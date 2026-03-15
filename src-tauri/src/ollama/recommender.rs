@@ -50,8 +50,12 @@ pub fn recommend_models(hw: &HardwareInfo) -> Vec<ModelRecommendation> {
         },
     ];
 
-    // Filter out models that don't fit in available RAM (with slight overcommit allowance)
-    models.retain(|m| m.min_ram_gb <= ram + 2.0);
+    // Filter out models that don't fit in RAM or GPU VRAM
+    models.retain(|m| {
+        let fits_ram = m.min_ram_gb <= ram + 2.0;
+        let fits_vram = has_gpu && hw.gpu_vram_gb.unwrap_or(0.0) >= m.min_ram_gb * 0.8;
+        fits_ram || fits_vram
+    });
     models
 }
 
