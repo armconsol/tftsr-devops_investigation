@@ -4,6 +4,8 @@ A structured, AI-backed desktop tool for IT incident triage, 5-Whys root cause a
 
 Built with **Tauri 2** (Rust + WebView), **React 18**, **TypeScript**, and **SQLCipher AES-256** encrypted storage.
 
+**CI status:** ![CI](http://172.0.0.29:3000/sarman/tftsr-devops_investigation/badges/master/status.svg) — all checks green (rustfmt · clippy · 64 Rust tests · tsc · vitest)
+
 ---
 
 ## Features
@@ -60,16 +62,24 @@ sudo dnf install -y \
   libsoup3-devel openssl-devel librsvg2-devel
 ```
 
+### System Libraries (Linux — Debian/Ubuntu)
+
+```bash
+sudo apt-get install -y \
+  libwebkit2gtk-4.1-dev libssl-dev libgtk-3-dev \
+  libayatana-appindicator3-dev librsvg2-dev patchelf pkg-config
+```
+
 ### Toolchain
 
 ```bash
-# Rust (install via rustup)
+# Rust (minimum 1.88 — required by cookie_store, time, darling)
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 source ~/.cargo/env
 
 # Node.js 22+ (via your package manager)
 # Verify:
-rustc --version   # 1.82+
+rustc --version   # 1.88+
 node --version    # 22+
 ```
 
@@ -78,18 +88,32 @@ node --version    # 22+
 ## Getting Started
 
 ```bash
-# Clone and install dependencies
-git clone <repo-url>
+# Clone
+git clone https://gogs.tftsr.com/sarman/tftsr-devops_investigation.git
 cd tftsr-devops_investigation
-npm install
+npm install --legacy-peer-deps
 
 # Development mode (hot reload)
+source ~/.cargo/env
 cargo tauri dev
 
 # Production build
 cargo tauri build
 # Output: src-tauri/target/release/bundle/
 ```
+
+---
+
+## Releases
+
+Pre-built installers are attached to each [tagged release](https://gogs.tftsr.com/sarman/tftsr-devops_investigation/releases):
+
+| Platform | Format | Notes |
+|---|---|---|
+| Linux amd64 | `.deb`, `.rpm`, `.AppImage` | Standard package or universal AppImage |
+| Windows amd64 | `.exe` (NSIS), `.msi` | From cross-compile via mingw-w64 |
+| Linux arm64 | `.deb`, `.AppImage` | Built on native arm64 runner (QEMU emulation available) |
+| macOS | — | Requires macOS runner — build locally |
 
 ---
 
@@ -151,11 +175,12 @@ tftsr/
 │   ├── lib/          # tauriCommands.ts (typed IPC wrappers), domainPrompts.ts
 │   └── styles/       # Tailwind + CSS custom properties
 ├── tests/
-│   ├── unit/         # Vitest unit tests (PII commands, session store, settings store)
-│   └── e2e/          # WebdriverIO + tauri-driver E2E test skeletons
+│   ├── unit/         # Vitest unit tests (PII, session store, settings store)
+│   └── e2e/          # WebdriverIO + tauri-driver E2E skeletons
+├── docs/wiki/        # Source of truth for Gogs wiki (auto-synced by CI)
 ├── .woodpecker/
-│   ├── test.yml      # CI: rustfmt, clippy, cargo test, tsc, vitest
-│   └── release.yml   # Release: multi-platform builds → Gogs artifacts
+│   ├── test.yml      # CI: rustfmt · clippy · cargo test · tsc · vitest (every push/PR)
+│   └── release.yml   # Release: linux/amd64 + windows/amd64 builds → Gogs release artifacts
 └── cli/              # Standalone CLI wrapper (tftsr-cli)
 ```
 
@@ -164,16 +189,16 @@ tftsr/
 ## Testing
 
 ```bash
-# Unit tests (Vitest)
+# Unit tests (Vitest) — 13/13 passing
 npm run test:run
 
-# Unit tests with coverage
+# Frontend coverage
 npm run test:coverage
 
 # TypeScript type check
 npx tsc --noEmit
 
-# Rust checks
+# Rust checks — 64/64 tests passing
 cargo check --manifest-path src-tauri/Cargo.toml
 cargo test --manifest-path src-tauri/Cargo.toml
 
@@ -185,14 +210,18 @@ TAURI_BINARY_PATH=./src-tauri/target/release/tftsr npm run test:e2e
 
 ## CI/CD — Woodpecker CI
 
-The project uses **Woodpecker CI** connected to the Gogs server at `172.0.0.29:3000`.
+The project uses **Woodpecker CI v0.15.4** connected to Gogs at `gogs.tftsr.com`.
 
 | Pipeline | Trigger | Steps |
 |---|---|---|
-| `.woodpecker/test.yml` | Every push / PR | rustfmt, clippy, cargo test, tsc, vitest |
-| `.woodpecker/release.yml` | Tag `v*` | Build linux/amd64 + linux/arm64 → upload to Gogs release |
+| `.woodpecker/test.yml` | Every push / PR | rustfmt · clippy · cargo test (64) · tsc · vitest |
+| `.woodpecker/release.yml` | Tag `v*` | Build linux/amd64 + windows/amd64 → upload to Gogs release |
 
-> macOS builds require a macOS runner (Apple SDK). Windows cross-compilation from Linux via `cross-rs` is possible but not yet configured.
+**Agents:**
+- `woodpecker_agent` — linux/amd64 (native x86_64)
+- `woodpecker_agent_arm64` — linux/arm64 (QEMU emulation on x86_64 host)
+
+> macOS builds require a macOS runner. See [CI/CD Pipeline wiki](https://gogs.tftsr.com/sarman/tftsr-devops_investigation/wiki/CICD-Pipeline) for full infrastructure docs.
 
 ---
 
@@ -249,8 +278,8 @@ Override with the `TFTSR_DATA_DIR` environment variable.
 | 8 | RCA & Post-Mortem Generation | ✅ Complete |
 | 9 | History & Search | 🔲 Pending |
 | 10 | Integrations (Confluence, ServiceNow, ADO) | 🔲 v0.2 |
-| 11 | CLI Interface | 🔲 Pending |
-| 12 | Release Packaging | 🔲 Pending |
+| 11 | CI/CD Pipeline | ✅ Complete — all checks green |
+| 12 | Release Packaging | ✅ linux/amd64 · windows/amd64; arm64 via QEMU agent |
 
 ---
 

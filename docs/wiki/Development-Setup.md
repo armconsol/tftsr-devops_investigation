@@ -90,7 +90,7 @@ npm run test:coverage
 npx tsc --noEmit
 ```
 
-Current test status: **13/13 frontend tests passing**, Rust tests passing.
+Current test status: **13/13 frontend tests passing**, **64/64 Rust tests passing**.
 
 ---
 
