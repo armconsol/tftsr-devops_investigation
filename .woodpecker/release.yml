@@ -1,6 +1,9 @@
 ---
-# NOTE: arm64 cross-compilation from x86_64 not supported here —
-# webkit2gtk multiarch conflicts prevent it. Run on native arm64 hardware.
+# Release pipeline — triggered on v* tags
+# Agents:
+#   linux/amd64 → woodpecker_agent (native x86_64)
+#   linux/arm64 → woodpecker_agent_arm64 (QEMU emulation on x86_64 host)
+# macOS requires a separate Mac runner — not covered here.
 
 clone:
   git:
@@ -30,7 +33,28 @@ pipeline:
       - mkdir -p artifacts/linux-amd64
       - find src-tauri/target/$TARGET/release/bundle -name "*.deb" -o -name "*.rpm" -o -name "*.AppImage" | xargs -I{} cp {} artifacts/linux-amd64/
 
-  upload-release-linux:
+  build-windows-amd64:
+    image: rust:1.88-slim
+    environment:
+      TARGET: x86_64-pc-windows-gnu
+      CC_x86_64_pc_windows_gnu: x86_64-w64-mingw32-gcc
+      CXX_x86_64_pc_windows_gnu: x86_64-w64-mingw32-g++
+      AR_x86_64_pc_windows_gnu: x86_64-w64-mingw32-ar
+      CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER: x86_64-w64-mingw32-gcc
+    when:
+      event: tag
+    commands:
+      - apt-get update -qq && apt-get install -y -qq mingw-w64 curl nsis
+      - curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+      - apt-get install -y nodejs
+      - npm ci --legacy-peer-deps
+      - rustup target add $TARGET
+      - cargo install tauri-cli --version "^2" --locked
+      - CI=true cargo tauri build --target $TARGET
+      - mkdir -p artifacts/windows-amd64
+      - find src-tauri/target/$TARGET/release/bundle -name "*.exe" -o -name "*.msi" | xargs -I{} cp {} artifacts/windows-amd64/ 2>/dev/null || true
+
+  upload-release:
     image: curlimages/curl:latest
     network_mode: gogs_default
     when:
@@ -46,15 +70,21 @@ pipeline:
         curl -sf -X POST "$API/repos/$REPO/releases" \
           -H "Authorization: token $GOGS_TOKEN" \
           -H "Content-Type: application/json" \
-          -d "{\"tag_name\":\"$TAG\",\"name\":\"TFTSR $TAG\",\"body\":\"Release $TAG (linux/amd64)\",\"draft\":false}" || true
+          -d "{\"tag_name\":\"$TAG\",\"name\":\"TFTSR $TAG\",\"body\":\"Release $TAG\",\"draft\":false}" || true
 
         # Get release ID
         RELEASE_ID=$(curl -sf "$API/repos/$REPO/releases/tags/$TAG" \
           -H "Authorization: token $GOGS_TOKEN" | grep -o '"id":[0-9]*' | head -1 | cut -d: -f2)
+        echo "Release ID: $RELEASE_ID"
 
-        # Upload amd64 artifacts from workspace
-        for f in artifacts/linux-amd64/*; do
-          [ -f "$f" ] && curl -sf -X POST "$API/repos/$REPO/releases/$RELEASE_ID/assets" \
-            -H "Authorization: token $GOGS_TOKEN" \
-            -F "attachment=@$f;filename=$(basename $f)" || echo "Upload failed: $f"
+        # Upload all available artifacts
+        for dir in artifacts/linux-amd64 artifacts/windows-amd64; do
+          [ -d "$dir" ] || continue
+          for f in "$dir"/*; do
+            [ -f "$f" ] || continue
+            echo "Uploading $f..."
+            curl -sf -X POST "$API/repos/$REPO/releases/$RELEASE_ID/assets" \
+              -H "Authorization: token $GOGS_TOKEN" \
+              -F "attachment=@$f;filename=$(basename $f)" && echo "OK" || echo "Upload failed: $f"
+          done
         done
