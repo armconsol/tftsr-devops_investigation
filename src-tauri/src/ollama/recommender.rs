@@ -18,7 +18,7 @@ pub fn recommend_models(hw: &HardwareInfo) -> Vec<ModelRecommendation> {
             size: "2.0 GB".to_string(),
             min_ram_gb: 6.0,
             description: "Balanced Llama 3.2 model. Good for most IT triage tasks.".to_string(),
-            recommended: ram >= 8.0 && ram < 16.0,
+            recommended: (8.0..16.0).contains(&ram),
         },
         ModelRecommendation {
             name: "phi3.5:3.8b".to_string(),
@@ -32,14 +32,14 @@ pub fn recommend_models(hw: &HardwareInfo) -> Vec<ModelRecommendation> {
             size: "4.7 GB".to_string(),
             min_ram_gb: 10.0,
             description: "Llama 3.1 8B. Strong performance for IT analysis.".to_string(),
-            recommended: ram >= 16.0 && ram < 32.0,
+            recommended: (16.0..32.0).contains(&ram),
         },
         ModelRecommendation {
             name: "qwen2.5:14b".to_string(),
             size: "9.0 GB".to_string(),
             min_ram_gb: 16.0,
             description: "Qwen 2.5 14B. Excellent for complex log analysis.".to_string(),
-            recommended: ram >= 24.0 && ram < 40.0,
+            recommended: (24.0..40.0).contains(&ram),
         },
         ModelRecommendation {
             name: "llama3.1:70b".to_string(),

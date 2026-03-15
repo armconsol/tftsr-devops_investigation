@@ -28,7 +28,7 @@ pub fn generate_rca_markdown(detail: &IssueDetail) -> String {
     if let Some(ref resolved) = issue.resolved_at {
         md.push_str(&format!("| **Resolved** | {} |\n", resolved));
     }
-    md.push_str("\n");
+    md.push('\n');
 
     if !issue.description.is_empty() {
         md.push_str("## Description\n\n");
@@ -90,7 +90,7 @@ pub fn generate_rca_markdown(detail: &IssueDetail) -> String {
                 &lf.content_hash[..8.min(lf.content_hash.len())],
             ));
         }
-        md.push_str("\n");
+        md.push('\n');
     }
 
     // Corrective Actions

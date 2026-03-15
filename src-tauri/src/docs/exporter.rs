@@ -48,7 +48,7 @@ pub fn export_pdf(content_md: &str, title: &str, output_path: &str) -> anyhow::R
         };
 
         current_layer.use_text(&line_info.text, font_size, margin_left, y_pos, font_ref);
-        y_pos = y_pos - line_height;
+        y_pos -= line_height;
         line_count += 1;
     }
 

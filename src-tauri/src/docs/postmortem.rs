@@ -73,7 +73,7 @@ pub fn generate_postmortem_markdown(detail: &IssueDetail) -> String {
                 step.step_order, step.why_question, answer
             ));
         }
-        md.push_str("\n");
+        md.push('\n');
 
         if let Some(last) = detail.resolution_steps.last() {
             if !last.answer.is_empty() {
@@ -122,7 +122,7 @@ pub fn generate_postmortem_markdown(detail: &IssueDetail) -> String {
                 if lf.redacted { "yes" } else { "no" }
             ));
         }
-        md.push_str("\n");
+        md.push('\n');
     }
 
     md.push_str("---\n\n");
