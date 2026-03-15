@@ -2,6 +2,8 @@
 
 **TFTSR** is a secure desktop application for guided IT incident triage, root cause analysis (RCA), and post-mortem documentation. Built with Tauri 2.x (Rust + WebView) and React 18.
 
+**CI:** ![build](http://172.0.0.29:3000/sarman/tftsr-devops_investigation/badges/master/status.svg) — rustfmt · clippy · 64 Rust tests · tsc · vitest — all green
+
 ## Quick Navigation
 
 | Topic | Description |
@@ -12,7 +14,7 @@
 | [AI Providers](wiki/AI-Providers) | Supported providers and configuration |
 | [PII Detection](wiki/PII-Detection) | Patterns, redaction flow, security |
 | [IPC Commands](wiki/IPC-Commands) | Full list of Tauri backend commands |
-| [CI/CD Pipeline](wiki/CICD-Pipeline) | Woodpecker CI + Gogs setup |
+| [CI/CD Pipeline](wiki/CICD-Pipeline) | Woodpecker CI + Gogs setup, multi-platform builds |
 | [Security Model](wiki/Security-Model) | Encryption, audit trail, capabilities |
 | [Integrations](wiki/Integrations) | Confluence, ServiceNow, Azure DevOps (v0.2) |
 | [Troubleshooting](wiki/Troubleshooting) | Known issues and fixes |
@@ -28,15 +30,23 @@
 - **Audit Trail** — Every external data send logged with SHA-256 hash
 - **Domain-Specific Prompts** — 8 IT domains: Linux, Windows, Network, Kubernetes, Databases, Virtualization, Hardware, Observability
 
+## Releases
+
+| Version | Status | Platforms |
+|---------|--------|-----------|
+| v0.1.0-alpha | 🚀 Released | linux/amd64 (.deb, .rpm, .AppImage), windows/amd64 (.exe, .msi) |
+
+Download from [Releases](https://gogs.tftsr.com/sarman/tftsr-devops_investigation/releases).
+
 ## Project Status
 
 | Phase | Status |
 |-------|--------|
-| Phases 1–8 (Core) | ✅ Complete |
-| Phase 9 (History/Search FTS) | 🔄 Partially integrated |
+| Phases 1–8 (Core application) | ✅ Complete |
+| Phase 9 (History/Search) | 🔲 Pending |
 | Phase 10 (Integrations) | 🕐 v0.2 stubs only |
-| Phase 11 (CLI) | 🕐 Planned |
-| Phase 12 (Release packaging) | 🔄 Linux done; macOS/Windows pending |
+| Phase 11 (CI/CD) | ✅ Complete — Woodpecker CI fully operational |
+| Phase 12 (Release packaging) | ✅ linux/amd64 + windows/amd64; arm64 via QEMU agent |
 
 ## Tech Stack
 
@@ -49,5 +59,5 @@
 | Database | rusqlite + SQLCipher (AES-256) |
 | Secret storage | tauri-plugin-stronghold |
 | State | Zustand |
-| Testing | Vitest (frontend) + `#[cfg(test)]` (Rust) |
+| Testing | Vitest (13 frontend) + `#[cfg(test)]` (64 Rust tests) |
 | CI/CD | Woodpecker CI v0.15.4 + Gogs |
