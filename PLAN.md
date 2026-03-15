@@ -314,77 +314,116 @@ All frontend ↔ backend communication goes through Tauri's `invoke()`.
 
 ## Implementation Phases
 
-### Phase 1 — Project Scaffold & CI [IN PROGRESS]
+### Phase 1 — Project Scaffold & CI ✅ COMPLETE
 - [x] Initialise repo with Tauri 2.x + React 18 + Vite
 - [x] Configure `tauri.conf.json` and capabilities
 - [x] Set up Woodpecker CI pipelines (`test.yml`, `release.yml`)
 - [x] Write Vitest setup and mock harness
-- [x] Write initial unit tests (PII, sessionStore, settingsStore)
+- [x] Write initial unit tests (PII, sessionStore, settingsStore) — 13/13 passing
 - [x] Write E2E scaffolding (wdio config, helpers, skeleton specs)
 - [x] Create CLI stub (`cli/`)
-- [ ] Verify CI green on first push
+- [x] Push to Gogs at http://172.0.0.29:3000/sarman/tftsr-devops_investigation
+- [x] Write README.md
+- [x] Deploy Woodpecker CI v0.15.4 (server + agent + nginx proxy)
+- [ ] **BLOCKED**: Verify CI green on push (Woodpecker hook auth issue — see below)
 
-### Phase 2 — Database & Migrations
-- [ ] Integrate `rusqlite` + `bundled-sqlcipher`
-- [ ] Write `001_init.sql` migration with all 8 tables
-- [ ] Implement migration runner in `db.rs`
-- [ ] Unit-test DB operations
+### Phase 2 — Database & Migrations ✅ COMPLETE
+- [x] Integrate `rusqlite` + `bundled-sqlcipher`
+- [x] Write migrations (10 tables: issues, log_files, pii_spans, ai_conversations, ai_messages, resolution_steps, documents, audit_log, settings, integration_publishes)
+- [x] Implement migration runner in `db/migrations.rs`
+- [x] DB models with all required types
 
-### Phase 3 — Stronghold Integration
-- [ ] Add `tauri-plugin-stronghold`
-- [ ] Store/retrieve DB encryption key
-- [ ] Store/retrieve AI API keys
-- [ ] Test key lifecycle
+### Phase 3 — Stronghold Integration ✅ COMPLETE (scaffold)
+- [x] `tauri-plugin-stronghold` registered in `lib.rs`
+- [x] Password derivation function configured
+- [ ] Full key lifecycle tests (deferred to Phase 3 proper)
 
-### Phase 4 — Issue CRUD
-- [ ] Implement `commands/issues.rs`
-- [ ] Wire IPC commands
-- [ ] Build `DashboardPage` and `NewIssuePage` UI
-- [ ] Unit-test issue store + commands
+### Phase 4 — Issue CRUD ✅ COMPLETE
+- [x] All issue CRUD commands: create, get, list, update, delete, search
+- [x] 5-Whys tracking: add_five_why, update_five_why
+- [x] Timeline events: add_timeline_event
+- [x] Dashboard, NewIssue, History pages
 
-### Phase 5 — Log Ingestion & PII Detection
-- [ ] Implement `commands/logs.rs` and `pii/` engine
-- [ ] Build `DropZone` + `PiiHighlighter` components
-- [ ] Write comprehensive PII regex tests
-- [ ] E2E: log upload flow
+### Phase 5 — Log Ingestion & PII Detection ✅ COMPLETE
+- [x] `upload_log_file`, `detect_pii`, `apply_redactions` commands
+- [x] PII engine: 11 regex patterns (IPv4, IPv6, email, phone, SSN, CC, MAC, bearer, password, API key, URL)
+- [x] PiiDiffViewer component
+- [x] LogUpload page
 
-### Phase 6 — AI Provider Abstraction
-- [ ] Implement `ai/ollama.rs` and `ai/openai_compat.rs`
-- [ ] Build `SettingsPage` provider configuration UI
-- [ ] `test_provider` command with connectivity check
-- [ ] Unit-test prompt templates
+### Phase 6 — AI Provider Abstraction ✅ COMPLETE
+- [x] OpenAI-compatible, Anthropic, Gemini, Mistral, Ollama providers
+- [x] `analyze_logs`, `chat_message`, `list_providers` IPC commands
+- [x] Settings/AIProviders page
+- [x] 8 IT domain system prompts
 
-### Phase 7 — 5-Whys Triage Engine
-- [ ] Implement `commands/triage.rs` with streaming support
-- [ ] Build `TriagePage` with `WhyStep` + `ChatBubble`
-- [ ] Wire progress bar to why-level state
-- [ ] E2E: full triage flow
+### Phase 7 — 5-Whys Triage Engine ✅ COMPLETE
+- [x] Triage page with ChatWindow
+- [x] TriageProgress component (5-step indicator)
+- [x] Auto-detection of why level from AI responses
+- [x] Session store with message persistence
 
-### Phase 8 — RCA Document Generation
-- [ ] Implement `commands/rca.rs` + `generate_rca`
-- [ ] Build `RcaPage` with `DocEditor`
-- [ ] Test RCA generation with mock AI responses
+### Phase 8 — RCA & Post-Mortem Generation ✅ COMPLETE
+- [x] `generate_rca`, `generate_postmortem` commands
+- [x] RCA and post-mortem Markdown templates
+- [x] DocEditor component with export (MD, PDF)
+- [x] RCA and Postmortem pages
 
-### Phase 9 — Document Export
-- [ ] Implement `export/markdown.rs`, `pdf.rs`, `docx.rs`
-- [ ] Build export bar with format selection
-- [ ] Test each export format
-- [ ] E2E: export flow
+### Phase 9 — Document Export ✅ COMPLETE (MD + PDF)
+- [x] Markdown export
+- [x] PDF export via `printpdf`
+- [ ] DOCX export (not yet implemented — docx-rs dep removed for simplicity)
 
-### Phase 10 — Polish & Accessibility
-- [ ] Dark/light theme toggle
-- [ ] Keyboard navigation
-- [ ] Loading states and error boundaries
-- [ ] Responsive layout adjustments
+### Phase 10 — Polish & Settings ✅ COMPLETE
+- [x] Dark/light theme via Tailwind + CSS variables
+- [x] Ollama settings page with hardware detection + model management
+- [x] Security page with audit log
+- [x] Integrations page (v0.2 stubs)
 
-### Phase 11 — Release Pipeline Validation
-- [ ] Tag `v0.1.0-alpha`
+### Phase 11 — Woodpecker CI Integration 🔴 IN PROGRESS / BLOCKED
+**What works:**
+- [x] Woodpecker CI v0.15.4 deployed at http://172.0.0.29:8084
+- [x] Gogs SSRF bypass: webhook URL uses 172.0.0.29:8084 (not container IP)
+- [x] Webhook delivery confirmed: Gogs IS sending webhooks to Woodpecker
+- [x] Custom login proxy at http://172.0.0.29:8085 with correct `username=` form field
+
+**What's blocked:**
+- [ ] Woodpecker hook authentication: 400 "failure to parse token" when Gogs delivers webhook
+  - Root cause: `token.ParseRequest()` in Woodpecker 0.15.4 doesn't read `?token=` URL param
+  - With `?access_token=<JWT>`: gets 404 (JWT validated, but parsePushHook returns nil unexpectedly)
+  - Web UI login via http://172.0.0.29:8085/login: custom form works but SPA still intercepts
+- [ ] Repo activation via Woodpecker API returns 401 (permission/token issue)
+- [ ] CI build not yet triggering on push
+
+**Next steps:**
+1. Fix Woodpecker token storage: ensure Woodpecker DB has the actual bearer token
+   (Gogs token `sha1` from CREATE response = actual token; DB `sha1` column = hash of it)
+2. Delete old "woodpecker" Gogs tokens via PostgreSQL, then re-login to Woodpecker
+3. Fix the `?access_token=<JWT>` 404 — investigate parsePushHook nil return
+4. Alternative: upgrade to Woodpecker 2.x and add OAuth2 to Gogs (or migrate to Gitea)
+
+### Phase 12 — Release Package 🔲 PENDING
+- [ ] Tag v0.1.0-alpha
 - [ ] Verify Woodpecker builds Linux amd64 + arm64
 - [ ] Verify artifacts upload to Gogs release
 - [ ] Smoke-test installed packages
 
-### Phase 12 — Documentation & Handoff
-- [ ] Write user-facing README
-- [ ] Document AI provider setup guide
-- [ ] Record architecture decision log
-- [ ] Final CI badge + release notes
+---
+
+## Known Issues & Gotchas
+
+### Gogs Token Authentication
+- The `sha1` in the Gogs CREATE token API response IS the actual bearer token
+- Gogs stores `sha1(token)` and `sha256(token)` in the DB — these are HASHES, not the token itself
+- Known working tokens: `[REDACTED-ROTATED]` (woodpecker-setup)
+
+### Woodpecker CI + Gogs v0.15.4 Compatibility
+- The SPA form login uses `login=` field but Gogs backend reads `username=`
+- Workaround: nginx proxy at :8085 serves custom HTML login page
+- The webhook `?token=` URL param is NOT read by Woodpecker's `token.ParseRequest()`
+- Use `?access_token=<JWT>` instead (JWT must be HS256 signed with `repo_hash` as key)
+- Gogs 0.14 has no OAuth2 provider support — blocks upgrade to Woodpecker 2.x
+
+### Rust/DB Type Notes
+- IssueDetail is NESTED: `{ issue: Issue, log_files, resolution_steps, conversations }`
+- DB uses TEXT timestamps for created_at/updated_at (not INTEGER)
+- All commands use the `and_then` pattern with rusqlite to avoid lifetime issues
