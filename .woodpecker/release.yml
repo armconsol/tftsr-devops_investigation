@@ -1,10 +1,13 @@
 ---
 clone:
   git:
-    image: woodpeckerci/plugin-git
+    image: alpine/git
     network_mode: gogs_default
-    environment:
-      - CI_REPO_CLONE_URL=http://gogs_app:3000/sarman/tftsr-devops_investigation.git
+    commands:
+      - git init -b master
+      - git remote add origin http://gogs_app:3000/sarman/tftsr-devops_investigation.git
+      - git fetch --depth=1 origin +refs/tags/${CI_COMMIT_TAG}:refs/tags/${CI_COMMIT_TAG}
+      - git checkout ${CI_COMMIT_TAG}
 
 pipeline:
   build-linux-amd64:
