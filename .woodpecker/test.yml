@@ -29,11 +29,11 @@ pipeline:
   frontend-typecheck:
     image: node:22-alpine
     commands:
-      - npm ci
+      - npm ci --legacy-peer-deps
       - npx tsc --noEmit
 
   frontend-tests:
     image: node:22-alpine
     commands:
-      - npm ci
+      - npm ci --legacy-peer-deps
       - npm run test:run
