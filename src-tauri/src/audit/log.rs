@@ -54,8 +54,14 @@ mod tests {
     #[test]
     fn test_write_audit_event_inserts_row() {
         let conn = setup_test_db();
-        write_audit_event(&conn, "test_action", "issue", "issue-123", r#"{"key":"val"}"#)
-            .expect("should insert");
+        write_audit_event(
+            &conn,
+            "test_action",
+            "issue",
+            "issue-123",
+            r#"{"key":"val"}"#,
+        )
+        .expect("should insert");
 
         let count: i64 = conn
             .prepare("SELECT COUNT(*) FROM audit_log")

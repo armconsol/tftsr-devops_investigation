@@ -20,7 +20,10 @@ pub struct Incident {
 }
 
 pub async fn test_connection(_config: &ServiceNowConfig) -> Result<ConnectionResult, String> {
-    Err("ServiceNow integration available in v0.2. Please update to the latest version.".to_string())
+    Err(
+        "ServiceNow integration available in v0.2. Please update to the latest version."
+            .to_string(),
+    )
 }
 
 pub async fn create_incident(
@@ -30,14 +33,20 @@ pub async fn create_incident(
     _urgency: &str,
     _impact: &str,
 ) -> Result<TicketResult, String> {
-    Err("ServiceNow integration available in v0.2. Please update to the latest version.".to_string())
+    Err(
+        "ServiceNow integration available in v0.2. Please update to the latest version."
+            .to_string(),
+    )
 }
 
 pub async fn get_incident(
     _config: &ServiceNowConfig,
     _incident_number: &str,
 ) -> Result<Incident, String> {
-    Err("ServiceNow integration available in v0.2. Please update to the latest version.".to_string())
+    Err(
+        "ServiceNow integration available in v0.2. Please update to the latest version."
+            .to_string(),
+    )
 }
 
 pub async fn update_incident(
@@ -45,5 +54,8 @@ pub async fn update_incident(
     _incident_number: &str,
     _updates: serde_json::Value,
 ) -> Result<TicketResult, String> {
-    Err("ServiceNow integration available in v0.2. Please update to the latest version.".to_string())
+    Err(
+        "ServiceNow integration available in v0.2. Please update to the latest version."
+            .to_string(),
+    )
 }

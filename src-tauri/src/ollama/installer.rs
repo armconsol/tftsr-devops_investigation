@@ -8,13 +8,9 @@ pub async fn check_ollama() -> anyhow::Result<OllamaStatus> {
         "which"
     };
 
-    let which_result = std::process::Command::new(which_cmd)
-        .arg("ollama")
-        .output();
+    let which_result = std::process::Command::new(which_cmd).arg("ollama").output();
 
-    let installed = which_result
-        .map(|o| o.status.success())
-        .unwrap_or(false);
+    let installed = which_result.map(|o| o.status.success()).unwrap_or(false);
 
     let version = if installed {
         std::process::Command::new("ollama")
@@ -104,7 +100,10 @@ mod tests {
     fn test_macos_install_guide() {
         let guide = get_install_instructions("macos");
         assert_eq!(guide.platform, "macOS");
-        assert!(guide.steps.iter().any(|s| s.contains("dmg") || s.contains("Applications")));
+        assert!(guide
+            .steps
+            .iter()
+            .any(|s| s.contains("dmg") || s.contains("Applications")));
     }
 
     #[test]

@@ -9,9 +9,7 @@ use crate::state::{AppSettings, AppState};
 
 #[tauri::command]
 pub async fn check_ollama_installed() -> Result<OllamaStatus, String> {
-    installer::check_ollama()
-        .await
-        .map_err(|e| e.to_string())
+    installer::check_ollama().await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -55,9 +53,7 @@ pub async fn recommend_models() -> Result<Vec<ModelRecommendation>, String> {
 // --- Settings commands ---
 
 #[tauri::command]
-pub async fn get_settings(
-    state: tauri::State<'_, AppState>,
-) -> Result<AppSettings, String> {
+pub async fn get_settings(state: tauri::State<'_, AppState>) -> Result<AppSettings, String> {
     state
         .settings
         .lock()

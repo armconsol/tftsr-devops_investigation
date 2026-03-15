@@ -35,8 +35,7 @@ pub fn export_pdf(content_md: &str, title: &str, output_path: &str) -> anyhow::R
 
     for line_info in &lines {
         if line_count >= max_lines_per_page {
-            let (new_page, new_layer) =
-                doc.add_page(Mm(210.0), Mm(297.0), "Layer 1");
+            let (new_page, new_layer) = doc.add_page(Mm(210.0), Mm(297.0), "Layer 1");
             current_layer = doc.get_page(new_page).get_layer(new_layer);
             y_pos = margin_top;
             line_count = 0;
@@ -185,13 +184,18 @@ mod tests {
     #[test]
     fn test_markdown_to_lines_title() {
         let lines = markdown_to_lines("# My Title\n\nSome text");
-        assert!(lines.iter().any(|l| l.text == "My Title" && matches!(l.style, LineStyle::Title)));
+        assert!(lines
+            .iter()
+            .any(|l| l.text == "My Title" && matches!(l.style, LineStyle::Title)));
     }
 
     #[test]
     fn test_markdown_to_lines_heading() {
         let lines = markdown_to_lines("## Section\n### Subsection");
-        let headings: Vec<_> = lines.iter().filter(|l| matches!(l.style, LineStyle::Heading)).collect();
+        let headings: Vec<_> = lines
+            .iter()
+            .filter(|l| matches!(l.style, LineStyle::Heading))
+            .collect();
         assert_eq!(headings.len(), 2);
     }
 
@@ -204,7 +208,9 @@ mod tests {
     #[test]
     fn test_markdown_to_lines_table_row() {
         let lines = markdown_to_lines("| Col1 | Col2 |\n|------|------|\n| A | B |");
-        assert!(lines.iter().any(|l| l.text.contains("Col1") && l.text.contains("Col2")));
+        assert!(lines
+            .iter()
+            .any(|l| l.text.contains("Col1") && l.text.contains("Col2")));
     }
 
     #[test]

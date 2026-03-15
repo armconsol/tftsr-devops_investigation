@@ -48,10 +48,7 @@ pub async fn analyze_logs(
         },
         Message {
             role: "user".into(),
-            content: format!(
-                "Analyze logs for issue {}:\n\n{}",
-                issue_id, log_contents
-            ),
+            content: format!("Analyze logs for issue {}:\n\n{}", issue_id, log_contents),
         },
     ];
 
@@ -61,8 +58,13 @@ pub async fn analyze_logs(
         .map_err(|e| e.to_string())?;
 
     let content = &response.content;
-    let summary = extract_section(content, "SUMMARY:")
-        .unwrap_or_else(|| content.lines().next().unwrap_or("Analysis complete").to_string());
+    let summary = extract_section(content, "SUMMARY:").unwrap_or_else(|| {
+        content
+            .lines()
+            .next()
+            .unwrap_or("Analysis complete")
+            .to_string()
+    });
     let key_findings = extract_list(content, "KEY_FINDINGS:");
     let suggested_why1 = extract_section(content, "FIRST_WHY:")
         .unwrap_or_else(|| "Why did this issue occur?".to_string());
@@ -76,7 +78,8 @@ pub async fn analyze_logs(
             "ai_analyze_logs".to_string(),
             "issue".to_string(),
             issue_id.clone(),
-            serde_json::json!({ "log_file_ids": log_file_ids, "provider": provider_config.name }).to_string(),
+            serde_json::json!({ "log_file_ids": log_file_ids, "provider": provider_config.name })
+                .to_string(),
         );
         db.execute(
             "INSERT INTO audit_log (id, timestamp, action, entity_type, entity_id, user_id, details) \
@@ -275,10 +278,7 @@ pub async fn list_providers() -> Result<Vec<ProviderInfo>, String> {
         ProviderInfo {
             name: "gemini".to_string(),
             supports_streaming: false,
-            models: vec![
-                "gemini-1.5-pro".to_string(),
-                "gemini-1.5-flash".to_string(),
-            ],
+            models: vec!["gemini-1.5-pro".to_string(), "gemini-1.5-flash".to_string()],
         },
         ProviderInfo {
             name: "mistral".to_string(),

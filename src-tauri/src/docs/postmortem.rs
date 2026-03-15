@@ -5,10 +5,7 @@ pub fn generate_postmortem_markdown(detail: &IssueDetail) -> String {
 
     let mut md = String::new();
 
-    md.push_str(&format!(
-        "# Blameless Post-Mortem: {}\n\n",
-        issue.title
-    ));
+    md.push_str(&format!("# Blameless Post-Mortem: {}\n\n", issue.title));
 
     // Header metadata
     md.push_str("## Metadata\n\n");
@@ -19,7 +16,11 @@ pub fn generate_postmortem_markdown(detail: &IssueDetail) -> String {
     md.push_str(&format!("- **Last Updated:** {}\n", issue.updated_at));
     md.push_str(&format!(
         "- **Assigned To:** {}\n",
-        if issue.assigned_to.is_empty() { "_Unassigned_" } else { &issue.assigned_to }
+        if issue.assigned_to.is_empty() {
+            "_Unassigned_"
+        } else {
+            &issue.assigned_to
+        }
     ));
     md.push_str("- **Authors:** _[Add authors]_\n");
     md.push_str("- **Reviewers:** _[Add reviewers]_\n\n");

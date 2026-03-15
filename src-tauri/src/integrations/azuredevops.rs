@@ -19,7 +19,10 @@ pub struct WorkItem {
 }
 
 pub async fn test_connection(_config: &AzureDevOpsConfig) -> Result<ConnectionResult, String> {
-    Err("Azure DevOps integration available in v0.2. Please update to the latest version.".to_string())
+    Err(
+        "Azure DevOps integration available in v0.2. Please update to the latest version."
+            .to_string(),
+    )
 }
 
 pub async fn create_work_item(
@@ -29,14 +32,20 @@ pub async fn create_work_item(
     _work_item_type: &str,
     _severity: &str,
 ) -> Result<TicketResult, String> {
-    Err("Azure DevOps integration available in v0.2. Please update to the latest version.".to_string())
+    Err(
+        "Azure DevOps integration available in v0.2. Please update to the latest version."
+            .to_string(),
+    )
 }
 
 pub async fn get_work_item(
     _config: &AzureDevOpsConfig,
     _work_item_id: i64,
 ) -> Result<WorkItem, String> {
-    Err("Azure DevOps integration available in v0.2. Please update to the latest version.".to_string())
+    Err(
+        "Azure DevOps integration available in v0.2. Please update to the latest version."
+            .to_string(),
+    )
 }
 
 pub async fn update_work_item(
@@ -44,5 +53,8 @@ pub async fn update_work_item(
     _work_item_id: i64,
     _updates: serde_json::Value,
 ) -> Result<TicketResult, String> {
-    Err("Azure DevOps integration available in v0.2. Please update to the latest version.".to_string())
+    Err(
+        "Azure DevOps integration available in v0.2. Please update to the latest version."
+            .to_string(),
+    )
 }

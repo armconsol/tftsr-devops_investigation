@@ -24,11 +24,17 @@ pub struct Page {
 }
 
 pub async fn test_connection(_config: &ConfluenceConfig) -> Result<ConnectionResult, String> {
-    Err("Confluence integration available in v0.2. Please update to the latest version.".to_string())
+    Err(
+        "Confluence integration available in v0.2. Please update to the latest version."
+            .to_string(),
+    )
 }
 
 pub async fn list_spaces(_config: &ConfluenceConfig) -> Result<Vec<Space>, String> {
-    Err("Confluence integration available in v0.2. Please update to the latest version.".to_string())
+    Err(
+        "Confluence integration available in v0.2. Please update to the latest version."
+            .to_string(),
+    )
 }
 
 pub async fn publish_page(
@@ -38,7 +44,10 @@ pub async fn publish_page(
     _content_html: &str,
     _parent_page_id: Option<&str>,
 ) -> Result<PublishResult, String> {
-    Err("Confluence integration available in v0.2. Please update to the latest version.".to_string())
+    Err(
+        "Confluence integration available in v0.2. Please update to the latest version."
+            .to_string(),
+    )
 }
 
 pub async fn update_page(
@@ -48,5 +57,8 @@ pub async fn update_page(
     _content_html: &str,
     _version: i32,
 ) -> Result<PublishResult, String> {
-    Err("Confluence integration available in v0.2. Please update to the latest version.".to_string())
+    Err(
+        "Confluence integration available in v0.2. Please update to the latest version."
+            .to_string(),
+    )
 }

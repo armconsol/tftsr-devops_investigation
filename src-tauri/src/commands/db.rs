@@ -247,23 +247,29 @@ pub async fn update_issue(
 }
 
 #[tauri::command]
-pub async fn delete_issue(
-    issue_id: String,
-    state: State<'_, AppState>,
-) -> Result<(), String> {
+pub async fn delete_issue(issue_id: String, state: State<'_, AppState>) -> Result<(), String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
 
     // Delete related records (CASCADE should handle this, but be explicit)
     db.execute("DELETE FROM ai_messages WHERE conversation_id IN (SELECT id FROM ai_conversations WHERE issue_id = ?1)", [&issue_id])
         .map_err(|e| e.to_string())?;
-    db.execute("DELETE FROM ai_conversations WHERE issue_id = ?1", [&issue_id])
-        .map_err(|e| e.to_string())?;
-    db.execute("DELETE FROM pii_spans WHERE log_file_id IN (SELECT id FROM log_files WHERE issue_id = ?1)", [&issue_id])
-        .map_err(|e| e.to_string())?;
+    db.execute(
+        "DELETE FROM ai_conversations WHERE issue_id = ?1",
+        [&issue_id],
+    )
+    .map_err(|e| e.to_string())?;
+    db.execute(
+        "DELETE FROM pii_spans WHERE log_file_id IN (SELECT id FROM log_files WHERE issue_id = ?1)",
+        [&issue_id],
+    )
+    .map_err(|e| e.to_string())?;
     db.execute("DELETE FROM log_files WHERE issue_id = ?1", [&issue_id])
         .map_err(|e| e.to_string())?;
-    db.execute("DELETE FROM resolution_steps WHERE issue_id = ?1", [&issue_id])
-        .map_err(|e| e.to_string())?;
+    db.execute(
+        "DELETE FROM resolution_steps WHERE issue_id = ?1",
+        [&issue_id],
+    )
+    .map_err(|e| e.to_string())?;
     db.execute("DELETE FROM issues WHERE id = ?1", [&issue_id])
         .map_err(|e| e.to_string())?;
 
@@ -364,13 +370,7 @@ pub async fn add_five_why(
     evidence: String,
     state: State<'_, AppState>,
 ) -> Result<ResolutionStep, String> {
-    let step = ResolutionStep::new(
-        issue_id.clone(),
-        step_order,
-        why_question,
-        answer,
-        evidence,
-    );
+    let step = ResolutionStep::new(issue_id.clone(), step_order, why_question, answer, evidence);
 
     let db = state.db.lock().map_err(|e| e.to_string())?;
     db.execute(
@@ -444,8 +444,13 @@ pub async fn add_timeline_event(
         "INSERT INTO audit_log (id, timestamp, action, entity_type, entity_id, user_id, details) \
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
         rusqlite::params![
-            entry.id, entry.timestamp, entry.action,
-            entry.entity_type, entry.entity_id, entry.user_id, entry.details
+            entry.id,
+            entry.timestamp,
+            entry.action,
+            entry.entity_type,
+            entry.entity_id,
+            entry.user_id,
+            entry.details
         ],
     )
     .map_err(|e| e.to_string())?;

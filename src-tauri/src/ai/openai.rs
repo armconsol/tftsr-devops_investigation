@@ -30,10 +30,7 @@ impl Provider for OpenAiProvider {
         config: &ProviderConfig,
     ) -> anyhow::Result<ChatResponse> {
         let client = reqwest::Client::new();
-        let url = format!(
-            "{}/chat/completions",
-            config.api_url.trim_end_matches('/')
-        );
+        let url = format!("{}/chat/completions", config.api_url.trim_end_matches('/'));
 
         let body = serde_json::json!({
             "model": config.model,

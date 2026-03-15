@@ -64,8 +64,13 @@ pub async fn upload_log_file(
         "INSERT INTO audit_log (id, timestamp, action, entity_type, entity_id, user_id, details) \
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
         rusqlite::params![
-            entry.id, entry.timestamp, entry.action,
-            entry.entity_type, entry.entity_id, entry.user_id, entry.details
+            entry.id,
+            entry.timestamp,
+            entry.action,
+            entry.entity_type,
+            entry.entity_id,
+            entry.user_id,
+            entry.details
         ],
     );
 
@@ -163,14 +168,16 @@ pub async fn apply_redactions(
             .unwrap_or_default();
         drop(db);
         raw.into_iter()
-            .map(|(id, pii_type, start, end, original, replacement)| pii::PiiSpan {
-                id,
-                pii_type,
-                start: start as usize,
-                end: end as usize,
-                original,
-                replacement,
-            })
+            .map(
+                |(id, pii_type, start, end, original, replacement)| pii::PiiSpan {
+                    id,
+                    pii_type,
+                    start: start as usize,
+                    end: end as usize,
+                    original,
+                    replacement,
+                },
+            )
             .filter(|span| approved_span_ids.contains(&span.id))
             .collect()
     };

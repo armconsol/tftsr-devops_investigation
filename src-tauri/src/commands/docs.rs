@@ -52,8 +52,13 @@ pub async fn generate_rca(
         "INSERT INTO audit_log (id, timestamp, action, entity_type, entity_id, user_id, details) \
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
         rusqlite::params![
-            entry.id, entry.timestamp, entry.action,
-            entry.entity_type, entry.entity_id, entry.user_id, entry.details
+            entry.id,
+            entry.timestamp,
+            entry.action,
+            entry.entity_type,
+            entry.entity_id,
+            entry.user_id,
+            entry.details
         ],
     );
 
@@ -94,8 +99,13 @@ pub async fn generate_postmortem(
         "INSERT INTO audit_log (id, timestamp, action, entity_type, entity_id, user_id, details) \
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
         rusqlite::params![
-            entry.id, entry.timestamp, entry.action,
-            entry.entity_type, entry.entity_id, entry.user_id, entry.details
+            entry.id,
+            entry.timestamp,
+            entry.action,
+            entry.entity_type,
+            entry.entity_id,
+            entry.user_id,
+            entry.details
         ],
     );
 
@@ -103,10 +113,7 @@ pub async fn generate_postmortem(
 }
 
 #[tauri::command]
-pub async fn update_document(
-    doc_id: String,
-    content_md: String,
-) -> Result<(), String> {
+pub async fn update_document(doc_id: String, content_md: String) -> Result<(), String> {
     // Documents are generated on-demand and held in memory / frontend state.
     // This is a no-op placeholder. In a future version with a documents table,
     // this would persist updates.

@@ -46,8 +46,7 @@ pub fn recommend_models(hw: &HardwareInfo) -> Vec<ModelRecommendation> {
             size: "40 GB".to_string(),
             min_ram_gb: 48.0,
             description: "Full Llama 3.1 70B. Best quality, requires significant RAM.".to_string(),
-            recommended: ram >= 48.0
-                || (has_gpu && hw.gpu_vram_gb.unwrap_or(0.0) >= 40.0),
+            recommended: ram >= 48.0 || (has_gpu && hw.gpu_vram_gb.unwrap_or(0.0) >= 40.0),
         },
     ];
 

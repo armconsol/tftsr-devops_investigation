@@ -106,10 +106,7 @@ impl Provider for AnthropicProvider {
             })
         });
 
-        let model = json["model"]
-            .as_str()
-            .unwrap_or(&config.model)
-            .to_string();
+        let model = json["model"].as_str().unwrap_or(&config.model).to_string();
 
         Ok(ChatResponse {
             content,
