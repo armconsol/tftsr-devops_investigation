@@ -1,4 +1,10 @@
 ---
+clone:
+  git:
+    image: woodpeckerci/plugin-git
+    environment:
+      - DRONE_REMOTE_URL=http://gogs_app:3000/sarman/tftsr-devops_investigation.git
+
 pipeline:
   rust-fmt-check:
     image: rust:1.82-slim
