@@ -6,3 +6,4 @@ src-tauri/target/
 .secrets
 secrets.yml
 secrets.yaml
+artifacts/
