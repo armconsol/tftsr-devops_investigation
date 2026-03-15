@@ -1,49 +1,51 @@
 ---
-when:
-  - event: tag
-    ref: refs/tags/v*
+clone:
+  git:
+    image: woodpeckerci/plugin-git
+    network_mode: gogs_default
+    environment:
+      - CI_REPO_CLONE_URL=http://gogs_app:3000/sarman/tftsr-devops_investigation.git
 
-variables:
-  - &rust_version "1.82"
-  - &node_version "22"
-
-# Linux AMD64
-steps:
-  - name: build-linux-amd64
-    image: rust:1.82-slim
+pipeline:
+  build-linux-amd64:
+    image: rust:1.88-slim
     environment:
       TARGET: x86_64-unknown-linux-gnu
+    when:
+      event: tag
     commands:
       - apt-get update -qq && apt-get install -y -qq libwebkit2gtk-4.1-dev libssl-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev patchelf pkg-config curl
       - curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
       - apt-get install -y nodejs
-      - npm ci
+      - npm ci --legacy-peer-deps
       - rustup target add $TARGET
       - cargo install tauri-cli --version "^2" --locked
       - cargo tauri build --target $TARGET
       - mkdir -p /artifacts/linux-amd64
       - find src-tauri/target/$TARGET/release/bundle -name "*.deb" -o -name "*.rpm" -o -name "*.AppImage" | xargs -I{} cp {} /artifacts/linux-amd64/
 
-  - name: build-linux-arm64
-    image: rust:1.82-slim
+  build-linux-arm64:
+    image: rust:1.88-slim
     environment:
       TARGET: aarch64-unknown-linux-gnu
+    when:
+      event: tag
     commands:
-      - apt-get update -qq && apt-get install -y -qq gcc-aarch64-linux-gnu libwebkit2gtk-4.1-dev libssl-dev libgtk-3-dev pkg-config curl
+      - apt-get update -qq && apt-get install -y -qq libwebkit2gtk-4.1-dev libssl-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev patchelf pkg-config curl
       - curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
       - apt-get install -y nodejs
-      - npm ci
+      - npm ci --legacy-peer-deps
       - rustup target add $TARGET
       - cargo install tauri-cli --version "^2" --locked
-      - export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc
       - cargo tauri build --target $TARGET
       - mkdir -p /artifacts/linux-arm64
       - find src-tauri/target/$TARGET/release/bundle -name "*.deb" -o -name "*.AppImage" | xargs -I{} cp {} /artifacts/linux-arm64/
 
-  - name: upload-release-linux
+  upload-release-linux:
     image: curlimages/curl:latest
-    secrets:
-      - GOGS_TOKEN
+    when:
+      event: tag
+    secrets: [GOGS_TOKEN]
     commands:
       - |
         TAG=${CI_COMMIT_TAG}
@@ -61,7 +63,7 @@ steps:
           -H "Authorization: token $GOGS_TOKEN" | grep -o '"id":[0-9]*' | head -1 | cut -d: -f2)
 
         # Upload artifacts
-        for f in /artifacts/**/*; do
+        for f in /artifacts/linux-amd64/* /artifacts/linux-arm64/*; do
           [ -f "$f" ] && curl -sf -X POST "$API/repos/$REPO/releases/$RELEASE_ID/assets" \
             -H "Authorization: token $GOGS_TOKEN" \
             -F "attachment=@$f;filename=$(basename $f)" || echo "Upload failed for $f"
