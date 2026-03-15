@@ -32,6 +32,7 @@ pipeline:
 
   upload-release-linux:
     image: curlimages/curl:latest
+    network_mode: gogs_default
     when:
       event: tag
     secrets: [GOGS_TOKEN]
@@ -39,7 +40,7 @@ pipeline:
       - |
         TAG=${CI_COMMIT_TAG}
         REPO=${CI_REPO}
-        API="http://172.0.0.29:3000/api/v1"
+        API="http://gogs_app:3000/api/v1"
 
         # Create release
         curl -sf -X POST "$API/repos/$REPO/releases" \
