@@ -1,0 +1,259 @@
+# TFTSR — IT Triage & RCA Desktop Application
+
+A structured, AI-backed desktop tool for IT incident triage, 5-Whys root cause analysis, RCA document generation, and blameless post-mortems. Runs fully offline via Ollama local models, or connects to cloud AI providers.
+
+Built with **Tauri 2** (Rust + WebView), **React 18**, **TypeScript**, and **SQLCipher AES-256** encrypted storage.
+
+---
+
+## Features
+
+- **5-Whys AI Triage** — Guided root cause analysis via AI chat, with auto-detection of why levels 1–5
+- **PII Sanitization** — Automatic detection and redaction of IPv4/IPv6, emails, tokens, passwords, SSNs, and more before any data leaves the machine
+- **Multi-Provider AI** — OpenAI, Anthropic Claude, Google Gemini, Mistral, and local [Ollama](https://ollama.com) (offline)
+- **Encrypted Database** — SQLCipher AES-256 encrypted SQLite; all issue history stays local
+- **RCA + Post-Mortem Generation** — Auto-populated Markdown templates, exportable to `.md` and `.pdf`
+- **Ollama Management** — Hardware detection, model recommendations, pull/delete models in-app
+- **Audit Trail** — Every external data send logged with SHA-256 hash
+- **Domain System Prompts** — Pre-built expert context for 8 IT domains (Linux, Windows, Network, Kubernetes, Databases, Virtualization, Hardware, Observability)
+- **Integrations** *(v0.2, coming soon)* — Confluence, ServiceNow, Azure DevOps
+
+---
+
+## Supported Domains
+
+| Domain | Coverage |
+|---|---|
+| Linux | RHEL/OEL, systemd, journald, SELinux, kernel panics |
+| Windows | Event IDs, WinRM, BSOD codes, Server 2019/2022 |
+| Network | Fortigate, Cisco IOS, Aruba AOS-CX, Nokia SR-OS, VoIP SIP/RTP |
+| Kubernetes | k3s, OpenShift, CrashLoopBackOff, OOMKill, etcd, Rancher |
+| Databases | PostgreSQL WAL, Redis AOF/RDB, RabbitMQ, MSSQL |
+| Virtualization | Proxmox VE/PBS, VDI sessions |
+| Hardware | HPE Synergy 12000, DL-20/320/360/380, iLO event logs |
+| Observability | Kibana/ECK, Elasticsearch shard failures |
+
+---
+
+## Architecture
+
+| Component | Technology |
+|---|---|
+| App framework | Tauri 2.x (Rust + WebView) |
+| Frontend | React 18 + TypeScript + Vite |
+| UI | Tailwind CSS (custom shadcn-style components) |
+| Database | rusqlite + `bundled-sqlcipher` (AES-256) |
+| Secret storage | `tauri-plugin-stronghold` |
+| State management | Zustand (persisted settings store) |
+| AI providers | reqwest (async HTTP) |
+| PII detection | regex + aho-corasick multi-pattern engine |
+
+---
+
+## Prerequisites
+
+### System Libraries (Linux — Fedora/RHEL)
+
+```bash
+sudo dnf install -y \
+  glib2-devel gtk3-devel webkit2gtk4.1-devel \
+  libsoup3-devel openssl-devel librsvg2-devel
+```
+
+### Toolchain
+
+```bash
+# Rust (install via rustup)
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source ~/.cargo/env
+
+# Node.js 22+ (via your package manager)
+# Verify:
+rustc --version   # 1.82+
+node --version    # 22+
+```
+
+---
+
+## Getting Started
+
+```bash
+# Clone and install dependencies
+git clone <repo-url>
+cd tftsr-devops_investigation
+npm install
+
+# Development mode (hot reload)
+cargo tauri dev
+
+# Production build
+cargo tauri build
+# Output: src-tauri/target/release/bundle/
+```
+
+---
+
+## AI Provider Setup
+
+Launch the app and go to **Settings → AI Providers** to add a provider:
+
+| Provider | API URL | Notes |
+|---|---|---|
+| OpenAI | `https://api.openai.com/v1` | Requires API key |
+| Anthropic | `https://api.anthropic.com` | Requires API key |
+| Google Gemini | `https://generativelanguage.googleapis.com` | Requires API key |
+| Mistral | `https://api.mistral.ai/v1` | Requires API key |
+| Ollama (local) | `http://localhost:11434` | No key needed — fully offline |
+| Azure OpenAI | `https://<resource>.openai.azure.com/openai/deployments/<deployment>` | Requires API key |
+
+For offline use, install [Ollama](https://ollama.com) and pull a model:
+```bash
+ollama pull llama3.2:3b   # Good for most hardware (≥8 GB RAM)
+ollama pull llama3.1:8b   # Better quality (≥16 GB RAM)
+```
+
+Or use **Settings → Ollama** to pull models directly from within the app.
+
+---
+
+## Triage Workflow
+
+```
+1. New Issue      → Select domain, enter title and severity
+2. Log Upload     → Drag-and-drop log files, review PII redactions
+3. Triage         → 5-Whys AI conversation, auto-tracked why levels 1–5
+4. Resolution     → Review and confirm each root cause and action
+5. RCA            → Auto-generated RCA document, export as MD or PDF
+6. Post-Mortem    → Blameless post-mortem document with action items
+```
+
+---
+
+## Project Structure
+
+```
+tftsr/
+├── src-tauri/src/
+│   ├── ai/           # AI provider clients (OpenAI, Anthropic, Gemini, Mistral, Ollama)
+│   ├── pii/          # PII detection + redaction engine
+│   ├── db/           # SQLCipher connection, migrations, models
+│   ├── ollama/       # Hardware detection, model recommendations, download manager
+│   ├── docs/         # RCA + post-mortem generators, PDF/MD exporters
+│   ├── integrations/ # Confluence, ServiceNow, Azure DevOps (v0.2 stubs)
+│   ├── audit/        # Audit log writer
+│   ├── commands/     # Tauri IPC command handlers
+│   ├── lib.rs        # App builder, plugin registration, command handler registration
+│   └── state.rs      # AppState (DB connection, settings)
+├── src/
+│   ├── pages/        # Dashboard, NewIssue, LogUpload, Triage, Resolution, RCA, Postmortem, History, Settings
+│   ├── components/   # ChatWindow, TriageProgress, PiiDiffViewer, DocEditor, HardwareReport, ModelSelector, UI
+│   ├── stores/       # sessionStore, settingsStore (persisted), historyStore
+│   ├── lib/          # tauriCommands.ts (typed IPC wrappers), domainPrompts.ts
+│   └── styles/       # Tailwind + CSS custom properties
+├── tests/
+│   ├── unit/         # Vitest unit tests (PII commands, session store, settings store)
+│   └── e2e/          # WebdriverIO + tauri-driver E2E test skeletons
+├── .woodpecker/
+│   ├── test.yml      # CI: rustfmt, clippy, cargo test, tsc, vitest
+│   └── release.yml   # Release: multi-platform builds → Gogs artifacts
+└── cli/              # Standalone CLI wrapper (tftsr-cli)
+```
+
+---
+
+## Testing
+
+```bash
+# Unit tests (Vitest)
+npm run test:run
+
+# Unit tests with coverage
+npm run test:coverage
+
+# TypeScript type check
+npx tsc --noEmit
+
+# Rust checks
+cargo check --manifest-path src-tauri/Cargo.toml
+cargo test --manifest-path src-tauri/Cargo.toml
+
+# E2E tests (requires compiled app binary)
+TAURI_BINARY_PATH=./src-tauri/target/release/tftsr npm run test:e2e
+```
+
+---
+
+## CI/CD — Woodpecker CI
+
+The project uses **Woodpecker CI** connected to the Gogs server at `172.0.0.29:3000`.
+
+| Pipeline | Trigger | Steps |
+|---|---|---|
+| `.woodpecker/test.yml` | Every push / PR | rustfmt, clippy, cargo test, tsc, vitest |
+| `.woodpecker/release.yml` | Tag `v*` | Build linux/amd64 + linux/arm64 → upload to Gogs release |
+
+> macOS builds require a macOS runner (Apple SDK). Windows cross-compilation from Linux via `cross-rs` is possible but not yet configured.
+
+---
+
+## Security
+
+| Concern | Implementation |
+|---|---|
+| API keys / tokens | `tauri-plugin-stronghold` encrypted vault |
+| Database at rest | SQLCipher AES-256; key derived via PBKDF2 |
+| PII before AI send | Rust-side detection + mandatory user approval in UI |
+| Audit trail | Every `ai_send` / `publish` event logged with SHA-256 hash |
+| Network | `reqwest` with TLS; HTTP blocked by Tauri capability config |
+| Capabilities | Least-privilege: scoped fs access, no arbitrary shell by default |
+| CSP | Strict CSP in `tauri.conf.json`; no inline scripts |
+| Telemetry | None — zero analytics, crash reporting, or usage tracking |
+
+---
+
+## Database
+
+All data is stored locally in a SQLCipher-encrypted database at:
+
+| OS | Path |
+|---|---|
+| Linux | `~/.local/share/tftsr/tftsr.db` |
+| macOS | `~/Library/Application Support/tftsr/tftsr.db` |
+| Windows | `%APPDATA%\tftsr\tftsr.db` |
+
+Override with the `TFTSR_DATA_DIR` environment variable.
+
+---
+
+## Environment Variables
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `TFTSR_DATA_DIR` | Platform data dir | Override database location |
+| `TFTSR_DB_KEY` | `dev-key-change-in-prod` | Database encryption key (release builds) |
+| `RUST_LOG` | `info` | Tracing log level (`debug`, `info`, `warn`, `error`) |
+
+---
+
+## Implementation Status
+
+| Phase | Description | Status |
+|---|---|---|
+| 1 | Scaffold & Foundation | ✅ Complete |
+| 2 | Security & Database Layer | ✅ Complete |
+| 3 | PII Sanitization Engine | ✅ Complete |
+| 4 | AI Provider Layer | ✅ Complete |
+| 5 | Ollama Integration | ✅ Complete |
+| 6 | Log Upload & Analysis | ✅ Complete |
+| 7 | 5-Whys Triage Engine | ✅ Complete |
+| 8 | RCA & Post-Mortem Generation | ✅ Complete |
+| 9 | History & Search | 🔲 Pending |
+| 10 | Integrations (Confluence, ServiceNow, ADO) | 🔲 v0.2 |
+| 11 | CLI Interface | 🔲 Pending |
+| 12 | Release Packaging | 🔲 Pending |
+
+---
+
+## License
+
+Private — internal tooling. All rights reserved.

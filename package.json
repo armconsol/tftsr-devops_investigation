@@ -1,0 +1,51 @@
+{
+  "name": "tftsr",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "tauri": "tauri",
+    "test": "vitest",
+    "test:run": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:e2e": "wdio run tests/e2e/wdio.conf.ts"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2",
+    "@tauri-apps/plugin-dialog": "^2",
+    "@tauri-apps/plugin-fs": "^2",
+    "@tauri-apps/plugin-stronghold": "^2",
+    "react": "^18",
+    "react-dom": "^18",
+    "react-router-dom": "^6",
+    "zustand": "^4",
+    "tailwindcss": "^3",
+    "lucide-react": "latest",
+    "react-diff-viewer-continued": "^3",
+    "react-markdown": "^9",
+    "remark-gfm": "^4",
+    "clsx": "^2",
+    "class-variance-authority": "^0.7"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2",
+    "@vitejs/plugin-react": "^4",
+    "@types/react": "^18",
+    "@types/react-dom": "^18",
+    "autoprefixer": "^10",
+    "postcss": "^8",
+    "typescript": "^5",
+    "vite": "^6",
+    "vitest": "^2",
+    "@testing-library/react": "^16",
+    "@testing-library/user-event": "^14",
+    "@vitest/coverage-v8": "^2",
+    "jsdom": "^26",
+    "webdriverio": "^9",
+    "@wdio/cli": "^9",
+    "@wdio/mocha-framework": "^9"
+  }
+}
