@@ -1,4 +1,7 @@
 ---
+# NOTE: arm64 cross-compilation from x86_64 not supported here —
+# webkit2gtk multiarch conflicts prevent it. Run on native arm64 hardware.
+
 clone:
   git:
     image: alpine/git
@@ -27,30 +30,6 @@ pipeline:
       - mkdir -p /artifacts/linux-amd64
       - find src-tauri/target/$TARGET/release/bundle -name "*.deb" -o -name "*.rpm" -o -name "*.AppImage" | xargs -I{} cp {} /artifacts/linux-amd64/
 
-  build-linux-arm64:
-    image: rust:1.88-slim
-    environment:
-      TARGET: aarch64-unknown-linux-gnu
-      PKG_CONFIG_ALLOW_CROSS: "1"
-      PKG_CONFIG_PATH: /usr/lib/aarch64-linux-gnu/pkgconfig
-      PKG_CONFIG_SYSROOT_DIR: /
-    when:
-      event: tag
-    commands:
-      - dpkg --add-architecture arm64
-      - apt-get update -qq && apt-get install -y -qq gcc-aarch64-linux-gnu
-          libwebkit2gtk-4.1-dev:arm64 libssl-dev:arm64 libgtk-3-dev:arm64
-          libayatana-appindicator3-dev:arm64 librsvg2-dev:arm64
-          patchelf pkg-config curl
-      - curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
-      - apt-get install -y nodejs
-      - npm ci --legacy-peer-deps
-      - rustup target add $TARGET
-      - cargo install tauri-cli --version "^2" --locked
-      - CI=true cargo tauri build --target $TARGET
-      - mkdir -p /artifacts/linux-arm64
-      - find src-tauri/target/$TARGET/release/bundle -name "*.deb" -o -name "*.AppImage" | xargs -I{} cp {} /artifacts/linux-arm64/
-
   upload-release-linux:
     image: curlimages/curl:latest
     when:
@@ -62,22 +41,19 @@ pipeline:
         REPO=${CI_REPO}
         API="http://172.0.0.29:3000/api/v1"
 
-        # Create release if it doesn't exist
+        # Create release
         curl -sf -X POST "$API/repos/$REPO/releases" \
           -H "Authorization: token $GOGS_TOKEN" \
           -H "Content-Type: application/json" \
-          -d "{\"tag_name\":\"$TAG\",\"name\":\"TFTSR $TAG\",\"body\":\"Release $TAG\",\"draft\":false}" || true
+          -d "{\"tag_name\":\"$TAG\",\"name\":\"TFTSR $TAG\",\"body\":\"Release $TAG (linux/amd64)\",\"draft\":false}" || true
 
         # Get release ID
         RELEASE_ID=$(curl -sf "$API/repos/$REPO/releases/tags/$TAG" \
           -H "Authorization: token $GOGS_TOKEN" | grep -o '"id":[0-9]*' | head -1 | cut -d: -f2)
 
-        # Upload all available artifacts (amd64 + arm64 if built)
-        for dir in /artifacts/linux-amd64 /artifacts/linux-arm64; do
-          [ -d "$dir" ] || continue
-          for f in "$dir"/*; do
-            [ -f "$f" ] && curl -sf -X POST "$API/repos/$REPO/releases/$RELEASE_ID/assets" \
-              -H "Authorization: token $GOGS_TOKEN" \
-              -F "attachment=@$f;filename=$(basename $f)" || echo "Upload failed: $f"
-          done
+        # Upload amd64 artifacts
+        for f in /artifacts/linux-amd64/*; do
+          [ -f "$f" ] && curl -sf -X POST "$API/repos/$REPO/releases/$RELEASE_ID/assets" \
+            -H "Authorization: token $GOGS_TOKEN" \
+            -F "attachment=@$f;filename=$(basename $f)" || echo "Upload failed: $f"
         done
