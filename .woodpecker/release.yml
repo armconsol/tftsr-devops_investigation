@@ -23,7 +23,7 @@ pipeline:
       - npm ci --legacy-peer-deps
       - rustup target add $TARGET
       - cargo install tauri-cli --version "^2" --locked
-      - cargo tauri build --target $TARGET
+      - CI=true cargo tauri build --target $TARGET
       - mkdir -p /artifacts/linux-amd64
       - find src-tauri/target/$TARGET/release/bundle -name "*.deb" -o -name "*.rpm" -o -name "*.AppImage" | xargs -I{} cp {} /artifacts/linux-amd64/
 
@@ -40,7 +40,7 @@ pipeline:
       - npm ci --legacy-peer-deps
       - rustup target add $TARGET
       - cargo install tauri-cli --version "^2" --locked
-      - cargo tauri build --target $TARGET
+      - CI=true cargo tauri build --target $TARGET
       - mkdir -p /artifacts/linux-arm64
       - find src-tauri/target/$TARGET/release/bundle -name "*.deb" -o -name "*.AppImage" | xargs -I{} cp {} /artifacts/linux-arm64/
 
