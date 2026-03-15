@@ -3,7 +3,7 @@ clone:
   git:
     image: woodpeckerci/plugin-git
     environment:
-      - CI_REPO_CLONE_URL=http://gogs_app:3000/sarman/tftsr-devops_investigation.git
+      - CI_REPO_CLONE_URL=http://172.0.0.29:3000/sarman/tftsr-devops_investigation.git
 
 pipeline:
   rust-fmt-check:
