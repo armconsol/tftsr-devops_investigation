@@ -37,7 +37,7 @@ impl Provider for OllamaProvider {
         } else {
             config.api_url.trim_end_matches('/').to_string()
         };
-        let url = format!("{}/api/chat", base_url);
+        let url = format!("{base_url}/api/chat");
 
         // Ollama expects {model, messages: [{role, content}], stream: false}
         let api_messages: Vec<serde_json::Value> = messages
@@ -66,7 +66,7 @@ impl Provider for OllamaProvider {
         if !resp.status().is_success() {
             let status = resp.status();
             let text = resp.text().await?;
-            anyhow::bail!("Ollama API error {}: {}", status, text);
+            anyhow::bail!("Ollama API error {status}: {text}");
         }
 
         let json: serde_json::Value = resp.json().await?;

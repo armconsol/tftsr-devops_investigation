@@ -47,7 +47,7 @@ pub fn generate_postmortem_markdown(detail: &IssueDetail) -> String {
     md.push_str("|------------|-------|\n");
     md.push_str(&format!("| {} | Issue created |\n", issue.created_at));
     if let Some(ref resolved) = issue.resolved_at {
-        md.push_str(&format!("| {} | Issue resolved |\n", resolved));
+        md.push_str(&format!("| {resolved} | Issue resolved |\n"));
     }
     md.push_str("| _HH:MM_ | _[Add additional timeline events]_ |\n\n");
 

@@ -143,16 +143,16 @@ pub async fn export_document(
 
     let output_path = match format.as_str() {
         "markdown" | "md" => {
-            let path = format!("{}/{}.md", output_dir, safe_title);
+            let path = format!("{output_dir}/{safe_title}.md");
             exporter::export_markdown(&content_md, &path).map_err(|e| e.to_string())?;
             path
         }
         "pdf" => {
-            let path = format!("{}/{}.pdf", output_dir, safe_title);
+            let path = format!("{output_dir}/{safe_title}.pdf");
             exporter::export_pdf(&content_md, &title, &path).map_err(|e| e.to_string())?;
             path
         }
-        _ => return Err(format!("Unsupported export format: {}", format)),
+        _ => return Err(format!("Unsupported export format: {format}")),
     };
 
     Ok(output_path)

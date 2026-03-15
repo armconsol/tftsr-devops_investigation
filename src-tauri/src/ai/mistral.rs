@@ -37,7 +37,7 @@ impl Provider for MistralProvider {
         } else {
             config.api_url.trim_end_matches('/').to_string()
         };
-        let url = format!("{}/chat/completions", base_url);
+        let url = format!("{base_url}/chat/completions");
 
         let body = serde_json::json!({
             "model": config.model,
@@ -56,7 +56,7 @@ impl Provider for MistralProvider {
         if !resp.status().is_success() {
             let status = resp.status();
             let text = resp.text().await?;
-            anyhow::bail!("Mistral API error {}: {}", status, text);
+            anyhow::bail!("Mistral API error {status}: {text}");
         }
 
         let json: serde_json::Value = resp.json().await?;

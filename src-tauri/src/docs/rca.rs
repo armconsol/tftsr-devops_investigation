@@ -26,7 +26,7 @@ pub fn generate_rca_markdown(detail: &IssueDetail) -> String {
     md.push_str(&format!("| **Created** | {} |\n", issue.created_at));
     md.push_str(&format!("| **Last Updated** | {} |\n", issue.updated_at));
     if let Some(ref resolved) = issue.resolved_at {
-        md.push_str(&format!("| **Resolved** | {} |\n", resolved));
+        md.push_str(&format!("| **Resolved** | {resolved} |\n"));
     }
     md.push('\n');
 

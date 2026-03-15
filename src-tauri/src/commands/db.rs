@@ -307,7 +307,7 @@ pub async fn list_issues(
         params.push(Box::new(category.clone()));
     }
     if let Some(ref search) = filter.search {
-        let pattern = format!("%{}%", search);
+        let pattern = format!("%{search}%");
         sql.push_str(&format!(
             " AND (i.title LIKE ?{0} OR i.description LIKE ?{0} OR i.category LIKE ?{0})",
             params.len() + 1

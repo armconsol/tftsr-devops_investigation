@@ -86,7 +86,7 @@ impl Provider for GeminiProvider {
         if !resp.status().is_success() {
             let status = resp.status();
             let text = resp.text().await?;
-            anyhow::bail!("Gemini API error {}: {}", status, text);
+            anyhow::bail!("Gemini API error {status}: {text}");
         }
 
         let json: serde_json::Value = resp.json().await?;

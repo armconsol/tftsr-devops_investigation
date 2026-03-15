@@ -56,7 +56,7 @@ pub struct PiiSpan {
 
 impl PiiSpan {
     pub fn new(pii_type: PiiType, start: usize, end: usize, original: String) -> Self {
-        let replacement = format!("[{}]", pii_type);
+        let replacement = format!("[{pii_type}]");
         PiiSpan {
             id: Uuid::now_v7().to_string(),
             pii_type: pii_type.to_string(),

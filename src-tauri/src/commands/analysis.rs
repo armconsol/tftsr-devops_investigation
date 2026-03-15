@@ -187,7 +187,7 @@ pub async fn apply_redactions(
     let data_hash = pii::hash_content(&redacted_text);
 
     // Save redacted file alongside original
-    let redacted_path = format!("{}.redacted", file_path);
+    let redacted_path = format!("{file_path}.redacted");
     std::fs::write(&redacted_path, &redacted_text).map_err(|e| e.to_string())?;
 
     // Mark the log file as redacted in DB

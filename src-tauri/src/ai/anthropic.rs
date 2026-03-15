@@ -85,7 +85,7 @@ impl Provider for AnthropicProvider {
         if !resp.status().is_success() {
             let status = resp.status();
             let text = resp.text().await?;
-            anyhow::bail!("Anthropic API error {}: {}", status, text);
+            anyhow::bail!("Anthropic API error {status}: {text}");
         }
 
         let json: serde_json::Value = resp.json().await?;

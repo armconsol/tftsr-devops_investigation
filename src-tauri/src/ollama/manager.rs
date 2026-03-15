@@ -5,7 +5,7 @@ const OLLAMA_BASE: &str = "http://localhost:11434";
 
 pub async fn list_models() -> anyhow::Result<Vec<OllamaModel>> {
     let resp: serde_json::Value = reqwest::Client::new()
-        .get(format!("{}/api/tags", OLLAMA_BASE))
+        .get(format!("{OLLAMA_BASE}/api/tags"))
         .send()
         .await?
         .json()
@@ -32,7 +32,7 @@ pub async fn list_models() -> anyhow::Result<Vec<OllamaModel>> {
 pub async fn pull_model(app_handle: tauri::AppHandle, model_name: &str) -> anyhow::Result<()> {
     let client = reqwest::Client::new();
     let mut resp = client
-        .post(format!("{}/api/pull", OLLAMA_BASE))
+        .post(format!("{OLLAMA_BASE}/api/pull"))
         .json(&serde_json::json!({ "name": model_name, "stream": true }))
         .send()
         .await?;
@@ -69,7 +69,7 @@ pub async fn pull_model(app_handle: tauri::AppHandle, model_name: &str) -> anyho
 
 pub async fn delete_model(model_name: &str) -> anyhow::Result<()> {
     let resp = reqwest::Client::new()
-        .delete(format!("{}/api/delete", OLLAMA_BASE))
+        .delete(format!("{OLLAMA_BASE}/api/delete"))
         .json(&serde_json::json!({ "name": model_name }))
         .send()
         .await?;

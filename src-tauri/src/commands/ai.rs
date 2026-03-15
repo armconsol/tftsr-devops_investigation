@@ -23,7 +23,7 @@ pub async fn analyze_logs(
             if let Ok((name, path)) = stmt.query_row([file_id], |row| {
                 Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
             }) {
-                log_contents.push_str(&format!("--- {} ---\n", name));
+                log_contents.push_str(&format!("--- {name} ---\n"));
                 if let Ok(content) = std::fs::read_to_string(&path) {
                     log_contents.push_str(&content);
                 } else {
@@ -48,7 +48,7 @@ pub async fn analyze_logs(
         },
         Message {
             role: "user".into(),
-            content: format!("Analyze logs for issue {}:\n\n{}", issue_id, log_contents),
+            content: format!("Analyze logs for issue {issue_id}:\n\n{log_contents}"),
         },
     ];
 
