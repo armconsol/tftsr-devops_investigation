@@ -8,20 +8,20 @@ clone:
 
 pipeline:
   rust-fmt-check:
-    image: rust:1.82-slim
+    image: rust:1.85-slim
     commands:
       - rustup component add rustfmt
       - cargo fmt --manifest-path src-tauri/Cargo.toml --check
 
   rust-clippy:
-    image: rust:1.82-slim
+    image: rust:1.85-slim
     commands:
       - apt-get update -qq && apt-get install -y -qq libwebkit2gtk-4.1-dev libssl-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev patchelf pkg-config
       - rustup component add clippy
       - cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
 
   rust-tests:
-    image: rust:1.82-slim
+    image: rust:1.85-slim
     commands:
       - apt-get update -qq && apt-get install -y -qq libwebkit2gtk-4.1-dev libssl-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev patchelf pkg-config
       - cargo test --manifest-path src-tauri/Cargo.toml
