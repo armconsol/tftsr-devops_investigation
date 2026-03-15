@@ -167,3 +167,33 @@ Known issues with Woodpecker 0.15.4 + Gogs 0.14:
 - Gogs 0.14 has no OAuth2 provider support, blocking upgrade to Woodpecker 2.x
 
 Gogs token quirk: the `sha1` value returned by `POST /api/v1/users/{user}/tokens` is the **actual bearer token**. The `sha1` and `sha256` columns in the Gogs DB are hashes of that token, not the token itself.
+
+---
+
+## Wiki Maintenance
+
+The project wiki lives at `https://gogs.tftsr.com/sarman/tftsr-devops_investigation/wiki`.
+
+**Source of truth**: `docs/wiki/*.md` in this repo. The `wiki-sync` CI step (in `.woodpecker/test.yml`) automatically pushes any changes to the Gogs wiki on every push to master.
+
+**When making code changes, update the corresponding wiki file in `docs/wiki/` before committing:**
+
+| Changed area | Wiki file to update |
+|---|---|
+| New/changed Tauri commands (`commands/*.rs`, `tauriCommands.ts`) | `docs/wiki/IPC-Commands.md` |
+| DB schema or migrations (`db/migrations.rs`, `db/models.rs`) | `docs/wiki/Database.md` |
+| New/changed AI provider (`ai/*.rs`) | `docs/wiki/AI-Providers.md` |
+| PII patterns or detection logic (`pii/`) | `docs/wiki/PII-Detection.md` |
+| CI/CD pipeline changes (`.woodpecker/*.yml`) | `docs/wiki/CICD-Pipeline.md` |
+| Rust architecture or module layout (`lib.rs`, `state.rs`) | `docs/wiki/Architecture.md` |
+| Security-relevant changes (capabilities, audit, Stronghold) | `docs/wiki/Security-Model.md` |
+| Dev setup, prerequisites, build commands | `docs/wiki/Development-Setup.md` |
+| Integration stubs or v0.2 progress (`integrations/`) | `docs/wiki/Integrations.md` |
+| Recurring bugs and fixes | `docs/wiki/Troubleshooting.md` |
+
+To manually push wiki changes without waiting for CI:
+```bash
+cd /tmp/tftsr-wiki   # local clone of the wiki git repo
+# edit *.md files, then:
+git add -A && git commit -m "docs: ..." && git push
+```
