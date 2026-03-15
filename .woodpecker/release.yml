@@ -31,10 +31,17 @@ pipeline:
     image: rust:1.88-slim
     environment:
       TARGET: aarch64-unknown-linux-gnu
+      PKG_CONFIG_ALLOW_CROSS: "1"
+      PKG_CONFIG_PATH: /usr/lib/aarch64-linux-gnu/pkgconfig
+      PKG_CONFIG_SYSROOT_DIR: /
     when:
       event: tag
     commands:
-      - apt-get update -qq && apt-get install -y -qq libwebkit2gtk-4.1-dev libssl-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev patchelf pkg-config curl
+      - dpkg --add-architecture arm64
+      - apt-get update -qq && apt-get install -y -qq gcc-aarch64-linux-gnu
+          libwebkit2gtk-4.1-dev:arm64 libssl-dev:arm64 libgtk-3-dev:arm64
+          libayatana-appindicator3-dev:arm64 librsvg2-dev:arm64
+          patchelf pkg-config curl
       - curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
       - apt-get install -y nodejs
       - npm ci --legacy-peer-deps
@@ -65,9 +72,12 @@ pipeline:
         RELEASE_ID=$(curl -sf "$API/repos/$REPO/releases/tags/$TAG" \
           -H "Authorization: token $GOGS_TOKEN" | grep -o '"id":[0-9]*' | head -1 | cut -d: -f2)
 
-        # Upload artifacts
-        for f in /artifacts/linux-amd64/* /artifacts/linux-arm64/*; do
-          [ -f "$f" ] && curl -sf -X POST "$API/repos/$REPO/releases/$RELEASE_ID/assets" \
-            -H "Authorization: token $GOGS_TOKEN" \
-            -F "attachment=@$f;filename=$(basename $f)" || echo "Upload failed for $f"
+        # Upload all available artifacts (amd64 + arm64 if built)
+        for dir in /artifacts/linux-amd64 /artifacts/linux-arm64; do
+          [ -d "$dir" ] || continue
+          for f in "$dir"/*; do
+            [ -f "$f" ] && curl -sf -X POST "$API/repos/$REPO/releases/$RELEASE_ID/assets" \
+              -H "Authorization: token $GOGS_TOKEN" \
+              -F "attachment=@$f;filename=$(basename $f)" || echo "Upload failed: $f"
+          done
         done
