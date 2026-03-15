@@ -27,8 +27,8 @@ pipeline:
       - rustup target add $TARGET
       - cargo install tauri-cli --version "^2" --locked
       - CI=true cargo tauri build --target $TARGET
-      - mkdir -p /artifacts/linux-amd64
-      - find src-tauri/target/$TARGET/release/bundle -name "*.deb" -o -name "*.rpm" -o -name "*.AppImage" | xargs -I{} cp {} /artifacts/linux-amd64/
+      - mkdir -p artifacts/linux-amd64
+      - find src-tauri/target/$TARGET/release/bundle -name "*.deb" -o -name "*.rpm" -o -name "*.AppImage" | xargs -I{} cp {} artifacts/linux-amd64/
 
   upload-release-linux:
     image: curlimages/curl:latest
@@ -51,8 +51,8 @@ pipeline:
         RELEASE_ID=$(curl -sf "$API/repos/$REPO/releases/tags/$TAG" \
           -H "Authorization: token $GOGS_TOKEN" | grep -o '"id":[0-9]*' | head -1 | cut -d: -f2)
 
-        # Upload amd64 artifacts
-        for f in /artifacts/linux-amd64/*; do
+        # Upload amd64 artifacts from workspace
+        for f in artifacts/linux-amd64/*; do
           [ -f "$f" ] && curl -sf -X POST "$API/repos/$REPO/releases/$RELEASE_ID/assets" \
             -H "Authorization: token $GOGS_TOKEN" \
             -F "attachment=@$f;filename=$(basename $f)" || echo "Upload failed: $f"
