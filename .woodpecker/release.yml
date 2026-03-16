@@ -44,7 +44,7 @@ pipeline:
     when:
       event: tag
     commands:
-      - apt-get update -qq && apt-get install -y -qq mingw-w64 curl nsis perl
+      - apt-get update -qq && apt-get install -y -qq mingw-w64 curl nsis perl make
       - curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
       - apt-get install -y nodejs
       - npm ci --legacy-peer-deps
