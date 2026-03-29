@@ -3,11 +3,19 @@ name: Release
 on:
   push:
     tags:
-      - 'v*'
+      - v*
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag (e.g. v0.1.0-rc1)'
+        required: true
+        default: 'v0.1.0-rc1'
 
 jobs:
   build-linux-amd64:
     runs-on: linux-amd64
+    env:
+      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
     container:
       image: rust:1.88-slim
     steps:
@@ -37,7 +45,7 @@ jobs:
           RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
         run: |
           API="http://172.0.0.29:3000/api/v1/repos/$GITHUB_REPOSITORY"
-          TAG="$GITHUB_REF_NAME"
+          TAG="$RELEASE_TAG"
           # Create release (idempotent)
           curl -sf -X POST "$API/releases" \
             -H "Authorization: token $RELEASE_TOKEN" \
@@ -55,6 +63,8 @@ jobs:
 
   build-windows-amd64:
     runs-on: linux-amd64
+    env:
+      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
     container:
       image: rust:1.88-slim
     steps:
@@ -86,7 +96,7 @@ jobs:
           RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
         run: |
           API="http://172.0.0.29:3000/api/v1/repos/$GITHUB_REPOSITORY"
-          TAG="$GITHUB_REF_NAME"
+          TAG="$RELEASE_TAG"
           curl -sf -X POST "$API/releases" \
             -H "Authorization: token $RELEASE_TOKEN" \
             -H "Content-Type: application/json" \
@@ -102,6 +112,8 @@ jobs:
 
   build-linux-arm64:
     runs-on: linux-arm64
+    env:
+      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
     container:
       image: rust:1.88-slim
     steps:
@@ -131,7 +143,7 @@ jobs:
           RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
         run: |
           API="http://172.0.0.29:3000/api/v1/repos/$GITHUB_REPOSITORY"
-          TAG="$GITHUB_REF_NAME"
+          TAG="$RELEASE_TAG"
           curl -sf -X POST "$API/releases" \
             -H "Authorization: token $RELEASE_TOKEN" \
             -H "Content-Type: application/json" \
