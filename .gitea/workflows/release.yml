@@ -11,7 +11,13 @@ jobs:
     container:
       image: rust:1.88-slim
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        run: |
+          apt-get install -y -qq git
+          git init
+          git remote add origin http://172.0.0.29:3000/sarman/tftsr-devops_investigation.git
+          git fetch --depth=1 origin $GITHUB_SHA
+          git checkout FETCH_HEAD
       - name: Install dependencies
         run: |
           apt-get update -qq && apt-get install -y -qq \
@@ -26,23 +32,39 @@ jobs:
           rustup target add x86_64-unknown-linux-gnu
           cargo install tauri-cli --version "^2" --locked
           CI=true cargo tauri build --target x86_64-unknown-linux-gnu
-      - name: Collect artifacts
+      - name: Upload artifacts
+        env:
+          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
         run: |
-          mkdir -p artifacts
+          API="http://172.0.0.29:3000/api/v1/repos/$GITHUB_REPOSITORY"
+          TAG="$GITHUB_REF_NAME"
+          # Create release (idempotent)
+          curl -sf -X POST "$API/releases" \
+            -H "Authorization: token $RELEASE_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "{\"tag_name\":\"$TAG\",\"name\":\"TFTSR $TAG\",\"body\":\"Release $TAG\",\"draft\":false}" || true
+          RELEASE_ID=$(curl -sf "$API/releases/tags/$TAG" \
+            -H "Authorization: token $RELEASE_TOKEN" | grep -o '"id":[0-9]*' | head -1 | cut -d: -f2)
+          echo "Release ID: $RELEASE_ID"
           find src-tauri/target/x86_64-unknown-linux-gnu/release/bundle \
-            \( -name "*.deb" -o -name "*.rpm" -o -name "*.AppImage" \) \
-            -exec cp {} artifacts/ \;
-      - uses: actions/upload-artifact@v4
-        with:
-          name: linux-amd64
-          path: artifacts/
+            \( -name "*.deb" -o -name "*.rpm" -o -name "*.AppImage" \) | while read f; do
+            curl -sf -X POST "$API/releases/$RELEASE_ID/assets" \
+              -H "Authorization: token $RELEASE_TOKEN" \
+              -F "attachment=@$f;filename=$(basename $f)" && echo "Uploaded $(basename $f)" || echo "Upload failed: $f"
+          done
 
   build-windows-amd64:
     runs-on: linux-amd64
     container:
       image: rust:1.88-slim
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        run: |
+          apt-get install -y -qq git
+          git init
+          git remote add origin http://172.0.0.29:3000/sarman/tftsr-devops_investigation.git
+          git fetch --depth=1 origin $GITHUB_SHA
+          git checkout FETCH_HEAD
       - name: Install dependencies
         run: |
           apt-get update -qq && apt-get install -y -qq mingw-w64 curl nsis perl make
@@ -59,23 +81,37 @@ jobs:
           rustup target add x86_64-pc-windows-gnu
           cargo install tauri-cli --version "^2" --locked
           CI=true cargo tauri build --target x86_64-pc-windows-gnu
-      - name: Collect artifacts
+      - name: Upload artifacts
+        env:
+          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
         run: |
-          mkdir -p artifacts
+          API="http://172.0.0.29:3000/api/v1/repos/$GITHUB_REPOSITORY"
+          TAG="$GITHUB_REF_NAME"
+          curl -sf -X POST "$API/releases" \
+            -H "Authorization: token $RELEASE_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "{\"tag_name\":\"$TAG\",\"name\":\"TFTSR $TAG\",\"body\":\"Release $TAG\",\"draft\":false}" || true
+          RELEASE_ID=$(curl -sf "$API/releases/tags/$TAG" \
+            -H "Authorization: token $RELEASE_TOKEN" | grep -o '"id":[0-9]*' | head -1 | cut -d: -f2)
           find src-tauri/target/x86_64-pc-windows-gnu/release/bundle \
-            \( -name "*.exe" -o -name "*.msi" \) \
-            -exec cp {} artifacts/ \; 2>/dev/null || true
-      - uses: actions/upload-artifact@v4
-        with:
-          name: windows-amd64
-          path: artifacts/
+            \( -name "*.exe" -o -name "*.msi" \) 2>/dev/null | while read f; do
+            curl -sf -X POST "$API/releases/$RELEASE_ID/assets" \
+              -H "Authorization: token $RELEASE_TOKEN" \
+              -F "attachment=@$f;filename=$(basename $f)" && echo "Uploaded $(basename $f)" || echo "Upload failed: $f"
+          done
 
   build-linux-arm64:
     runs-on: linux-arm64
     container:
       image: rust:1.88-slim
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        run: |
+          apt-get install -y -qq git
+          git init
+          git remote add origin http://172.0.0.29:3000/sarman/tftsr-devops_investigation.git
+          git fetch --depth=1 origin $GITHUB_SHA
+          git checkout FETCH_HEAD
       - name: Install dependencies
         run: |
           apt-get update -qq && apt-get install -y -qq \
@@ -90,48 +126,21 @@ jobs:
           rustup target add aarch64-unknown-linux-gnu
           cargo install tauri-cli --version "^2" --locked
           CI=true cargo tauri build --target aarch64-unknown-linux-gnu
-      - name: Collect artifacts
-        run: |
-          mkdir -p artifacts
-          find src-tauri/target/aarch64-unknown-linux-gnu/release/bundle \
-            \( -name "*.deb" -o -name "*.rpm" -o -name "*.AppImage" \) \
-            -exec cp {} artifacts/ \;
-      - uses: actions/upload-artifact@v4
-        with:
-          name: linux-arm64
-          path: artifacts/
-
-  upload-release:
-    needs: [build-linux-amd64, build-windows-amd64, build-linux-arm64]
-    runs-on: linux-amd64
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          path: artifacts/
-
-      - name: Create Gitea release and upload artifacts
+      - name: Upload artifacts
         env:
           RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
         run: |
-          TAG="${{ gitea.ref_name }}"
-          REPO="${{ gitea.repository }}"
-          API="http://gitea_app:3000/api/v1"
-
-          # Create release (idempotent)
-          curl -sf -X POST "$API/repos/$REPO/releases" \
+          API="http://172.0.0.29:3000/api/v1/repos/$GITHUB_REPOSITORY"
+          TAG="$GITHUB_REF_NAME"
+          curl -sf -X POST "$API/releases" \
             -H "Authorization: token $RELEASE_TOKEN" \
             -H "Content-Type: application/json" \
             -d "{\"tag_name\":\"$TAG\",\"name\":\"TFTSR $TAG\",\"body\":\"Release $TAG\",\"draft\":false}" || true
-
-          # Get release ID
-          RELEASE_ID=$(curl -sf "$API/repos/$REPO/releases/tags/$TAG" \
+          RELEASE_ID=$(curl -sf "$API/releases/tags/$TAG" \
             -H "Authorization: token $RELEASE_TOKEN" | grep -o '"id":[0-9]*' | head -1 | cut -d: -f2)
-          echo "Release ID: $RELEASE_ID"
-
-          # Upload all artifacts
-          find artifacts/ -type f | while read f; do
-            echo "Uploading $f..."
-            curl -sf -X POST "$API/repos/$REPO/releases/$RELEASE_ID/assets" \
+          find src-tauri/target/aarch64-unknown-linux-gnu/release/bundle \
+            \( -name "*.deb" -o -name "*.rpm" -o -name "*.AppImage" \) | while read f; do
+            curl -sf -X POST "$API/releases/$RELEASE_ID/assets" \
               -H "Authorization: token $RELEASE_TOKEN" \
-              -F "attachment=@$f;filename=$(basename $f)" && echo "OK" || echo "Upload failed: $f"
+              -F "attachment=@$f;filename=$(basename $f)" && echo "Uploaded $(basename $f)" || echo "Upload failed: $f"
           done
