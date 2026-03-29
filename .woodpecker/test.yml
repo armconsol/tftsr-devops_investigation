@@ -16,14 +16,14 @@ pipeline:
   rust-clippy:
     image: rust:1.88-slim
     commands:
-      - apt-get update -qq && apt-get install -y -qq libwebkit2gtk-4.1-dev libssl-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev patchelf pkg-config
+      - apt-get update -qq && apt-get install -y -qq libwebkit2gtk-4.1-dev libssl-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev patchelf pkg-config perl
       - rustup component add clippy
       - cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
 
   rust-tests:
     image: rust:1.88-slim
     commands:
-      - apt-get update -qq && apt-get install -y -qq libwebkit2gtk-4.1-dev libssl-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev patchelf pkg-config
+      - apt-get update -qq && apt-get install -y -qq libwebkit2gtk-4.1-dev libssl-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev patchelf pkg-config perl
       - cargo test --manifest-path src-tauri/Cargo.toml
 
   frontend-typecheck:
