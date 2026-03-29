@@ -246,6 +246,20 @@ docker volume rm $(docker volume ls -q | grep '0_')
 docker restart woodpecker_agent
 ```
 
+### Windows DLL Export Ordinal Too Large
+`/usr/bin/x86_64-w64-mingw32-ld: error: export ordinal too large: 106290`
+
+MinGW's `ld` auto-exports ALL public Rust symbols into the DLL export table. With a
+large dependency tree (~106k symbols), this exceeds the 65,535 PE ordinal limit.
+
+Fix: `src-tauri/.cargo/config.toml` tells `ld` to suppress auto-export:
+```toml
+[target.x86_64-pc-windows-gnu]
+rustflags = ["-C", "link-arg=-Wl,--exclude-all-symbols"]
+```
+The desktop `main.exe` links against `rlib` (static), so the cdylib export table is
+unused at runtime. An empty export table is valid for a DLL.
+
 ### Gogs OAuth2 Limitation
 Gogs 0.14 has no OAuth2 provider support, blocking upgrade to Woodpecker 2.x.
 
