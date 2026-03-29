@@ -11,10 +11,11 @@
 
 ### CI Agents
 
-| Container | Platform | Purpose |
-|-----------|----------|---------|
-| `woodpecker_agent` | `linux/amd64` | Native x86_64 — all test builds + amd64/windows release |
-| `woodpecker_agent_arm64` | `linux/arm64` | QEMU emulation on x86_64 host — arm64 release builds |
+| Agent | Platform | Host | Purpose |
+|-------|----------|------|---------|
+| `woodpecker_agent` (Docker) | `linux/amd64` | 172.0.0.29 | Native x86_64 — test builds + amd64/windows release |
+| `woodpecker-agent` (systemd) | `linux/arm64` | sarman's local machine | Native aarch64 — arm64 release builds |
+| `woodpecker_agent_arm64` (Docker) | `linux/arm64` | 172.0.0.29 | QEMU fallback — kept as backup |
 
 ---
 
@@ -64,11 +65,13 @@ pipeline:
 ```
 Pipeline steps:
   1. clone                → alpine/git with explicit tag fetch + checkout
-  2. build-linux-amd64   → cargo tauri build (x86_64-unknown-linux-gnu)
+  2. build-linux-amd64   → cargo tauri build (x86_64-unknown-linux-gnu)     [amd64 agent]
                             → artifacts/linux-amd64/{.deb, .rpm, .AppImage}
-  3. build-windows-amd64 → cargo tauri build (x86_64-pc-windows-gnu via mingw-w64)
+  3. build-windows-amd64 → cargo tauri build (x86_64-pc-windows-gnu)        [amd64 agent]
                             → artifacts/windows-amd64/{.exe, .msi}
-  4. upload-release       → Create Gogs release + upload all artifacts
+  4. build-linux-arm64   → cargo tauri build (aarch64-unknown-linux-gnu)    [arm64 agent]
+                            → artifacts/linux-arm64/{.deb, .rpm, .AppImage}
+  5. upload-release       → Create Gogs release + upload all artifacts
 ```
 
 **Clone override (release.yml):**
@@ -98,7 +101,7 @@ environment:
 **Artifacts per platform:**
 - Linux amd64: `.deb`, `.rpm`, `.AppImage`
 - Windows amd64: `.exe` (NSIS installer), `.msi`
-- Linux arm64: `.deb`, `.AppImage` (requires arm64 agent or QEMU)
+- Linux arm64: `.deb`, `.rpm`, `.AppImage` (native build on local arm64 agent)
 
 **Important:** Artifacts must be written to the **workspace** (relative paths like `artifacts/linux-amd64/`), not to absolute paths like `/artifacts/`. Only the workspace is shared between pipeline steps via Docker volume.
 
