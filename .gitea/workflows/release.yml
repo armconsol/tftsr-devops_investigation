@@ -4,18 +4,12 @@ on:
   push:
     tags:
       - 'v*'
-  workflow_dispatch:
-    inputs:
-      tag:
-        description: 'Release tag (e.g. v0.1.0-rc1)'
-        required: true
-        default: 'v0.1.0-rc1'
 
 jobs:
   build-linux-amd64:
     runs-on: linux-amd64
     env:
-      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+      RELEASE_TAG: ${{ github.ref_name }}
     container:
       image: rust:1.88-slim
     steps:
@@ -64,7 +58,7 @@ jobs:
   build-windows-amd64:
     runs-on: linux-amd64
     env:
-      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+      RELEASE_TAG: ${{ github.ref_name }}
     container:
       image: rust:1.88-slim
     steps:
@@ -113,7 +107,7 @@ jobs:
   build-linux-arm64:
     runs-on: linux-arm64
     env:
-      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+      RELEASE_TAG: ${{ github.ref_name }}
     container:
       image: rust:1.88-slim
     steps:
