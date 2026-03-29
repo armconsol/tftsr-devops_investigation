@@ -65,13 +65,13 @@ pipeline:
 ```
 Pipeline steps:
   1. clone                → alpine/git with explicit tag fetch + checkout
-  2. build-linux-amd64   → cargo tauri build (x86_64-unknown-linux-gnu)     [amd64 agent]
+  2. build-linux-amd64   → cargo tauri build (x86_64-unknown-linux-gnu)
                             → artifacts/linux-amd64/{.deb, .rpm, .AppImage}
-  3. build-windows-amd64 → cargo tauri build (x86_64-pc-windows-gnu)        [amd64 agent]
+  3. build-windows-amd64 → cargo tauri build (x86_64-pc-windows-gnu)
                             → artifacts/windows-amd64/{.exe, .msi}
-  4. build-linux-arm64   → cargo tauri build (aarch64-unknown-linux-gnu)    [arm64 agent]
-                            → artifacts/linux-arm64/{.deb, .rpm, .AppImage}
-  5. upload-release       → Create Gogs release + upload all artifacts
+  4. upload-release       → Create Gogs release + upload all artifacts
+
+linux/arm64 (manual): make release-arm64 GOGS_TOKEN=<token>   (see below)
 ```
 
 **Clone override (release.yml):**
@@ -101,7 +101,23 @@ environment:
 **Artifacts per platform:**
 - Linux amd64: `.deb`, `.rpm`, `.AppImage`
 - Windows amd64: `.exe` (NSIS installer), `.msi`
-- Linux arm64: `.deb`, `.rpm`, `.AppImage` (native build on local arm64 agent)
+- Linux arm64: `.deb`, `.rpm`, `.AppImage` — built via `make release-arm64` (see below)
+
+**Linux arm64 build (Woodpecker 0.15.4 workaround):**
+
+Woodpecker 0.15.4 evaluates `when: platform:` at compile time against the server's
+platform (amd64), dropping arm64 steps before any agent can claim them. Per-step
+agent routing is a Woodpecker 2.x feature.
+
+To build and upload arm64 artifacts from the local aarch64 machine:
+```bash
+# On the local arm64 machine (Fedora Asahi 42)
+cd ~/Documents/tftsr-devops_investigation
+make release-arm64 TAG=v0.1.0-alpha GOGS_TOKEN=<bearer_token>
+```
+
+`make build-arm64` runs the full Tauri build inside a `rust:1.88-slim` ARM64 Docker
+container. `make upload-arm64` uploads the resulting artifacts to the Gogs release.
 
 **Important:** Artifacts must be written to the **workspace** (relative paths like `artifacts/linux-amd64/`), not to absolute paths like `/artifacts/`. Only the workspace is shared between pipeline steps via Docker volume.
 
@@ -248,6 +264,17 @@ docker volume rm $(docker volume ls -q | grep '0_')
 # Restart agent
 docker restart woodpecker_agent
 ```
+
+### Per-Step Agent Platform Routing Not Supported
+Woodpecker 0.15.4 evaluates `when: platform:` conditions at pipeline compile time
+against the **server's** platform (amd64). Steps filtered by platform are dropped
+before any agent can claim them, so arm64 steps never reach the arm64 agent.
+
+The `platform:` step-level key (e.g. `platform: linux/arm64`) is treated as a plugin
+attribute and causes `Cannot configure both commands and custom attributes [platform]`.
+
+Workaround: build arm64 artifacts locally via `make release-arm64`. This is fixed in
+Woodpecker 2.x which supports proper per-step label-based agent routing.
 
 ### Windows DLL Export Ordinal Too Large
 `/usr/bin/x86_64-w64-mingw32-ld: error: export ordinal too large: 106290`
