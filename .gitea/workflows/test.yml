@@ -10,7 +10,7 @@ jobs:
     steps:
       - name: Checkout
         run: |
-          apt-get install -y -qq git
+          apt-get update -qq && apt-get install -y -qq git
           git init
           git remote add origin http://172.0.0.29:3000/sarman/tftsr-devops_investigation.git
           git fetch --depth=1 origin $GITHUB_SHA
@@ -25,7 +25,7 @@ jobs:
     steps:
       - name: Checkout
         run: |
-          apt-get install -y -qq git
+          apt-get update -qq && apt-get install -y -qq git
           git init
           git remote add origin http://172.0.0.29:3000/sarman/tftsr-devops_investigation.git
           git fetch --depth=1 origin $GITHUB_SHA
@@ -41,7 +41,7 @@ jobs:
     steps:
       - name: Checkout
         run: |
-          apt-get install -y -qq git
+          apt-get update -qq && apt-get install -y -qq git
           git init
           git remote add origin http://172.0.0.29:3000/sarman/tftsr-devops_investigation.git
           git fetch --depth=1 origin $GITHUB_SHA
