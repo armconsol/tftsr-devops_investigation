@@ -4,10 +4,10 @@
 
 | Component | URL | Notes |
 |-----------|-----|-------|
-| Gogs | `https://gogs.tftsr.com` / `http://172.0.0.29:3000` | Git server, version 0.14 |
-| Woodpecker CI (direct) | `http://172.0.0.29:8084` | v0.15.4 |
-| Woodpecker CI (proxy) | `http://172.0.0.29:8085` | nginx with custom login page |
-| PostgreSQL (Gogs DB) | Container: `gogs_postgres_db` | DB: `gogsdb`, User: `gogs` |
+| Gitea | `https://gogs.tftsr.com` / `http://172.0.0.29:3000` | Git server (migrated from Gogs 0.14) |
+| Woodpecker CI (direct) | `http://172.0.0.29:8084` | v2.x |
+| Woodpecker CI (proxy) | `http://172.0.0.29:8085` | nginx reverse proxy |
+| PostgreSQL (Gitea DB) | Container: `gogs_postgres_db` | DB: `gogsdb`, User: `gogs` |
 
 ### CI Agents
 
@@ -16,6 +16,10 @@
 | `woodpecker_agent` (Docker) | `linux/amd64` | 172.0.0.29 | Native x86_64 — test builds + amd64/windows release |
 | `woodpecker-agent` (systemd) | `linux/arm64` | sarman's local machine | Native aarch64 — arm64 release builds |
 | `woodpecker_agent_arm64` (Docker) | `linux/arm64` | 172.0.0.29 | QEMU fallback — kept as backup |
+
+Agent labels configured via `WOODPECKER_LABELS`:
+- Docker agents: `WOODPECKER_LABELS=platform=linux/amd64` (or arm64)
+- Local systemd agent: `~/.config/woodpecker-agent/config.env` → `WOODPECKER_LABELS=platform=linux/arm64`
 
 ---
 
@@ -36,23 +40,24 @@ Pipeline steps:
 - `rust:1.88-slim` — Rust steps (minimum for cookie_store + time + darling)
 - `node:22-alpine` — Frontend steps
 
-**Pipeline YAML format (Woodpecker 0.15.4 — legacy MAP format):**
+**Pipeline YAML format (Woodpecker 2.x — steps list format):**
 ```yaml
 clone:
   git:
     image: woodpeckerci/plugin-git
     network_mode: gogs_default     # requires repo_trusted=1
     environment:
-      - CI_REPO_CLONE_URL=http://gogs_app:3000/sarman/tftsr-devops_investigation.git
+      - CI_REPO_CLONE_URL=http://gitea_app:3000/sarman/tftsr-devops_investigation.git
 
-pipeline:
-  step-name:                        # KEY = step name (MAP, not list!)
+steps:
+  - name: step-name                 # LIST format (- name:)
     image: rust:1.88-slim
     commands:
       - cargo test
 ```
 
-> ⚠️ **Do NOT** use the newer `steps:` list format — Woodpecker 0.15.4 uses the Drone-legacy map format. Using `steps:` causes "Invalid or missing pipeline section" error.
+> ⚠️ Woodpecker 2.x uses the `steps:` list format. The legacy `pipeline:` map format from
+> Woodpecker 0.15.4 is no longer supported.
 
 ---
 
@@ -60,23 +65,40 @@ pipeline:
 
 **Triggers:** Git tags matching `v*`
 
-**Active config path:** Woodpecker DB must have `repo_config_path = .woodpecker/release.yml` when the tag is pushed. Switch back to `test.yml` after tagging to restore PR/push CI.
-
 ```
 Pipeline steps:
-  1. clone                → alpine/git with explicit tag fetch + checkout
-  2. build-linux-amd64   → cargo tauri build (x86_64-unknown-linux-gnu)
-                            → artifacts/linux-amd64/{.deb, .rpm, .AppImage}
-  3. build-windows-amd64 → cargo tauri build (x86_64-pc-windows-gnu)
-                            → artifacts/windows-amd64/{.exe, .msi}
-  4. upload-release       → Create Gogs release + upload all artifacts
-
-linux/arm64 (manual): make release-arm64 GOGS_TOKEN=<token>   (see below)
+  1. clone (amd64 workspace)  → alpine/git with explicit tag fetch + checkout
+  2. build-linux-amd64        → cargo tauri build (x86_64-unknown-linux-gnu)
+                                 → artifacts/linux-amd64/{.deb, .rpm, .AppImage}
+  3. build-windows-amd64      → cargo tauri build (x86_64-pc-windows-gnu)
+                                 → artifacts/windows-amd64/{.exe, .msi}
+  4. build-linux-arm64        → cargo tauri build (aarch64-unknown-linux-gnu)
+                                 → artifacts/linux-arm64/{.deb, .rpm, .AppImage}
+                                 → uploads arm64 artifacts inline to Gitea release
+  5. upload-release            → Create Gitea release + upload amd64 + windows artifacts
 ```
 
-**Clone override (release.yml):**
+**Per-step agent routing (Woodpecker 2.x labels):**
 
-Release builds use `alpine/git` with explicit commands because `woodpeckerci/plugin-git:latest` uses `git switch` which fails on tag refs:
+```yaml
+steps:
+  - name: build-linux-amd64
+    labels:
+      platform: linux/amd64   # → woodpecker_agent on 172.0.0.29
+
+  - name: build-linux-arm64
+    labels:
+      platform: linux/arm64   # → woodpecker-agent.service on local arm64 machine
+```
+
+**Multi-agent workspace isolation:**
+
+Steps routed to different agents do **not** share a workspace. The arm64 step clones
+the repo directly within its commands (using `http://172.0.0.29:3000`, accessible from
+the local machine) and uploads its artifacts inline. The `upload-release` step (amd64)
+handles amd64 + windows artifacts only.
+
+**Clone override (release.yml — amd64 workspace):**
 
 ```yaml
 clone:
@@ -85,7 +107,7 @@ clone:
     network_mode: gogs_default
     commands:
       - git init -b master
-      - git remote add origin http://gogs_app:3000/sarman/tftsr-devops_investigation.git
+      - git remote add origin http://gitea_app:3000/sarman/tftsr-devops_investigation.git
       - git fetch --depth=1 origin +refs/tags/${CI_COMMIT_TAG}:refs/tags/${CI_COMMIT_TAG}
       - git checkout ${CI_COMMIT_TAG}
 ```
@@ -101,130 +123,69 @@ environment:
 **Artifacts per platform:**
 - Linux amd64: `.deb`, `.rpm`, `.AppImage`
 - Windows amd64: `.exe` (NSIS installer), `.msi`
-- Linux arm64: `.deb`, `.rpm`, `.AppImage` — built via `make release-arm64` (see below)
+- Linux arm64: `.deb`, `.rpm`, `.AppImage`
 
-**Linux arm64 build (Woodpecker 0.15.4 workaround):**
-
-Woodpecker 0.15.4 evaluates `when: platform:` at compile time against the server's
-platform (amd64), dropping arm64 steps before any agent can claim them. Per-step
-agent routing is a Woodpecker 2.x feature.
-
-To build and upload arm64 artifacts from the local aarch64 machine:
-```bash
-# On the local arm64 machine (Fedora Asahi 42)
-cd ~/Documents/tftsr-devops_investigation
-make release-arm64 TAG=v0.1.0-alpha GOGS_TOKEN=<bearer_token>
-```
-
-`make build-arm64` runs the full Tauri build inside a `rust:1.88-slim` ARM64 Docker
-container. `make upload-arm64` uploads the resulting artifacts to the Gogs release.
-
-**Important:** Artifacts must be written to the **workspace** (relative paths like `artifacts/linux-amd64/`), not to absolute paths like `/artifacts/`. Only the workspace is shared between pipeline steps via Docker volume.
-
-**Upload step (requires gogs_default network):**
+**Upload step (requires gogs_default network for amd64, host IP for arm64):**
 ```yaml
+# amd64 upload step
 upload-release:
   image: curlimages/curl:latest
-  network_mode: gogs_default    # host firewall blocks default bridge from reaching Gogs API
+  labels:
+    platform: linux/amd64
+  network_mode: gogs_default
   secrets: [GOGS_TOKEN]
 ```
 
-The `GOGS_TOKEN` Woodpecker secret is inserted into the DB:
-```python
-conn.execute("""
-  INSERT INTO secrets (secret_repo_id, secret_name, secret_value, secret_images, secret_events, secret_skip_verify, secret_conceal)
-  VALUES (1, 'GOGS_TOKEN', '<bearer_token>', '', 'tag', 0, 1)
-""")
-```
+The `GOGS_TOKEN` Woodpecker secret must be created via the Woodpecker UI or API after
+migration. The secret name stays `GOGS_TOKEN` for pipeline compatibility.
 
-**Gogs Release API:**
+**Gitea Release API (replaces Gogs API — same endpoints, different container name):**
 ```bash
 # Create release
-POST http://gogs_app:3000/api/v1/repos/sarman/tftsr-devops_investigation/releases
+POST http://gitea_app:3000/api/v1/repos/sarman/tftsr-devops_investigation/releases
 Authorization: token $GOGS_TOKEN
 
 # Upload artifact
-POST http://gogs_app:3000/api/v1/repos/sarman/tftsr-devops_investigation/releases/{id}/assets
+POST http://gitea_app:3000/api/v1/repos/sarman/tftsr-devops_investigation/releases/{id}/assets
 ```
+
+From the arm64 agent (local machine), use `http://172.0.0.29:3000/api/v1` instead.
 
 ---
 
-## Switching Between Test and Release Config
+## Multi-File Pipeline Support (Woodpecker 2.x)
 
-Woodpecker 0.15.4 supports only **one config file per repo**. The workflow:
+Woodpecker 2.x supports multiple pipeline files in the `.woodpecker/` directory.
+All `.yml` files are evaluated on every trigger; `when:` conditions control which
+pipelines actually run.
 
-```bash
-# For regular pushes/PRs — use test pipeline
-python3 -c "conn.execute(\"UPDATE repos SET repo_config_path='.woodpecker/test.yml'\")"
+Current files:
+- `.woodpecker/test.yml` — runs on every push/PR
+- `.woodpecker/release.yml` — runs on `v*` tags only
 
-# Before pushing a release tag — switch to release pipeline
-python3 -c "conn.execute(\"UPDATE repos SET repo_config_path='.woodpecker/release.yml'\")"
-git tag -a v1.0.0 -m "Release v1.0.0"
-git push origin v1.0.0
-# → Switch back to test.yml after build starts
-```
+No DB config path switching needed (unlike Woodpecker 0.15.4).
 
 ---
 
 ## Webhook Configuration
 
-**Hook ID:** 9 (in Gogs, `http://gogs.tftsr.com`)
-**Events:** `create`, `push`, `pull_request`
-**URL:** `http://172.0.0.29:8084/hook?access_token=<JWT>`
+**Woodpecker 2.x with Gitea OAuth2:**
 
-**JWT signing:**
-- Algorithm: HS256
-- Secret: `repo_hash` from Woodpecker DB (`dK8zFWtAu67qfKd3Et6N8LptqTmedumJ`)
-- Payload: `{"text":"sarman/tftsr-devops_investigation","type":"hook","iat":<timestamp>}`
+After migration, Woodpecker 2.x registers webhooks automatically when a repo is
+activated via the UI. No manual JWT-signed webhook setup required.
 
-**Regenerate JWT when stale:**
-```python
-import base64, hmac, hashlib, json, time
-
-def b64url(data):
-    if isinstance(data, str): data = data.encode()
-    return base64.urlsafe_b64encode(data).rstrip(b'=').decode()
-
-header  = b64url(json.dumps({'alg':'HS256','typ':'JWT'}, separators=(',',':')))
-payload = b64url(json.dumps({'text':'sarman/tftsr-devops_investigation','type':'hook','iat':int(time.time())}, separators=(',',':')))
-msg     = f'{header}.{payload}'
-sig     = hmac.new(b'dK8zFWtAu67qfKd3Et6N8LptqTmedumJ', msg.encode(), hashlib.sha256).digest()
-print(f'{msg}.{b64url(sig)}')
-```
-
-Then update the webhook in Gogs via API:
-```bash
-curl -X DELETE http://172.0.0.29:3000/api/v1/repos/sarman/tftsr-devops_investigation/hooks/<old_id>
-curl -X POST http://172.0.0.29:3000/api/v1/repos/sarman/tftsr-devops_investigation/hooks \
-  -H "Authorization: token <bearer_token>" \
-  -H "Content-Type: application/json" \
-  -d '{"type":"gogs","config":{"url":"http://172.0.0.29:8084/hook?access_token=<NEW_JWT>","content_type":"json","secret":"af5dc60e0984f2680d0969f4a087e7100a4ece7e"},"events":["push","pull_request","create"],"active":true}'
-```
-
----
-
-## Woodpecker DB State
-
-SQLite at `/docker_mounts/woodpecker/data/woodpecker.sqlite` (on host `172.0.0.29`).
-
-```sql
--- Verify config
-SELECT user_token IS NOT NULL AND user_token != '' AS token_set FROM users WHERE user_login='sarman';
-
-SELECT repo_active, repo_trusted, repo_config_path, repo_hash
-FROM repos WHERE repo_full_name='sarman/tftsr-devops_investigation';
--- repo_active=1, repo_trusted=1
--- repo_config_path='.woodpecker/test.yml'  (or release.yml during release)
--- repo_hash='dK8zFWtAu67qfKd3Et6N8LptqTmedumJ'
-```
+1. Log in at `http://172.0.0.29:8085` via Gitea OAuth2
+2. Add repo `sarman/tftsr-devops_investigation`
+3. Woodpecker creates webhook in Gitea automatically
 
 ---
 
 ## Branch Protection
 
-Master branch is protected: all changes require a PR. Direct pushes are blocked.
+Master branch is protected: all changes require a PR.
 
 ```sql
+-- Gitea branch protection (via psql on gogs_postgres_db container)
 -- Check protection
 SELECT name, protected, require_pull_request FROM protect_branch WHERE repo_id=42;
 
@@ -234,71 +195,63 @@ UPDATE protect_branch SET protected=false WHERE repo_id=42 AND name='master';
 UPDATE protect_branch SET protected=true, require_pull_request=true WHERE repo_id=42 AND name='master';
 ```
 
-> Gogs 0.14 does **not** enforce required CI status checks before merging. Only `require_pull_request=true` is supported.
-
 ---
 
 ## Known Issues & Fixes
 
-### Webhook JWT Must Use `?access_token=`
-`token.ParseRequest()` in Woodpecker 0.15.4 does **not** read `?token=` URL params. Use `?access_token=<JWT>` instead.
-
-### Directory-Based Config Not Supported
-Woodpecker 0.15.4 only supports a **single config file**. Multi-file pipelines require v2.x+.
-
-### Empty Clone URL in Push Events
-Woodpecker 0.15.4's `go-gogs-client` `PayloadRepo` struct lacks `CloneURL`, so `build_remote` is always empty. Fix: set `CI_REPO_CLONE_URL` in the clone step environment.
-
-### Step Containers Cannot Reach `gogs_app`
-Default Docker bridge containers cannot resolve `gogs_app` or reach `172.0.0.29:3000` (host firewall). Fix: use `network_mode: gogs_default` in any step that needs Gogs access. Requires `repo_trusted=1`.
+### Step Containers Cannot Reach `gitea_app`
+Default Docker bridge containers cannot resolve `gitea_app` or reach `172.0.0.29:3000`
+(host firewall). Fix: use `network_mode: gogs_default` in any step that needs Gitea
+access. Requires `repo_trusted=1`.
 
 ### `CI=woodpecker` Rejected by Tauri CLI
-Woodpecker sets `CI=woodpecker`; `cargo tauri build` expects a boolean. Fix: prefix with `CI=true cargo tauri build`.
+Woodpecker sets `CI=woodpecker`; `cargo tauri build` expects a boolean. Fix: prefix with
+`CI=true cargo tauri build`.
 
 ### Agent Stalls After Server Restart
-After restarting the Woodpecker server, the agent may enter a loop cleaning up orphaned containers and stop picking up new builds. Fix:
+After restarting the Woodpecker server, the agent may enter a loop cleaning up orphaned
+containers and stop picking up new builds. Fix:
 ```bash
-# Kill orphan containers and volumes
 docker rm -f $(docker ps -aq --filter 'name=0_')
 docker volume rm $(docker volume ls -q | grep '0_')
-# Restart agent
 docker restart woodpecker_agent
 ```
-
-### Per-Step Agent Platform Routing Not Supported
-Woodpecker 0.15.4 evaluates `when: platform:` conditions at pipeline compile time
-against the **server's** platform (amd64). Steps filtered by platform are dropped
-before any agent can claim them, so arm64 steps never reach the arm64 agent.
-
-The `platform:` step-level key (e.g. `platform: linux/arm64`) is treated as a plugin
-attribute and causes `Cannot configure both commands and custom attributes [platform]`.
-
-Workaround: build arm64 artifacts locally via `make release-arm64`. This is fixed in
-Woodpecker 2.x which supports proper per-step label-based agent routing.
 
 ### Windows DLL Export Ordinal Too Large
 `/usr/bin/x86_64-w64-mingw32-ld: error: export ordinal too large: 106290`
 
-MinGW's `ld` auto-exports ALL public Rust symbols into the DLL export table. With a
-large dependency tree (~106k symbols), this exceeds the 65,535 PE ordinal limit.
-
-Fix: `src-tauri/.cargo/config.toml` tells `ld` to suppress auto-export:
+Fix: `src-tauri/.cargo/config.toml`:
 ```toml
 [target.x86_64-pc-windows-gnu]
 rustflags = ["-C", "link-arg=-Wl,--exclude-all-symbols"]
 ```
-The desktop `main.exe` links against `rlib` (static), so the cdylib export table is
-unused at runtime. An empty export table is valid for a DLL.
 
-### Gogs OAuth2 Limitation
-Gogs 0.14 has no OAuth2 provider support, blocking upgrade to Woodpecker 2.x.
+### GOGS_TOKEN Secret Must Be Recreated After Migration
+After migrating from Woodpecker 0.15.4 to 2.x, recreate the `GOGS_TOKEN` secret:
+1. Log in to Gitea, create a new API token under Settings → Applications
+2. In Woodpecker UI → Repository → Secrets, add secret `GOGS_TOKEN` with the token value
 
 ---
 
-## Gogs PostgreSQL Access
+## Gitea PostgreSQL Access
 
 ```bash
 docker exec gogs_postgres_db psql -U gogs -d gogsdb -c "SELECT id, lower_name FROM repository;"
 ```
 
-> Database name is `gogsdb`, not `gogs`.
+> Database name is `gogsdb` (unchanged from Gogs migration).
+
+---
+
+## Migration Notes (Gogs 0.14 → Gitea)
+
+Gitea auto-migrates the Gogs PostgreSQL schema on first start. Users, repos, teams, and
+issues are preserved. API tokens stored in the DB are also migrated but should be
+regenerated for security.
+
+Key changes after migration:
+- Container name: `gogs_app` → `gitea_app`
+- Config dir: `/data/gitea` (was `/data/gogs` inside container, same host volume)
+- Repo dir: `gogs-repositories` → `gitea-repositories` (renamed on host during migration)
+- OAuth2 provider: Gitea now supports OAuth2 (Woodpecker 2.x uses this for login)
+- Woodpecker 2.x multi-file pipeline support enabled (no more single config file limitation)
