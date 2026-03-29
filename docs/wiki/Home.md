@@ -2,7 +2,7 @@
 
 **TFTSR** is a secure desktop application for guided IT incident triage, root cause analysis (RCA), and post-mortem documentation. Built with Tauri 2.x (Rust + WebView) and React 18.
 
-**CI:** ![build](http://172.0.0.29:3000/sarman/tftsr-devops_investigation/badges/master/status.svg) — rustfmt · clippy · 64 Rust tests · tsc · vitest — all green
+**CI:** ![build](http://172.0.0.29:3000/sarman/tftsr-devops_investigation/actions/workflows/test.yml/badge.svg) — rustfmt · clippy · 64 Rust tests · tsc · vitest — all green
 
 ## Quick Navigation
 
@@ -14,7 +14,7 @@
 | [AI Providers](wiki/AI-Providers) | Supported providers and configuration |
 | [PII Detection](wiki/PII-Detection) | Patterns, redaction flow, security |
 | [IPC Commands](wiki/IPC-Commands) | Full list of Tauri backend commands |
-| [CI/CD Pipeline](wiki/CICD-Pipeline) | Woodpecker CI + Gogs setup, multi-platform builds |
+| [CI/CD Pipeline](wiki/CICD-Pipeline) | Gitea Actions setup, multi-platform builds, act_runner config |
 | [Security Model](wiki/Security-Model) | Encryption, audit trail, capabilities |
 | [Integrations](wiki/Integrations) | Confluence, ServiceNow, Azure DevOps (v0.2) |
 | [Troubleshooting](wiki/Troubleshooting) | Known issues and fixes |
@@ -34,9 +34,9 @@
 
 | Version | Status | Platforms |
 |---------|--------|-----------|
-| v0.1.0-alpha | 🚀 Released | linux/amd64 (.deb, .rpm, .AppImage), windows/amd64 (.exe, .msi) |
+| v0.1.0-rc1 | 🚀 Released | linux/amd64 · linux/arm64 · windows/amd64 (.deb, .rpm, .AppImage, .exe, .msi) |
 
-Download from [Releases](https://gogs.tftsr.com/sarman/tftsr-devops_investigation/releases).
+Download from [Releases](https://gogs.tftsr.com/sarman/tftsr-devops_investigation/releases). All builds are produced natively (no QEMU emulation).
 
 ## Project Status
 
@@ -45,8 +45,8 @@ Download from [Releases](https://gogs.tftsr.com/sarman/tftsr-devops_investigatio
 | Phases 1–8 (Core application) | ✅ Complete |
 | Phase 9 (History/Search) | 🔲 Pending |
 | Phase 10 (Integrations) | 🕐 v0.2 stubs only |
-| Phase 11 (CI/CD) | ✅ Complete — Woodpecker CI fully operational |
-| Phase 12 (Release packaging) | ✅ linux/amd64 + windows/amd64; arm64 via QEMU agent |
+| Phase 11 (CI/CD) | ✅ Complete — Gitea Actions fully operational |
+| Phase 12 (Release packaging) | ✅ linux/amd64 · linux/arm64 (native) · windows/amd64 |
 
 ## Tech Stack
 
@@ -60,4 +60,4 @@ Download from [Releases](https://gogs.tftsr.com/sarman/tftsr-devops_investigatio
 | Secret storage | tauri-plugin-stronghold |
 | State | Zustand |
 | Testing | Vitest (13 frontend) + `#[cfg(test)]` (64 Rust tests) |
-| CI/CD | Woodpecker CI v0.15.4 + Gogs |
+| CI/CD | Gitea Actions (act_runner v0.3.1) + Gitea |

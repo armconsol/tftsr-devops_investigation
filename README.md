@@ -4,7 +4,7 @@ A structured, AI-backed desktop tool for IT incident triage, 5-Whys root cause a
 
 Built with **Tauri 2** (Rust + WebView), **React 18**, **TypeScript**, and **SQLCipher AES-256** encrypted storage.
 
-**CI status:** ![CI](http://172.0.0.29:3000/sarman/tftsr-devops_investigation/badges/master/status.svg) — all checks green (rustfmt · clippy · 64 Rust tests · tsc · vitest)
+**CI status:** ![CI](http://172.0.0.29:3000/sarman/tftsr-devops_investigation/actions/workflows/test.yml/badge.svg) — all checks green (rustfmt · clippy · 64 Rust tests · tsc · vitest)
 
 ---
 
@@ -112,7 +112,7 @@ Pre-built installers are attached to each [tagged release](https://gogs.tftsr.co
 |---|---|---|
 | Linux amd64 | `.deb`, `.rpm`, `.AppImage` | Standard package or universal AppImage |
 | Windows amd64 | `.exe` (NSIS), `.msi` | From cross-compile via mingw-w64 |
-| Linux arm64 | `.deb`, `.AppImage` | Built on native arm64 runner (QEMU emulation available) |
+| Linux arm64 | `.deb`, `.rpm`, `.AppImage` | Built natively on arm64 runner |
 | macOS | — | Requires macOS runner — build locally |
 
 ---
@@ -177,11 +177,11 @@ tftsr/
 ├── tests/
 │   ├── unit/         # Vitest unit tests (PII, session store, settings store)
 │   └── e2e/          # WebdriverIO + tauri-driver E2E skeletons
-├── docs/wiki/        # Source of truth for Gogs wiki (auto-synced by CI)
-├── .woodpecker/
-│   ├── test.yml      # CI: rustfmt · clippy · cargo test · tsc · vitest (every push/PR)
-│   └── release.yml   # Release: linux/amd64 + windows/amd64 builds → Gogs release artifacts
-└── cli/              # Standalone CLI wrapper (tftsr-cli)
+├── docs/wiki/        # Source of truth for Gitea wiki
+└── .gitea/
+    └── workflows/
+        ├── test.yml     # CI: rustfmt · clippy · cargo test · tsc · vitest (every push/PR)
+        └── release.yml  # Release: linux/amd64 + windows/amd64 + linux/arm64 → Gitea release
 ```
 
 ---
@@ -208,20 +208,25 @@ TAURI_BINARY_PATH=./src-tauri/target/release/tftsr npm run test:e2e
 
 ---
 
-## CI/CD — Woodpecker CI
+## CI/CD — Gitea Actions
 
-The project uses **Woodpecker CI v0.15.4** connected to Gogs at `gogs.tftsr.com`.
+The project uses **Gitea Actions** (act_runner v0.3.1) connected to the Gitea instance at `gogs.tftsr.com`.
 
-| Pipeline | Trigger | Steps |
+| Workflow | Trigger | Jobs |
 |---|---|---|
-| `.woodpecker/test.yml` | Every push / PR | rustfmt · clippy · cargo test (64) · tsc · vitest |
-| `.woodpecker/release.yml` | Tag `v*` | Build linux/amd64 + windows/amd64 → upload to Gogs release |
+| `.gitea/workflows/test.yml` | Every push / PR | rustfmt · clippy · cargo test (64) · tsc · vitest (13) |
+| `.gitea/workflows/release.yml` | Tag `v*` or manual dispatch | Build linux/amd64 + windows/amd64 + linux/arm64 → upload to Gitea release |
 
-**Agents:**
-- `woodpecker_agent` — linux/amd64 (native x86_64)
-- `woodpecker_agent_arm64` — linux/arm64 (QEMU emulation on x86_64 host)
+**Runners:**
 
-> macOS builds require a macOS runner. See [CI/CD Pipeline wiki](https://gogs.tftsr.com/sarman/tftsr-devops_investigation/wiki/CICD-Pipeline) for full infrastructure docs.
+| Runner | Platform | Host | Purpose |
+|---|---|---|---|
+| `amd64-docker-runner` | linux/amd64 | 172.0.0.29 (Docker) | Test pipeline + amd64/windows release builds |
+| `arm64-native-runner` | linux/arm64 | Local arm64 machine | Native arm64 release builds |
+
+**Branch protection:** master requires a PR approved by `sarman`, with all 5 CI checks passing before merge.
+
+> See [CI/CD Pipeline wiki](https://gogs.tftsr.com/sarman/tftsr-devops_investigation/wiki/CICD-Pipeline) for full infrastructure docs.
 
 ---
 
@@ -278,8 +283,8 @@ Override with the `TFTSR_DATA_DIR` environment variable.
 | 8 | RCA & Post-Mortem Generation | ✅ Complete |
 | 9 | History & Search | 🔲 Pending |
 | 10 | Integrations (Confluence, ServiceNow, ADO) | 🔲 v0.2 |
-| 11 | CI/CD Pipeline | ✅ Complete — all checks green |
-| 12 | Release Packaging | ✅ linux/amd64 · windows/amd64; arm64 via QEMU agent |
+| 11 | CI/CD Pipeline | ✅ Complete — Gitea Actions, all checks green |
+| 12 | Release Packaging | ✅ linux/amd64 · linux/arm64 (native) · windows/amd64 |
 
 ---
 
