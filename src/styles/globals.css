@@ -59,6 +59,16 @@
     -webkit-text-fill-color: hsl(var(--foreground));
   }
 
+  /* Reset button appearance so macOS WebKit doesn't apply system button styling.
+     Use currentColor so -webkit-text-fill-color always matches whatever Tailwind
+     sets via text-* utilities (e.g. text-primary-foreground). */
+  button {
+    -webkit-appearance: none;
+    appearance: none;
+    color: inherit;
+    -webkit-text-fill-color: currentColor;
+  }
+
   input::placeholder, textarea::placeholder {
     color: hsl(var(--muted-foreground));
     -webkit-text-fill-color: hsl(var(--muted-foreground));
