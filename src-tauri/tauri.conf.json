@@ -1,6 +1,6 @@
 {
   "productName": "TFTSR",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "identifier": "com.tftsr.devops",
   "build": {
     "frontendDist": "../dist",
@@ -14,7 +14,7 @@
     },
     "windows": [
       {
-        "title": "TFTSR — IT Triage & RCA",
+        "title": "TFTSR \u2014 IT Triage & RCA",
         "width": 1280,
         "height": 800,
         "resizable": true,
