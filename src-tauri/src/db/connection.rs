@@ -9,7 +9,7 @@ pub fn open_encrypted_db(path: &Path, key: &str) -> anyhow::Result<Connection> {
     conn.execute_batch("SELECT count(*) FROM sqlite_master;")?;
     // Set SQLCipher settings for AES-256
     conn.execute_batch(
-        "PRAGMA cipher_page_size = 4096; \
+        "PRAGMA cipher_page_size = 16384; \
          PRAGMA kdf_iter = 256000; \
          PRAGMA cipher_hmac_algorithm = HMAC_SHA512; \
          PRAGMA cipher_kdf_algorithm = PBKDF2_HMAC_SHA512;",
