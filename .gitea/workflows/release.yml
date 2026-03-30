@@ -117,6 +117,8 @@ jobs:
           rustup target add aarch64-apple-darwin
           cargo install tauri-cli --version "^2" --locked
           CI=true cargo tauri build --target aarch64-apple-darwin
+          codesign --deep --force --sign - \
+            src-tauri/target/aarch64-apple-darwin/release/bundle/macos/TFTSR.app
       - name: Upload artifacts
         env:
           RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}

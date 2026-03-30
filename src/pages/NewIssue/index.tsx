@@ -51,9 +51,9 @@ export default function NewIssue() {
     setIsSubmitting(true);
     setError(null);
     try {
-      const detail = await createIssueCmd({ title: title.trim(), domain: selectedDomain, severity });
-      startSession(detail.issue);
-      navigate(`/issue/${detail.issue.id}/triage`);
+      const issue = await createIssueCmd({ title: title.trim(), domain: selectedDomain, severity });
+      startSession(issue);
+      navigate(`/issue/${issue.id}/triage`);
     } catch (err) {
       setError(String(err));
       setIsSubmitting(false);

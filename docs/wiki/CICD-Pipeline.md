@@ -79,7 +79,7 @@ Jobs (run in parallel):
                          → {.deb, .rpm, .AppImage} uploaded to Gitea release
   build-macos-arm64   → cargo tauri build (aarch64-apple-darwin) — runs on local Mac
                          → {.dmg} uploaded to Gitea release
-                         → unsigned; users must right-click → Open to bypass Gatekeeper
+                         → unsigned; after install run: xattr -cr /Applications/TFTSR.app
 ```
 
 **Per-step agent routing (Woodpecker 2.x labels):**

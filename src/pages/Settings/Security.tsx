@@ -82,7 +82,7 @@ export default function Security() {
                 aria-checked={enabledPatterns[pattern.id]}
                 onClick={() => togglePattern(pattern.id)}
                 className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                  enabledPatterns[pattern.id] ? "bg-primary" : "bg-muted"
+                  enabledPatterns[pattern.id] ? "bg-blue-500" : "bg-muted"
                 }`}
               >
                 <span
