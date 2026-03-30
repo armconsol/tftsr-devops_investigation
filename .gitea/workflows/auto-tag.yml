@@ -1,0 +1,48 @@
+name: Auto Tag
+
+# Runs on every merge to master — reads the latest semver tag, increments
+# the patch version, and pushes a new tag (which triggers release.yml).
+
+on:
+  push:
+    branches:
+      - master
+
+jobs:
+  auto-tag:
+    runs-on: linux-amd64
+    container:
+      image: alpine:latest
+    steps:
+      - name: Bump patch version and create tag
+        env:
+          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        run: |
+          apk add --no-cache curl jq
+
+          API="http://172.0.0.29:3000/api/v1/repos/$GITHUB_REPOSITORY"
+
+          # Get the latest clean semver tag (vX.Y.Z only, ignore rc/test suffixes)
+          LATEST=$(curl -s "$API/tags?limit=50" \
+            -H "Authorization: token $RELEASE_TOKEN" | \
+            jq -r '.[].name' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | \
+            sort -V | tail -1)
+
+          if [ -z "$LATEST" ]; then
+            NEXT="v0.1.0"
+          else
+            MAJOR=$(echo "$LATEST" | cut -d. -f1 | tr -d 'v')
+            MINOR=$(echo "$LATEST" | cut -d. -f2)
+            PATCH=$(echo "$LATEST" | cut -d. -f3)
+            NEXT="v${MAJOR}.${MINOR}.$((PATCH + 1))"
+          fi
+
+          echo "Latest tag: ${LATEST:-none}  →  Next: $NEXT"
+
+          # Create the new tag pointing at the commit that triggered this push
+          curl -sf -X POST "$API/tags" \
+            -H "Authorization: token $RELEASE_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "{\"tag_name\":\"$NEXT\",\"message\":\"Release $NEXT\",\"target\":\"$GITHUB_SHA\"}"
+
+          echo "Tag $NEXT created successfully"
