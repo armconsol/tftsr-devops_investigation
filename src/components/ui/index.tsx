@@ -205,7 +205,7 @@ export function SelectTrigger({
     <button
       type="button"
       className={cn(
-        "flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50",
+        "flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50",
         className
       )}
       onClick={() => ctx.setOpen(!ctx.open)}
@@ -221,7 +221,7 @@ export function SelectTrigger({
 
 export function SelectValue({ placeholder }: { placeholder?: string }) {
   const ctx = React.useContext(SelectContext)!;
-  return <span className={ctx.value ? "" : "text-muted-foreground"}>{ctx.value || placeholder}</span>;
+  return <span className={ctx.value ? "text-foreground" : "text-muted-foreground"}>{ctx.value || placeholder}</span>;
 }
 
 export function SelectContent({
@@ -256,7 +256,7 @@ export function SelectItem({
   return (
     <div
       className={cn(
-        "relative flex cursor-pointer select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground",
+        "relative flex cursor-pointer select-none items-center rounded-sm px-2 py-1.5 text-sm text-foreground outline-none hover:bg-accent hover:text-accent-foreground",
         ctx.value === value && "bg-accent text-accent-foreground"
       )}
       onMouseDown={(e) => {
