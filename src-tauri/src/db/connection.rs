@@ -3,17 +3,20 @@ use std::path::Path;
 
 pub fn open_encrypted_db(path: &Path, key: &str) -> anyhow::Result<Connection> {
     let conn = Connection::open(path)?;
-    // Set SQLCipher encryption key
-    conn.execute_batch(&format!("PRAGMA key = '{}';", key.replace('\'', "''")))?;
-    // Verify the key works by running a simple query
-    conn.execute_batch("SELECT count(*) FROM sqlite_master;")?;
-    // Set SQLCipher settings for AES-256
-    conn.execute_batch(
-        "PRAGMA cipher_page_size = 16384; \
-         PRAGMA kdf_iter = 256000; \
-         PRAGMA cipher_hmac_algorithm = HMAC_SHA512; \
+    // ALL cipher settings MUST be set before the first database access.
+    // cipher_page_size in particular must precede any read/write so it takes
+    // effect for both creation (new DB) and reopening (existing DB).
+    // 16384 matches 16KB kernel page size (Asahi Linux / Apple Silicon aarch64).
+    conn.execute_batch(&format!(
+        "PRAGMA key = '{}';\
+         PRAGMA cipher_page_size = 16384;\
+         PRAGMA kdf_iter = 256000;\
+         PRAGMA cipher_hmac_algorithm = HMAC_SHA512;\
          PRAGMA cipher_kdf_algorithm = PBKDF2_HMAC_SHA512;",
-    )?;
+        key.replace('\'', "''")
+    ))?;
+    // Verify the key and settings work
+    conn.execute_batch("SELECT count(*) FROM sqlite_master;")?;
     Ok(conn)
 }
 
