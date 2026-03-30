@@ -100,6 +100,42 @@ jobs:
               -F "attachment=@$f;filename=$(basename $f)" && echo "Uploaded $(basename $f)" || echo "Upload failed: $f"
           done
 
+  build-macos-arm64:
+    runs-on: macos-arm64
+    steps:
+      - name: Checkout
+        run: |
+          git init
+          git remote add origin http://172.0.0.29:3000/sarman/tftsr-devops_investigation.git
+          git fetch --depth=1 origin $GITHUB_SHA
+          git checkout FETCH_HEAD
+      - name: Build
+        env:
+          MACOSX_DEPLOYMENT_TARGET: "11.0"
+        run: |
+          npm ci --legacy-peer-deps
+          rustup target add aarch64-apple-darwin
+          cargo install tauri-cli --version "^2" --locked
+          CI=true cargo tauri build --target aarch64-apple-darwin
+      - name: Upload artifacts
+        env:
+          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        run: |
+          API="http://172.0.0.29:3000/api/v1/repos/$GITHUB_REPOSITORY"
+          TAG="$GITHUB_REF_NAME"
+          curl -sf -X POST "$API/releases" \
+            -H "Authorization: token $RELEASE_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "{\"tag_name\":\"$TAG\",\"name\":\"TFTSR $TAG\",\"body\":\"Release $TAG\",\"draft\":false}" || true
+          RELEASE_ID=$(curl -sf "$API/releases/tags/$TAG" \
+            -H "Authorization: token $RELEASE_TOKEN" | grep -o '"id":[0-9]*' | head -1 | cut -d: -f2)
+          echo "Release ID: $RELEASE_ID"
+          find src-tauri/target/aarch64-apple-darwin/release/bundle -name "*.dmg" | while read f; do
+            curl -sf -X POST "$API/releases/$RELEASE_ID/assets" \
+              -H "Authorization: token $RELEASE_TOKEN" \
+              -F "attachment=@$f;filename=$(basename $f)" && echo "Uploaded $(basename $f)" || echo "Upload failed: $f"
+          done
+
   build-linux-arm64:
     runs-on: linux-arm64
     container:
