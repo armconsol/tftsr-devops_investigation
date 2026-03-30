@@ -113,7 +113,7 @@ export default function App() {
           {/* Version */}
           {!collapsed && (
             <div className="px-4 py-3 border-t text-xs text-muted-foreground">
-              v0.1.0
+              v0.1.1
             </div>
           )}
         </aside>

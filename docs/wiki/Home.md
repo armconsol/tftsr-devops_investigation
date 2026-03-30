@@ -34,7 +34,7 @@
 
 | Version | Status | Platforms |
 |---------|--------|-----------|
-| v0.1.0-rc1 | 🚀 Released | linux/amd64 · linux/arm64 · windows/amd64 (.deb, .rpm, .AppImage, .exe, .msi) |
+| v0.1.1 | 🚀 Released | linux/amd64 · linux/arm64 · windows/amd64 (.deb, .rpm, .AppImage, .exe, .msi) |
 
 Download from [Releases](https://gogs.tftsr.com/sarman/tftsr-devops_investigation/releases). All builds are produced natively (no QEMU emulation).
 
