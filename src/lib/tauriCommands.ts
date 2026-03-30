@@ -266,7 +266,12 @@ export const applyRedactionsCmd = (logFileId: string, approvedSpanIds: string[])
 // ─── Issue CRUD ───────────────────────────────────────────────────────────────
 
 export const createIssueCmd = (newIssue: NewIssue) =>
-  invoke<IssueDetail>("create_issue", { newIssue });
+  invoke<Issue>("create_issue", {
+    title: newIssue.title,
+    description: newIssue.description ?? "",
+    severity: newIssue.severity ?? "P3",
+    category: newIssue.domain,
+  });
 
 export const getIssueCmd = (issueId: string) =>
   invoke<IssueDetail>("get_issue", { issueId });

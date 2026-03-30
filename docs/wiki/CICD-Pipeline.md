@@ -13,13 +13,17 @@
 
 | Agent | Platform | Host | Purpose |
 |-------|----------|------|---------|
-| `woodpecker_agent` (Docker) | `linux/amd64` | 172.0.0.29 | Native x86_64 — test builds + amd64/windows release |
-| `woodpecker-agent` (systemd) | `linux/arm64` | sarman's local machine | Native aarch64 — arm64 release builds |
-| `woodpecker_agent_arm64` (Docker) | `linux/arm64` | 172.0.0.29 | QEMU fallback — kept as backup |
+| `gitea_act_runner_amd64` (Docker) | `linux-amd64` | 172.0.0.29 | Native x86_64 — test builds + amd64/windows release |
+| `act_runner` (systemd) | `linux-arm64` | 172.0.0.29 | Native aarch64 — arm64 release builds |
+| `act_runner` (launchd) | `macos-arm64` | sarman's local Mac | Native Apple Silicon — macOS `.dmg` release builds |
 
-Agent labels configured via `WOODPECKER_LABELS`:
-- Docker agents: `WOODPECKER_LABELS=platform=linux/amd64` (or arm64)
-- Local systemd agent: `~/.config/woodpecker-agent/config.env` → `WOODPECKER_LABELS=platform=linux/arm64`
+Agent labels configured in `~/.config/act_runner/config.yaml`:
+```yaml
+runner:
+  labels:
+    - "macos-arm64:host"
+```
+macOS runner runs jobs **directly on the host** (no Docker container) — macOS SDK cannot run in Docker.
 
 ---
 
@@ -61,21 +65,21 @@ steps:
 
 ---
 
-## Release Pipeline (`.woodpecker/release.yml`)
+## Release Pipeline (`.gitea/workflows/release.yml`)
 
 **Triggers:** Git tags matching `v*`
 
 ```
-Pipeline steps:
-  1. clone (amd64 workspace)  → alpine/git with explicit tag fetch + checkout
-  2. build-linux-amd64        → cargo tauri build (x86_64-unknown-linux-gnu)
-                                 → artifacts/linux-amd64/{.deb, .rpm, .AppImage}
-  3. build-windows-amd64      → cargo tauri build (x86_64-pc-windows-gnu)
-                                 → artifacts/windows-amd64/{.exe, .msi}
-  4. build-linux-arm64        → cargo tauri build (aarch64-unknown-linux-gnu)
-                                 → artifacts/linux-arm64/{.deb, .rpm, .AppImage}
-                                 → uploads arm64 artifacts inline to Gitea release
-  5. upload-release            → Create Gitea release + upload amd64 + windows artifacts
+Jobs (run in parallel):
+  build-linux-amd64   → cargo tauri build (x86_64-unknown-linux-gnu)
+                         → {.deb, .rpm, .AppImage} uploaded to Gitea release
+  build-windows-amd64 → cargo tauri build (x86_64-pc-windows-gnu) via mingw-w64
+                         → {.exe, .msi} uploaded to Gitea release
+  build-linux-arm64   → cargo tauri build (aarch64-unknown-linux-gnu)
+                         → {.deb, .rpm, .AppImage} uploaded to Gitea release
+  build-macos-arm64   → cargo tauri build (aarch64-apple-darwin) — runs on local Mac
+                         → {.dmg} uploaded to Gitea release
+                         → unsigned; after install run: xattr -cr /Applications/TFTSR.app
 ```
 
 **Per-step agent routing (Woodpecker 2.x labels):**
