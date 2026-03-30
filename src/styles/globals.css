@@ -51,4 +51,21 @@
 @layer base {
   * { @apply border-border; }
   body { @apply bg-background text-foreground; }
+
+  /* Prevent WebKit/GTK from overriding form control colors with system theme */
+  input, textarea, select, button {
+    color: hsl(var(--foreground));
+    background-color: hsl(var(--background));
+    -webkit-text-fill-color: hsl(var(--foreground));
+  }
+
+  input::placeholder, textarea::placeholder {
+    color: hsl(var(--muted-foreground));
+    -webkit-text-fill-color: hsl(var(--muted-foreground));
+    opacity: 1;
+  }
 }
+
+/* Tell WebKit which color scheme is active so system UI elements match */
+:root { color-scheme: light; }
+.dark { color-scheme: dark; }
