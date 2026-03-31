@@ -1,16 +1,16 @@
 import React, { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { Plus, AlertTriangle, CheckCircle, Clock } from "lucide-react";
+import { Plus, AlertTriangle, CheckCircle, Clock, RefreshCw } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardContent, Badge, Button } from "@/components/ui";
 import { useHistoryStore } from "@/stores/historyStore";
 
 export default function Dashboard() {
   const navigate = useNavigate();
-  const { issues, loadIssues, isLoading } = useHistoryStore();
+  const { issues, loadIssues, isLoading, error } = useHistoryStore();
 
   useEffect(() => {
     loadIssues();
-  }, [loadIssues]);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const openCount = issues.filter((i) => i.status === "open" || i.status === "triaging").length;
   const resolvedThisWeek = issues.filter((i) => {
@@ -25,6 +25,7 @@ export default function Dashboard() {
   ).length;
 
   const recentIssues = issues.slice(0, 10);
+  const statValue = (n: number) => (isLoading ? "—" : String(n));
 
   return (
     <div className="p-6 space-y-6">
@@ -36,11 +37,23 @@ export default function Dashboard() {
             IT Triage & Root Cause Analysis
           </p>
         </div>
-        <Button onClick={() => navigate("/new-issue")}>
-          <Plus className="w-4 h-4 mr-2" />
-          New Issue
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={() => loadIssues()} disabled={isLoading}>
+            <RefreshCw className={`w-4 h-4 mr-2 ${isLoading ? "animate-spin" : ""}`} />
+            Refresh
+          </Button>
+          <Button onClick={() => navigate("/new-issue")}>
+            <Plus className="w-4 h-4 mr-2" />
+            New Issue
+          </Button>
+        </div>
       </div>
+
+      {error && (
+        <div className="rounded-md border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+          Failed to load issues: {error}
+        </div>
+      )}
 
       {/* Stat cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -50,7 +63,7 @@ export default function Dashboard() {
             <Clock className="w-4 h-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{openCount}</div>
+            <div className="text-2xl font-bold">{statValue(openCount)}</div>
             <p className="text-xs text-muted-foreground">Currently active</p>
           </CardContent>
         </Card>
@@ -60,7 +73,7 @@ export default function Dashboard() {
             <CheckCircle className="w-4 h-4 text-green-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{resolvedThisWeek}</div>
+            <div className="text-2xl font-bold">{statValue(resolvedThisWeek)}</div>
             <p className="text-xs text-muted-foreground">Last 7 days</p>
           </CardContent>
         </Card>
@@ -70,7 +83,7 @@ export default function Dashboard() {
             <AlertTriangle className="w-4 h-4 text-destructive" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{criticalCount}</div>
+            <div className="text-2xl font-bold">{statValue(criticalCount)}</div>
             <p className="text-xs text-muted-foreground">Require immediate attention</p>
           </CardContent>
         </Card>

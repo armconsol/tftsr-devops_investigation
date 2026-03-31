@@ -34,15 +34,26 @@ describe("History Store", () => {
     expect(useHistoryStore.getState().isLoading).toBe(false);
   });
 
-  it("loadIssues sets error on failure without clearing existing issues", async () => {
-    const existing = [makeIssue()];
-    useHistoryStore.setState({ issues: existing });
+  it("loadIssues sets error on failure and clears isLoading", async () => {
     mockInvoke.mockRejectedValueOnce(new Error("DB locked"));
 
     await useHistoryStore.getState().loadIssues();
 
     expect(useHistoryStore.getState().error).toContain("DB locked");
     expect(useHistoryStore.getState().isLoading).toBe(false);
+  });
+
+  it("isLoading is true while fetching (stat cards must show — not 0)", async () => {
+    let resolve!: (v: unknown) => void;
+    mockInvoke.mockReturnValueOnce(new Promise((r) => (resolve = r)));
+
+    const p = useHistoryStore.getState().loadIssues();
+    expect(useHistoryStore.getState().isLoading).toBe(true);
+
+    resolve([makeIssue()]);
+    await p;
+    expect(useHistoryStore.getState().isLoading).toBe(false);
+    expect(useHistoryStore.getState().issues).toHaveLength(1);
   });
 
   it("open issue count includes status=open and status=triaging", () => {
