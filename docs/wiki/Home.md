@@ -12,6 +12,7 @@
 | [Development Setup](wiki/Development-Setup) | Prerequisites, commands, environment |
 | [Database](wiki/Database) | Schema, migrations, encryption |
 | [AI Providers](wiki/AI-Providers) | Supported providers and configuration |
+| [LiteLLM + Bedrock Setup](wiki/LiteLLM-Bedrock-Setup) | AWS Bedrock integration via LiteLLM proxy |
 | [PII Detection](wiki/PII-Detection) | Patterns, redaction flow, security |
 | [IPC Commands](wiki/IPC-Commands) | Full list of Tauri backend commands |
 | [CI/CD Pipeline](wiki/CICD-Pipeline) | Gitea Actions setup, multi-platform builds, act_runner config |
@@ -23,7 +24,7 @@
 
 - **5-Whys AI Triage** — Interactive guided root cause analysis via multi-turn AI chat
 - **PII Auto-Redaction** — Detects and redacts sensitive data before any AI send
-- **Multi-Provider AI** — OpenAI, Anthropic Claude, Google Gemini, Mistral, local Ollama (fully offline)
+- **Multi-Provider AI** — OpenAI, Anthropic Claude, Google Gemini, Mistral, AWS Bedrock (via LiteLLM), local Ollama (fully offline)
 - **SQLCipher AES-256** — All issue history encrypted at rest
 - **RCA + Post-Mortem Generation** — Auto-populated Markdown templates, exportable as MD/PDF
 - **Ollama Management** — Hardware detection, model recommendations, in-app model management

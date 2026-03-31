@@ -129,6 +129,7 @@ Launch the app and go to **Settings → AI Providers** to add a provider:
 | Mistral | `https://api.mistral.ai/v1` | Requires API key |
 | Ollama (local) | `http://localhost:11434` | No key needed — fully offline |
 | Azure OpenAI | `https://<resource>.openai.azure.com/openai/deployments/<deployment>` | Requires API key |
+| **AWS Bedrock (via LiteLLM)** | `http://localhost:8000/v1` | See [LiteLLM + AWS Bedrock](#litellm--aws-bedrock-setup) below |
 
 For offline use, install [Ollama](https://ollama.com) and pull a model:
 ```bash
@@ -137,6 +138,41 @@ ollama pull llama3.1:8b   # Better quality (≥16 GB RAM)
 ```
 
 Or use **Settings → Ollama** to pull models directly from within the app.
+
+### LiteLLM + AWS Bedrock Setup
+
+To use Claude via AWS Bedrock (ideal for enterprise environments with existing AWS contracts):
+
+1. **Install LiteLLM:**
+   ```bash
+   pip install litellm[proxy]
+   ```
+
+2. **Create config file** at `~/.litellm/config.yaml`:
+   ```yaml
+   model_list:
+     - model_name: bedrock-claude
+       litellm_params:
+         model: bedrock/us.anthropic.claude-sonnet-4-6
+         aws_region_name: us-east-1
+         # Optionally specify aws_profile_name if not using default
+
+   general_settings:
+     master_key: sk-your-secure-key  # Any value for API auth
+   ```
+
+3. **Start LiteLLM proxy:**
+   ```bash
+   nohup litellm --config ~/.litellm/config.yaml --port 8000 > ~/.litellm/litellm.log 2>&1 &
+   ```
+
+4. **Configure in TFTSR:**
+   - Provider: **OpenAI** (OpenAI-compatible)
+   - Base URL: `http://localhost:8000/v1`
+   - API Key: `sk-your-secure-key` (from config)
+   - Model: `bedrock-claude`
+
+For detailed setup including multiple AWS accounts and Claude Code integration, see the [LiteLLM + Bedrock wiki page](https://gogs.tftsr.com/sarman/tftsr-devops_investigation/wiki/LiteLLM-Bedrock-Setup).
 
 ---
 

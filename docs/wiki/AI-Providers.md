@@ -19,7 +19,7 @@ pub trait Provider {
 
 ### 1. OpenAI-Compatible
 
-Covers: OpenAI, Azure OpenAI, LM Studio, vLLM, and any OpenAI-API-compatible endpoint.
+Covers: OpenAI, Azure OpenAI, LM Studio, vLLM, **LiteLLM (AWS Bedrock)**, and any OpenAI-API-compatible endpoint.
 
 | Field | Value |
 |-------|-------|
@@ -30,7 +30,9 @@ Covers: OpenAI, Azure OpenAI, LM Studio, vLLM, and any OpenAI-API-compatible end
 
 **Models:** `gpt-4o`, `gpt-4o-mini`, `gpt-4-turbo`
 
-**Custom endpoint:** Set `config.base_url` to any OpenAI-compatible API (e.g., LM Studio at `http://localhost:1234/v1`).
+**Custom endpoint:** Set `config.base_url` to any OpenAI-compatible API:
+- LM Studio: `http://localhost:1234/v1`
+- **LiteLLM (AWS Bedrock):** `http://localhost:8000/v1` — See [LiteLLM + Bedrock Setup](LiteLLM-Bedrock-Setup) for full configuration guide
 
 ---
 
