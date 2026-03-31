@@ -9,6 +9,11 @@ import {
   Server,
   HardDrive,
   BarChart3,
+  Phone,
+  Lock,
+  PhoneCall,
+  Code,
+  Workflow,
 } from "lucide-react";
 import {
   Card,
@@ -35,6 +40,11 @@ const iconMap: Record<string, React.ElementType> = {
   Server,
   HardDrive,
   BarChart3,
+  Phone,
+  Lock,
+  PhoneCall,
+  Code,
+  Workflow,
 };
 
 export default function NewIssue() {
