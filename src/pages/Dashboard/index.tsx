@@ -1,8 +1,9 @@
 import React, { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { Plus, AlertTriangle, CheckCircle, Clock, RefreshCw } from "lucide-react";
+import { Plus, AlertTriangle, CheckCircle, Clock, RefreshCw, X } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardContent, Badge, Button } from "@/components/ui";
 import { useHistoryStore } from "@/stores/historyStore";
+import { updateIssueCmd } from "@/lib/tauriCommands";
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -132,6 +133,20 @@ export default function Dashboard() {
                     <Badge variant={statusVariant(issue.status)}>
                       {issue.status}
                     </Badge>
+                    {issue.status !== "resolved" && (
+                      <button
+                        title="Close issue"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          updateIssueCmd(issue.id, { status: "resolved" }).then(() =>
+                            loadIssues()
+                          );
+                        }}
+                        className="p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
                   </div>
                 </div>
               ))}

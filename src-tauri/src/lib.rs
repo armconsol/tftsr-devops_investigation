@@ -60,6 +60,7 @@ pub fn run() {
             commands::db::delete_issue,
             commands::db::list_issues,
             commands::db::search_issues,
+            commands::db::get_issue_messages,
             commands::db::add_five_why,
             commands::db::update_five_why,
             commands::db::add_timeline_event,

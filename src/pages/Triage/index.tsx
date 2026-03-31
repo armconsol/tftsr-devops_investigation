@@ -7,8 +7,31 @@ import { ChatWindow } from "@/components/ChatWindow";
 import { TriageProgress } from "@/components/TriageProgress";
 import { useSessionStore } from "@/stores/sessionStore";
 import { useSettingsStore } from "@/stores/settingsStore";
-import { chatMessageCmd, getIssueCmd, uploadLogFileCmd } from "@/lib/tauriCommands";
+import {
+  chatMessageCmd,
+  getIssueCmd,
+  getIssueMessagesCmd,
+  uploadLogFileCmd,
+  updateIssueCmd,
+  addFiveWhyCmd,
+} from "@/lib/tauriCommands";
 import type { TriageMessage } from "@/lib/tauriCommands";
+
+const CLOSE_PATTERNS = [
+  "close this issue",
+  "please close",
+  "mark as resolved",
+  "mark resolved",
+  "issue is fixed",
+  "issue is resolved",
+  "resolve this",
+  "this is resolved",
+];
+
+function isCloseIntent(message: string): boolean {
+  const lower = message.toLowerCase();
+  return CLOSE_PATTERNS.some((p) => lower.includes(p));
+}
 
 type PendingFile = { name: string; content: string | null };
 
@@ -18,6 +41,8 @@ export default function Triage() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([]);
+  // Track the last user message so we can save it as a resolution step when why level advances
+  const lastUserMsgRef = useRef<string>("");
   const initialized = useRef(false);
 
   const { currentIssue, messages, currentWhyLevel, startSession, addMessage, setWhyLevel } =
@@ -28,20 +53,32 @@ export default function Triage() {
     if (!id || initialized.current) return;
     initialized.current = true;
 
-    getIssueCmd(id)
-      .then((detail) => {
+    Promise.all([getIssueCmd(id), getIssueMessagesCmd(id)])
+      .then(([detail, pastMessages]) => {
         startSession(detail.issue);
 
-        if (detail.resolution_steps.length === 0) {
-          const welcome: TriageMessage = {
+        if (pastMessages.length > 0) {
+          // Restore conversation history from DB
+          pastMessages.forEach((m, i) => {
+            addMessage({
+              id: `hist-${i}`,
+              issue_id: id,
+              role: m.role,
+              content: m.content,
+              why_level: 0,
+              created_at: Date.now() - (pastMessages.length - i) * 1000,
+            });
+          });
+        } else if (detail.resolution_steps.length === 0) {
+          // Fresh issue — show welcome prompt
+          addMessage({
             id: "welcome",
             issue_id: id,
             role: "assistant",
             content: `I'll guide you through a 5-Whys root cause analysis for: **"${detail.issue.title}"**\n\nDomain: **${detail.issue.category || "General"}**\n\nDescribe the symptoms you're observing — error messages, affected services, and when the issue started.`,
             why_level: 0,
             created_at: Date.now(),
-          };
-          addMessage(welcome);
+          });
         }
       })
       .catch((e) => setError(String(e)));
@@ -78,6 +115,18 @@ export default function Triage() {
 
   const handleSend = async (message: string) => {
     if (!id || !currentIssue) return;
+
+    // Close intent: mark resolved and return to dashboard
+    if (isCloseIntent(message) && pendingFiles.length === 0) {
+      try {
+        await updateIssueCmd(id, { status: "resolved" });
+        navigate("/");
+      } catch (e) {
+        setError(String(e));
+      }
+      return;
+    }
+
     const provider = getActiveProvider();
     if (!provider) {
       setError("No AI provider configured. Go to Settings > AI Providers.");
@@ -109,6 +158,7 @@ export default function Triage() {
       why_level: currentWhyLevel,
       created_at: Date.now(),
     };
+    lastUserMsgRef.current = message;
     addMessage(userMsg);
     setPendingFiles([]);
 
@@ -125,11 +175,24 @@ export default function Triage() {
       addMessage(assistantMsg);
 
       const lower = response.content.toLowerCase();
-      if (lower.includes("why 2") || (currentWhyLevel === 1 && lower.includes("why is that"))) setWhyLevel(2);
-      else if (lower.includes("why 3")) setWhyLevel(3);
-      else if (lower.includes("why 4")) setWhyLevel(4);
-      else if (lower.includes("why 5")) setWhyLevel(5);
-      if (lower.includes("root cause") && (lower.includes("identified") || lower.includes("the root cause is"))) setWhyLevel(6);
+      let nextLevel = currentWhyLevel;
+      if (lower.includes("why 2") || (currentWhyLevel === 1 && lower.includes("why is that"))) nextLevel = 2;
+      else if (lower.includes("why 3")) nextLevel = 3;
+      else if (lower.includes("why 4")) nextLevel = 4;
+      else if (lower.includes("why 5")) nextLevel = 5;
+      if (lower.includes("root cause") && (lower.includes("identified") || lower.includes("the root cause is"))) nextLevel = 6;
+
+      // Auto-save the completed why step as a resolution step
+      if (nextLevel > currentWhyLevel && currentWhyLevel >= 1 && currentWhyLevel <= 5) {
+        addFiveWhyCmd(
+          id,
+          currentWhyLevel,
+          `Why ${currentWhyLevel}: ${lastUserMsgRef.current}`,
+          response.content.slice(0, 500),
+          ""
+        ).catch(() => {}); // non-blocking, best-effort
+      }
+      if (nextLevel !== currentWhyLevel) setWhyLevel(nextLevel);
     } catch (e) {
       setError(String(e));
     } finally {

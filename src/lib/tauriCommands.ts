@@ -285,7 +285,7 @@ export const listIssuesCmd = (query: IssueListQuery) =>
 export const updateIssueCmd = (
   issueId: string,
   updates: { title?: string; status?: string; severity?: string; description?: string; domain?: string }
-) => invoke<IssueDetail>("update_issue", { issueId, ...updates });
+) => invoke<Issue>("update_issue", { issueId, updates });
 
 export const deleteIssueCmd = (issueId: string) =>
   invoke<void>("delete_issue", { issueId });
@@ -293,8 +293,25 @@ export const deleteIssueCmd = (issueId: string) =>
 export const searchIssuesCmd = (query: string) =>
   invoke<IssueSummary[]>("search_issues", { query });
 
-export const addFiveWhyCmd = (issueId: string, whyNumber: number, question: string, answer?: string) =>
-  invoke<FiveWhyEntry>("add_five_why", { issueId, whyNumber, question, answer });
+export interface IssueMessage {
+  id: string;
+  conversation_id: string;
+  role: string;
+  content: string;
+  token_count: number;
+  created_at: string;
+}
+
+export const getIssueMessagesCmd = (issueId: string) =>
+  invoke<IssueMessage[]>("get_issue_messages", { issueId });
+
+export const addFiveWhyCmd = (
+  issueId: string,
+  stepOrder: number,
+  whyQuestion: string,
+  answer: string,
+  evidence: string
+) => invoke<ResolutionStep>("add_five_why", { issueId, stepOrder, whyQuestion, answer, evidence });
 
 export const updateFiveWhyCmd = (entryId: string, answer: string) =>
   invoke<void>("update_five_why", { entryId, answer });

@@ -1,7 +1,7 @@
 use tauri::State;
 
 use crate::db::models::{
-    AiConversation, Issue, IssueDetail, IssueFilter, IssueSummary, IssueUpdate, LogFile,
+    AiConversation, AiMessage, Issue, IssueDetail, IssueFilter, IssueSummary, IssueUpdate, LogFile,
     ResolutionStep,
 };
 use crate::state::AppState;
@@ -359,6 +359,38 @@ pub async fn search_issues(
         ..Default::default()
     };
     list_issues(filter, state).await
+}
+
+#[tauri::command]
+pub async fn get_issue_messages(
+    issue_id: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<AiMessage>, String> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+    let mut stmt = db
+        .prepare(
+            "SELECT am.id, am.conversation_id, am.role, am.content, am.token_count, am.created_at \
+             FROM ai_messages am \
+             JOIN ai_conversations ac ON ac.id = am.conversation_id \
+             WHERE ac.issue_id = ?1 \
+             ORDER BY am.created_at ASC",
+        )
+        .map_err(|e| e.to_string())?;
+    let messages = stmt
+        .query_map([&issue_id], |row| {
+            Ok(AiMessage {
+                id: row.get(0)?,
+                conversation_id: row.get(1)?,
+                role: row.get(2)?,
+                content: row.get(3)?,
+                token_count: row.get(4)?,
+                created_at: row.get(5)?,
+            })
+        })
+        .map_err(|e| e.to_string())?
+        .filter_map(|r| r.ok())
+        .collect();
+    Ok(messages)
 }
 
 #[tauri::command]
