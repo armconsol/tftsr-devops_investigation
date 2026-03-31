@@ -260,6 +260,21 @@ pub async fn chat_message(
 }
 
 #[tauri::command]
+pub async fn test_provider_connection(
+    provider_config: ProviderConfig,
+) -> Result<ChatResponse, String> {
+    let provider = create_provider(&provider_config);
+    let messages = vec![Message {
+        role: "user".into(),
+        content: "Reply with exactly: TFTSR connection test successful.".into(),
+    }];
+    provider
+        .chat(messages, &provider_config)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub async fn list_providers() -> Result<Vec<ProviderInfo>, String> {
     Ok(vec![
         ProviderInfo {

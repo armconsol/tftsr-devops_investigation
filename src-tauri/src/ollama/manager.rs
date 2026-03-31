@@ -57,7 +57,7 @@ pub async fn pull_model(app_handle: tauri::AppHandle, model_name: &str) -> anyho
                             "status": status,
                             "total": total,
                             "completed": completed,
-                            "percent": percent,
+                            "progress": percent,
                         }),
                     );
                 }

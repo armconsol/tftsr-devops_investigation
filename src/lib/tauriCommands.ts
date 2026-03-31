@@ -265,6 +265,9 @@ export const applyRedactionsCmd = (logFileId: string, approvedSpanIds: string[])
 
 // ─── Issue CRUD ───────────────────────────────────────────────────────────────
 
+export const testProviderConnectionCmd = (providerConfig: ProviderConfig) =>
+  invoke<ChatResponse>("test_provider_connection", { providerConfig });
+
 export const createIssueCmd = (newIssue: NewIssue) =>
   invoke<Issue>("create_issue", {
     title: newIssue.title,

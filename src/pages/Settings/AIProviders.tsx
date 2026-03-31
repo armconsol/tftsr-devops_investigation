@@ -17,7 +17,7 @@ import {
   Separator,
 } from "@/components/ui";
 import { useSettingsStore } from "@/stores/settingsStore";
-import { chatMessageCmd, type ProviderConfig, type Message } from "@/lib/tauriCommands";
+import { testProviderConnectionCmd, type ProviderConfig } from "@/lib/tauriCommands";
 
 const emptyProvider: ProviderConfig = {
   name: "",
@@ -82,10 +82,7 @@ export default function AIProviders() {
     setIsTesting(true);
     setTestResult(null);
     try {
-      const testMessages: Message[] = [
-        { role: "user", content: "Reply with exactly: TFTSR connection test successful." },
-      ];
-      const response = await chatMessageCmd("test-connection", "Test connection", form);
+      const response = await testProviderConnectionCmd(form);
       setTestResult({ success: true, message: `OK: ${response.content.slice(0, 100)}` });
     } catch (err) {
       setTestResult({ success: false, message: String(err) });

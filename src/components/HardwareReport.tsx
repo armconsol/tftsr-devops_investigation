@@ -82,7 +82,7 @@ export function HardwareReport({ hardware, recommendations }: HardwareReportProp
               >
                 <div className="flex items-center gap-3">
                   {rec.recommended && (
-                    <Badge className="bg-green-600 text-white">RECOMMENDED</Badge>
+                    <Badge variant="success">RECOMMENDED</Badge>
                   )}
                   <div>
                     <p className="text-sm font-medium">{rec.name}</p>

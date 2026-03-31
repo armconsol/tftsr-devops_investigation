@@ -70,6 +70,7 @@ pub fn run() {
             // AI
             commands::ai::analyze_logs,
             commands::ai::chat_message,
+            commands::ai::test_provider_connection,
             commands::ai::list_providers,
             // Docs
             commands::docs::generate_rca,
