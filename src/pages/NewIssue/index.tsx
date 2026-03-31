@@ -14,6 +14,9 @@ import {
   PhoneCall,
   Code,
   Workflow,
+  CircuitBoard,
+  ServerCog,
+  Users,
 } from "lucide-react";
 import {
   Card,
@@ -45,6 +48,9 @@ const iconMap: Record<string, React.ElementType> = {
   PhoneCall,
   Code,
   Workflow,
+  CircuitBoard,
+  ServerCog,
+  Users,
 };
 
 export default function NewIssue() {
