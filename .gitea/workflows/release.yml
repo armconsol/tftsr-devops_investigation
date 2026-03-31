@@ -158,13 +158,21 @@ jobs:
           git checkout FETCH_HEAD
       - name: Install dependencies
         run: |
+          # Enable arm64 multiarch so apt can install aarch64 libraries for cross-compilation
+          dpkg --add-architecture arm64
           apt-get update -qq && apt-get install -y -qq \
-            libwebkit2gtk-4.1-dev libssl-dev libgtk-3-dev \
-            libayatana-appindicator3-dev librsvg2-dev patchelf \
+            gcc-aarch64-linux-gnu \
+            libwebkit2gtk-4.1-dev:arm64 libssl-dev:arm64 libgtk-3-dev:arm64 \
+            libayatana-appindicator3-dev:arm64 librsvg2-dev:arm64 patchelf \
             pkg-config curl perl
           curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
           apt-get install -y nodejs
       - name: Build
+        env:
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
+          PKG_CONFIG_SYSROOT_DIR: /
+          PKG_CONFIG_LIBDIR: /usr/lib/aarch64-linux-gnu/pkgconfig:/usr/share/pkgconfig
+          PKG_CONFIG_ALLOW_CROSS: "1"
         run: |
           npm ci --legacy-peer-deps
           rustup target add aarch64-unknown-linux-gnu
