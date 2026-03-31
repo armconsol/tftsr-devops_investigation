@@ -10,7 +10,12 @@ pub async fn check_ollama() -> anyhow::Result<OllamaStatus> {
 
     let which_result = std::process::Command::new(which_cmd).arg("ollama").output();
 
-    let installed = which_result.map(|o| o.status.success()).unwrap_or(false);
+    // Check common install paths explicitly — Tauri's process PATH may omit /usr/local/bin
+    let in_common_path = ["/usr/local/bin/ollama", "/opt/homebrew/bin/ollama", "/usr/bin/ollama"]
+        .iter()
+        .any(|p| std::path::Path::new(p).exists());
+
+    let installed = which_result.map(|o| o.status.success()).unwrap_or(false) || in_common_path;
 
     let version = if installed {
         std::process::Command::new("ollama")
@@ -31,6 +36,9 @@ pub async fn check_ollama() -> anyhow::Result<OllamaStatus> {
         .await
         .map(|r| r.status().is_success())
         .unwrap_or(false);
+
+    // If the API is responding, Ollama is definitely installed even if binary wasn't found in PATH
+    let installed = installed || running;
 
     Ok(OllamaStatus {
         installed,

@@ -195,9 +195,18 @@ export default function AIProviders() {
                 <Label>Type</Label>
                 <Select
                   value={form.provider_type}
-                  onValueChange={(v) =>
-                    setForm({ ...form, provider_type: v as ProviderConfig["provider_type"] })
-                  }
+                  onValueChange={(v) => {
+                    const type = v as ProviderConfig["provider_type"];
+                    const defaults: Partial<ProviderConfig> =
+                      type === "ollama"
+                        ? { api_url: "http://localhost:11434", api_key: "", model: "llama3.2:3b" }
+                        : type === "openai"
+                        ? { api_url: "https://api.openai.com/v1" }
+                        : type === "anthropic"
+                        ? { api_url: "https://api.anthropic.com" }
+                        : {};
+                    setForm({ ...form, provider_type: type, ...defaults });
+                  }}
                 >
                   <SelectTrigger>
                     <SelectValue />

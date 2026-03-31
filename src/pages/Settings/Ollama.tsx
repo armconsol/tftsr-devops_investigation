@@ -23,15 +23,18 @@ import {
   pullOllamaModelCmd,
   deleteOllamaModelCmd,
   listOllamaModelsCmd,
+  getOllamaInstallGuideCmd,
   type OllamaStatus,
   type HardwareInfo,
   type ModelRecommendation,
   type OllamaModel,
+  type InstallGuide,
 } from "@/lib/tauriCommands";
 import { listen } from "@tauri-apps/api/event";
 
 export default function Ollama() {
   const [status, setStatus] = useState<OllamaStatus | null>(null);
+  const [installGuide, setInstallGuide] = useState<InstallGuide | null>(null);
   const [models, setModels] = useState<OllamaModel[]>([]);
   const [hardware, setHardware] = useState<HardwareInfo | null>(null);
   const [recommendations, setRecommendations] = useState<ModelRecommendation[]>([]);
@@ -45,13 +48,18 @@ export default function Ollama() {
   const loadData = async () => {
     setIsLoading(true);
     try {
-      const [ollamaStatus, hw, recs, modelList] = await Promise.all([
+      const platform = navigator.platform.toLowerCase().includes("mac") ? "macos"
+        : navigator.platform.toLowerCase().includes("win") ? "windows" : "linux";
+
+      const [ollamaStatus, hw, recs, modelList, guide] = await Promise.all([
         checkOllamaInstalledCmd(),
         detectHardwareCmd(),
         recommendModelsCmd(),
         listOllamaModelsCmd().catch(() => [] as OllamaModel[]),
+        getOllamaInstallGuideCmd(platform),
       ]);
       setStatus(ollamaStatus);
+      setInstallGuide(guide);
       setHardware(hw);
       setRecommendations(recs);
       setModels(modelList);
@@ -156,6 +164,32 @@ export default function Ollama() {
           )}
         </CardContent>
       </Card>
+
+      {/* Install Instructions — shown when Ollama is not detected */}
+      {status && !status.installed && installGuide && (
+        <Card className="border-yellow-500/50">
+          <CardHeader>
+            <CardTitle className="text-lg flex items-center gap-2">
+              <Download className="w-5 h-5 text-yellow-500" />
+              Ollama Not Detected — Installation Required
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <ol className="space-y-2 list-decimal list-inside">
+              {installGuide.steps.map((step, i) => (
+                <li key={i} className="text-sm text-muted-foreground">{step}</li>
+              ))}
+            </ol>
+            <Button
+              variant="outline"
+              onClick={() => window.open(installGuide.url, "_blank")}
+            >
+              <Download className="w-4 h-4 mr-2" />
+              Download Ollama for {installGuide.platform}
+            </Button>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Model List */}
       <Card>
