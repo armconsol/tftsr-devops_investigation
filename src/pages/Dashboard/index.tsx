@@ -108,7 +108,7 @@ export default function Dashboard() {
                     <div>
                       <p className="text-sm font-medium">{issue.title}</p>
                       <p className="text-xs text-muted-foreground">
-                        {issue.domain} | {new Date(issue.created_at).toLocaleDateString()}
+                        {issue.category} | {new Date(issue.created_at).toLocaleDateString()}
                       </p>
                     </div>
                   </div>
