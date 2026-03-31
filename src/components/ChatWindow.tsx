@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
-import { Send, Bot, User } from "lucide-react";
+import { Send, Bot, User, Paperclip, X } from "lucide-react";
 import type { TriageMessage } from "@/lib/tauriCommands";
 
 interface ChatWindowProps {
@@ -7,9 +7,12 @@ interface ChatWindowProps {
   onSend: (message: string) => Promise<void>;
   isLoading?: boolean;
   placeholder?: string;
+  pendingFiles?: { name: string }[];
+  onAttach?: () => void;
+  onRemoveFile?: (index: number) => void;
 }
 
-export function ChatWindow({ messages, onSend, isLoading, placeholder }: ChatWindowProps) {
+export function ChatWindow({ messages, onSend, isLoading, placeholder, pendingFiles, onAttach, onRemoveFile }: ChatWindowProps) {
   const [input, setInput] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -76,20 +79,48 @@ export function ChatWindow({ messages, onSend, isLoading, placeholder }: ChatWin
         )}
         <div ref={bottomRef} />
       </div>
-      <div className="border-t p-4">
+      <div className="border-t p-4 space-y-2">
+        {pendingFiles && pendingFiles.length > 0 && (
+          <div className="flex flex-wrap gap-1">
+            {pendingFiles.map((f, i) => (
+              <span
+                key={i}
+                className="inline-flex items-center gap-1 rounded-md bg-secondary px-2 py-1 text-xs text-secondary-foreground"
+              >
+                <Paperclip className="w-3 h-3" />
+                {f.name}
+                {onRemoveFile && (
+                  <button onClick={() => onRemoveFile(i)} className="ml-1 hover:text-destructive">
+                    <X className="w-3 h-3" />
+                  </button>
+                )}
+              </span>
+            ))}
+          </div>
+        )}
         <div className="flex gap-2">
+          {onAttach && (
+            <button
+              onClick={onAttach}
+              disabled={isLoading}
+              title="Attach log file or screenshot"
+              className="px-3 py-2 rounded-md border border-input bg-background hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <Paperclip className="w-4 h-4 text-muted-foreground" />
+            </button>
+          )}
           <textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder={placeholder ?? "Type your response... (Enter to send, Shift+Enter for new line)"}
             rows={2}
-            className="flex-1 resize-none rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+            className="flex-1 resize-none rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
             disabled={isLoading}
           />
           <button
             onClick={handleSend}
-            disabled={!input.trim() || isLoading}
+            disabled={(!input.trim() && (!pendingFiles || pendingFiles.length === 0)) || isLoading}
             className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Send className="w-4 h-4" />

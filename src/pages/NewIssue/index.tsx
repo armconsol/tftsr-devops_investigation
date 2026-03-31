@@ -53,7 +53,7 @@ export default function NewIssue() {
     try {
       const issue = await createIssueCmd({ title: title.trim(), domain: selectedDomain, severity });
       startSession(issue);
-      navigate(`/issue/${issue.id}/logs`);
+      navigate(`/issue/${issue.id}/triage`);
     } catch (err) {
       setError(String(err));
       setIsSubmitting(false);
