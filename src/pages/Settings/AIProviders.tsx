@@ -136,7 +136,7 @@ export default function AIProviders() {
                   <span className="text-sm font-medium">{provider.name}</span>
                   <Badge variant="secondary">{provider.provider_type}</Badge>
                   {active_provider === provider.name && (
-                    <Badge className="bg-green-600 text-white">Active</Badge>
+                    <Badge variant="success">Active</Badge>
                   )}
                 </div>
                 <p className="text-xs text-muted-foreground">

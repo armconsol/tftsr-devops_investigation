@@ -5,6 +5,8 @@ use std::sync::{Arc, Mutex};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProviderConfig {
     pub name: String,
+    #[serde(default)]
+    pub provider_type: String,
     pub api_url: String,
     pub api_key: String,
     pub model: String,

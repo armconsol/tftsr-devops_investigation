@@ -15,7 +15,13 @@ pub trait Provider: Send + Sync {
 }
 
 pub fn create_provider(config: &ProviderConfig) -> Box<dyn Provider> {
-    match config.name.as_str() {
+    // Match on provider_type (the kind), falling back to name for legacy configs
+    let kind = if config.provider_type.is_empty() {
+        config.name.as_str()
+    } else {
+        config.provider_type.as_str()
+    };
+    match kind {
         "anthropic" => Box::new(crate::ai::anthropic::AnthropicProvider),
         "gemini" => Box::new(crate::ai::gemini::GeminiProvider),
         "mistral" => Box::new(crate::ai::mistral::MistralProvider),

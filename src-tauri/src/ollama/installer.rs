@@ -11,9 +11,13 @@ pub async fn check_ollama() -> anyhow::Result<OllamaStatus> {
     let which_result = std::process::Command::new(which_cmd).arg("ollama").output();
 
     // Check common install paths explicitly — Tauri's process PATH may omit /usr/local/bin
-    let in_common_path = ["/usr/local/bin/ollama", "/opt/homebrew/bin/ollama", "/usr/bin/ollama"]
-        .iter()
-        .any(|p| std::path::Path::new(p).exists());
+    let in_common_path = [
+        "/usr/local/bin/ollama",
+        "/opt/homebrew/bin/ollama",
+        "/usr/bin/ollama",
+    ]
+    .iter()
+    .any(|p| std::path::Path::new(p).exists());
 
     let installed = which_result.map(|o| o.status.success()).unwrap_or(false) || in_common_path;
 
