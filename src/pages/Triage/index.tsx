@@ -114,11 +114,13 @@ export default function Triage() {
   };
 
   const handleSend = async (message: string) => {
-    if (!id || !currentIssue) return;
+    if (!id) return;
 
-    // Close intent: mark resolved and return to dashboard
+    // Close intent: works regardless of whether issue is fully loaded in session.
+    // Save the user's reason as a resolution step so the Resolution page is never empty.
     if (isCloseIntent(message) && pendingFiles.length === 0) {
       try {
+        await addFiveWhyCmd(id, 1, "Resolution", message, "Self-resolved by user");
         await updateIssueCmd(id, { status: "resolved" });
         navigate("/");
       } catch (e) {
@@ -126,6 +128,8 @@ export default function Triage() {
       }
       return;
     }
+
+    if (!currentIssue) return;
 
     const provider = getActiveProvider();
     if (!provider) {

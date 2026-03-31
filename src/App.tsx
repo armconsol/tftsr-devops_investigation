@@ -1,4 +1,5 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
+import { getVersion } from "@tauri-apps/api/app";
 import { Routes, Route, NavLink, useLocation } from "react-router-dom";
 import {
   Home,
@@ -41,8 +42,13 @@ const settingsItems = [
 
 export default function App() {
   const [collapsed, setCollapsed] = useState(false);
+  const [appVersion, setAppVersion] = useState("");
   const theme = useSettingsStore((s) => s.theme);
   const location = useLocation();
+
+  useEffect(() => {
+    getVersion().then(setAppVersion).catch(() => {});
+  }, []);
 
   return (
     <div className={theme === "dark" ? "dark" : ""}>
@@ -113,7 +119,7 @@ export default function App() {
           {/* Version */}
           {!collapsed && (
             <div className="px-4 py-3 border-t text-xs text-muted-foreground">
-              v0.1.1
+              {appVersion ? `v${appVersion}` : ""}
             </div>
           )}
         </aside>
