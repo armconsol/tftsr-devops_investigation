@@ -280,7 +280,7 @@ export const getIssueCmd = (issueId: string) =>
   invoke<IssueDetail>("get_issue", { issueId });
 
 export const listIssuesCmd = (query: IssueListQuery) =>
-  invoke<IssueSummary[]>("list_issues", { query });
+  invoke<IssueSummary[]>("list_issues", { filter: query });
 
 export const updateIssueCmd = (
   issueId: string,
