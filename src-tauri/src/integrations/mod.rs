@@ -20,6 +20,7 @@ pub struct PublishResult {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TicketResult {
+    pub id: String,
     pub ticket_number: String,
     pub url: String,
 }
