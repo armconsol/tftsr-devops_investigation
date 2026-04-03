@@ -41,6 +41,7 @@ dirs = "5"
 aes-gcm = "0.10"
 rand = "0.8"
 lazy_static = "1.4"
+warp = "0.3"
 
 [dev-dependencies]
 tokio-test = "0.4"

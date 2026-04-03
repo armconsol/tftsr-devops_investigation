@@ -3,10 +3,16 @@ use crate::state::AppState;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use tauri::State;
+use tokio::sync::oneshot;
 
-// Global OAuth state storage (verifier per state key)
+// Global OAuth state storage (verifier + service per state key)
 lazy_static::lazy_static! {
-    static ref OAUTH_STATE: Arc<Mutex<HashMap<String, String>>> = Arc::new(Mutex::new(HashMap::new()));
+    static ref OAUTH_STATE: Arc<Mutex<HashMap<String, (String, String)>>> = Arc::new(Mutex::new(HashMap::new()));
+}
+
+// Global callback server shutdown channel
+lazy_static::lazy_static! {
+    static ref CALLBACK_SERVER_SHUTDOWN: Arc<Mutex<Option<oneshot::Sender<()>>>> = Arc::new(Mutex::new(None));
 }
 
 #[tauri::command]
@@ -68,24 +74,99 @@ pub struct OAuthInitResponse {
 }
 
 /// Initiate OAuth2 authorization flow for a service.
-/// Returns the authorization URL and a state key.
+/// Starts the callback server and returns the authorization URL.
 #[tauri::command]
 pub async fn initiate_oauth(
     service: String,
-    _state: State<'_, AppState>,
+    app_state: State<'_, AppState>,
 ) -> Result<OAuthInitResponse, String> {
+    // Start callback server if not already running
+    let server_already_running = {
+        let shutdown = CALLBACK_SERVER_SHUTDOWN.lock().map_err(|e| e.to_string())?;
+        shutdown.is_some()
+    };
+
+    if !server_already_running {
+        tracing::info!("Starting OAuth callback server");
+
+        let (mut callback_rx, shutdown_tx) =
+            crate::integrations::callback_server::start_callback_server(8765)
+                .await
+                .map_err(|e| format!("Failed to start callback server: {}", e))?;
+
+        // Store shutdown channel
+        {
+            let mut shutdown = CALLBACK_SERVER_SHUTDOWN.lock().map_err(|e| e.to_string())?;
+            *shutdown = Some(shutdown_tx);
+        }
+
+        // Clone the Arc fields from app_state for the spawned task
+        let db = app_state.db.clone();
+        let settings = app_state.settings.clone();
+        let app_data_dir = app_state.app_data_dir.clone();
+
+        tokio::spawn(async move {
+            let app_state_for_callback = AppState {
+                db,
+                settings,
+                app_data_dir,
+            };
+            while let Some(callback) = callback_rx.recv().await {
+                tracing::info!("Received OAuth callback for state: {}", callback.state);
+
+                // Retrieve service and verifier
+                let (service, verifier) = {
+                    let mut oauth_state = match OAUTH_STATE.lock() {
+                        Ok(state) => state,
+                        Err(e) => {
+                            tracing::error!("Failed to lock OAuth state: {}", e);
+                            continue;
+                        }
+                    };
+
+                    match oauth_state.remove(&callback.state) {
+                        Some((svc, ver)) => (svc, ver),
+                        None => {
+                            tracing::warn!("Unknown OAuth state: {}", callback.state);
+                            continue;
+                        }
+                    }
+                };
+
+                // Call handle_oauth_callback internally
+                let result = handle_oauth_callback_internal(
+                    service,
+                    callback.code,
+                    verifier,
+                    &app_state_for_callback,
+                )
+                .await;
+
+                match result {
+                    Ok(_) => tracing::info!("OAuth callback handled successfully"),
+                    Err(e) => tracing::error!("OAuth callback failed: {}", e),
+                }
+            }
+
+            tracing::info!("OAuth callback listener stopped");
+        });
+    }
+
     // Generate PKCE challenge
     let pkce = crate::integrations::auth::generate_pkce();
 
     // Generate state key for this OAuth session
     let state_key = uuid::Uuid::now_v7().to_string();
 
-    // Store verifier temporarily
+    // Store verifier and service name
     {
         let mut oauth_state = OAUTH_STATE
             .lock()
             .map_err(|e| format!("Failed to lock OAuth state: {}", e))?;
-        oauth_state.insert(state_key.clone(), pkce.code_verifier.clone());
+        oauth_state.insert(
+            state_key.clone(),
+            (service.clone(), pkce.code_verifier.clone()),
+        );
     }
 
     // Build authorization URL based on service
@@ -125,25 +206,13 @@ pub async fn initiate_oauth(
     })
 }
 
-/// Handle OAuth2 callback after user authorization.
-/// Exchanges authorization code for access token and stores it.
-#[tauri::command]
-pub async fn handle_oauth_callback(
+/// Internal function to handle OAuth callback (used by callback server).
+async fn handle_oauth_callback_internal(
     service: String,
     code: String,
-    state_key: String,
-    app_state: State<'_, AppState>,
+    verifier: String,
+    app_state: &AppState,
 ) -> Result<(), String> {
-    // Retrieve verifier from temporary state
-    let verifier = {
-        let mut oauth_state = OAUTH_STATE
-            .lock()
-            .map_err(|e| format!("Failed to lock OAuth state: {}", e))?;
-        oauth_state
-            .remove(&state_key)
-            .ok_or_else(|| "Invalid or expired OAuth state".to_string())?
-    };
-
     // Get token endpoint and client_id based on service
     let (token_endpoint, client_id, redirect_uri) = match service.as_str() {
         "confluence" => (
@@ -233,6 +302,29 @@ pub async fn handle_oauth_callback(
     Ok(())
 }
 
+/// Handle OAuth2 callback (Tauri command for external/manual calls).
+/// This is rarely used since callbacks are handled automatically by the callback server.
+#[tauri::command]
+pub async fn handle_oauth_callback(
+    service: String,
+    code: String,
+    state_key: String,
+    app_state: State<'_, AppState>,
+) -> Result<(), String> {
+    // Retrieve verifier from temporary state
+    let verifier = {
+        let mut oauth_state = OAUTH_STATE
+            .lock()
+            .map_err(|e| format!("Failed to lock OAuth state: {}", e))?;
+        oauth_state
+            .remove(&state_key)
+            .map(|(_svc, ver)| ver)
+            .ok_or_else(|| "Invalid or expired OAuth state".to_string())?
+    };
+
+    handle_oauth_callback_internal(service, code, verifier, app_state.inner()).await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -240,18 +332,19 @@ mod tests {
     #[test]
     fn test_oauth_state_storage() {
         let key = "test-key".to_string();
+        let service = "confluence".to_string();
         let verifier = "test-verifier".to_string();
 
         // Store
         {
             let mut state = OAUTH_STATE.lock().unwrap();
-            state.insert(key.clone(), verifier.clone());
+            state.insert(key.clone(), (service.clone(), verifier.clone()));
         }
 
         // Retrieve
         {
             let state = OAUTH_STATE.lock().unwrap();
-            assert_eq!(state.get(&key), Some(&verifier));
+            assert_eq!(state.get(&key), Some(&(service.clone(), verifier.clone())));
         }
 
         // Remove
@@ -274,8 +367,14 @@ mod tests {
 
         {
             let mut state = OAUTH_STATE.lock().unwrap();
-            state.insert(key1.clone(), "verifier1".to_string());
-            state.insert(key2.clone(), "verifier2".to_string());
+            state.insert(
+                key1.clone(),
+                ("confluence".to_string(), "verifier1".to_string()),
+            );
+            state.insert(
+                key2.clone(),
+                ("azuredevops".to_string(), "verifier2".to_string()),
+            );
         }
 
         {
@@ -286,6 +385,10 @@ mod tests {
         let state = OAUTH_STATE.lock().unwrap();
         assert!(!state.contains_key(&key1));
         assert!(state.contains_key(&key2));
+        assert_eq!(
+            state.get(&key2),
+            Some(&("azuredevops".to_string(), "verifier2".to_string()))
+        );
     }
 
     #[test]

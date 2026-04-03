@@ -1,5 +1,6 @@
 pub mod auth;
 pub mod azuredevops;
+pub mod callback_server;
 pub mod confluence;
 pub mod servicenow;
 
