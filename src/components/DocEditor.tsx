@@ -53,16 +53,16 @@ export function DocEditor({ content, onChange, version, updatedAt, onExport }: D
           )}
           {onExport && (
             <div className="flex items-center gap-1">
-              <Button size="sm" variant="outline" onClick={() => onExport("md")}>
+              <Button size="sm" onClick={() => onExport("md")}>
                 <FileText className="w-3 h-3 mr-1" />
                 MD
               </Button>
-              <Button size="sm" variant="outline" onClick={() => onExport("pdf")}>
-                <Download className="w-3 h-3 mr-1 text-foreground" />
+              <Button size="sm" onClick={() => onExport("pdf")}>
+                <Download className="w-3 h-3 mr-1" />
                 PDF
               </Button>
-              <Button size="sm" variant="outline" onClick={() => onExport("docx")}>
-                <Download className="w-3 h-3 mr-1 text-foreground" />
+              <Button size="sm" onClick={() => onExport("docx")}>
+                <Download className="w-3 h-3 mr-1" />
                 DOCX
               </Button>
             </div>
