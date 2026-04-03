@@ -162,7 +162,7 @@ export default function NewIssue() {
               </Button>
               <Button
                 onClick={() => navigate("/")}
-                variant="secondary"
+                variant="ghost"
                 className="flex-1"
               >
                 Cancel

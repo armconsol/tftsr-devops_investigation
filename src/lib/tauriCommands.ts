@@ -360,3 +360,30 @@ export const updateSettingsCmd = (partialSettings: Partial<AppSettings>) =>
 
 export const getAuditLogCmd = (filter: AuditFilter) =>
   invoke<AuditEntry[]>("get_audit_log", { filter });
+
+// ─── OAuth & Integrations ─────────────────────────────────────────────────────
+
+export interface OAuthInitResponse {
+  auth_url: string;
+  state: string;
+}
+
+export interface ConnectionResult {
+  success: boolean;
+  message: string;
+}
+
+export const initiateOauthCmd = (service: string) =>
+  invoke<OAuthInitResponse>("initiate_oauth", { service });
+
+export const handleOauthCallbackCmd = (service: string, code: string, stateKey: string) =>
+  invoke<void>("handle_oauth_callback", { service, code, stateKey });
+
+export const testConfluenceConnectionCmd = (baseUrl: string, credentials: Record<string, unknown>) =>
+  invoke<ConnectionResult>("test_confluence_connection", { baseUrl, credentials });
+
+export const testServiceNowConnectionCmd = (instanceUrl: string, credentials: Record<string, unknown>) =>
+  invoke<ConnectionResult>("test_servicenow_connection", { instanceUrl, credentials });
+
+export const testAzureDevOpsConnectionCmd = (orgUrl: string, credentials: Record<string, unknown>) =>
+  invoke<ConnectionResult>("test_azuredevops_connection", { orgUrl, credentials });
