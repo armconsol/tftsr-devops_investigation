@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
+use tauri::{AppHandle, Listener, WebviewUrl, WebviewWindowBuilder, WebviewWindow};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExtractedCredentials {
@@ -52,8 +52,8 @@ pub async fn authenticate_with_webview(
     .map_err(|e| format!("Failed to create webview: {}", e))?;
 
     // Wait for user to complete login
-    // We'll detect this by checking if they reached a success page or dashboard
-    // For now, return a placeholder - actual implementation needs JS injection
+    // User will click "Complete Login" button in the UI after successful authentication
+    // This function just opens the window - extraction happens in extract_cookies_via_ipc
 
     Ok(ExtractedCredentials {
         cookies: vec![],
@@ -61,50 +61,121 @@ pub async fn authenticate_with_webview(
     })
 }
 
-/// Extract cookies from a webview after successful login.
-/// This uses Tauri's webview cookie API to get session cookies.
-pub async fn extract_cookies_from_webview(
-    webview_label: &str,
-    app_handle: &AppHandle,
-    _service: &str,
+/// Extract cookies from a webview using Tauri's IPC mechanism.
+/// This is the most reliable cross-platform approach.
+pub async fn extract_cookies_via_ipc<R: tauri::Runtime>(
+    webview_window: &WebviewWindow<R>,
+    app_handle: &AppHandle<R>,
 ) -> Result<Vec<Cookie>, String> {
-    let webview = app_handle
-        .get_webview_window(webview_label)
-        .ok_or_else(|| "Webview window not found".to_string())?;
+    // Inject JavaScript that will send cookies via IPC
+    // Note: We use window.__TAURI__ which is the Tauri 2.x API exposed to webviews
+    let cookie_extraction_script = r#"
+        (async function() {
+            try {
+                // Wait for Tauri API to be available
+                if (typeof window.__TAURI__ === 'undefined') {
+                    console.error('Tauri API not available');
+                    return;
+                }
 
-    // Get all cookies from the webview
-    // Note: Tauri 2.x provides cookie manager via webview
-    // We need to use eval_script to extract cookies via JavaScript
+                const cookieString = document.cookie;
+                if (!cookieString || cookieString.trim() === '') {
+                    await window.__TAURI__.event.emit('tftsr-cookies-extracted', { cookies: [] });
+                    return;
+                }
 
-    let cookie_script = r#"
-        (function() {
-            const cookies = document.cookie.split(';').map(c => c.trim());
-            const parsed = cookies.map(cookie => {
-                const [nameValue, ...attrs] = cookie.split(';');
-                const [name, value] = nameValue.split('=');
-                return {
-                    name: name.trim(),
-                    value: value?.trim() || '',
-                    domain: window.location.hostname,
-                    path: '/',
-                    secure: window.location.protocol === 'https:',
-                    http_only: false,
-                    expires: null
-                };
-            });
-            return JSON.stringify(parsed);
+                const cookies = cookieString.split(';').map(c => c.trim()).filter(c => c.length > 0);
+                const parsed = cookies.map(cookie => {
+                    const equalIndex = cookie.indexOf('=');
+                    if (equalIndex === -1) return null;
+
+                    const name = cookie.substring(0, equalIndex).trim();
+                    const value = cookie.substring(equalIndex + 1).trim();
+
+                    return {
+                        name: name,
+                        value: value,
+                        domain: window.location.hostname,
+                        path: '/',
+                        secure: window.location.protocol === 'https:',
+                        http_only: false,
+                        expires: null
+                    };
+                }).filter(c => c !== null);
+
+                // Use Tauri's event API to send cookies back to Rust
+                await window.__TAURI__.event.emit('tftsr-cookies-extracted', { cookies: parsed });
+                console.log('Cookies extracted and emitted:', parsed.length);
+            } catch (e) {
+                console.error('Cookie extraction failed:', e);
+                try {
+                    await window.__TAURI__.event.emit('tftsr-cookies-extracted', { cookies: [], error: e.message });
+                } catch (emitError) {
+                    console.error('Failed to emit error:', emitError);
+                }
+            }
         })();
     "#;
 
-    let _result = webview
-        .eval(cookie_script)
-        .map_err(|e| format!("Failed to extract cookies: {}", e))?;
+    // Set up event listener first
+    let (tx, mut rx) = tokio::sync::mpsc::channel::<Result<Vec<Cookie>, String>>(1);
 
-    // Parse the JSON result
-    // TODO: Actually parse the cookies from the eval result
-    // For now, return empty - needs proper implementation
+    // Listen for the custom event from the webview
+    let listen_id = app_handle.listen("tftsr-cookies-extracted", move |event| {
+        tracing::debug!("Received cookies-extracted event");
 
-    Ok(vec![])
+        let payload_str = event.payload();
+
+        // Parse the payload JSON
+        match serde_json::from_str::<serde_json::Value>(payload_str) {
+            Ok(payload) => {
+                if let Some(error_msg) = payload.get("error").and_then(|e| e.as_str()) {
+                    let _ = tx.try_send(Err(format!("JavaScript error: {}", error_msg)));
+                    return;
+                }
+
+                if let Some(cookies_value) = payload.get("cookies") {
+                    match serde_json::from_value::<Vec<Cookie>>(cookies_value.clone()) {
+                        Ok(cookies) => {
+                            tracing::info!("Parsed {} cookies from webview", cookies.len());
+                            let _ = tx.try_send(Ok(cookies));
+                        }
+                        Err(e) => {
+                            tracing::error!("Failed to parse cookies: {}", e);
+                            let _ = tx.try_send(Err(format!("Failed to parse cookies: {}", e)));
+                        }
+                    }
+                } else {
+                    let _ = tx.try_send(Err("No cookies field in payload".to_string()));
+                }
+            }
+            Err(e) => {
+                tracing::error!("Failed to parse event payload: {}", e);
+                let _ = tx.try_send(Err(format!("Failed to parse event payload: {}", e)));
+            }
+        }
+    });
+
+    // Inject the script into the webview
+    webview_window
+        .eval(cookie_extraction_script)
+        .map_err(|e| format!("Failed to inject cookie extraction script: {}", e))?;
+
+    tracing::info!("Cookie extraction script injected, waiting for response...");
+
+    // Wait for cookies with timeout
+    let result = tokio::time::timeout(tokio::time::Duration::from_secs(10), rx.recv())
+        .await
+        .map_err(|_| {
+            "Timeout waiting for cookies. Make sure you are logged in and on the correct page."
+                .to_string()
+        })?
+        .ok_or_else(|| "Failed to receive cookies from webview".to_string())?;
+
+    // Clean up event listener
+    app_handle.unlisten(listen_id);
+
+    result
 }
 
 /// Build cookie header string for HTTP requests
@@ -152,5 +223,26 @@ mod tests {
         let cookies = vec![];
         let header = cookies_to_header(&cookies);
         assert_eq!(header, "");
+    }
+
+    #[test]
+    fn test_cookie_json_serialization() {
+        let cookies = vec![Cookie {
+            name: "test".to_string(),
+            value: "value123".to_string(),
+            domain: "example.com".to_string(),
+            path: "/".to_string(),
+            secure: true,
+            http_only: false,
+            expires: None,
+        }];
+
+        let json = serde_json::to_string(&cookies).unwrap();
+        assert!(json.contains("\"name\":\"test\""));
+        assert!(json.contains("\"value\":\"value123\""));
+
+        let deserialized: Vec<Cookie> = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.len(), 1);
+        assert_eq!(deserialized[0].name, "test");
     }
 }

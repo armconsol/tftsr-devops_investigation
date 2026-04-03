@@ -458,11 +458,15 @@ pub async fn extract_cookies_from_webview(
     app_handle: tauri::AppHandle,
     app_state: State<'_, AppState>,
 ) -> Result<ConnectionResult, String> {
-    // Extract cookies from the webview
-    let cookies = crate::integrations::webview_auth::extract_cookies_from_webview(
-        &webview_id,
+    // Get the webview window
+    let webview_window = app_handle
+        .get_webview_window(&webview_id)
+        .ok_or_else(|| "Webview window not found".to_string())?;
+
+    // Extract cookies using IPC mechanism (more reliable than platform-specific APIs)
+    let cookies = crate::integrations::webview_auth::extract_cookies_via_ipc(
+        &webview_window,
         &app_handle,
-        &service,
     )
     .await?;
 
