@@ -117,9 +117,9 @@ export default function Resolution() {
                     </span>
                     {step.done && <span className="text-xs text-primary font-medium">Resolved</span>}
                   </div>
-                  <p className="text-sm font-medium">{step.why_question}</p>
-                  {step.answer && <p className="text-sm text-muted-foreground mt-1">{step.answer}</p>}
-                  {step.evidence && <p className="text-xs text-muted-foreground mt-1 italic">{step.evidence}</p>}
+                  <p className="text-sm font-medium text-foreground">{step.why_question}</p>
+                  {step.answer && <p className="text-sm text-foreground/80 mt-1">{step.answer}</p>}
+                  {step.evidence && <p className="text-xs text-foreground/70 mt-1 italic">{step.evidence}</p>}
                 </div>
               </div>
             </div>

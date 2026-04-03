@@ -174,8 +174,8 @@ export default function History() {
                       className="border-b last:border-0 hover:bg-accent/50 transition-colors"
                     >
                       <td className="px-4 py-3 text-sm font-medium">{issue.title}</td>
-                      <td className="px-4 py-3 text-sm text-muted-foreground capitalize">
-                        {issue.domain}
+                      <td className="px-4 py-3 text-sm text-foreground/80 capitalize">
+                        {issue.category}
                       </td>
                       <td className="px-4 py-3">
                         <Badge variant={severityVariant(issue.severity)}>

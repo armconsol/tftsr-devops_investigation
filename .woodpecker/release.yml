@@ -62,8 +62,6 @@ steps:
 
   - name: build-linux-arm64
     image: rust:1.88-slim
-    labels:
-      platform: linux/arm64
     environment:
       TARGET: aarch64-unknown-linux-gnu
     when:

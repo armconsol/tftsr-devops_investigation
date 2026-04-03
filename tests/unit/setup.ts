@@ -1,4 +1,5 @@
 import { vi, beforeAll, afterAll } from "vitest";
+import "@testing-library/jest-dom/vitest";
 
 // Mock Tauri core API
 vi.mock("@tauri-apps/api/core", () => ({

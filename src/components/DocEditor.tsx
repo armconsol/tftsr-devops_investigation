@@ -80,7 +80,7 @@ export function DocEditor({ content, onChange, version, updatedAt, onExport }: D
             placeholder="Start writing your document..."
           />
         ) : (
-          <div className="p-4 prose prose-sm dark:prose-invert max-w-none">
+          <div className="p-4 prose prose-sm dark:prose-invert max-w-none text-foreground">
             <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
           </div>
         )}

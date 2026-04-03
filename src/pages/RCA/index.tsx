@@ -53,7 +53,7 @@ export default function RCA() {
   const handleExport = async (format: "md" | "pdf" | "docx") => {
     if (!doc) return;
     try {
-      await exportDocumentCmd(doc.id, format, ".");
+      await exportDocumentCmd(doc.id, doc.title, content, format, ".");
     } catch (err) {
       setError(String(err));
     }

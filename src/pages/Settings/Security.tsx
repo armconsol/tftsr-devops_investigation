@@ -26,6 +26,7 @@ export default function Security() {
     Object.fromEntries(piiPatterns.map((p) => [p.id, true]))
   );
   const [auditEntries, setAuditEntries] = useState<AuditEntry[]>([]);
+  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -47,6 +48,18 @@ export default function Security() {
 
   const togglePattern = (id: string) => {
     setEnabledPatterns((prev) => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  const toggleRow = (entryId: string) => {
+    setExpandedRows((prev) => {
+      const newSet = new Set(prev);
+      if (newSet.has(entryId)) {
+        newSet.delete(entryId);
+      } else {
+        newSet.add(entryId);
+      }
+      return newSet;
+    });
   };
 
   return (
@@ -133,35 +146,63 @@ export default function Security() {
                     <th className="text-left text-xs font-medium text-muted-foreground px-3 py-2">
                       Date
                     </th>
+                    <th className="text-center text-xs font-medium text-muted-foreground px-3 py-2">
+                      Details
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
-                  {auditEntries.map((entry) => (
-                    <tr key={entry.id} className="border-b last:border-0">
-                      <td className="px-3 py-2 text-sm">
-                        <Badge variant="outline">{entry.action}</Badge>
-                      </td>
-                      <td className="px-3 py-2 text-sm text-muted-foreground">
-                        {entry.entity_id}
-                      </td>
-                      <td className="px-3 py-2">
-                        <Badge
-                          variant={
-                            entry.details.includes("success")
-                              ? "default"
-                              : entry.action === "blocked"
-                                ? "destructive"
-                                : "secondary"
-                          }
-                        >
-                          {entry.action}
-                        </Badge>
-                      </td>
-                      <td className="px-3 py-2 text-xs text-muted-foreground">
-                        {new Date(entry.timestamp).toLocaleString()}
-                      </td>
-                    </tr>
-                  ))}
+                  {auditEntries.map((entry) => {
+                    const isExpanded = expandedRows.has(entry.id);
+                    return (
+                      <React.Fragment key={entry.id}>
+                        <tr className="border-b hover:bg-accent/50">
+                          <td className="px-3 py-2 text-sm">
+                            <Badge variant="outline">{entry.action}</Badge>
+                          </td>
+                          <td className="px-3 py-2 text-sm text-muted-foreground">
+                            {entry.entity_id}
+                          </td>
+                          <td className="px-3 py-2">
+                            <Badge
+                              variant={
+                                entry.details.includes("success")
+                                  ? "default"
+                                  : entry.action === "blocked"
+                                    ? "destructive"
+                                    : "secondary"
+                              }
+                            >
+                              {entry.action}
+                            </Badge>
+                          </td>
+                          <td className="px-3 py-2 text-xs text-muted-foreground">
+                            {new Date(entry.timestamp).toLocaleString()}
+                          </td>
+                          <td className="px-3 py-2 text-center">
+                            <button
+                              onClick={() => toggleRow(entry.id)}
+                              className="text-xs text-primary hover:underline"
+                            >
+                              {isExpanded ? "Hide" : "View"}
+                            </button>
+                          </td>
+                        </tr>
+                        {isExpanded && (
+                          <tr className="border-b bg-accent/20">
+                            <td colSpan={5} className="px-3 py-3">
+                              <div className="text-xs">
+                                <p className="font-medium text-foreground mb-1">Transmitted Data:</p>
+                                <pre className="bg-background/50 p-2 rounded text-xs overflow-x-auto text-foreground/80">
+                                  {entry.details}
+                                </pre>
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

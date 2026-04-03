@@ -329,8 +329,8 @@ export const generatePostmortemCmd = (issueId: string) =>
 export const updateDocumentCmd = (docId: string, contentMd: string) =>
   invoke<Document_>("update_document", { docId, contentMd });
 
-export const exportDocumentCmd = (docId: string, format: string, outputDir: string) =>
-  invoke<string>("export_document", { docId, format, outputDir });
+export const exportDocumentCmd = (docId: string, title: string, contentMd: string, format: string, outputDir: string) =>
+  invoke<string>("export_document", { title, contentMd, format, outputDir });
 
 // ─── Ollama & System ──────────────────────────────────────────────────────────
 
