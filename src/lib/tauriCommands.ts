@@ -10,6 +10,11 @@ export interface ProviderConfig {
   api_url: string;
   api_key: string;
   model: string;
+  custom_endpoint_path?: string;
+  custom_auth_header?: string;
+  custom_auth_prefix?: string;
+  api_format?: string;
+  session_id?: string;
 }
 
 export interface Message {

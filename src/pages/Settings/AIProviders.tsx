@@ -27,6 +27,11 @@ const emptyProvider: ProviderConfig = {
   model: "",
   max_tokens: 4096,
   temperature: 0.7,
+  custom_endpoint_path: undefined,
+  custom_auth_header: undefined,
+  custom_auth_prefix: undefined,
+  api_format: undefined,
+  session_id: undefined,
 };
 
 export default function AIProviders() {
@@ -266,6 +271,89 @@ export default function AIProviders() {
                 />
               </div>
             </div>
+
+            {/* Custom provider format options */}
+            {form.provider_type === "custom" && (
+              <>
+                <Separator />
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label>API Format</Label>
+                    <Select
+                      value={form.api_format ?? "openai"}
+                      onValueChange={(v) => {
+                        const format = v;
+                        const defaults =
+                          format === "msi_genai"
+                            ? {
+                                custom_endpoint_path: "",
+                                custom_auth_header: "x-msi-genai-api-key",
+                                custom_auth_prefix: "",
+                              }
+                            : {
+                                custom_endpoint_path: "/chat/completions",
+                                custom_auth_header: "Authorization",
+                                custom_auth_prefix: "Bearer ",
+                              };
+                        setForm({ ...form, api_format: format, ...defaults });
+                      }}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="openai">OpenAI Compatible</SelectItem>
+                        <SelectItem value="msi_genai">MSI GenAI</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">
+                      Select the API format. MSI GenAI uses a different request/response structure.
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label>Endpoint Path</Label>
+                      <Input
+                        value={form.custom_endpoint_path ?? ""}
+                        onChange={(e) =>
+                          setForm({ ...form, custom_endpoint_path: e.target.value })
+                        }
+                        placeholder="/chat/completions"
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Path appended to API URL. Leave empty if URL includes full path.
+                      </p>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Auth Header Name</Label>
+                      <Input
+                        value={form.custom_auth_header ?? ""}
+                        onChange={(e) =>
+                          setForm({ ...form, custom_auth_header: e.target.value })
+                        }
+                        placeholder="Authorization"
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Header name for authentication (e.g., "Authorization" or "x-msi-genai-api-key")
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Auth Prefix</Label>
+                    <Input
+                      value={form.custom_auth_prefix ?? ""}
+                      onChange={(e) => setForm({ ...form, custom_auth_prefix: e.target.value })}
+                      placeholder="Bearer "
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Prefix added before API key (e.g., "Bearer " for OpenAI, empty for MSI GenAI)
+                    </p>
+                  </div>
+                </div>
+              </>
+            )}
 
             {/* Test result */}
             {testResult && (

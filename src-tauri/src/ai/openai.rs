@@ -29,8 +29,32 @@ impl Provider for OpenAiProvider {
         messages: Vec<Message>,
         config: &ProviderConfig,
     ) -> anyhow::Result<ChatResponse> {
+        // Check if using MSI GenAI format
+        let api_format = config.api_format.as_deref().unwrap_or("openai");
+
+        if api_format == "msi_genai" {
+            self.chat_msi_genai(messages, config).await
+        } else {
+            self.chat_openai(messages, config).await
+        }
+    }
+}
+
+impl OpenAiProvider {
+    /// OpenAI-compatible API format (default)
+    async fn chat_openai(
+        &self,
+        messages: Vec<Message>,
+        config: &ProviderConfig,
+    ) -> anyhow::Result<ChatResponse> {
         let client = reqwest::Client::new();
-        let url = format!("{}/chat/completions", config.api_url.trim_end_matches('/'));
+
+        // Use custom endpoint path if provided, otherwise default to /chat/completions
+        let endpoint_path = config
+            .custom_endpoint_path
+            .as_deref()
+            .unwrap_or("/chat/completions");
+        let url = format!("{}{}", config.api_url.trim_end_matches('/'), endpoint_path);
 
         let body = serde_json::json!({
             "model": config.model,
@@ -38,9 +62,14 @@ impl Provider for OpenAiProvider {
             "max_tokens": 4096,
         });
 
+        // Use custom auth header and prefix if provided
+        let auth_header = config.custom_auth_header.as_deref().unwrap_or("Authorization");
+        let auth_prefix = config.custom_auth_prefix.as_deref().unwrap_or("Bearer ");
+        let auth_value = format!("{}{}", auth_prefix, config.api_key);
+
         let resp = client
             .post(&url)
-            .header("Authorization", format!("Bearer {}", config.api_key))
+            .header(auth_header, auth_value)
             .header("Content-Type", "application/json")
             .json(&body)
             .send()
@@ -70,6 +99,91 @@ impl Provider for OpenAiProvider {
             content,
             model: config.model.clone(),
             usage,
+        })
+    }
+
+    /// MSI GenAI custom format
+    async fn chat_msi_genai(
+        &self,
+        messages: Vec<Message>,
+        config: &ProviderConfig,
+    ) -> anyhow::Result<ChatResponse> {
+        let client = reqwest::Client::new();
+
+        // Use custom endpoint path, default to empty (API URL already includes /api/v2/chat)
+        let endpoint_path = config.custom_endpoint_path.as_deref().unwrap_or("");
+        let url = format!("{}{}", config.api_url.trim_end_matches('/'), endpoint_path);
+
+        // Extract system message if present
+        let system_message = messages
+            .iter()
+            .find(|m| m.role == "system")
+            .map(|m| m.content.clone());
+
+        // Get last user message as prompt
+        let prompt = messages
+            .iter()
+            .rev()
+            .find(|m| m.role == "user")
+            .map(|m| m.content.clone())
+            .ok_or_else(|| anyhow::anyhow!("No user message found"))?;
+
+        // Build request body
+        let mut body = serde_json::json!({
+            "model": config.model,
+            "prompt": prompt,
+            "userId": "user@motorolasolutions.com", // Default user ID
+        });
+
+        // Add optional system message
+        if let Some(system) = system_message {
+            body["system"] = serde_json::Value::String(system);
+        }
+
+        // Add session ID if available (for conversation continuity)
+        if let Some(session_id) = &config.session_id {
+            body["sessionId"] = serde_json::Value::String(session_id.clone());
+        }
+
+        // Use custom auth header and prefix (no prefix for MSI GenAI)
+        let auth_header = config
+            .custom_auth_header
+            .as_deref()
+            .unwrap_or("x-msi-genai-api-key");
+        let auth_prefix = config.custom_auth_prefix.as_deref().unwrap_or("");
+        let auth_value = format!("{}{}", auth_prefix, config.api_key);
+
+        let resp = client
+            .post(&url)
+            .header(auth_header, auth_value)
+            .header("Content-Type", "application/json")
+            .json(&body)
+            .send()
+            .await?;
+
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let text = resp.text().await?;
+            anyhow::bail!("MSI GenAI API error {status}: {text}");
+        }
+
+        let json: serde_json::Value = resp.json().await?;
+
+        // Extract response content from "msg" field
+        let content = json["msg"]
+            .as_str()
+            .ok_or_else(|| anyhow::anyhow!("No 'msg' field in response"))?
+            .to_string();
+
+        // Note: sessionId from response should be stored back to config.session_id
+        // This would require making config mutable or returning it as part of ChatResponse
+        // For now, the caller can extract it from the response if needed
+        // TODO: Consider adding session_id to ChatResponse struct
+
+        Ok(ChatResponse {
+            content,
+            model: config.model.clone(),
+            usage: None, // MSI GenAI doesn't provide token usage in response
         })
     }
 }
