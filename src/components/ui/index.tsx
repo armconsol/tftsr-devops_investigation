@@ -16,6 +16,7 @@ const buttonVariants = cva(
         default: "bg-primary text-primary-foreground hover:bg-primary/90",
         destructive: "bg-destructive text-destructive-foreground hover:bg-destructive/90",
         outline: "border border-input bg-background hover:bg-accent hover:text-accent-foreground",
+        secondary: "bg-secondary text-secondary-foreground hover:bg-secondary/80",
         ghost: "hover:bg-accent hover:text-accent-foreground",
         link: "text-primary underline-offset-4 hover:underline",
       },
@@ -341,5 +342,55 @@ export function Separator({
     />
   );
 }
+
+// ─── RadioGroup ──────────────────────────────────────────────────────────────
+
+interface RadioGroupContextValue {
+  value: string;
+  onValueChange: (value: string) => void;
+}
+
+const RadioGroupContext = React.createContext<RadioGroupContextValue | null>(null);
+
+interface RadioGroupProps {
+  value: string;
+  onValueChange: (value: string) => void;
+  className?: string;
+  children: React.ReactNode;
+}
+
+export function RadioGroup({ value, onValueChange, className, children }: RadioGroupProps) {
+  return (
+    <RadioGroupContext.Provider value={{ value, onValueChange }}>
+      <div className={cn("space-y-2", className)}>{children}</div>
+    </RadioGroupContext.Provider>
+  );
+}
+
+interface RadioGroupItemProps extends React.InputHTMLAttributes<HTMLInputElement> {
+  value: string;
+}
+
+export const RadioGroupItem = React.forwardRef<HTMLInputElement, RadioGroupItemProps>(
+  ({ value, className, ...props }, ref) => {
+    const ctx = React.useContext(RadioGroupContext);
+    if (!ctx) throw new Error("RadioGroupItem must be used within RadioGroup");
+
+    return (
+      <input
+        ref={ref}
+        type="radio"
+        className={cn(
+          "aspect-square h-4 w-4 rounded-full border border-primary text-primary ring-offset-background focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50",
+          className
+        )}
+        checked={ctx.value === value}
+        onChange={() => ctx.onValueChange(value)}
+        {...props}
+      />
+    );
+  }
+);
+RadioGroupItem.displayName = "RadioGroupItem";
 
 export { cn };

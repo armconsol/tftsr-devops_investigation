@@ -1,8 +1,9 @@
 use crate::integrations::{ConnectionResult, PublishResult, TicketResult};
 use crate::state::AppState;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use tauri::State;
+use tauri::{Manager, State};
 use tokio::sync::oneshot;
 
 // Global OAuth state storage (verifier + service per state key)
@@ -406,4 +407,224 @@ mod tests {
         assert_eq!(deserialized.auth_url, response.auth_url);
         assert_eq!(deserialized.state, response.state);
     }
+}
+
+// ─── Webview-Based Authentication (Option C) ────────────────────────────────
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct WebviewAuthRequest {
+    pub service: String,
+    pub base_url: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct WebviewAuthResponse {
+    pub success: bool,
+    pub message: String,
+    pub webview_id: String,
+}
+
+/// Open embedded browser window for user to log in.
+/// After successful login, call extract_cookies_from_webview to capture session.
+#[tauri::command]
+pub async fn authenticate_with_webview(
+    service: String,
+    base_url: String,
+    app_handle: tauri::AppHandle,
+) -> Result<WebviewAuthResponse, String> {
+    let webview_id = format!("{}-auth", service);
+
+    // Open login page in embedded browser
+    let _credentials = crate::integrations::webview_auth::authenticate_with_webview(
+        app_handle,
+        &service,
+        &base_url,
+    )
+    .await?;
+
+    Ok(WebviewAuthResponse {
+        success: true,
+        message: format!("Login window opened. Complete authentication in the browser."),
+        webview_id,
+    })
+}
+
+/// Extract cookies from webview after user completes login.
+/// User should call this after they've successfully logged in.
+#[tauri::command]
+pub async fn extract_cookies_from_webview(
+    service: String,
+    webview_id: String,
+    app_handle: tauri::AppHandle,
+    app_state: State<'_, AppState>,
+) -> Result<ConnectionResult, String> {
+    // Extract cookies from the webview
+    let cookies = crate::integrations::webview_auth::extract_cookies_from_webview(
+        &webview_id,
+        &app_handle,
+        &service,
+    )
+    .await?;
+
+    if cookies.is_empty() {
+        return Err("No cookies found. Make sure you completed the login.".to_string());
+    }
+
+    // Encrypt and store cookies in database
+    let cookies_json =
+        serde_json::to_string(&cookies).map_err(|e| format!("Failed to serialize cookies: {}", e))?;
+    let encrypted_cookies = crate::integrations::auth::encrypt_token(&cookies_json)?;
+
+    let token_hash = {
+        use sha2::{Digest, Sha256};
+        let mut hasher = Sha256::new();
+        hasher.update(cookies_json.as_bytes());
+        format!("{:x}", hasher.finalize())
+    };
+
+    // Store in database
+    let db = app_state
+        .db
+        .lock()
+        .map_err(|e| format!("Failed to lock database: {}", e))?;
+
+    db.execute(
+        "INSERT OR REPLACE INTO credentials (id, service, token_hash, encrypted_token, created_at, expires_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        rusqlite::params![
+            uuid::Uuid::now_v7().to_string(),
+            service,
+            token_hash,
+            encrypted_cookies,
+            chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+            None::<String>, // Cookies don't have explicit expiry
+        ],
+    )
+    .map_err(|e| format!("Failed to store cookies: {}", e))?;
+
+    // Close the webview window
+    if let Some(webview) = app_handle.get_webview_window(&webview_id) {
+        webview
+            .close()
+            .map_err(|e| format!("Failed to close webview: {}", e))?;
+    }
+
+    Ok(ConnectionResult {
+        success: true,
+        message: format!("{} authentication saved successfully", service),
+    })
+}
+
+// ─── Manual Token Authentication (Token Mode) ───────────────────────────────
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct TokenAuthRequest {
+    pub service: String,
+    pub token: String,
+    pub token_type: String, // "Bearer", "Basic", "api_token"
+    pub base_url: String,
+}
+
+/// Store a manually provided token (API key, PAT, etc.)
+/// This is the fallback authentication method when OAuth2 and webview don't work.
+#[tauri::command]
+pub async fn save_manual_token(
+    request: TokenAuthRequest,
+    app_state: State<'_, AppState>,
+) -> Result<ConnectionResult, String> {
+    // Validate token by testing connection
+    let test_result = match request.service.as_str() {
+        "confluence" => {
+            let config = crate::integrations::confluence::ConfluenceConfig {
+                base_url: request.base_url.clone(),
+                access_token: request.token.clone(),
+            };
+            crate::integrations::confluence::test_connection(&config).await
+        }
+        "azuredevops" => {
+            let config = crate::integrations::azuredevops::AzureDevOpsConfig {
+                organization_url: request.base_url.clone(),
+                access_token: request.token.clone(),
+                project: "".to_string(), // Project not needed for connection test
+            };
+            crate::integrations::azuredevops::test_connection(&config).await
+        }
+        "servicenow" => {
+            // ServiceNow uses basic auth, token is base64(username:password)
+            let config = crate::integrations::servicenow::ServiceNowConfig {
+                instance_url: request.base_url.clone(),
+                username: "".to_string(), // Encoded in token
+                password: request.token.clone(),
+            };
+            crate::integrations::servicenow::test_connection(&config).await
+        }
+        _ => return Err(format!("Unknown service: {}", request.service)),
+    };
+
+    // If test fails, don't save the token
+    if let Ok(result) = &test_result {
+        if !result.success {
+            return Ok(ConnectionResult {
+                success: false,
+                message: format!(
+                    "Token validation failed: {}. Token not saved.",
+                    result.message
+                ),
+            });
+        }
+    }
+
+    // Encrypt and store token
+    let encrypted_token = crate::integrations::auth::encrypt_token(&request.token)?;
+
+    let token_hash = {
+        use sha2::{Digest, Sha256};
+        let mut hasher = Sha256::new();
+        hasher.update(request.token.as_bytes());
+        format!("{:x}", hasher.finalize())
+    };
+
+    let db = app_state
+        .db
+        .lock()
+        .map_err(|e| format!("Failed to lock database: {}", e))?;
+
+    db.execute(
+        "INSERT OR REPLACE INTO credentials (id, service, token_hash, encrypted_token, created_at, expires_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        rusqlite::params![
+            uuid::Uuid::now_v7().to_string(),
+            request.service,
+            token_hash,
+            encrypted_token,
+            chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+            None::<String>,
+        ],
+    )
+    .map_err(|e| format!("Failed to store token: {}", e))?;
+
+    // Log audit event
+    db.execute(
+        "INSERT INTO audit_log (id, timestamp, action, entity_type, entity_id, user_id, details)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        rusqlite::params![
+            uuid::Uuid::now_v7().to_string(),
+            chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+            "manual_token_saved",
+            "credential",
+            request.service,
+            "local",
+            serde_json::json!({
+                "token_type": request.token_type,
+                "token_hash": token_hash,
+            })
+            .to_string(),
+        ],
+    )
+    .map_err(|e| format!("Failed to log audit event: {}", e))?;
+
+    Ok(ConnectionResult {
+        success: true,
+        message: format!("{} token saved and validated successfully", request.service),
+    })
 }

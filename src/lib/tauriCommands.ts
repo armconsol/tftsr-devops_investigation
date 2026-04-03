@@ -393,3 +393,27 @@ export const testServiceNowConnectionCmd = (instanceUrl: string, credentials: Re
 
 export const testAzureDevOpsConnectionCmd = (orgUrl: string, credentials: Record<string, unknown>) =>
   invoke<ConnectionResult>("test_azuredevops_connection", { orgUrl, credentials });
+
+// ─── Webview & Token Authentication ──────────────────────────────────────────
+
+export interface WebviewAuthResponse {
+  success: boolean;
+  message: string;
+  webview_id: string;
+}
+
+export interface TokenAuthRequest {
+  service: string;
+  token: string;
+  token_type: string;
+  base_url: string;
+}
+
+export const authenticateWithWebviewCmd = (service: string, baseUrl: string) =>
+  invoke<WebviewAuthResponse>("authenticate_with_webview", { service, baseUrl });
+
+export const extractCookiesFromWebviewCmd = (service: string, webviewId: string) =>
+  invoke<ConnectionResult>("extract_cookies_from_webview", { service, webviewId });
+
+export const saveManualTokenCmd = (request: TokenAuthRequest) =>
+  invoke<ConnectionResult>("save_manual_token", { request });

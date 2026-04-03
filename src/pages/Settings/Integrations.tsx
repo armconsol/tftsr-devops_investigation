@@ -1,5 +1,6 @@
 import React, { useState } from "react";
-import { ExternalLink, Check, X, Loader2 } from "lucide-react";
+import { ExternalLink, Check, X, Loader2, Key, Globe, Lock } from "lucide-react";
+import { invoke } from "@tauri-apps/api/core";
 import {
   Card,
   CardHeader,
@@ -9,14 +10,20 @@ import {
   Button,
   Input,
   Label,
+  RadioGroup,
+  RadioGroupItem,
 } from "@/components/ui";
 import {
   initiateOauthCmd,
+  authenticateWithWebviewCmd,
+  extractCookiesFromWebviewCmd,
+  saveManualTokenCmd,
   testConfluenceConnectionCmd,
   testServiceNowConnectionCmd,
   testAzureDevOpsConnectionCmd,
 } from "@/lib/tauriCommands";
-import { invoke } from "@tauri-apps/api/core";
+
+type AuthMode = "oauth2" | "webview" | "token";
 
 interface IntegrationConfig {
   service: string;
@@ -25,6 +32,10 @@ interface IntegrationConfig {
   projectName?: string;
   spaceKey?: string;
   connected: boolean;
+  authMode: AuthMode;
+  token?: string;
+  tokenType?: string;
+  webviewId?: string;
 }
 
 export default function Integrations() {
@@ -34,34 +45,47 @@ export default function Integrations() {
       baseUrl: "",
       spaceKey: "",
       connected: false,
+      authMode: "webview",
+      tokenType: "Bearer",
     },
     servicenow: {
       service: "servicenow",
       baseUrl: "",
       username: "",
       connected: false,
+      authMode: "token",
+      tokenType: "Basic",
     },
     azuredevops: {
       service: "azuredevops",
       baseUrl: "",
       projectName: "",
       connected: false,
+      authMode: "webview",
+      tokenType: "Bearer",
     },
   });
 
   const [loading, setLoading] = useState<Record<string, boolean>>({});
   const [testResults, setTestResults] = useState<Record<string, { success: boolean; message: string } | null>>({});
 
-  const handleConnect = async (service: string) => {
+  const handleAuthModeChange = (service: string, mode: AuthMode) => {
+    setConfigs((prev) => ({
+      ...prev,
+      [service]: { ...prev[service], authMode: mode, connected: false },
+    }));
+    setTestResults((prev) => ({ ...prev, [service]: null }));
+  };
+
+  const handleConnectOAuth = async (service: string) => {
     setLoading((prev) => ({ ...prev, [service]: true }));
 
     try {
       const response = await initiateOauthCmd(service);
 
-      // Open auth URL in default browser using shell plugin
+      // Open auth URL in default browser
       await invoke("plugin:shell|open", { path: response.auth_url });
 
-      // Mark as connected (optimistic)
       setConfigs((prev) => ({
         ...prev,
         [service]: { ...prev[service], connected: true },
@@ -79,6 +103,110 @@ export default function Integrations() {
       }));
     } finally {
       setLoading((prev) => ({ ...prev, [service]: false }));
+    }
+  };
+
+  const handleConnectWebview = async (service: string) => {
+    const config = configs[service];
+    setLoading((prev) => ({ ...prev, [service]: true }));
+
+    try {
+      const response = await authenticateWithWebviewCmd(service, config.baseUrl);
+
+      setConfigs((prev) => ({
+        ...prev,
+        [service]: { ...prev[service], webviewId: response.webview_id },
+      }));
+
+      setTestResults((prev) => ({
+        ...prev,
+        [service]: { success: true, message: response.message + " Click 'Complete Login' when done." },
+      }));
+    } catch (err) {
+      console.error("Failed to open webview:", err);
+      setTestResults((prev) => ({
+        ...prev,
+        [service]: { success: false, message: String(err) },
+      }));
+    } finally {
+      setLoading((prev) => ({ ...prev, [service]: false }));
+    }
+  };
+
+  const handleCompleteWebviewLogin = async (service: string) => {
+    const config = configs[service];
+    if (!config.webviewId) {
+      setTestResults((prev) => ({
+        ...prev,
+        [service]: { success: false, message: "No webview session found. Click 'Login via Browser' first." },
+      }));
+      return;
+    }
+
+    setLoading((prev) => ({ ...prev, [`complete-${service}`]: true }));
+
+    try {
+      const result = await extractCookiesFromWebviewCmd(service, config.webviewId);
+
+      setConfigs((prev) => ({
+        ...prev,
+        [service]: { ...prev[service], connected: true, webviewId: undefined },
+      }));
+
+      setTestResults((prev) => ({
+        ...prev,
+        [service]: { success: result.success, message: result.message },
+      }));
+    } catch (err) {
+      console.error("Failed to extract cookies:", err);
+      setTestResults((prev) => ({
+        ...prev,
+        [service]: { success: false, message: String(err) },
+      }));
+    } finally {
+      setLoading((prev) => ({ ...prev, [`complete-${service}`]: false }));
+    }
+  };
+
+  const handleSaveToken = async (service: string) => {
+    const config = configs[service];
+    if (!config.token) {
+      setTestResults((prev) => ({
+        ...prev,
+        [service]: { success: false, message: "Please enter a token" },
+      }));
+      return;
+    }
+
+    setLoading((prev) => ({ ...prev, [`save-${service}`]: true }));
+
+    try {
+      const result = await saveManualTokenCmd({
+        service,
+        token: config.token,
+        token_type: config.tokenType || "Bearer",
+        base_url: config.baseUrl,
+      });
+
+      if (result.success) {
+        setConfigs((prev) => ({
+          ...prev,
+          [service]: { ...prev[service], connected: true },
+        }));
+      }
+
+      setTestResults((prev) => ({
+        ...prev,
+        [service]: result,
+      }));
+    } catch (err) {
+      console.error("Failed to save token:", err);
+      setTestResults((prev) => ({
+        ...prev,
+        [service]: { success: false, message: String(err) },
+      }));
+    } finally {
+      setLoading((prev) => ({ ...prev, [`save-${service}`]: false }));
     }
   };
 
@@ -128,12 +256,158 @@ export default function Integrations() {
     }));
   };
 
+  const renderAuthSection = (service: string) => {
+    const config = configs[service];
+    const isOAuthSupported = service !== "servicenow"; // ServiceNow doesn't support OAuth2
+
+    return (
+      <div className="space-y-4">
+        {/* Auth Mode Selection */}
+        <div className="space-y-3">
+          <Label>Authentication Method</Label>
+          <RadioGroup
+            value={config.authMode}
+            onValueChange={(value) => handleAuthModeChange(service, value as AuthMode)}
+          >
+            {isOAuthSupported && (
+              <div className="flex items-center space-x-2">
+                <RadioGroupItem value="oauth2" id={`${service}-oauth`} />
+                <Label htmlFor={`${service}-oauth`} className="font-normal cursor-pointer flex items-center gap-2">
+                  <Lock className="w-4 h-4" />
+                  OAuth2 (Enterprise SSO)
+                </Label>
+              </div>
+            )}
+            <div className="flex items-center space-x-2">
+              <RadioGroupItem value="webview" id={`${service}-webview`} />
+              <Label htmlFor={`${service}-webview`} className="font-normal cursor-pointer flex items-center gap-2">
+                <Globe className="w-4 h-4" />
+                Browser Login (Works off-VPN)
+              </Label>
+            </div>
+            <div className="flex items-center space-x-2">
+              <RadioGroupItem value="token" id={`${service}-token`} />
+              <Label htmlFor={`${service}-token`} className="font-normal cursor-pointer flex items-center gap-2">
+                <Key className="w-4 h-4" />
+                Manual Token/API Key
+              </Label>
+            </div>
+          </RadioGroup>
+        </div>
+
+        {/* OAuth2 Mode */}
+        {config.authMode === "oauth2" && (
+          <div className="space-y-3 p-4 bg-muted/30 rounded-lg">
+            <p className="text-sm text-muted-foreground">
+              OAuth2 requires pre-registered application credentials. This may not work in all enterprise environments.
+            </p>
+            <Button
+              onClick={() => handleConnectOAuth(service)}
+              disabled={loading[service] || !config.baseUrl}
+            >
+              {loading[service] ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Connecting...
+                </>
+              ) : config.connected ? (
+                <>
+                  <Check className="w-4 h-4 mr-2" />
+                  Connected
+                </>
+              ) : (
+                "Connect with OAuth2"
+              )}
+            </Button>
+          </div>
+        )}
+
+        {/* Webview Mode */}
+        {config.authMode === "webview" && (
+          <div className="space-y-3 p-4 bg-muted/30 rounded-lg">
+            <p className="text-sm text-muted-foreground">
+              Opens an embedded browser for you to log in normally. Works even when off-VPN. Captures session cookies for API access.
+            </p>
+            <div className="flex gap-2">
+              <Button
+                onClick={() => handleConnectWebview(service)}
+                disabled={loading[service] || !config.baseUrl}
+              >
+                {loading[service] ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Opening...
+                  </>
+                ) : (
+                  "Login via Browser"
+                )}
+              </Button>
+              {config.webviewId && (
+                <Button
+                  variant="secondary"
+                  onClick={() => handleCompleteWebviewLogin(service)}
+                  disabled={loading[`complete-${service}`]}
+                >
+                  {loading[`complete-${service}`] ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Saving...
+                    </>
+                  ) : (
+                    "Complete Login"
+                  )}
+                </Button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Token Mode */}
+        {config.authMode === "token" && (
+          <div className="space-y-3 p-4 bg-muted/30 rounded-lg">
+            <p className="text-sm text-muted-foreground">
+              Enter a Personal Access Token (PAT), API Key, or Bearer token. Most reliable method but requires manual token generation.
+            </p>
+            <div className="space-y-2">
+              <Label htmlFor={`${service}-token-input`}>Token</Label>
+              <Input
+                id={`${service}-token-input`}
+                type="password"
+                placeholder={service === "confluence" ? "Bearer token or API key" : "API token or PAT"}
+                value={config.token || ""}
+                onChange={(e) => updateConfig(service, "token", e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">
+                {service === "confluence" && "Generate at: https://id.atlassian.com/manage-profile/security/api-tokens"}
+                {service === "azuredevops" && "Generate at: https://dev.azure.com/{org}/_usersSettings/tokens"}
+                {service === "servicenow" && "Use your ServiceNow password or API key"}
+              </p>
+            </div>
+            <Button
+              onClick={() => handleSaveToken(service)}
+              disabled={loading[`save-${service}`] || !config.token}
+            >
+              {loading[`save-${service}`] ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Validating...
+                </>
+              ) : (
+                "Save & Validate Token"
+              )}
+            </Button>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div className="p-6 space-y-6">
       <div>
         <h1 className="text-3xl font-bold">Integrations</h1>
         <p className="text-muted-foreground mt-1">
-          Connect TFTSR with your existing tools and platforms via OAuth2.
+          Connect TFTSR with your existing tools and platforms. Choose the authentication method that works best for your environment.
         </p>
       </div>
 
@@ -145,7 +419,7 @@ export default function Integrations() {
             Confluence
           </CardTitle>
           <CardDescription>
-            Publish RCA documents to Confluence spaces. Requires OAuth2 authentication with Atlassian.
+            Publish RCA documents to Confluence spaces. Supports OAuth2, browser login, or API tokens.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -169,26 +443,9 @@ export default function Integrations() {
             />
           </div>
 
-          <div className="flex items-center gap-3">
-            <Button
-              onClick={() => handleConnect("confluence")}
-              disabled={loading.confluence || !configs.confluence.baseUrl}
-            >
-              {loading.confluence ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Connecting...
-                </>
-              ) : configs.confluence.connected ? (
-                <>
-                  <Check className="w-4 h-4 mr-2" />
-                  Connected
-                </>
-              ) : (
-                "Connect with OAuth2"
-              )}
-            </Button>
+          {renderAuthSection("confluence")}
 
+          <div className="flex items-center gap-3 pt-2">
             <Button
               variant="outline"
               onClick={() => handleTestConnection("confluence")}
@@ -232,7 +489,7 @@ export default function Integrations() {
             ServiceNow
           </CardTitle>
           <CardDescription>
-            Link incidents and push resolution steps. Uses basic authentication (username + password).
+            Link incidents and push resolution steps. Supports browser login or basic authentication.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -256,35 +513,9 @@ export default function Integrations() {
             />
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="servicenow-password">Password</Label>
-            <Input
-              id="servicenow-password"
-              type="password"
-              placeholder="••••••••"
-              disabled
-            />
-            <p className="text-xs text-muted-foreground">
-              ServiceNow credentials are stored securely after first login. OAuth2 not supported.
-            </p>
-          </div>
+          {renderAuthSection("servicenow")}
 
-          <div className="flex items-center gap-3">
-            <Button
-              onClick={() =>
-                setTestResults((prev) => ({
-                  ...prev,
-                  servicenow: {
-                    success: false,
-                    message: "ServiceNow uses basic authentication, not OAuth2. Enter credentials above.",
-                  },
-                }))
-              }
-              disabled={!configs.servicenow.baseUrl || !configs.servicenow.username}
-            >
-              Save Credentials
-            </Button>
-
+          <div className="flex items-center gap-3 pt-2">
             <Button
               variant="outline"
               onClick={() => handleTestConnection("servicenow")}
@@ -328,7 +559,7 @@ export default function Integrations() {
             Azure DevOps
           </CardTitle>
           <CardDescription>
-            Create work items and attach RCA documents. Requires OAuth2 authentication with Microsoft.
+            Create work items and attach RCA documents. Supports OAuth2, browser login, or PAT tokens.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -352,26 +583,9 @@ export default function Integrations() {
             />
           </div>
 
-          <div className="flex items-center gap-3">
-            <Button
-              onClick={() => handleConnect("azuredevops")}
-              disabled={loading.azuredevops || !configs.azuredevops.baseUrl}
-            >
-              {loading.azuredevops ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Connecting...
-                </>
-              ) : configs.azuredevops.connected ? (
-                <>
-                  <Check className="w-4 h-4 mr-2" />
-                  Connected
-                </>
-              ) : (
-                "Connect with OAuth2"
-              )}
-            </Button>
+          {renderAuthSection("azuredevops")}
 
+          <div className="flex items-center gap-3 pt-2">
             <Button
               variant="outline"
               onClick={() => handleTestConnection("azuredevops")}
@@ -408,14 +622,12 @@ export default function Integrations() {
       </Card>
 
       <div className="p-4 bg-muted/50 rounded-lg space-y-2">
-        <p className="text-sm font-semibold">How OAuth2 Authentication Works:</p>
-        <ol className="text-xs text-muted-foreground space-y-1 list-decimal list-inside">
-          <li>Click "Connect with OAuth2" to open the service's authentication page</li>
-          <li>Log in with your service credentials in your default browser</li>
-          <li>Authorize TFTSR to access your account</li>
-          <li>You'll be automatically redirected back and the connection will be saved</li>
-          <li>Tokens are encrypted and stored locally in your secure database</li>
-        </ol>
+        <p className="text-sm font-semibold">Authentication Method Comparison:</p>
+        <ul className="text-xs text-muted-foreground space-y-1 list-disc list-inside">
+          <li><strong>OAuth2:</strong> Most secure, but requires pre-registered app. May not work with enterprise SSO.</li>
+          <li><strong>Browser Login:</strong> Best for VPN environments. Lets you authenticate off-VPN, extracts session cookies for API use.</li>
+          <li><strong>Manual Token:</strong> Most reliable fallback. Requires generating API tokens manually from each service.</li>
+        </ul>
       </div>
     </div>
   );

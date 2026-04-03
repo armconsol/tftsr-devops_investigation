@@ -87,6 +87,9 @@ pub fn run() {
             commands::integrations::create_azuredevops_workitem,
             commands::integrations::initiate_oauth,
             commands::integrations::handle_oauth_callback,
+            commands::integrations::authenticate_with_webview,
+            commands::integrations::extract_cookies_from_webview,
+            commands::integrations::save_manual_token,
             // System / Settings
             commands::system::check_ollama_installed,
             commands::system::get_ollama_install_guide,
