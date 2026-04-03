@@ -9,6 +9,40 @@ pub fn export_markdown(content_md: &str, output_path: &str) -> anyhow::Result<()
     Ok(())
 }
 
+pub fn export_docx(content_md: &str, title: &str, output_path: &str) -> anyhow::Result<()> {
+    use docx_rs::*;
+
+    let path = Path::new(output_path);
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+
+    let lines = markdown_to_lines(content_md);
+    let mut docx = Docx::new();
+
+    // Add title
+    docx = docx.add_paragraph(Paragraph::new().add_run(Run::new().add_text(title).size(32).bold()));
+
+    for line_info in &lines {
+        if line_info.text.is_empty() {
+            docx = docx.add_paragraph(Paragraph::new());
+            continue;
+        }
+
+        let run = match line_info.style {
+            LineStyle::Title => Run::new().add_text(&line_info.text).size(28).bold(),
+            LineStyle::Heading => Run::new().add_text(&line_info.text).size(22).bold(),
+            LineStyle::Normal => Run::new().add_text(&line_info.text).size(20),
+        };
+
+        docx = docx.add_paragraph(Paragraph::new().add_run(run));
+    }
+
+    let file = std::fs::File::create(path)?;
+    docx.build().pack(file)?;
+    Ok(())
+}
+
 pub fn export_pdf(content_md: &str, title: &str, output_path: &str) -> anyhow::Result<()> {
     use printpdf::*;
 

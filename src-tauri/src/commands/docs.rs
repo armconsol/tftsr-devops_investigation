@@ -202,37 +202,10 @@ pub async fn export_document(
             path.to_string_lossy().to_string()
         }
         "docx" => {
-            // DOCX export via pandoc
-            let md_path = base_dir.join(format!("{safe_title}_temp.md"));
-            let docx_path = base_dir.join(format!("{safe_title}.docx"));
-
-            // Write markdown to temp file
-            std::fs::write(&md_path, &content_md)
-                .map_err(|e| format!("Failed to write temp markdown: {}", e))?;
-
-            // Use pandoc to convert
-            let output = std::process::Command::new("pandoc")
-                .arg(md_path.to_str().unwrap())
-                .arg("-o")
-                .arg(docx_path.to_str().unwrap())
-                .arg("-f")
-                .arg("markdown")
-                .arg("-t")
-                .arg("docx")
-                .output()
-                .map_err(|e| format!("Failed to run pandoc (is it installed?): {}", e))?;
-
-            // Clean up temp file
-            let _ = std::fs::remove_file(&md_path);
-
-            if !output.status.success() {
-                return Err(format!(
-                    "Pandoc conversion failed: {}",
-                    String::from_utf8_lossy(&output.stderr)
-                ));
-            }
-
-            docx_path.to_string_lossy().to_string()
+            let path = base_dir.join(format!("{safe_title}.docx"));
+            exporter::export_docx(&content_md, &title, path.to_str().unwrap())
+                .map_err(|e| e.to_string())?;
+            path.to_string_lossy().to_string()
         }
         _ => return Err(format!("Unsupported export format: {format}")),
     };
