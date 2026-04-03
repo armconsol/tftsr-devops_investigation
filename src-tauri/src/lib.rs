@@ -85,6 +85,8 @@ pub fn run() {
             commands::integrations::create_servicenow_incident,
             commands::integrations::test_azuredevops_connection,
             commands::integrations::create_azuredevops_workitem,
+            commands::integrations::initiate_oauth,
+            commands::integrations::handle_oauth_callback,
             // System / Settings
             commands::system::check_ollama_installed,
             commands::system::get_ollama_install_guide,

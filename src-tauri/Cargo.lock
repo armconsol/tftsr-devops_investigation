@@ -5508,6 +5508,7 @@ dependencies = [
  "docx-rs",
  "futures",
  "hex",
+ "lazy_static",
  "mockito",
  "printpdf",
  "rand 0.8.5",
