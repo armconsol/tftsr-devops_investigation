@@ -10,6 +10,12 @@ pub struct ProviderConfig {
     pub api_url: String,
     pub api_key: String,
     pub model: String,
+    /// Optional: Maximum tokens for response
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_tokens: Option<u32>,
+    /// Optional: Temperature (0.0-2.0) - controls randomness
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub temperature: Option<f64>,
     /// Optional: Custom endpoint path (e.g., "" for no path, "/v1/chat" for custom path)
     /// If None, defaults to "/chat/completions" for OpenAI compatibility
     #[serde(skip_serializing_if = "Option::is_none")]

@@ -56,11 +56,18 @@ impl OpenAiProvider {
             .unwrap_or("/chat/completions");
         let url = format!("{}{}", config.api_url.trim_end_matches('/'), endpoint_path);
 
-        let body = serde_json::json!({
+        let mut body = serde_json::json!({
             "model": config.model,
             "messages": messages,
-            "max_tokens": 4096,
         });
+
+        // Add max_tokens if provided, otherwise use default 4096
+        body["max_tokens"] = serde_json::Value::from(config.max_tokens.unwrap_or(4096));
+
+        // Add temperature if provided
+        if let Some(temp) = config.temperature {
+            body["temperature"] = serde_json::Value::from(temp);
+        }
 
         // Use custom auth header and prefix if provided
         let auth_header = config.custom_auth_header.as_deref().unwrap_or("Authorization");
@@ -147,6 +154,18 @@ impl OpenAiProvider {
         // Add session ID if available (for conversation continuity)
         if let Some(session_id) = &config.session_id {
             body["sessionId"] = serde_json::Value::String(session_id.clone());
+        }
+
+        // Add modelConfig with temperature and max_tokens if provided
+        let mut model_config = serde_json::json!({});
+        if let Some(temp) = config.temperature {
+            model_config["temperature"] = serde_json::Value::from(temp);
+        }
+        if let Some(max_tokens) = config.max_tokens {
+            model_config["max_tokens"] = serde_json::Value::from(max_tokens);
+        }
+        if !model_config.is_null() && model_config.as_object().map_or(false, |obj| !obj.is_empty()) {
+            body["modelConfig"] = model_config;
         }
 
         // Use custom auth header and prefix (no prefix for MSI GenAI)
