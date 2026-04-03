@@ -160,18 +160,21 @@ pub async fn export_document(
     // Determine the output directory
     let base_dir = if output_dir.is_empty() || output_dir == "." {
         // Try to use the Downloads directory, fall back to app data dir
-        dirs::download_dir()
-            .unwrap_or_else(|| {
-                let app_data = state.app_data_dir.clone();
-                app_data.join("exports")
-            })
+        dirs::download_dir().unwrap_or_else(|| {
+            let app_data = state.app_data_dir.clone();
+            app_data.join("exports")
+        })
     } else {
         PathBuf::from(&output_dir)
     };
 
     // Ensure the directory exists
     std::fs::create_dir_all(&base_dir).map_err(|e| {
-        format!("Failed to create export directory {}: {}", base_dir.display(), e)
+        format!(
+            "Failed to create export directory {}: {}",
+            base_dir.display(),
+            e
+        )
     })?;
 
     let safe_title: String = title
