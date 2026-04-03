@@ -191,11 +191,16 @@ export default function Security() {
                         {isExpanded && (
                           <tr className="border-b bg-accent/20">
                             <td colSpan={5} className="px-3 py-3">
-                              <div className="text-xs">
-                                <p className="font-medium text-foreground mb-1">Transmitted Data:</p>
-                                <pre className="bg-background/50 p-2 rounded text-xs overflow-x-auto text-foreground/80">
-                                  {entry.details}
+                              <div className="text-xs space-y-2">
+                                <p className="font-medium text-foreground">Transmitted Data:</p>
+                                <pre className="bg-background/50 p-3 rounded text-xs overflow-x-auto text-foreground/80 whitespace-pre-wrap">
+                                  {JSON.stringify(JSON.parse(entry.details), null, 2)}
                                 </pre>
+                                <div className="flex items-center gap-2 text-muted-foreground pt-1">
+                                  <span>Entry ID: {entry.id}</span>
+                                  <span>•</span>
+                                  <span>Type: {entry.entity_type}</span>
+                                </div>
                               </div>
                             </td>
                           </tr>

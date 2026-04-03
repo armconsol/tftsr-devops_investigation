@@ -40,13 +40,25 @@ pub async fn generate_rca(
         updated_at: now,
     };
 
-    // Audit
+    // Audit - capture document metadata
     let db = state.db.lock().map_err(|e| e.to_string())?;
+    let audit_details = serde_json::json!({
+        "issue_id": issue_id,
+        "issue_title": issue_detail.issue.title,
+        "doc_type": "rca",
+        "doc_title": document.title,
+        "content_length": content_md.len(),
+        "content_preview": if content_md.len() > 300 {
+            format!("{}...", &content_md[..300])
+        } else {
+            content_md.clone()
+        },
+    });
     let entry = AuditEntry::new(
         "generate_rca".to_string(),
         "document".to_string(),
         doc_id,
-        serde_json::json!({ "issue_id": issue_id }).to_string(),
+        audit_details.to_string(),
     );
     let _ = db.execute(
         "INSERT INTO audit_log (id, timestamp, action, entity_type, entity_id, user_id, details) \
@@ -87,13 +99,25 @@ pub async fn generate_postmortem(
         updated_at: now,
     };
 
-    // Audit
+    // Audit - capture document metadata
     let db = state.db.lock().map_err(|e| e.to_string())?;
+    let audit_details = serde_json::json!({
+        "issue_id": issue_id,
+        "issue_title": issue_detail.issue.title,
+        "doc_type": "postmortem",
+        "doc_title": document.title,
+        "content_length": content_md.len(),
+        "content_preview": if content_md.len() > 300 {
+            format!("{}...", &content_md[..300])
+        } else {
+            content_md.clone()
+        },
+    });
     let entry = AuditEntry::new(
         "generate_postmortem".to_string(),
         "document".to_string(),
         doc_id,
-        serde_json::json!({ "issue_id": issue_id }).to_string(),
+        audit_details.to_string(),
     );
     let _ = db.execute(
         "INSERT INTO audit_log (id, timestamp, action, entity_type, entity_id, user_id, details) \
@@ -129,7 +153,27 @@ pub async fn export_document(
     content_md: String,
     format: String,
     output_dir: String,
+    state: State<'_, AppState>,
 ) -> Result<String, String> {
+    use std::path::PathBuf;
+
+    // Determine the output directory
+    let base_dir = if output_dir.is_empty() || output_dir == "." {
+        // Try to use the Downloads directory, fall back to app data dir
+        dirs::download_dir()
+            .unwrap_or_else(|| {
+                let app_data = state.app_data_dir.clone();
+                app_data.join("exports")
+            })
+    } else {
+        PathBuf::from(&output_dir)
+    };
+
+    // Ensure the directory exists
+    std::fs::create_dir_all(&base_dir).map_err(|e| {
+        format!("Failed to create export directory {}: {}", base_dir.display(), e)
+    })?;
+
     let safe_title: String = title
         .chars()
         .map(|c| {
@@ -143,14 +187,16 @@ pub async fn export_document(
 
     let output_path = match format.as_str() {
         "markdown" | "md" => {
-            let path = format!("{output_dir}/{safe_title}.md");
-            exporter::export_markdown(&content_md, &path).map_err(|e| e.to_string())?;
-            path
+            let path = base_dir.join(format!("{safe_title}.md"));
+            exporter::export_markdown(&content_md, path.to_str().unwrap())
+                .map_err(|e| e.to_string())?;
+            path.to_string_lossy().to_string()
         }
         "pdf" => {
-            let path = format!("{output_dir}/{safe_title}.pdf");
-            exporter::export_pdf(&content_md, &title, &path).map_err(|e| e.to_string())?;
-            path
+            let path = base_dir.join(format!("{safe_title}.pdf"));
+            exporter::export_pdf(&content_md, &title, path.to_str().unwrap())
+                .map_err(|e| e.to_string())?;
+            path.to_string_lossy().to_string()
         }
         _ => return Err(format!("Unsupported export format: {format}")),
     };

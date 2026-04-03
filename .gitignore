@@ -8,3 +8,4 @@ secrets.yml
 secrets.yaml
 artifacts/
 *.png
+/screenshots/

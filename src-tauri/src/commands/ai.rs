@@ -239,12 +239,24 @@ pub async fn chat_message(
         )
         .map_err(|e| e.to_string())?;
 
-        // Audit
+        // Audit - capture full transmission details
+        let audit_details = serde_json::json!({
+            "provider": provider_config.name,
+            "model": provider_config.model,
+            "api_url": provider_config.api_url,
+            "user_message": user_msg.content,
+            "response_preview": if response.content.len() > 200 {
+                format!("{}...", &response.content[..200])
+            } else {
+                response.content.clone()
+            },
+            "token_count": user_msg.token_count,
+        });
         let entry = AuditEntry::new(
             "ai_chat".to_string(),
             "issue".to_string(),
             issue_id,
-            serde_json::json!({ "provider": provider_config.name }).to_string(),
+            audit_details.to_string(),
         );
         let _ = db.execute(
             "INSERT INTO audit_log (id, timestamp, action, entity_type, entity_id, user_id, details) \

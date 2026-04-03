@@ -121,7 +121,8 @@ export default function History() {
             </SelectContent>
           </Select>
         </div>
-        <Button variant="outline" onClick={handleSearch}>
+        <Button onClick={handleSearch}>
+          <Search className="w-4 h-4 mr-2" />
           Search
         </Button>
       </div>

@@ -58,11 +58,11 @@ export function DocEditor({ content, onChange, version, updatedAt, onExport }: D
                 MD
               </Button>
               <Button size="sm" variant="outline" onClick={() => onExport("pdf")}>
-                <Download className="w-3 h-3 mr-1" />
+                <Download className="w-3 h-3 mr-1 text-foreground" />
                 PDF
               </Button>
               <Button size="sm" variant="outline" onClick={() => onExport("docx")}>
-                <Download className="w-3 h-3 mr-1" />
+                <Download className="w-3 h-3 mr-1 text-foreground" />
                 DOCX
               </Button>
             </div>

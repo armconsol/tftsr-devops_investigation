@@ -52,9 +52,11 @@ export default function Postmortem() {
   const handleExport = async (format: "md" | "pdf" | "docx") => {
     if (!doc) return;
     try {
-      await exportDocumentCmd(doc.id, doc.title, content, format, ".");
+      const path = await exportDocumentCmd(doc.id, doc.title, content, format, "");
+      setError(`Document exported to: ${path}`);
+      setTimeout(() => setError(null), 5000);
     } catch (err) {
-      setError(String(err));
+      setError(`Export failed: ${String(err)}`);
     }
   };
 

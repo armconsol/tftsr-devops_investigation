@@ -306,6 +306,10 @@ pub async fn list_issues(
         sql.push_str(&format!(" AND i.category = ?{}", params.len() + 1));
         params.push(Box::new(category.clone()));
     }
+    if let Some(ref domain) = filter.domain {
+        sql.push_str(&format!(" AND i.category = ?{}", params.len() + 1));
+        params.push(Box::new(domain.clone()));
+    }
     if let Some(ref search) = filter.search {
         let pattern = format!("%{search}%");
         sql.push_str(&format!(
