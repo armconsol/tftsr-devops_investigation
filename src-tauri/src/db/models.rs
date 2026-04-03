@@ -340,3 +340,55 @@ pub struct SettingRecord {
     pub value: String,
     pub updated_at: String,
 }
+
+// ─── Integrations ───────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Credential {
+    pub id: String,
+    pub service: String,
+    pub token_hash: String,
+    pub encrypted_token: String,
+    pub created_at: String,
+    pub expires_at: Option<String>,
+}
+
+impl Credential {
+    pub fn new(service: String, token_hash: String, encrypted_token: String) -> Self {
+        Credential {
+            id: Uuid::now_v7().to_string(),
+            service,
+            token_hash,
+            encrypted_token,
+            created_at: chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+            expires_at: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IntegrationConfig {
+    pub id: String,
+    pub service: String,
+    pub base_url: String,
+    pub username: Option<String>,
+    pub project_name: Option<String>,
+    pub space_key: Option<String>,
+    pub auto_create_enabled: bool,
+    pub updated_at: String,
+}
+
+impl IntegrationConfig {
+    pub fn new(service: String, base_url: String) -> Self {
+        IntegrationConfig {
+            id: Uuid::now_v7().to_string(),
+            service,
+            base_url,
+            username: None,
+            project_name: None,
+            space_key: None,
+            auto_create_enabled: false,
+            updated_at: chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+        }
+    }
+}
