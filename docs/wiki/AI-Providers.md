@@ -1,6 +1,6 @@
 # AI Providers
 
-TFTSR supports 5 AI providers, selectable per-session. API keys are stored in the Stronghold encrypted vault.
+TFTSR supports 6+ AI providers, including custom providers with flexible authentication and API formats. API keys are stored encrypted with AES-256-GCM.
 
 ## Provider Factory
 
@@ -110,6 +110,130 @@ Each triage conversation is pre-loaded with a domain-specific expert system prom
 | **Observability** | Prometheus/Grafana, ELK/OpenSearch, tracing, SLO/SLI burn rates |
 
 The domain prompt is injected as the first `system` role message in every new conversation.
+
+---
+
+## 6. Custom Provider (MSI GenAI & Others)
+
+**Status:** ✅ **Implemented** (v0.2.6)
+
+Custom providers allow integration with non-OpenAI-compatible APIs. The application supports two API formats:
+
+### Format: OpenAI Compatible (Default)
+
+Standard OpenAI `/chat/completions` endpoint with Bearer authentication.
+
+| Field | Default Value |
+|-------|--------------|
+| `api_format` | `"openai"` |
+| `custom_endpoint_path` | `/chat/completions` |
+| `custom_auth_header` | `Authorization` |
+| `custom_auth_prefix` | `Bearer ` |
+
+**Use cases:**
+- Self-hosted LLMs with OpenAI-compatible APIs
+- Custom proxy services
+- Enterprise gateways
+
+---
+
+### Format: MSI GenAI
+
+**Motorola Solutions Internal GenAI Service** — Enterprise AI platform with centralized cost tracking and model access.
+
+| Field | Value |
+|-------|-------|
+| `config.provider_type` | `"custom"` |
+| `config.api_format` | `"msi_genai"` |
+| API URL | `https://genai-service.commandcentral.com/app-gateway` (prod)<br>`https://genai-service.stage.commandcentral.com/app-gateway` (stage) |
+| Auth Header | `x-msi-genai-api-key` |
+| Auth Prefix | `` (empty - no Bearer prefix) |
+| Endpoint Path | `` (empty - URL includes full path `/api/v2/chat`) |
+
+**Available Models:**
+- `VertexGemini` — Gemini 2.0 Flash (Private/GCP)
+- `Claude-Sonnet-4` — Claude Sonnet 4 (Public/Anthropic)
+- `ChatGPT4o` — GPT-4o (Public/OpenAI)
+- `ChatGPT-5_2-Chat` — GPT-4.5 (Public/OpenAI)
+- See [GenAI API User Guide](../GenAI%20API%20User%20Guide.md) for full model list
+
+**Request Format:**
+```json
+{
+  "model": "VertexGemini",
+  "prompt": "User's latest message",
+  "system": "Optional system prompt",
+  "sessionId": "uuid-for-conversation-continuity",
+  "userId": "user.name@motorolasolutions.com"
+}
+```
+
+**Response Format:**
+```json
+{
+  "status": true,
+  "sessionId": "uuid",
+  "msg": "AI response text",
+  "initialPrompt": false
+}
+```
+
+**Key Differences from OpenAI:**
+- **Single prompt** instead of message array (server manages history via `sessionId`)
+- **Response in `msg` field** instead of `choices[0].message.content`
+- **Session-based** conversation continuity (no need to resend history)
+- **Cost tracking** via `userId` field (optional — defaults to API key owner if omitted)
+- **Custom client header**: `X-msi-genai-client: tftsr-devops-investigation`
+
+**Configuration (Settings → AI Providers → Add Provider):**
+```
+Name:             MSI GenAI
+Type:             Custom
+API Format:       MSI GenAI
+API URL:          https://genai-service.stage.commandcentral.com/app-gateway
+Model:            VertexGemini
+API Key:          (your MSI GenAI API key from portal)
+User ID:          your.name@motorolasolutions.com (optional)
+Endpoint Path:    (leave empty)
+Auth Header:      x-msi-genai-api-key
+Auth Prefix:      (leave empty)
+```
+
+**Rate Limits:**
+- $50/user/month (enforced server-side)
+- Per-API-key quotas available
+
+**Troubleshooting:**
+
+| Error | Cause | Solution |
+|-------|-------|----------|
+| 403 Forbidden | Invalid API key or insufficient permissions | Verify key in MSI GenAI portal, check model access |
+| Missing `userId` field | Configuration not saved | Ensure UI shows User ID field when `api_format=msi_genai` |
+| No conversation history | `sessionId` not persisted | Session ID stored in `ProviderConfig.session_id` — currently per-provider, not per-conversation |
+
+**Implementation Details:**
+- Backend: `src-tauri/src/ai/openai.rs::chat_msi_genai()`
+- Schema: `src-tauri/src/state.rs::ProviderConfig` (added `user_id`, `api_format`, custom auth fields)
+- Frontend: `src/pages/Settings/AIProviders.tsx` (conditional UI for MSI GenAI)
+- CSP whitelist: `https://genai-service.stage.commandcentral.com` and production domain
+
+---
+
+## Custom Provider Configuration Fields
+
+All providers support the following optional configuration fields (v0.2.6+):
+
+| Field | Type | Purpose | Default |
+|-------|------|---------|---------|
+| `custom_endpoint_path` | `Option<String>` | Override endpoint path | `/chat/completions` |
+| `custom_auth_header` | `Option<String>` | Custom auth header name | `Authorization` |
+| `custom_auth_prefix` | `Option<String>` | Prefix before API key | `Bearer ` |
+| `api_format` | `Option<String>` | API format (`openai` or `msi_genai`) | `openai` |
+| `session_id` | `Option<String>` | Session ID for stateful APIs | None |
+| `user_id` | `Option<String>` | User ID for cost tracking (MSI GenAI) | None |
+
+**Backward Compatibility:**
+All fields are optional and default to OpenAI-compatible behavior. Existing provider configurations are unaffected.
 
 ---
 

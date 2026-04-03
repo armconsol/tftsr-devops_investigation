@@ -2,7 +2,7 @@
 
 ## Overview
 
-TFTSR uses **SQLite** via `rusqlite` with the `bundled-sqlcipher` feature for AES-256 encryption in production. 10 versioned migrations are tracked in the `_migrations` table.
+TFTSR uses **SQLite** via `rusqlite` with the `bundled-sqlcipher` feature for AES-256 encryption in production. 11 versioned migrations are tracked in the `_migrations` table.
 
 **DB file location:** `{app_data_dir}/tftsr.db`
 
@@ -38,7 +38,7 @@ pub fn init_db(data_dir: &Path) -> anyhow::Result<Connection> {
 
 ---
 
-## Schema (10 Migrations)
+## Schema (11 Migrations)
 
 ### 001 — issues
 
@@ -180,6 +180,47 @@ CREATE VIRTUAL TABLE issues_fts USING fts5(
     content_rowid='rowid'
 );
 ```
+
+### 011 — credentials & integration_config (v0.2.3+)
+
+**Integration credentials table:**
+```sql
+CREATE TABLE credentials (
+    id TEXT PRIMARY KEY,
+    service TEXT NOT NULL CHECK(service IN ('confluence','servicenow','azuredevops')),
+    token_hash TEXT NOT NULL,        -- SHA-256 hash for audit
+    encrypted_token TEXT NOT NULL,   -- AES-256-GCM encrypted
+    created_at TEXT NOT NULL,
+    expires_at TEXT,
+    UNIQUE(service)
+);
+```
+
+**Integration configuration table:**
+```sql
+CREATE TABLE integration_config (
+    id TEXT PRIMARY KEY,
+    service TEXT NOT NULL CHECK(service IN ('confluence','servicenow','azuredevops')),
+    base_url TEXT NOT NULL,
+    username TEXT,              -- ServiceNow only
+    project_name TEXT,          -- Azure DevOps only
+    space_key TEXT,             -- Confluence only
+    auto_create_enabled INTEGER NOT NULL DEFAULT 0,
+    updated_at TEXT NOT NULL,
+    UNIQUE(service)
+);
+```
+
+**Encryption:**
+- OAuth2 tokens encrypted with AES-256-GCM
+- Key derived from `TFTSR_DB_KEY` environment variable
+- Random 96-bit nonce per encryption
+- Format: `base64(nonce || ciphertext || tag)`
+
+**Usage:**
+- OAuth2 flows (Confluence, Azure DevOps): Store encrypted bearer token
+- Basic auth (ServiceNow): Store encrypted password
+- One credential per service (enforced by UNIQUE constraint)
 
 ---
 

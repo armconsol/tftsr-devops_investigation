@@ -24,8 +24,10 @@
 
 - **5-Whys AI Triage** — Interactive guided root cause analysis via multi-turn AI chat
 - **PII Auto-Redaction** — Detects and redacts sensitive data before any AI send
-- **Multi-Provider AI** — OpenAI, Anthropic Claude, Google Gemini, Mistral, AWS Bedrock (via LiteLLM), local Ollama (fully offline)
-- **SQLCipher AES-256** — All issue history encrypted at rest
+- **Multi-Provider AI** — OpenAI, Anthropic Claude, Google Gemini, Mistral, AWS Bedrock (via LiteLLM), MSI GenAI (Motorola internal), local Ollama (fully offline)
+- **Custom Provider Support** — Flexible authentication (Bearer, custom headers) and API formats (OpenAI-compatible, MSI GenAI)
+- **External Integrations** — Confluence, ServiceNow, Azure DevOps with OAuth2 PKCE flows
+- **SQLCipher AES-256** — All issue history and credentials encrypted at rest
 - **RCA + Post-Mortem Generation** — Auto-populated Markdown templates, exportable as MD/PDF
 - **Ollama Management** — Hardware detection, model recommendations, in-app model management
 - **Audit Trail** — Every external data send logged with SHA-256 hash
@@ -33,9 +35,13 @@
 
 ## Releases
 
-| Version | Status | Platforms |
+| Version | Status | Highlights |
 |---------|--------|-----------|
-| v0.1.1 | 🚀 Released | linux/amd64 · linux/arm64 · windows/amd64 (.deb, .rpm, .AppImage, .exe, .msi) |
+| v0.2.6 | 🚀 Latest | MSI GenAI support, OAuth2 shell permissions, user ID tracking |
+| v0.2.3 | Released | Confluence/ServiceNow/ADO REST API clients (19 TDD tests) |
+| v0.1.1 | Released | Core application with PII detection, RCA generation |
+
+**Platforms:** linux/amd64 · linux/arm64 · windows/amd64 (.deb, .rpm, .AppImage, .exe, .msi)
 
 Download from [Releases](https://gogs.tftsr.com/sarman/tftsr-devops_investigation/releases). All builds are produced natively (no QEMU emulation).
 
@@ -45,7 +51,7 @@ Download from [Releases](https://gogs.tftsr.com/sarman/tftsr-devops_investigatio
 |-------|--------|
 | Phases 1–8 (Core application) | ✅ Complete |
 | Phase 9 (History/Search) | 🔲 Pending |
-| Phase 10 (Integrations) | 🕐 v0.2 stubs only |
+| Phase 10 (Integrations) | ✅ Complete — Confluence, ServiceNow, Azure DevOps fully implemented with OAuth2 |
 | Phase 11 (CI/CD) | ✅ Complete — Gitea Actions fully operational |
 | Phase 12 (Release packaging) | ✅ linux/amd64 · linux/arm64 (native) · windows/amd64 |
 

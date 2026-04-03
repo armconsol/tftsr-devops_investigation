@@ -220,15 +220,206 @@ Returns audit log entries. Filter by action, entity_type, date range.
 
 ---
 
-## Integration Commands (v0.2 Stubs)
+## Integration Commands
 
-All 6 integration commands currently return `"not yet available"` errors.
+> **Status:** ✅ **Fully Implemented** (v0.2.3+)
 
-| Command | Purpose |
-|---------|---------|
-| `test_confluence_connection` | Verify Confluence credentials |
-| `publish_to_confluence` | Publish RCA/postmortem to Confluence space |
-| `test_servicenow_connection` | Verify ServiceNow credentials |
-| `create_servicenow_incident` | Create incident from issue |
-| `test_azuredevops_connection` | Verify Azure DevOps credentials |
-| `create_azuredevops_workitem` | Create work item from issue |
+All integration commands are production-ready with complete OAuth2/authentication flows.
+
+### OAuth2 Commands
+
+### `initiate_oauth`
+```typescript
+initiateOauthCmd(service: "confluence" | "servicenow" | "azuredevops") → OAuthInitResponse
+```
+Starts OAuth2 PKCE flow. Returns authorization URL and state key. Opens browser window for user authentication.
+
+```typescript
+interface OAuthInitResponse {
+    auth_url: string;  // URL to open in browser
+    state: string;     // State key for callback verification
+}
+```
+
+**Flow:**
+1. Generates PKCE challenge
+2. Starts local callback server on `http://localhost:8765`
+3. Opens authorization URL in browser
+4. User authenticates with service
+5. Service redirects to callback server
+6. Callback server triggers `handle_oauth_callback`
+
+### `handle_oauth_callback`
+```typescript
+handleOauthCallbackCmd(service: string, code: string, stateKey: string) → void
+```
+Exchanges authorization code for access token. Encrypts token with AES-256-GCM and stores in database.
+
+### Confluence Commands
+
+### `test_confluence_connection`
+```typescript
+testConfluenceConnectionCmd(baseUrl: string, credentials: Record<string, unknown>) → ConnectionResult
+```
+Verifies Confluence connection by calling `/rest/api/user/current`.
+
+### `list_confluence_spaces`
+```typescript
+listConfluenceSpacesCmd(config: ConfluenceConfig) → Space[]
+```
+Lists all accessible Confluence spaces.
+
+### `search_confluence_pages`
+```typescript
+searchConfluencePagesCmd(config: ConfluenceConfig, query: string, spaceKey?: string) → Page[]
+```
+Searches pages using CQL (Confluence Query Language). Optional space filter.
+
+### `publish_to_confluence`
+```typescript
+publishToConfluenceCmd(config: ConfluenceConfig, spaceKey: string, title: string, contentHtml: string, parentPageId?: string) → PublishResult
+```
+Creates a new page in Confluence. Returns page ID and URL.
+
+### `update_confluence_page`
+```typescript
+updateConfluencePageCmd(config: ConfluenceConfig, pageId: string, title: string, contentHtml: string, version: number) → PublishResult
+```
+Updates an existing page. Requires current version number.
+
+### ServiceNow Commands
+
+### `test_servicenow_connection`
+```typescript
+testServiceNowConnectionCmd(instanceUrl: string, credentials: Record<string, unknown>) → ConnectionResult
+```
+Verifies ServiceNow connection by querying incident table.
+
+### `search_servicenow_incidents`
+```typescript
+searchServiceNowIncidentsCmd(config: ServiceNowConfig, query: string) → Incident[]
+```
+Searches incidents by short description. Returns up to 10 results.
+
+### `create_servicenow_incident`
+```typescript
+createServiceNowIncidentCmd(config: ServiceNowConfig, shortDesc: string, description: string, urgency: string, impact: string) → TicketResult
+```
+Creates a new incident. Returns incident number and URL.
+
+```typescript
+interface TicketResult {
+    id: string;           // sys_id (UUID)
+    ticket_number: string; // INC0010001
+    url: string;          // Direct link to incident
+}
+```
+
+### `get_servicenow_incident`
+```typescript
+getServiceNowIncidentCmd(config: ServiceNowConfig, incidentId: string) → Incident
+```
+Retrieves incident by sys_id or incident number (e.g., `INC0010001`).
+
+### `update_servicenow_incident`
+```typescript
+updateServiceNowIncidentCmd(config: ServiceNowConfig, sysId: string, updates: Record<string, any>) → TicketResult
+```
+Updates incident fields. Uses JSON-PATCH format.
+
+### Azure DevOps Commands
+
+### `test_azuredevops_connection`
+```typescript
+testAzureDevOpsConnectionCmd(orgUrl: string, credentials: Record<string, unknown>) → ConnectionResult
+```
+Verifies Azure DevOps connection by querying project info.
+
+### `search_azuredevops_workitems`
+```typescript
+searchAzureDevOpsWorkItemsCmd(config: AzureDevOpsConfig, query: string) → WorkItem[]
+```
+Searches work items using WIQL (Work Item Query Language).
+
+### `create_azuredevops_workitem`
+```typescript
+createAzureDevOpsWorkItemCmd(config: AzureDevOpsConfig, title: string, description: string, workItemType: string, severity: string) → TicketResult
+```
+Creates a work item (Bug, Task, User Story). Returns work item ID and URL.
+
+**Work Item Types:**
+- `Bug` — Software defect
+- `Task` — Work assignment
+- `User Story` — Feature request
+- `Issue` — Problem or blocker
+- `Incident` — Production incident
+
+### `get_azuredevops_workitem`
+```typescript
+getAzureDevOpsWorkItemCmd(config: AzureDevOpsConfig, workItemId: number) → WorkItem
+```
+Retrieves work item by ID.
+
+### `update_azuredevops_workitem`
+```typescript
+updateAzureDevOpsWorkItemCmd(config: AzureDevOpsConfig, workItemId: number, updates: Record<string, any>) → TicketResult
+```
+Updates work item fields. Uses JSON-PATCH format.
+
+---
+
+## Common Types
+
+### `ConnectionResult`
+```typescript
+interface ConnectionResult {
+    success: boolean;
+    message: string;
+}
+```
+
+### `PublishResult`
+```typescript
+interface PublishResult {
+    id: string;     // Page ID or document ID
+    url: string;    // Direct link to published content
+}
+```
+
+### `TicketResult`
+```typescript
+interface TicketResult {
+    id: string;           // sys_id or work item ID
+    ticket_number: string; // Human-readable number
+    url: string;          // Direct link
+}
+```
+
+---
+
+## Authentication Storage
+
+All integration credentials are stored in the `credentials` table:
+
+```sql
+CREATE TABLE credentials (
+    id TEXT PRIMARY KEY,
+    service TEXT NOT NULL CHECK(service IN ('confluence','servicenow','azuredevops')),
+    token_hash TEXT NOT NULL,        -- SHA-256 for audit
+    encrypted_token TEXT NOT NULL,   -- AES-256-GCM encrypted
+    created_at TEXT NOT NULL,
+    expires_at TEXT
+);
+```
+
+**Encryption:**
+- Algorithm: AES-256-GCM
+- Key derivation: From `TFTSR_DB_KEY` environment variable
+- Nonce: Random 96-bit per encryption
+- Format: `base64(nonce || ciphertext || tag)`
+
+**Token retrieval:**
+```rust
+// Backend: src-tauri/src/integrations/auth.rs
+pub fn decrypt_token(encrypted: &str) -> Result<String, String>
+```
