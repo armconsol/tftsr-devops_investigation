@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Terminal,
@@ -61,8 +61,27 @@ export default function NewIssue() {
   const [severity, setSeverity] = useState("P3");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showDisclaimer, setShowDisclaimer] = useState(false);
+
+  useEffect(() => {
+    const hasAcceptedDisclaimer = localStorage.getItem("tftsr-ai-disclaimer-accepted");
+    if (!hasAcceptedDisclaimer) {
+      setShowDisclaimer(true);
+    }
+  }, []);
+
+  const handleAcceptDisclaimer = () => {
+    localStorage.setItem("tftsr-ai-disclaimer-accepted", "true");
+    setShowDisclaimer(false);
+  };
 
   const handleStartTriage = async () => {
+    const hasAcceptedDisclaimer = localStorage.getItem("tftsr-ai-disclaimer-accepted");
+    if (!hasAcceptedDisclaimer) {
+      setShowDisclaimer(true);
+      return;
+    }
+
     if (!selectedDomain || !title.trim()) return;
     setIsSubmitting(true);
     setError(null);
@@ -77,6 +96,82 @@ export default function NewIssue() {
   };
 
   return (
+    <>
+      {/* AI Disclaimer Modal */}
+      {showDisclaimer && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-background border rounded-lg max-w-2xl w-full p-6 space-y-4 shadow-lg">
+            <h2 className="text-2xl font-bold text-foreground">AI-Assisted Triage Disclaimer</h2>
+
+            <div className="space-y-3 text-sm text-foreground/90 max-h-[60vh] overflow-y-auto">
+              <p className="font-medium text-destructive">
+                ⚠️ IMPORTANT: Read Carefully Before Proceeding
+              </p>
+
+              <p>
+                This application uses artificial intelligence (AI) to assist with IT issue triage, root cause analysis,
+                and troubleshooting recommendations. While AI can be a powerful tool, <strong>you must understand its
+                limitations and your responsibilities</strong>.
+              </p>
+
+              <div className="bg-destructive/10 border border-destructive/20 rounded p-3 space-y-2">
+                <p className="font-semibold">AI Can Make Mistakes:</p>
+                <ul className="list-disc list-inside space-y-1 ml-2">
+                  <li>AI models may provide <strong>incorrect</strong>, <strong>incomplete</strong>, or <strong>outdated</strong> information</li>
+                  <li>AI can <strong>hallucinate</strong> — generating plausible-sounding but entirely false information</li>
+                  <li>Recommendations may not apply to your specific environment or configuration</li>
+                  <li>Commands suggested by AI may have <strong>unintended consequences</strong> including data loss, system downtime, or security vulnerabilities</li>
+                </ul>
+              </div>
+
+              <div className="bg-yellow-500/10 border border-yellow-500/20 rounded p-3 space-y-2">
+                <p className="font-semibold">You Are Fully Responsible:</p>
+                <ul className="list-disc list-inside space-y-1 ml-2">
+                  <li><strong>You</strong> are solely responsible for any commands you execute, changes you make, or actions you take based on AI recommendations</li>
+                  <li><strong>Always verify</strong> AI suggestions against official documentation, best practices, and your organization's policies</li>
+                  <li><strong>Test in non-production</strong> environments before applying changes to production systems</li>
+                  <li><strong>Understand commands</strong> before executing them — never blindly run suggested commands</li>
+                  <li>Have <strong>backups and rollback plans</strong> in place before making system changes</li>
+                </ul>
+              </div>
+
+              <p>
+                <strong>Best Practices:</strong>
+              </p>
+              <ul className="list-disc list-inside space-y-1 ml-2">
+                <li>Treat AI recommendations as a starting point for investigation, not definitive answers</li>
+                <li>Consult with senior engineers or subject matter experts when dealing with critical systems</li>
+                <li>Review all AI-generated content for accuracy and relevance to your specific situation</li>
+                <li>Maintain proper change control and approval processes</li>
+                <li>Document your actions and decision-making process</li>
+              </ul>
+
+              <p className="pt-2 border-t">
+                By clicking "I Understand and Accept," you acknowledge that you have read and understood this disclaimer,
+                and you accept full responsibility for any actions taken based on information provided by this AI-assisted
+                system. <strong>Use at your own risk.</strong>
+              </p>
+            </div>
+
+            <div className="flex gap-3 pt-2">
+              <Button
+                onClick={handleAcceptDisclaimer}
+                className="flex-1"
+              >
+                I Understand and Accept
+              </Button>
+              <Button
+                onClick={() => navigate("/")}
+                variant="outline"
+                className="flex-1"
+              >
+                Cancel
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
     <div className="p-6 space-y-6">
       <div>
         <h1 className="text-3xl font-bold">New Issue</h1>
@@ -155,5 +250,6 @@ export default function NewIssue() {
         {isSubmitting ? "Creating..." : "Start Triage"}
       </Button>
     </div>
+    </>
   );
 }
