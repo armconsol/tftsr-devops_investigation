@@ -15,6 +15,7 @@ export interface ProviderConfig {
   custom_auth_prefix?: string;
   api_format?: string;
   session_id?: string;
+  user_id?: string;
 }
 
 export interface Message {

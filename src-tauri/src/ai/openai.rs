@@ -132,8 +132,12 @@ impl OpenAiProvider {
         let mut body = serde_json::json!({
             "model": config.model,
             "prompt": prompt,
-            "userId": "user@motorolasolutions.com", // Default user ID
         });
+
+        // Add userId if provided (CORE ID email)
+        if let Some(user_id) = &config.user_id {
+            body["userId"] = serde_json::Value::String(user_id.clone());
+        }
 
         // Add optional system message
         if let Some(system) = system_message {
@@ -157,6 +161,7 @@ impl OpenAiProvider {
             .post(&url)
             .header(auth_header, auth_value)
             .header("Content-Type", "application/json")
+            .header("X-msi-genai-client", "tftsr-devops-investigation")
             .json(&body)
             .send()
             .await?;

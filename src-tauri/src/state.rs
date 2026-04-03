@@ -29,6 +29,9 @@ pub struct ProviderConfig {
     /// Optional: Session ID for stateful APIs like MSI GenAI
     #[serde(skip_serializing_if = "Option::is_none")]
     pub session_id: Option<String>,
+    /// Optional: User ID for MSI GenAI (CORE ID email)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub user_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -32,6 +32,7 @@ const emptyProvider: ProviderConfig = {
   custom_auth_prefix: undefined,
   api_format: undefined,
   session_id: undefined,
+  user_id: undefined,
 };
 
 export default function AIProviders() {
@@ -351,6 +352,21 @@ export default function AIProviders() {
                       Prefix added before API key (e.g., "Bearer " for OpenAI, empty for MSI GenAI)
                     </p>
                   </div>
+
+                  {/* MSI GenAI specific: User ID field */}
+                  {form.api_format === "msi_genai" && (
+                    <div className="space-y-2">
+                      <Label>User ID (CORE ID)</Label>
+                      <Input
+                        value={form.user_id ?? ""}
+                        onChange={(e) => setForm({ ...form, user_id: e.target.value })}
+                        placeholder="your.name@motorolasolutions.com"
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Optional: Your Motorola CORE ID email. If omitted, costs are tracked to API key owner.
+                      </p>
+                    </div>
+                  )}
                 </div>
               </>
             )}
