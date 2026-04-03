@@ -82,3 +82,94 @@ jobs:
           git checkout FETCH_HEAD
       - run: npm ci --legacy-peer-deps
       - run: npm run test:run
+
+  wiki-sync:
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/master'
+    container:
+      image: alpine:latest
+    steps:
+      - name: Install dependencies
+        run: apk add --no-cache git openssh-client
+
+      - name: Checkout main repository
+        run: |
+          git init
+          git remote add origin http://172.0.0.29:3000/sarman/tftsr-devops_investigation.git
+          git fetch --depth=1 origin $GITHUB_SHA
+          git checkout FETCH_HEAD
+
+      - name: Configure git
+        run: |
+          git config --global user.email "actions@gitea.local"
+          git config --global user.name "Gitea Actions"
+
+      - name: Clone wiki repository
+        run: |
+          cd /tmp
+          # Use token authentication if available, fallback to unauthenticated
+          if [ -n "${{ secrets.GITHUB_TOKEN }}" ]; then
+            WIKI_URL="http://${{ secrets.GITHUB_TOKEN }}@172.0.0.29:3000/sarman/tftsr-devops_investigation.wiki.git"
+          else
+            WIKI_URL="http://172.0.0.29:3000/sarman/tftsr-devops_investigation.wiki.git"
+          fi
+          git clone "$WIKI_URL" wiki || true
+
+      - name: Initialize wiki if clone failed
+        run: |
+          if [ ! -d /tmp/wiki ]; then
+            echo "Wiki repository doesn't exist yet or clone failed, initializing..."
+            mkdir -p /tmp/wiki
+            cd /tmp/wiki
+            git init
+            git checkout -b master
+            echo "# Wiki" > Home.md
+            git add Home.md
+            git commit -m "Initial wiki commit"
+            if [ -n "${{ secrets.GITHUB_TOKEN }}" ]; then
+              WIKI_URL="http://${{ secrets.GITHUB_TOKEN }}@172.0.0.29:3000/sarman/tftsr-devops_investigation.wiki.git"
+            else
+              WIKI_URL="http://172.0.0.29:3000/sarman/tftsr-devops_investigation.wiki.git"
+            fi
+            git remote add origin "$WIKI_URL"
+          fi
+
+      - name: Sync wiki files
+        run: |
+          # Copy all markdown files from docs/wiki/ to wiki repo root
+          if [ -d "docs/wiki" ] && [ "$(ls -A docs/wiki/*.md 2>/dev/null)" ]; then
+            cp -v docs/wiki/*.md /tmp/wiki/
+            echo "Copied $(ls docs/wiki/*.md | wc -l) wiki files"
+          else
+            echo "No wiki markdown files found in docs/wiki/"
+          fi
+
+      - name: Commit and push wiki changes
+        run: |
+          cd /tmp/wiki
+          git add -A
+
+          # Check if there are any changes
+          if git diff --staged --quiet; then
+            echo "No wiki changes to commit"
+            exit 0
+          fi
+
+          # Commit changes
+          git commit -m "docs: sync from docs/wiki/ at commit ${GITHUB_SHA:0:8}"
+
+          # Prepare push URL with token if available
+          if [ -n "${{ secrets.GITHUB_TOKEN }}" ]; then
+            WIKI_URL="http://${{ secrets.GITHUB_TOKEN }}@172.0.0.29:3000/sarman/tftsr-devops_investigation.wiki.git"
+          else
+            WIKI_URL="http://172.0.0.29:3000/sarman/tftsr-devops_investigation.wiki.git"
+          fi
+
+          # Push to wiki
+          if git push "$WIKI_URL" master; then
+            echo "✓ Wiki successfully synced"
+          else
+            echo "⚠ Wiki push failed - you may need to configure authentication"
+            echo "  To enable automatic wiki sync, add a Gitea token with repository write access"
+            exit 1
+          fi
