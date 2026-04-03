@@ -1,6 +1,6 @@
 {
   "productName": "TFTSR",
-  "version": "0.1.22",
+  "version": "0.2.0",
   "identifier": "com.tftsr.devops",
   "build": {
     "frontendDist": "../dist",
