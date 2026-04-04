@@ -278,7 +278,9 @@ pub async fn test_provider_connection(
     let provider = create_provider(&provider_config);
     let messages = vec![Message {
         role: "user".into(),
-        content: "Reply with exactly: TFTSR connection test successful.".into(),
+        content:
+            "Reply with exactly: Troubleshooting and RCA Assistant connection test successful."
+                .into(),
     }];
     provider
         .chat(messages, &provider_config)

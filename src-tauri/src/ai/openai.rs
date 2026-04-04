@@ -6,6 +6,10 @@ use crate::state::ProviderConfig;
 
 pub struct OpenAiProvider;
 
+fn is_custom_rest_format(api_format: Option<&str>) -> bool {
+    matches!(api_format, Some("custom_rest") | Some("msi_genai"))
+}
+
 #[async_trait]
 impl Provider for OpenAiProvider {
     fn name(&self) -> &str {
@@ -29,14 +33,36 @@ impl Provider for OpenAiProvider {
         messages: Vec<Message>,
         config: &ProviderConfig,
     ) -> anyhow::Result<ChatResponse> {
-        // Check if using MSI GenAI format
+        // Check if using custom REST format
         let api_format = config.api_format.as_deref().unwrap_or("openai");
 
-        if api_format == "msi_genai" {
-            self.chat_msi_genai(messages, config).await
+        // Backward compatibility: accept legacy msi_genai identifier
+        if is_custom_rest_format(Some(api_format)) {
+            self.chat_custom_rest(messages, config).await
         } else {
             self.chat_openai(messages, config).await
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_custom_rest_format;
+
+    #[test]
+    fn custom_rest_format_is_recognized() {
+        assert!(is_custom_rest_format(Some("custom_rest")));
+    }
+
+    #[test]
+    fn legacy_msi_format_is_recognized_for_compatibility() {
+        assert!(is_custom_rest_format(Some("msi_genai")));
+    }
+
+    #[test]
+    fn openai_format_is_not_custom_rest() {
+        assert!(!is_custom_rest_format(Some("openai")));
+        assert!(!is_custom_rest_format(None));
     }
 }
 
@@ -113,8 +139,8 @@ impl OpenAiProvider {
         })
     }
 
-    /// MSI GenAI custom format
-    async fn chat_msi_genai(
+    /// Custom REST format (MSI GenAI payload contract)
+    async fn chat_custom_rest(
         &self,
         messages: Vec<Message>,
         config: &ProviderConfig,
@@ -173,7 +199,7 @@ impl OpenAiProvider {
             body["modelConfig"] = model_config;
         }
 
-        // Use custom auth header and prefix (no prefix for MSI GenAI)
+        // Use custom auth header and prefix (no prefix for this custom REST contract)
         let auth_header = config
             .custom_auth_header
             .as_deref()
@@ -185,7 +211,7 @@ impl OpenAiProvider {
             .post(&url)
             .header(auth_header, auth_value)
             .header("Content-Type", "application/json")
-            .header("X-msi-genai-client", "tftsr-devops-investigation")
+            .header("X-msi-genai-client", "troubleshooting-rca-assistant")
             .json(&body)
             .send()
             .await?;
@@ -193,7 +219,7 @@ impl OpenAiProvider {
         if !resp.status().is_success() {
             let status = resp.status();
             let text = resp.text().await?;
-            anyhow::bail!("MSI GenAI API error {status}: {text}");
+            anyhow::bail!("Custom REST API error {status}: {text}");
         }
 
         let json: serde_json::Value = resp.json().await?;
@@ -212,7 +238,7 @@ impl OpenAiProvider {
         Ok(ChatResponse {
             content,
             model: config.model.clone(),
-            usage: None, // MSI GenAI doesn't provide token usage in response
+            usage: None, // This custom REST contract doesn't provide token usage in response
         })
     }
 }

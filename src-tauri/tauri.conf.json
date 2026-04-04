@@ -1,5 +1,5 @@
 {
-  "productName": "TFTSR",
+  "productName": "Troubleshooting and RCA Assistant",
   "version": "0.2.10",
   "identifier": "com.tftsr.devops",
   "build": {
@@ -14,7 +14,7 @@
     },
     "windows": [
       {
-        "title": "TFTSR \u2014 IT Triage & RCA",
+        "title": "Troubleshooting and RCA Assistant",
         "width": 1280,
         "height": 800,
         "resizable": true,
@@ -36,9 +36,9 @@
     ],
     "resources": [],
     "externalBin": [],
-    "copyright": "TFTSR Contributors",
+    "copyright": "Troubleshooting and RCA Assistant Contributors",
     "category": "Utility",
-    "shortDescription": "IT Incident Triage & RCA Tool",
-    "longDescription": "Structured AI-backed tool for IT incident triage, 5-whys root cause analysis, and post-mortem documentation with offline Ollama support."
+    "shortDescription": "Troubleshooting and RCA Assistant",
+    "longDescription": "Structured AI-backed assistant for IT troubleshooting, 5-whys root cause analysis, and post-mortem documentation with offline Ollama support."
   }
 }

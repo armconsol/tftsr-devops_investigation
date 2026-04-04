@@ -19,6 +19,35 @@ import {
 import { useSettingsStore } from "@/stores/settingsStore";
 import { testProviderConnectionCmd, type ProviderConfig } from "@/lib/tauriCommands";
 
+export const CUSTOM_REST_MODELS = [
+  "ChatGPT4o",
+  "ChatGPT4o-mini",
+  "ChatGPT-o3-mini",
+  "Gemini-2_0-Flash-001",
+  "Gemini-2_5-Flash",
+  "Claude-Sonnet-3_7",
+  "Openai-gpt-4_1-mini",
+  "Openai-o4-mini",
+  "Claude-Sonnet-4",
+  "ChatGPT-o3-pro",
+  "OpenAI-ChatGPT-4_1",
+  "OpenAI-GPT-4_1-Nano",
+  "ChatGPT-5",
+  "VertexGemini",
+  "ChatGPT-5_1",
+  "ChatGPT-5_1-chat",
+  "ChatGPT-5_2-Chat",
+  "Gemini-3_Pro-Preview",
+  "Gemini-3_1-flash-lite-preview",
+] as const;
+
+export const CUSTOM_MODEL_OPTION = "__custom_model__";
+export const LEGACY_API_FORMAT = "msi_genai";
+export const CUSTOM_REST_FORMAT = "custom_rest";
+
+export const normalizeApiFormat = (format?: string): string | undefined =>
+  format === LEGACY_API_FORMAT ? CUSTOM_REST_FORMAT : format;
+
 const emptyProvider: ProviderConfig = {
   name: "",
   provider_type: "openai",
@@ -50,19 +79,39 @@ export default function AIProviders() {
   const [form, setForm] = useState<ProviderConfig>({ ...emptyProvider });
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
   const [isTesting, setIsTesting] = useState(false);
+  const [isCustomModel, setIsCustomModel] = useState(false);
+  const [customModelInput, setCustomModelInput] = useState("");
 
   const startAdd = () => {
     setForm({ ...emptyProvider });
     setEditIndex(null);
     setIsAdding(true);
     setTestResult(null);
+    setIsCustomModel(false);
+    setCustomModelInput("");
   };
 
   const startEdit = (index: number) => {
-    setForm({ ...ai_providers[index] });
+    const provider = ai_providers[index];
+    const apiFormat = normalizeApiFormat(provider.api_format);
+    const nextForm = { ...provider, api_format: apiFormat };
+
+    setForm(nextForm);
     setEditIndex(index);
     setIsAdding(true);
     setTestResult(null);
+
+    const isCustomRestProvider =
+      nextForm.provider_type === "custom" && apiFormat === CUSTOM_REST_FORMAT;
+    const knownModel = CUSTOM_REST_MODELS.includes(nextForm.model as (typeof CUSTOM_REST_MODELS)[number]);
+
+    if (isCustomRestProvider && !knownModel) {
+      setIsCustomModel(true);
+      setCustomModelInput(nextForm.model);
+    } else {
+      setIsCustomModel(false);
+      setCustomModelInput("");
+    }
   };
 
   const handleSave = () => {
@@ -244,11 +293,21 @@ export default function AIProviders() {
               </div>
               <div className="space-y-2">
                 <Label>Model</Label>
-                <Input
-                  value={form.model}
-                  onChange={(e) => setForm({ ...form, model: e.target.value })}
-                  placeholder="gpt-4o"
-                />
+                {form.provider_type === "custom"
+                && normalizeApiFormat(form.api_format) === CUSTOM_REST_FORMAT ? (
+                  <Input
+                    value={form.model}
+                    onChange={(e) => setForm({ ...form, model: e.target.value })}
+                    placeholder="Select API Format below to choose model"
+                    disabled
+                  />
+                ) : (
+                  <Input
+                    value={form.model}
+                    onChange={(e) => setForm({ ...form, model: e.target.value })}
+                    placeholder="gpt-4o"
+                  />
+                )}
               </div>
             </div>
             <div className="grid grid-cols-2 gap-4">
@@ -285,7 +344,7 @@ export default function AIProviders() {
                       onValueChange={(v) => {
                         const format = v;
                         const defaults =
-                          format === "msi_genai"
+                          format === CUSTOM_REST_FORMAT
                             ? {
                                 custom_endpoint_path: "",
                                 custom_auth_header: "x-msi-genai-api-key",
@@ -297,6 +356,10 @@ export default function AIProviders() {
                                 custom_auth_prefix: "Bearer ",
                               };
                         setForm({ ...form, api_format: format, ...defaults });
+                        if (format !== CUSTOM_REST_FORMAT) {
+                          setIsCustomModel(false);
+                          setCustomModelInput("");
+                        }
                       }}
                     >
                       <SelectTrigger>
@@ -304,11 +367,11 @@ export default function AIProviders() {
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="openai">OpenAI Compatible</SelectItem>
-                        <SelectItem value="msi_genai">MSI GenAI</SelectItem>
+                        <SelectItem value={CUSTOM_REST_FORMAT}>Custom REST</SelectItem>
                       </SelectContent>
                     </Select>
                     <p className="text-xs text-muted-foreground">
-                      Select the API format. MSI GenAI uses a different request/response structure.
+                      Select the API format. Custom REST uses a non-OpenAI request/response structure.
                     </p>
                   </div>
 
@@ -349,12 +412,12 @@ export default function AIProviders() {
                       placeholder="Bearer "
                     />
                     <p className="text-xs text-muted-foreground">
-                      Prefix added before API key (e.g., "Bearer " for OpenAI, empty for MSI GenAI)
+                      Prefix added before API key (e.g., "Bearer " for OpenAI, empty for Custom REST)
                     </p>
                   </div>
 
-                  {/* MSI GenAI specific: User ID field */}
-                  {form.api_format === "msi_genai" && (
+                  {/* Custom REST specific: User ID field */}
+                  {normalizeApiFormat(form.api_format) === CUSTOM_REST_FORMAT && (
                     <div className="space-y-2">
                       <Label>User ID (CORE ID)</Label>
                       <Input
@@ -365,6 +428,52 @@ export default function AIProviders() {
                       <p className="text-xs text-muted-foreground">
                         Optional: Your Motorola CORE ID email. If omitted, costs are tracked to API key owner.
                       </p>
+                    </div>
+                  )}
+
+                  {/* Custom REST specific: model dropdown with custom option */}
+                  {normalizeApiFormat(form.api_format) === CUSTOM_REST_FORMAT && (
+                    <div className="space-y-2">
+                      <Label>Model</Label>
+                      <Select
+                        value={isCustomModel ? CUSTOM_MODEL_OPTION : form.model}
+                        onValueChange={(value) => {
+                          if (value === CUSTOM_MODEL_OPTION) {
+                            setIsCustomModel(true);
+                            if (CUSTOM_REST_MODELS.includes(form.model as (typeof CUSTOM_REST_MODELS)[number])) {
+                              setForm({ ...form, model: "" });
+                              setCustomModelInput("");
+                            }
+                          } else {
+                            setIsCustomModel(false);
+                            setCustomModelInput("");
+                            setForm({ ...form, model: value });
+                          }
+                        }}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select a model..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {CUSTOM_REST_MODELS.map((model) => (
+                            <SelectItem key={model} value={model}>
+                              {model}
+                            </SelectItem>
+                          ))}
+                          <SelectItem value={CUSTOM_MODEL_OPTION}>Custom model...</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      {isCustomModel && (
+                        <Input
+                          value={customModelInput}
+                          onChange={(e) => {
+                            const value = e.target.value;
+                            setCustomModelInput(value);
+                            setForm({ ...form, model: value });
+                          }}
+                          placeholder="Enter custom model ID"
+                        />
+                      )}
                     </div>
                   )}
                 </div>

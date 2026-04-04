@@ -49,7 +49,9 @@ pub async fn authenticate_with_webview(
         &webview_label,
         WebviewUrl::External(login_url.parse().map_err(|e| format!("Invalid URL: {e}"))?),
     )
-    .title(format!("{service} Browser (TFTSR)"))
+    .title(format!(
+        "{service} Browser (Troubleshooting and RCA Assistant)"
+    ))
     .inner_size(1000.0, 800.0)
     .min_inner_size(800.0, 600.0)
     .resizable(true)

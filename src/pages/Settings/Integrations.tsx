@@ -453,7 +453,7 @@ export default function Integrations() {
       <div>
         <h1 className="text-3xl font-bold">Integrations</h1>
         <p className="text-muted-foreground mt-1">
-          Connect TFTSR with your existing tools and platforms. Choose the authentication method that works best for your environment.
+          Connect Troubleshooting and RCA Assistant with your existing tools and platforms. Choose the authentication method that works best for your environment.
         </p>
       </div>
 
