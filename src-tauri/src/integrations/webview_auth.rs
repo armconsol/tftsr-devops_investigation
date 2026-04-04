@@ -25,13 +25,14 @@ pub async fn authenticate_with_webview(
     service: &str,
     base_url: &str,
 ) -> Result<ExtractedCredentials, String> {
+    let trimmed_base_url = base_url.trim_end_matches('/');
     let login_url = match service {
-        "confluence" => format!("{}/login.action", base_url.trim_end_matches('/')),
+        "confluence" => format!("{trimmed_base_url}/login.action"),
         "azuredevops" => {
             // Azure DevOps login - user will be redirected through Microsoft SSO
-            format!("{}/_signin", base_url.trim_end_matches('/'))
+            format!("{trimmed_base_url}/_signin")
         }
-        "servicenow" => format!("{}/login.do", base_url.trim_end_matches('/')),
+        "servicenow" => format!("{trimmed_base_url}/login.do"),
         _ => return Err(format!("Unknown service: {service}")),
     };
 
@@ -42,13 +43,13 @@ pub async fn authenticate_with_webview(
     );
 
     // Create persistent browser window (stays open for browsing and fresh cookie extraction)
-    let webview_label = format!("{}-auth", service);
+    let webview_label = format!("{service}-auth");
     let webview = WebviewWindowBuilder::new(
         &app_handle,
         &webview_label,
         WebviewUrl::External(login_url.parse().map_err(|e| format!("Invalid URL: {e}"))?),
     )
-    .title(format!("{} Browser (TFTSR)", service))
+    .title(format!("{service} Browser (TFTSR)"))
     .inner_size(1000.0, 800.0)
     .min_inner_size(800.0, 600.0)
     .resizable(true)
@@ -195,7 +196,7 @@ pub async fn extract_cookies_via_ipc<R: tauri::Runtime>(
 pub fn cookies_to_header(cookies: &[Cookie]) -> String {
     cookies
         .iter()
-        .map(|c| format!("{}={}", c.name, c.value))
+        .map(|c| format!("{name}={value}", name = c.name.as_str(), value = c.value.as_str()))
         .collect::<Vec<_>>()
         .join("; ")
 }

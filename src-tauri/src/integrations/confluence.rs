@@ -43,9 +43,10 @@ pub async fn test_connection(config: &ConfluenceConfig) -> Result<ConnectionResu
             message: "Successfully connected to Confluence".to_string(),
         })
     } else {
+        let status = resp.status();
         Ok(ConnectionResult {
             success: false,
-            message: format!("Connection failed with status: {}", resp.status()),
+            message: format!("Connection failed with status: {status}"),
         })
     }
 }
@@ -53,7 +54,8 @@ pub async fn test_connection(config: &ConfluenceConfig) -> Result<ConnectionResu
 /// List all spaces accessible with the current token
 pub async fn list_spaces(config: &ConfluenceConfig) -> Result<Vec<Space>, String> {
     let client = reqwest::Client::new();
-    let url = format!("{}/rest/api/space", config.base_url.trim_end_matches('/'));
+    let base_url = config.base_url.trim_end_matches('/');
+    let url = format!("{base_url}/rest/api/space");
 
     let resp = client
         .get(&url)
@@ -103,9 +105,9 @@ pub async fn search_pages(
         config.base_url.trim_end_matches('/')
     );
 
-    let mut cql = format!("text ~ \"{}\"", query);
+    let mut cql = format!("text ~ \"{query}\"");
     if let Some(space) = space_key {
-        cql = format!("{} AND space = {}", cql, space);
+        cql = format!("{cql} AND space = {space}");
     }
 
     let resp = client
@@ -140,7 +142,7 @@ pub async fn search_pages(
                 id: page_id.to_string(),
                 title: p["title"].as_str()?.to_string(),
                 space_key: p["space"]["key"].as_str()?.to_string(),
-                url: format!("{}/pages/viewpage.action?pageId={}", base_url, page_id),
+                url: format!("{base_url}/pages/viewpage.action?pageId={page_id}"),
             })
         })
         .collect();
@@ -157,7 +159,8 @@ pub async fn publish_page(
     parent_page_id: Option<&str>,
 ) -> Result<PublishResult, String> {
     let client = reqwest::Client::new();
-    let url = format!("{}/rest/api/content", config.base_url.trim_end_matches('/'));
+    let base_url = config.base_url.trim_end_matches('/');
+    let url = format!("{base_url}/rest/api/content");
 
     let mut body = serde_json::json!({
         "type": "page",

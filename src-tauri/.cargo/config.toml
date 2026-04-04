@@ -4,3 +4,8 @@
 # error. The desktop binary links against rlib (static), so cdylib exports
 # are unused at runtime.
 rustflags = ["-C", "link-arg=-Wl,--exclude-all-symbols"]
+
+[env]
+# Use system OpenSSL instead of vendoring from source (which requires Perl modules
+# unavailable on some environments and breaks clippy/check).
+OPENSSL_NO_VENDOR = "1"

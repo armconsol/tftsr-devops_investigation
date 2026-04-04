@@ -269,7 +269,7 @@ mod tests {
         tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
 
         // Server should be running
-        let health_url = format!("http://127.0.0.1:{}/health", port);
+        let health_url = format!("http://127.0.0.1:{port}/health");
         let health_before = reqwest::get(&health_url).await;
         assert!(health_before.is_ok(), "Server should be running");
 

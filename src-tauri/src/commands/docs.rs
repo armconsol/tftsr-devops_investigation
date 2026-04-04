@@ -34,7 +34,7 @@ pub async fn generate_rca(
         id: doc_id.clone(),
         issue_id: issue_id.clone(),
         doc_type: "rca".to_string(),
-        title: format!("RCA: {}", issue_detail.issue.title),
+        title: format!("RCA: {title}", title = issue_detail.issue.title),
         content_md: content_md.clone(),
         created_at: now.clone(),
         updated_at: now,
@@ -49,7 +49,7 @@ pub async fn generate_rca(
         "doc_title": document.title,
         "content_length": content_md.len(),
         "content_preview": if content_md.len() > 300 {
-            format!("{}...", &content_md[..300])
+            format!("{preview}...", preview = &content_md[..300])
         } else {
             content_md.clone()
         },
@@ -93,7 +93,7 @@ pub async fn generate_postmortem(
         id: doc_id.clone(),
         issue_id: issue_id.clone(),
         doc_type: "postmortem".to_string(),
-        title: format!("Post-Mortem: {}", issue_detail.issue.title),
+        title: format!("Post-Mortem: {title}", title = issue_detail.issue.title),
         content_md: content_md.clone(),
         created_at: now.clone(),
         updated_at: now,
@@ -108,7 +108,7 @@ pub async fn generate_postmortem(
         "doc_title": document.title,
         "content_length": content_md.len(),
         "content_preview": if content_md.len() > 300 {
-            format!("{}...", &content_md[..300])
+            format!("{preview}...", preview = &content_md[..300])
         } else {
             content_md.clone()
         },

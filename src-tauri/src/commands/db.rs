@@ -295,19 +295,19 @@ pub async fn list_issues(
     let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = vec![];
 
     if let Some(ref status) = filter.status {
-        sql.push_str(&format!(" AND i.status = ?{}", params.len() + 1));
+        sql.push_str(&format!(" AND i.status = ?{index}", index = params.len() + 1));
         params.push(Box::new(status.clone()));
     }
     if let Some(ref severity) = filter.severity {
-        sql.push_str(&format!(" AND i.severity = ?{}", params.len() + 1));
+        sql.push_str(&format!(" AND i.severity = ?{index}", index = params.len() + 1));
         params.push(Box::new(severity.clone()));
     }
     if let Some(ref category) = filter.category {
-        sql.push_str(&format!(" AND i.category = ?{}", params.len() + 1));
+        sql.push_str(&format!(" AND i.category = ?{index}", index = params.len() + 1));
         params.push(Box::new(category.clone()));
     }
     if let Some(ref domain) = filter.domain {
-        sql.push_str(&format!(" AND i.category = ?{}", params.len() + 1));
+        sql.push_str(&format!(" AND i.category = ?{index}", index = params.len() + 1));
         params.push(Box::new(domain.clone()));
     }
     if let Some(ref search) = filter.search {
@@ -321,9 +321,9 @@ pub async fn list_issues(
 
     sql.push_str(" ORDER BY i.updated_at DESC");
     sql.push_str(&format!(
-        " LIMIT ?{} OFFSET ?{}",
-        params.len() + 1,
-        params.len() + 2
+        " LIMIT ?{limit_index} OFFSET ?{offset_index}",
+        limit_index = params.len() + 1,
+        offset_index = params.len() + 2
     ));
     params.push(Box::new(limit));
     params.push(Box::new(offset));

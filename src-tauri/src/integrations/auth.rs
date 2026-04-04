@@ -365,7 +365,7 @@ mod tests {
             .create_async()
             .await;
 
-        let token_endpoint = format!("{}/oauth/token", server.url());
+        let token_endpoint = format!("{server_url}/oauth/token", server_url = server.url());
         let result = exchange_code(
             &token_endpoint,
             "test-client-id",
@@ -397,7 +397,7 @@ mod tests {
             .create_async()
             .await;
 
-        let token_endpoint = format!("{}/oauth/token", server.url());
+        let token_endpoint = format!("{server_url}/oauth/token", server_url = server.url());
         let result = exchange_code(
             &token_endpoint,
             "test-client-id",
@@ -421,7 +421,7 @@ mod tests {
             .create_async()
             .await;
 
-        let token_endpoint = format!("{}/oauth/token", server.url());
+        let token_endpoint = format!("{server_url}/oauth/token", server_url = server.url());
         let result = exchange_code(
             &token_endpoint,
             "test-client-id",

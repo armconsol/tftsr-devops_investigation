@@ -54,7 +54,8 @@ impl OpenAiProvider {
             .custom_endpoint_path
             .as_deref()
             .unwrap_or("/chat/completions");
-        let url = format!("{}{}", config.api_url.trim_end_matches('/'), endpoint_path);
+        let api_url = config.api_url.trim_end_matches('/');
+        let url = format!("{api_url}{endpoint_path}");
 
         let mut body = serde_json::json!({
             "model": config.model,
@@ -75,7 +76,7 @@ impl OpenAiProvider {
             .as_deref()
             .unwrap_or("Authorization");
         let auth_prefix = config.custom_auth_prefix.as_deref().unwrap_or("Bearer ");
-        let auth_value = format!("{}{}", auth_prefix, config.api_key);
+        let auth_value = format!("{auth_prefix}{api_key}", api_key = config.api_key);
 
         let resp = client
             .post(&url)
@@ -122,7 +123,8 @@ impl OpenAiProvider {
 
         // Use custom endpoint path, default to empty (API URL already includes /api/v2/chat)
         let endpoint_path = config.custom_endpoint_path.as_deref().unwrap_or("");
-        let url = format!("{}{}", config.api_url.trim_end_matches('/'), endpoint_path);
+        let api_url = config.api_url.trim_end_matches('/');
+        let url = format!("{api_url}{endpoint_path}");
 
         // Extract system message if present
         let system_message = messages
@@ -177,7 +179,7 @@ impl OpenAiProvider {
             .as_deref()
             .unwrap_or("x-msi-genai-api-key");
         let auth_prefix = config.custom_auth_prefix.as_deref().unwrap_or("");
-        let auth_value = format!("{}{}", auth_prefix, config.api_key);
+        let auth_value = format!("{auth_prefix}{api_key}", api_key = config.api_key);
 
         let resp = client
             .post(&url)

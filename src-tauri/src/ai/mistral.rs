@@ -47,7 +47,10 @@ impl Provider for MistralProvider {
 
         let resp = client
             .post(&url)
-            .header("Authorization", format!("Bearer {}", config.api_key))
+            .header(
+                "Authorization",
+                format!("Bearer {api_key}", api_key = config.api_key),
+            )
             .header("Content-Type", "application/json")
             .json(&body)
             .send()

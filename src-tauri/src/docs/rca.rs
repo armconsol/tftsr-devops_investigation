@@ -5,16 +5,16 @@ pub fn generate_rca_markdown(detail: &IssueDetail) -> String {
 
     let mut md = String::new();
 
-    md.push_str(&format!("# Root Cause Analysis: {}\n\n", issue.title));
+    md.push_str(&format!("# Root Cause Analysis: {title}\n\n", title = issue.title));
 
     md.push_str("## Issue Summary\n\n");
     md.push_str("| Field | Value |\n");
     md.push_str("|-------|-------|\n");
-    md.push_str(&format!("| **Issue ID** | {} |\n", issue.id));
-    md.push_str(&format!("| **Category** | {} |\n", issue.category));
-    md.push_str(&format!("| **Status** | {} |\n", issue.status));
-    md.push_str(&format!("| **Severity** | {} |\n", issue.severity));
-    md.push_str(&format!("| **Source** | {} |\n", issue.source));
+    md.push_str(&format!("| **Issue ID** | {id} |\n", id = issue.id));
+    md.push_str(&format!("| **Category** | {category} |\n", category = issue.category));
+    md.push_str(&format!("| **Status** | {status} |\n", status = issue.status));
+    md.push_str(&format!("| **Severity** | {severity} |\n", severity = issue.severity));
+    md.push_str(&format!("| **Source** | {source} |\n", source = issue.source));
     md.push_str(&format!(
         "| **Assigned To** | {} |\n",
         if issue.assigned_to.is_empty() {
@@ -23,8 +23,11 @@ pub fn generate_rca_markdown(detail: &IssueDetail) -> String {
             &issue.assigned_to
         }
     ));
-    md.push_str(&format!("| **Created** | {} |\n", issue.created_at));
-    md.push_str(&format!("| **Last Updated** | {} |\n", issue.updated_at));
+    md.push_str(&format!("| **Created** | {created_at} |\n", created_at = issue.created_at));
+    md.push_str(&format!(
+        "| **Last Updated** | {updated_at} |\n",
+        updated_at = issue.updated_at
+    ));
     if let Some(ref resolved) = issue.resolved_at {
         md.push_str(&format!("| **Resolved** | {resolved} |\n"));
     }
@@ -47,12 +50,12 @@ pub fn generate_rca_markdown(detail: &IssueDetail) -> String {
                 step.step_order, step.why_question
             ));
             if !step.answer.is_empty() {
-                md.push_str(&format!("**Answer:** {}\n\n", step.answer));
+                md.push_str(&format!("**Answer:** {answer}\n\n", answer = step.answer));
             } else {
                 md.push_str("_Awaiting answer._\n\n");
             }
             if !step.evidence.is_empty() {
-                md.push_str(&format!("**Evidence:** {}\n\n", step.evidence));
+                md.push_str(&format!("**Evidence:** {evidence}\n\n", evidence = step.evidence));
             }
         }
     }

@@ -40,9 +40,10 @@ pub async fn test_connection(config: &AzureDevOpsConfig) -> Result<ConnectionRes
             message: "Successfully connected to Azure DevOps".to_string(),
         })
     } else {
+        let status = resp.status();
         Ok(ConnectionResult {
             success: false,
-            message: format!("Connection failed with status: {}", resp.status()),
+            message: format!("Connection failed with status: {status}"),
         })
     }
 }
@@ -61,8 +62,7 @@ pub async fn search_work_items(
 
     // Build WIQL query
     let wiql = format!(
-        "SELECT [System.Id], [System.Title], [System.WorkItemType], [System.State] FROM WorkItems WHERE [System.Title] CONTAINS '{}' ORDER BY [System.CreatedDate] DESC",
-        query
+        "SELECT [System.Id], [System.Title], [System.WorkItemType], [System.State] FROM WorkItems WHERE [System.Title] CONTAINS '{query}' ORDER BY [System.CreatedDate] DESC"
     );
 
     let body = serde_json::json!({ "query": wiql });

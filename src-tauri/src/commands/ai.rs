@@ -246,7 +246,7 @@ pub async fn chat_message(
             "api_url": provider_config.api_url,
             "user_message": user_msg.content,
             "response_preview": if response.content.len() > 200 {
-                format!("{}...", &response.content[..200])
+                format!("{preview}...", preview = &response.content[..200])
             } else {
                 response.content.clone()
             },

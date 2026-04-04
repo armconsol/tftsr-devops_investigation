@@ -42,9 +42,10 @@ pub async fn test_connection(config: &ServiceNowConfig) -> Result<ConnectionResu
             message: "Successfully connected to ServiceNow".to_string(),
         })
     } else {
+        let status = resp.status();
         Ok(ConnectionResult {
             success: false,
-            message: format!("Connection failed with status: {}", resp.status()),
+            message: format!("Connection failed with status: {status}"),
         })
     }
 }

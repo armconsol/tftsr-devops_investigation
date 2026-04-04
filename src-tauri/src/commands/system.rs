@@ -98,20 +98,23 @@ pub async fn get_audit_log(
     let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = vec![];
 
     if let Some(ref action) = filter.action {
-        sql.push_str(&format!(" AND action = ?{}", params.len() + 1));
+        sql.push_str(&format!(" AND action = ?{index}", index = params.len() + 1));
         params.push(Box::new(action.clone()));
     }
     if let Some(ref entity_type) = filter.entity_type {
-        sql.push_str(&format!(" AND entity_type = ?{}", params.len() + 1));
+        sql.push_str(&format!(
+            " AND entity_type = ?{index}",
+            index = params.len() + 1
+        ));
         params.push(Box::new(entity_type.clone()));
     }
     if let Some(ref entity_id) = filter.entity_id {
-        sql.push_str(&format!(" AND entity_id = ?{}", params.len() + 1));
+        sql.push_str(&format!(" AND entity_id = ?{index}", index = params.len() + 1));
         params.push(Box::new(entity_id.clone()));
     }
 
     sql.push_str(" ORDER BY timestamp DESC");
-    sql.push_str(&format!(" LIMIT ?{}", params.len() + 1));
+    sql.push_str(&format!(" LIMIT ?{index}", index = params.len() + 1));
     params.push(Box::new(limit));
 
     let param_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();

@@ -514,7 +514,7 @@ pub async fn authenticate_with_webview(
     app_handle: tauri::AppHandle,
     app_state: State<'_, AppState>,
 ) -> Result<WebviewAuthResponse, String> {
-    let webview_id = format!("{}-auth", service);
+    let webview_id = format!("{service}-auth");
 
     // Check if window already exists
     if let Some(existing_label) = app_state
@@ -526,10 +526,7 @@ pub async fn authenticate_with_webview(
         if app_handle.get_webview_window(existing_label).is_some() {
             return Ok(WebviewAuthResponse {
                 success: true,
-                message: format!(
-                    "{} browser window is already open. Switch to it to log in.",
-                    service
-                ),
+                message: format!("{service} browser window is already open. Switch to it to log in."),
                 webview_id: existing_label.clone(),
             });
         }
@@ -551,8 +548,7 @@ pub async fn authenticate_with_webview(
     Ok(WebviewAuthResponse {
         success: true,
         message: format!(
-            "{} browser window opened. This window will stay open - use it to browse and authenticate. Cookies will be extracted automatically for API calls.",
-            service
+            "{service} browser window opened. This window will stay open - use it to browse and authenticate. Cookies will be extracted automatically for API calls."
         ),
         webview_id,
     })
@@ -622,7 +618,7 @@ pub async fn extract_cookies_from_webview(
 
     Ok(ConnectionResult {
         success: true,
-        message: format!("{} authentication saved successfully", service),
+        message: format!("{service} authentication saved successfully"),
     })
 }
 
@@ -669,7 +665,7 @@ pub async fn save_manual_token(
             };
             crate::integrations::servicenow::test_connection(&config).await
         }
-        _ => return Err(format!("Unknown service: {}", request.service)),
+        _ => return Err(format!("Unknown service: {service}", service = request.service)),
     };
 
     // If test fails, don't save the token
@@ -736,7 +732,10 @@ pub async fn save_manual_token(
 
     Ok(ConnectionResult {
         success: true,
-        message: format!("{} token saved and validated successfully", request.service),
+        message: format!(
+            "{service} token saved and validated successfully",
+            service = request.service
+        ),
     })
 }
 
