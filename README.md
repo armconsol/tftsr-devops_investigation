@@ -1,4 +1,4 @@
-# TFTSR — IT Triage & RCA Desktop Application
+# Troubleshooting and RCA Assistant
 
 A structured, AI-backed desktop tool for IT incident triage, 5-Whys root cause analysis, RCA document generation, and blameless post-mortems. Runs fully offline via Ollama local models, or connects to cloud AI providers.
 
@@ -166,7 +166,7 @@ To use Claude via AWS Bedrock (ideal for enterprise environments with existing A
    nohup litellm --config ~/.litellm/config.yaml --port 8000 > ~/.litellm/litellm.log 2>&1 &
    ```
 
-4. **Configure in TFTSR:**
+4. **Configure in Troubleshooting and RCA Assistant:**
    - Provider: **OpenAI** (OpenAI-compatible)
    - Base URL: `http://localhost:8000/v1`
    - API Key: `sk-your-secure-key` (from config)

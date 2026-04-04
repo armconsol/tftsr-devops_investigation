@@ -113,7 +113,7 @@ The domain prompt is injected as the first `system` role message in every new co
 
 ---
 
-## 6. Custom Provider (MSI GenAI & Others)
+## 6. Custom Provider (Custom REST & Others)
 
 **Status:** ✅ **Implemented** (v0.2.6)
 
@@ -137,25 +137,26 @@ Standard OpenAI `/chat/completions` endpoint with Bearer authentication.
 
 ---
 
-### Format: MSI GenAI
+### Format: Custom REST
 
 **Motorola Solutions Internal GenAI Service** — Enterprise AI platform with centralized cost tracking and model access.
 
 | Field | Value |
 |-------|-------|
 | `config.provider_type` | `"custom"` |
-| `config.api_format` | `"msi_genai"` |
+| `config.api_format` | `"custom_rest"` |
 | API URL | `https://genai-service.commandcentral.com/app-gateway` (prod)<br>`https://genai-service.stage.commandcentral.com/app-gateway` (stage) |
 | Auth Header | `x-msi-genai-api-key` |
 | Auth Prefix | `` (empty - no Bearer prefix) |
 | Endpoint Path | `` (empty - URL includes full path `/api/v2/chat`) |
 
-**Available Models:**
+**Available Models (dropdown in Settings):**
 - `VertexGemini` — Gemini 2.0 Flash (Private/GCP)
 - `Claude-Sonnet-4` — Claude Sonnet 4 (Public/Anthropic)
 - `ChatGPT4o` — GPT-4o (Public/OpenAI)
 - `ChatGPT-5_2-Chat` — GPT-4.5 (Public/OpenAI)
-- See [GenAI API User Guide](../GenAI%20API%20User%20Guide.md) for full model list
+- Full list is sourced from [GenAI API User Guide](../GenAI%20API%20User%20Guide.md)
+- Includes a `Custom model...` option to manually enter any model ID
 
 **Request Format:**
 ```json
@@ -187,9 +188,9 @@ Standard OpenAI `/chat/completions` endpoint with Bearer authentication.
 
 **Configuration (Settings → AI Providers → Add Provider):**
 ```
-Name:             MSI GenAI
+Name:             Custom REST (MSI GenAI)
 Type:             Custom
-API Format:       MSI GenAI
+API Format:       Custom REST
 API URL:          https://genai-service.stage.commandcentral.com/app-gateway
 Model:            VertexGemini
 API Key:          (your MSI GenAI API key from portal)
@@ -208,13 +209,13 @@ Auth Prefix:      (leave empty)
 | Error | Cause | Solution |
 |-------|-------|----------|
 | 403 Forbidden | Invalid API key or insufficient permissions | Verify key in MSI GenAI portal, check model access |
-| Missing `userId` field | Configuration not saved | Ensure UI shows User ID field when `api_format=msi_genai` |
+| Missing `userId` field | Configuration not saved | Ensure UI shows User ID field when `api_format=custom_rest` |
 | No conversation history | `sessionId` not persisted | Session ID stored in `ProviderConfig.session_id` — currently per-provider, not per-conversation |
 
 **Implementation Details:**
-- Backend: `src-tauri/src/ai/openai.rs::chat_msi_genai()`
+- Backend: `src-tauri/src/ai/openai.rs::chat_custom_rest()`
 - Schema: `src-tauri/src/state.rs::ProviderConfig` (added `user_id`, `api_format`, custom auth fields)
-- Frontend: `src/pages/Settings/AIProviders.tsx` (conditional UI for MSI GenAI)
+- Frontend: `src/pages/Settings/AIProviders.tsx` (conditional UI for Custom REST + model dropdown)
 - CSP whitelist: `https://genai-service.stage.commandcentral.com` and production domain
 
 ---
@@ -228,9 +229,9 @@ All providers support the following optional configuration fields (v0.2.6+):
 | `custom_endpoint_path` | `Option<String>` | Override endpoint path | `/chat/completions` |
 | `custom_auth_header` | `Option<String>` | Custom auth header name | `Authorization` |
 | `custom_auth_prefix` | `Option<String>` | Prefix before API key | `Bearer ` |
-| `api_format` | `Option<String>` | API format (`openai` or `msi_genai`) | `openai` |
+| `api_format` | `Option<String>` | API format (`openai` or `custom_rest`) | `openai` |
 | `session_id` | `Option<String>` | Session ID for stateful APIs | None |
-| `user_id` | `Option<String>` | User ID for cost tracking (MSI GenAI) | None |
+| `user_id` | `Option<String>` | User ID for cost tracking (Custom REST MSI contract) | None |
 
 **Backward Compatibility:**
 All fields are optional and default to OpenAI-compatible behavior. Existing provider configurations are unaffected.

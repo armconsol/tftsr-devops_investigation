@@ -35,7 +35,7 @@ pub async fn test_connection(config: &ConfluenceConfig) -> Result<ConnectionResu
         .bearer_auth(&config.access_token)
         .send()
         .await
-        .map_err(|e| format!("Connection failed: {}", e))?;
+        .map_err(|e| format!("Connection failed: {e}"))?;
 
     if resp.status().is_success() {
         Ok(ConnectionResult {
@@ -43,9 +43,10 @@ pub async fn test_connection(config: &ConfluenceConfig) -> Result<ConnectionResu
             message: "Successfully connected to Confluence".to_string(),
         })
     } else {
+        let status = resp.status();
         Ok(ConnectionResult {
             success: false,
-            message: format!("Connection failed with status: {}", resp.status()),
+            message: format!("Connection failed with status: {status}"),
         })
     }
 }
@@ -53,7 +54,8 @@ pub async fn test_connection(config: &ConfluenceConfig) -> Result<ConnectionResu
 /// List all spaces accessible with the current token
 pub async fn list_spaces(config: &ConfluenceConfig) -> Result<Vec<Space>, String> {
     let client = reqwest::Client::new();
-    let url = format!("{}/rest/api/space", config.base_url.trim_end_matches('/'));
+    let base_url = config.base_url.trim_end_matches('/');
+    let url = format!("{base_url}/rest/api/space");
 
     let resp = client
         .get(&url)
@@ -61,7 +63,7 @@ pub async fn list_spaces(config: &ConfluenceConfig) -> Result<Vec<Space>, String
         .query(&[("limit", "100")])
         .send()
         .await
-        .map_err(|e| format!("Failed to list spaces: {}", e))?;
+        .map_err(|e| format!("Failed to list spaces: {e}"))?;
 
     if !resp.status().is_success() {
         return Err(format!(
@@ -74,7 +76,7 @@ pub async fn list_spaces(config: &ConfluenceConfig) -> Result<Vec<Space>, String
     let body: serde_json::Value = resp
         .json()
         .await
-        .map_err(|e| format!("Failed to parse response: {}", e))?;
+        .map_err(|e| format!("Failed to parse response: {e}"))?;
 
     let spaces = body["results"]
         .as_array()
@@ -103,9 +105,9 @@ pub async fn search_pages(
         config.base_url.trim_end_matches('/')
     );
 
-    let mut cql = format!("text ~ \"{}\"", query);
+    let mut cql = format!("text ~ \"{query}\"");
     if let Some(space) = space_key {
-        cql = format!("{} AND space = {}", cql, space);
+        cql = format!("{cql} AND space = {space}");
     }
 
     let resp = client
@@ -114,7 +116,7 @@ pub async fn search_pages(
         .query(&[("cql", &cql), ("limit", &"50".to_string())])
         .send()
         .await
-        .map_err(|e| format!("Search failed: {}", e))?;
+        .map_err(|e| format!("Search failed: {e}"))?;
 
     if !resp.status().is_success() {
         return Err(format!(
@@ -127,7 +129,7 @@ pub async fn search_pages(
     let body: serde_json::Value = resp
         .json()
         .await
-        .map_err(|e| format!("Failed to parse response: {}", e))?;
+        .map_err(|e| format!("Failed to parse response: {e}"))?;
 
     let pages = body["results"]
         .as_array()
@@ -140,7 +142,7 @@ pub async fn search_pages(
                 id: page_id.to_string(),
                 title: p["title"].as_str()?.to_string(),
                 space_key: p["space"]["key"].as_str()?.to_string(),
-                url: format!("{}/pages/viewpage.action?pageId={}", base_url, page_id),
+                url: format!("{base_url}/pages/viewpage.action?pageId={page_id}"),
             })
         })
         .collect();
@@ -157,7 +159,8 @@ pub async fn publish_page(
     parent_page_id: Option<&str>,
 ) -> Result<PublishResult, String> {
     let client = reqwest::Client::new();
-    let url = format!("{}/rest/api/content", config.base_url.trim_end_matches('/'));
+    let base_url = config.base_url.trim_end_matches('/');
+    let url = format!("{base_url}/rest/api/content");
 
     let mut body = serde_json::json!({
         "type": "page",
@@ -182,7 +185,7 @@ pub async fn publish_page(
         .json(&body)
         .send()
         .await
-        .map_err(|e| format!("Failed to publish page: {}", e))?;
+        .map_err(|e| format!("Failed to publish page: {e}"))?;
 
     if !resp.status().is_success() {
         return Err(format!(
@@ -195,7 +198,7 @@ pub async fn publish_page(
     let result: serde_json::Value = resp
         .json()
         .await
-        .map_err(|e| format!("Failed to parse response: {}", e))?;
+        .map_err(|e| format!("Failed to parse response: {e}"))?;
 
     let page_id = result["id"].as_str().unwrap_or("");
     let page_url = format!(
@@ -245,7 +248,7 @@ pub async fn update_page(
         .json(&body)
         .send()
         .await
-        .map_err(|e| format!("Failed to update page: {}", e))?;
+        .map_err(|e| format!("Failed to update page: {e}"))?;
 
     if !resp.status().is_success() {
         return Err(format!(
@@ -258,7 +261,7 @@ pub async fn update_page(
     let result: serde_json::Value = resp
         .json()
         .await
-        .map_err(|e| format!("Failed to parse response: {}", e))?;
+        .map_err(|e| format!("Failed to parse response: {e}"))?;
 
     let updated_page_id = result["id"].as_str().unwrap_or(page_id);
     let page_url = format!(

@@ -21,7 +21,7 @@ pub fn run() {
         )
         .init();
 
-    tracing::info!("Starting TFTSR application");
+    tracing::info!("Starting Troubleshooting and RCA Assistant application");
 
     // Determine data directory
     let data_dir = dirs_data_dir();
@@ -107,7 +107,7 @@ pub fn run() {
             commands::system::get_audit_log,
         ])
         .run(tauri::generate_context!())
-        .expect("Error running TFTSR application");
+        .expect("Error running Troubleshooting and RCA Assistant application");
 }
 
 /// Determine the application data directory.

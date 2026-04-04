@@ -35,7 +35,7 @@ export default function Dashboard() {
         <div>
           <h1 className="text-3xl font-bold">Dashboard</h1>
           <p className="text-muted-foreground mt-1">
-            IT Triage & Root Cause Analysis
+            Troubleshooting and Root Cause Analysis Assistant
           </p>
         </div>
         <div className="flex items-center gap-2">

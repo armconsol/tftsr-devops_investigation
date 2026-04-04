@@ -59,7 +59,7 @@ export default function App() {
           <div className="flex items-center justify-between px-4 py-4 border-b">
             {!collapsed && (
               <span className="text-lg font-bold text-foreground tracking-tight">
-                TFTSR
+                Troubleshooting and RCA Assistant
               </span>
             )}
             <button

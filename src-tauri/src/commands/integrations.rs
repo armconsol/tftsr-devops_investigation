@@ -94,7 +94,7 @@ pub async fn initiate_oauth(
         let (mut callback_rx, shutdown_tx) =
             crate::integrations::callback_server::start_callback_server(8765)
                 .await
-                .map_err(|e| format!("Failed to start callback server: {}", e))?;
+                .map_err(|e| format!("Failed to start callback server: {e}"))?;
 
         // Store shutdown channel
         {
@@ -123,7 +123,7 @@ pub async fn initiate_oauth(
                     let mut oauth_state = match OAUTH_STATE.lock() {
                         Ok(state) => state,
                         Err(e) => {
-                            tracing::error!("Failed to lock OAuth state: {}", e);
+                            tracing::error!("Failed to lock OAuth state: {e}");
                             continue;
                         }
                     };
@@ -148,7 +148,7 @@ pub async fn initiate_oauth(
 
                 match result {
                     Ok(_) => tracing::info!("OAuth callback handled successfully"),
-                    Err(e) => tracing::error!("OAuth callback failed: {}", e),
+                    Err(e) => tracing::error!("OAuth callback failed: {e}"),
                 }
             }
 
@@ -166,7 +166,7 @@ pub async fn initiate_oauth(
     {
         let mut oauth_state = OAUTH_STATE
             .lock()
-            .map_err(|e| format!("Failed to lock OAuth state: {}", e))?;
+            .map_err(|e| format!("Failed to lock OAuth state: {e}"))?;
         oauth_state.insert(
             state_key.clone(),
             (service.clone(), pkce.code_verifier.clone()),
@@ -193,7 +193,7 @@ pub async fn initiate_oauth(
             // ServiceNow uses basic auth, not OAuth2
             return Err("ServiceNow uses basic authentication, not OAuth2".to_string());
         }
-        _ => return Err(format!("Unknown service: {}", service)),
+        _ => return Err(format!("Unknown service: {service}")),
     };
 
     let auth_url = crate::integrations::auth::build_auth_url(
@@ -231,7 +231,7 @@ async fn handle_oauth_callback_internal(
                 .unwrap_or_else(|_| "ado-client-id-placeholder".to_string()),
             "http://localhost:8765/callback",
         ),
-        _ => return Err(format!("Unknown service: {}", service)),
+        _ => return Err(format!("Unknown service: {service}")),
     };
 
     // Exchange authorization code for access token
@@ -265,7 +265,7 @@ async fn handle_oauth_callback_internal(
     let db = app_state
         .db
         .lock()
-        .map_err(|e| format!("Failed to lock database: {}", e))?;
+        .map_err(|e| format!("Failed to lock database: {e}"))?;
 
     db.execute(
         "INSERT OR REPLACE INTO credentials (id, service, token_hash, encrypted_token, created_at, expires_at)
@@ -279,7 +279,7 @@ async fn handle_oauth_callback_internal(
             expires_at,
         ],
     )
-    .map_err(|e| format!("Failed to store credentials: {}", e))?;
+    .map_err(|e| format!("Failed to store credentials: {e}"))?;
 
     // Log audit event
     let audit_details = serde_json::json!({
@@ -301,7 +301,7 @@ async fn handle_oauth_callback_internal(
             audit_details.to_string(),
         ],
     )
-    .map_err(|e| format!("Failed to log audit event: {}", e))?;
+    .map_err(|e| format!("Failed to log audit event: {e}"))?;
 
     Ok(())
 }
@@ -319,7 +319,7 @@ pub async fn handle_oauth_callback(
     let verifier = {
         let mut oauth_state = OAUTH_STATE
             .lock()
-            .map_err(|e| format!("Failed to lock OAuth state: {}", e))?;
+            .map_err(|e| format!("Failed to lock OAuth state: {e}"))?;
         oauth_state
             .remove(&state_key)
             .map(|(_svc, ver)| ver)
@@ -514,21 +514,20 @@ pub async fn authenticate_with_webview(
     app_handle: tauri::AppHandle,
     app_state: State<'_, AppState>,
 ) -> Result<WebviewAuthResponse, String> {
-    let webview_id = format!("{}-auth", service);
+    let webview_id = format!("{service}-auth");
 
     // Check if window already exists
     if let Some(existing_label) = app_state
         .integration_webviews
         .lock()
-        .map_err(|e| format!("Failed to lock webviews: {}", e))?
+        .map_err(|e| format!("Failed to lock webviews: {e}"))?
         .get(&service)
     {
         if app_handle.get_webview_window(existing_label).is_some() {
             return Ok(WebviewAuthResponse {
                 success: true,
                 message: format!(
-                    "{} browser window is already open. Switch to it to log in.",
-                    service
+                    "{service} browser window is already open. Switch to it to log in."
                 ),
                 webview_id: existing_label.clone(),
             });
@@ -545,14 +544,13 @@ pub async fn authenticate_with_webview(
     app_state
         .integration_webviews
         .lock()
-        .map_err(|e| format!("Failed to lock webviews: {}", e))?
+        .map_err(|e| format!("Failed to lock webviews: {e}"))?
         .insert(service.clone(), webview_id.clone());
 
     Ok(WebviewAuthResponse {
         success: true,
         message: format!(
-            "{} browser window opened. This window will stay open - use it to browse and authenticate. Cookies will be extracted automatically for API calls.",
-            service
+            "{service} browser window opened. This window will stay open - use it to browse and authenticate. Cookies will be extracted automatically for API calls."
         ),
         webview_id,
     })
@@ -582,8 +580,8 @@ pub async fn extract_cookies_from_webview(
     }
 
     // Encrypt and store cookies in database
-    let cookies_json = serde_json::to_string(&cookies)
-        .map_err(|e| format!("Failed to serialize cookies: {}", e))?;
+    let cookies_json =
+        serde_json::to_string(&cookies).map_err(|e| format!("Failed to serialize cookies: {e}"))?;
     let encrypted_cookies = crate::integrations::auth::encrypt_token(&cookies_json)?;
 
     let token_hash = {
@@ -597,7 +595,7 @@ pub async fn extract_cookies_from_webview(
     let db = app_state
         .db
         .lock()
-        .map_err(|e| format!("Failed to lock database: {}", e))?;
+        .map_err(|e| format!("Failed to lock database: {e}"))?;
 
     db.execute(
         "INSERT OR REPLACE INTO credentials (id, service, token_hash, encrypted_token, created_at, expires_at)
@@ -611,18 +609,18 @@ pub async fn extract_cookies_from_webview(
             None::<String>, // Cookies don't have explicit expiry
         ],
     )
-    .map_err(|e| format!("Failed to store cookies: {}", e))?;
+    .map_err(|e| format!("Failed to store cookies: {e}"))?;
 
     // Close the webview window
     if let Some(webview) = app_handle.get_webview_window(&webview_id) {
         webview
             .close()
-            .map_err(|e| format!("Failed to close webview: {}", e))?;
+            .map_err(|e| format!("Failed to close webview: {e}"))?;
     }
 
     Ok(ConnectionResult {
         success: true,
-        message: format!("{} authentication saved successfully", service),
+        message: format!("{service} authentication saved successfully"),
     })
 }
 
@@ -669,7 +667,12 @@ pub async fn save_manual_token(
             };
             crate::integrations::servicenow::test_connection(&config).await
         }
-        _ => return Err(format!("Unknown service: {}", request.service)),
+        _ => {
+            return Err(format!(
+                "Unknown service: {service}",
+                service = request.service
+            ))
+        }
     };
 
     // If test fails, don't save the token
@@ -698,7 +701,7 @@ pub async fn save_manual_token(
     let db = app_state
         .db
         .lock()
-        .map_err(|e| format!("Failed to lock database: {}", e))?;
+        .map_err(|e| format!("Failed to lock database: {e}"))?;
 
     db.execute(
         "INSERT OR REPLACE INTO credentials (id, service, token_hash, encrypted_token, created_at, expires_at)
@@ -712,7 +715,7 @@ pub async fn save_manual_token(
             None::<String>,
         ],
     )
-    .map_err(|e| format!("Failed to store token: {}", e))?;
+    .map_err(|e| format!("Failed to store token: {e}"))?;
 
     // Log audit event
     db.execute(
@@ -732,11 +735,14 @@ pub async fn save_manual_token(
             .to_string(),
         ],
     )
-    .map_err(|e| format!("Failed to log audit event: {}", e))?;
+    .map_err(|e| format!("Failed to log audit event: {e}"))?;
 
     Ok(ConnectionResult {
         success: true,
-        message: format!("{} token saved and validated successfully", request.service),
+        message: format!(
+            "{service} token saved and validated successfully",
+            service = request.service
+        ),
     })
 }
 
@@ -757,7 +763,7 @@ pub async fn get_fresh_cookies_from_webview(
         let webviews = app_state
             .integration_webviews
             .lock()
-            .map_err(|e| format!("Failed to lock webviews: {}", e))?;
+            .map_err(|e| format!("Failed to lock webviews: {e}"))?;
 
         match webviews.get(service) {
             Some(label) => label.clone(),
@@ -773,7 +779,7 @@ pub async fn get_fresh_cookies_from_webview(
             app_state
                 .integration_webviews
                 .lock()
-                .map_err(|e| format!("Failed to lock webviews: {}", e))?
+                .map_err(|e| format!("Failed to lock webviews: {e}"))?
                 .remove(service);
             return Ok(None);
         }
@@ -814,7 +820,7 @@ pub async fn save_integration_config(
     let db = app_state
         .db
         .lock()
-        .map_err(|e| format!("Failed to lock database: {}", e))?;
+        .map_err(|e| format!("Failed to lock database: {e}"))?;
 
     db.execute(
         "INSERT OR REPLACE INTO integration_config
@@ -829,7 +835,7 @@ pub async fn save_integration_config(
             config.space_key,
         ],
     )
-    .map_err(|e| format!("Failed to save integration config: {}", e))?;
+    .map_err(|e| format!("Failed to save integration config: {e}"))?;
 
     Ok(())
 }
@@ -843,11 +849,11 @@ pub async fn get_integration_config(
     let db = app_state
         .db
         .lock()
-        .map_err(|e| format!("Failed to lock database: {}", e))?;
+        .map_err(|e| format!("Failed to lock database: {e}"))?;
 
     let mut stmt = db
         .prepare("SELECT service, base_url, username, project_name, space_key FROM integration_config WHERE service = ?1")
-        .map_err(|e| format!("Failed to prepare query: {}", e))?;
+        .map_err(|e| format!("Failed to prepare query: {e}"))?;
 
     let config = stmt
         .query_row([&service], |row| {
@@ -860,7 +866,7 @@ pub async fn get_integration_config(
             })
         })
         .optional()
-        .map_err(|e| format!("Failed to query integration config: {}", e))?;
+        .map_err(|e| format!("Failed to query integration config: {e}"))?;
 
     Ok(config)
 }
@@ -873,13 +879,13 @@ pub async fn get_all_integration_configs(
     let db = app_state
         .db
         .lock()
-        .map_err(|e| format!("Failed to lock database: {}", e))?;
+        .map_err(|e| format!("Failed to lock database: {e}"))?;
 
     let mut stmt = db
         .prepare(
             "SELECT service, base_url, username, project_name, space_key FROM integration_config",
         )
-        .map_err(|e| format!("Failed to prepare query: {}", e))?;
+        .map_err(|e| format!("Failed to prepare query: {e}"))?;
 
     let configs = stmt
         .query_map([], |row| {
@@ -891,9 +897,9 @@ pub async fn get_all_integration_configs(
                 space_key: row.get(4)?,
             })
         })
-        .map_err(|e| format!("Failed to query integration configs: {}", e))?
+        .map_err(|e| format!("Failed to query integration configs: {e}"))?
         .collect::<Result<Vec<_>, _>>()
-        .map_err(|e| format!("Failed to collect integration configs: {}", e))?;
+        .map_err(|e| format!("Failed to collect integration configs: {e}"))?;
 
     Ok(configs)
 }

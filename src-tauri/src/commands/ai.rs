@@ -246,7 +246,7 @@ pub async fn chat_message(
             "api_url": provider_config.api_url,
             "user_message": user_msg.content,
             "response_preview": if response.content.len() > 200 {
-                format!("{}...", &response.content[..200])
+                format!("{preview}...", preview = &response.content[..200])
             } else {
                 response.content.clone()
             },
@@ -278,7 +278,9 @@ pub async fn test_provider_connection(
     let provider = create_provider(&provider_config);
     let messages = vec![Message {
         role: "user".into(),
-        content: "Reply with exactly: TFTSR connection test successful.".into(),
+        content:
+            "Reply with exactly: Troubleshooting and RCA Assistant connection test successful."
+                .into(),
     }];
     provider
         .chat(messages, &provider_config)

@@ -25,14 +25,15 @@ pub async fn authenticate_with_webview(
     service: &str,
     base_url: &str,
 ) -> Result<ExtractedCredentials, String> {
+    let trimmed_base_url = base_url.trim_end_matches('/');
     let login_url = match service {
-        "confluence" => format!("{}/login.action", base_url.trim_end_matches('/')),
+        "confluence" => format!("{trimmed_base_url}/login.action"),
         "azuredevops" => {
             // Azure DevOps login - user will be redirected through Microsoft SSO
-            format!("{}/_signin", base_url.trim_end_matches('/'))
+            format!("{trimmed_base_url}/_signin")
         }
-        "servicenow" => format!("{}/login.do", base_url.trim_end_matches('/')),
-        _ => return Err(format!("Unknown service: {}", service)),
+        "servicenow" => format!("{trimmed_base_url}/login.do"),
+        _ => return Err(format!("Unknown service: {service}")),
     };
 
     tracing::info!(
@@ -42,17 +43,15 @@ pub async fn authenticate_with_webview(
     );
 
     // Create persistent browser window (stays open for browsing and fresh cookie extraction)
-    let webview_label = format!("{}-auth", service);
+    let webview_label = format!("{service}-auth");
     let webview = WebviewWindowBuilder::new(
         &app_handle,
         &webview_label,
-        WebviewUrl::External(
-            login_url
-                .parse()
-                .map_err(|e| format!("Invalid URL: {}", e))?,
-        ),
+        WebviewUrl::External(login_url.parse().map_err(|e| format!("Invalid URL: {e}"))?),
     )
-    .title(format!("{} Browser (TFTSR)", service))
+    .title(format!(
+        "{service} Browser (Troubleshooting and RCA Assistant)"
+    ))
     .inner_size(1000.0, 800.0)
     .min_inner_size(800.0, 600.0)
     .resizable(true)
@@ -60,12 +59,12 @@ pub async fn authenticate_with_webview(
     .focused(true)
     .visible(true)
     .build()
-    .map_err(|e| format!("Failed to create webview: {}", e))?;
+    .map_err(|e| format!("Failed to create webview: {e}"))?;
 
     // Focus the window
     webview
         .set_focus()
-        .map_err(|e| tracing::warn!("Failed to focus webview: {}", e))
+        .map_err(|e| tracing::warn!("Failed to focus webview: {e}"))
         .ok();
 
     // Wait for user to complete login
@@ -147,7 +146,7 @@ pub async fn extract_cookies_via_ipc<R: tauri::Runtime>(
         match serde_json::from_str::<serde_json::Value>(payload_str) {
             Ok(payload) => {
                 if let Some(error_msg) = payload.get("error").and_then(|e| e.as_str()) {
-                    let _ = tx.try_send(Err(format!("JavaScript error: {}", error_msg)));
+                    let _ = tx.try_send(Err(format!("JavaScript error: {error_msg}")));
                     return;
                 }
 
@@ -158,8 +157,8 @@ pub async fn extract_cookies_via_ipc<R: tauri::Runtime>(
                             let _ = tx.try_send(Ok(cookies));
                         }
                         Err(e) => {
-                            tracing::error!("Failed to parse cookies: {}", e);
-                            let _ = tx.try_send(Err(format!("Failed to parse cookies: {}", e)));
+                            tracing::error!("Failed to parse cookies: {e}");
+                            let _ = tx.try_send(Err(format!("Failed to parse cookies: {e}")));
                         }
                     }
                 } else {
@@ -167,8 +166,8 @@ pub async fn extract_cookies_via_ipc<R: tauri::Runtime>(
                 }
             }
             Err(e) => {
-                tracing::error!("Failed to parse event payload: {}", e);
-                let _ = tx.try_send(Err(format!("Failed to parse event payload: {}", e)));
+                tracing::error!("Failed to parse event payload: {e}");
+                let _ = tx.try_send(Err(format!("Failed to parse event payload: {e}")));
             }
         }
     });
@@ -176,7 +175,7 @@ pub async fn extract_cookies_via_ipc<R: tauri::Runtime>(
     // Inject the script into the webview
     webview_window
         .eval(cookie_extraction_script)
-        .map_err(|e| format!("Failed to inject cookie extraction script: {}", e))?;
+        .map_err(|e| format!("Failed to inject cookie extraction script: {e}"))?;
 
     tracing::info!("Cookie extraction script injected, waiting for response...");
 
@@ -199,7 +198,13 @@ pub async fn extract_cookies_via_ipc<R: tauri::Runtime>(
 pub fn cookies_to_header(cookies: &[Cookie]) -> String {
     cookies
         .iter()
-        .map(|c| format!("{}={}", c.name, c.value))
+        .map(|c| {
+            format!(
+                "{name}={value}",
+                name = c.name.as_str(),
+                value = c.value.as_str()
+            )
+        })
         .collect::<Vec<_>>()
         .join("; ")
 }

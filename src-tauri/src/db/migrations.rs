@@ -162,13 +162,13 @@ pub fn run_migrations(conn: &Connection) -> anyhow::Result<()> {
             // FTS5 virtual table creation can be skipped if FTS5 is not compiled in
             if let Err(e) = conn.execute_batch(sql) {
                 if name.contains("fts") {
-                    tracing::warn!("FTS5 not available, skipping: {}", e);
+                    tracing::warn!("FTS5 not available, skipping: {e}");
                 } else {
                     return Err(e.into());
                 }
             }
             conn.execute("INSERT INTO _migrations (name) VALUES (?1)", [name])?;
-            tracing::info!("Applied migration: {}", name);
+            tracing::info!("Applied migration: {name}");
         }
     }
 

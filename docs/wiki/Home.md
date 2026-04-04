@@ -1,6 +1,6 @@
-# TFTSR — IT Triage & RCA Desktop Application
+# Troubleshooting and RCA Assistant
 
-**TFTSR** is a secure desktop application for guided IT incident triage, root cause analysis (RCA), and post-mortem documentation. Built with Tauri 2.x (Rust + WebView) and React 18.
+**Troubleshooting and RCA Assistant** is a secure desktop application for guided IT incident triage, root cause analysis (RCA), and post-mortem documentation. Built with Tauri 2.x (Rust + WebView) and React 18.
 
 **CI:** ![build](http://172.0.0.29:3000/sarman/tftsr-devops_investigation/actions/workflows/test.yml/badge.svg) — rustfmt · clippy · 64 Rust tests · tsc · vitest — all green
 
@@ -25,7 +25,7 @@
 - **5-Whys AI Triage** — Interactive guided root cause analysis via multi-turn AI chat
 - **PII Auto-Redaction** — Detects and redacts sensitive data before any AI send
 - **Multi-Provider AI** — OpenAI, Anthropic Claude, Google Gemini, Mistral, AWS Bedrock (via LiteLLM), MSI GenAI (Motorola internal), local Ollama (fully offline)
-- **Custom Provider Support** — Flexible authentication (Bearer, custom headers) and API formats (OpenAI-compatible, MSI GenAI)
+- **Custom Provider Support** — Flexible authentication (Bearer, custom headers) and API formats (OpenAI-compatible, Custom REST)
 - **External Integrations** — Confluence, ServiceNow, Azure DevOps with OAuth2 PKCE flows
 - **SQLCipher AES-256** — All issue history and credentials encrypted at rest
 - **RCA + Post-Mortem Generation** — Auto-populated Markdown templates, exportable as MD/PDF

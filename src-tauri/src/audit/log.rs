@@ -97,9 +97,9 @@ mod tests {
         for i in 0..5 {
             write_audit_event(
                 &conn,
-                &format!("action_{}", i),
+                &format!("action_{i}"),
                 "test",
-                &format!("id_{}", i),
+                &format!("id_{i}"),
                 "{}",
             )
             .unwrap();

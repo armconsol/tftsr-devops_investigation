@@ -29,14 +29,14 @@ pub struct ProviderConfig {
     /// If None, defaults to "Bearer "
     #[serde(skip_serializing_if = "Option::is_none")]
     pub custom_auth_prefix: Option<String>,
-    /// Optional: API format ("openai" or "msi_genai")
+    /// Optional: API format ("openai" or "custom_rest")
     /// If None, defaults to "openai"
     #[serde(skip_serializing_if = "Option::is_none")]
     pub api_format: Option<String>,
-    /// Optional: Session ID for stateful APIs like MSI GenAI
+    /// Optional: Session ID for stateful custom REST APIs
     #[serde(skip_serializing_if = "Option::is_none")]
     pub session_id: Option<String>,
-    /// Optional: User ID for MSI GenAI (CORE ID email)
+    /// Optional: User ID for custom REST API cost tracking (CORE ID email)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub user_id: Option<String>,
 }
