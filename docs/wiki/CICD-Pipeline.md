@@ -29,7 +29,7 @@ macOS runner runs jobs **directly on the host** (no Docker container) — macOS 
 
 ## Test Pipeline (`.woodpecker/test.yml`)
 
-**Triggers:** Every push and pull request to any branch.
+**Triggers:** Every push to non-`master` branches and all pull requests.
 
 ```
 Pipeline steps:

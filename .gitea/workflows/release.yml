@@ -130,13 +130,18 @@ jobs:
           cargo install tauri-cli --version "^2" --locked
           # Build the .app bundle only (no DMG yet so we can sign before packaging)
           CI=true cargo tauri build --target aarch64-apple-darwin --bundles app
-          APP=src-tauri/target/aarch64-apple-darwin/release/bundle/macos/TFTSR.app
+          APP=$(find src-tauri/target/aarch64-apple-darwin/release/bundle/macos -maxdepth 1 -type d -name "*.app" | head -n 1)
+          if [ -z "$APP" ]; then
+            echo "ERROR: Could not find macOS app bundle"
+            exit 1
+          fi
+          APP_NAME=$(basename "$APP" .app)
           # Ad-hoc sign: changes Gatekeeper error from "damaged" to "unidentified developer"
           codesign --deep --force --sign - "$APP"
           # Create DMG from the signed .app
           mkdir -p src-tauri/target/aarch64-apple-darwin/release/bundle/dmg
-          DMG=src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/TFTSR.dmg
-          hdiutil create -volname "TFTSR" -srcfolder "$APP" -ov -format UDZO "$DMG"
+          DMG=src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/${APP_NAME}.dmg
+          hdiutil create -volname "$APP_NAME" -srcfolder "$APP" -ov -format UDZO "$DMG"
       - name: Upload artifacts
         env:
           RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
