@@ -32,7 +32,7 @@ pub async fn test_connection(config: &AzureDevOpsConfig) -> Result<ConnectionRes
         .bearer_auth(&config.access_token)
         .send()
         .await
-        .map_err(|e| format!("Connection failed: {}", e))?;
+        .map_err(|e| format!("Connection failed: {e}"))?;
 
     if resp.status().is_success() {
         Ok(ConnectionResult {
@@ -74,7 +74,7 @@ pub async fn search_work_items(
         .json(&body)
         .send()
         .await
-        .map_err(|e| format!("WIQL query failed: {}", e))?;
+        .map_err(|e| format!("WIQL query failed: {e}"))?;
 
     if !resp.status().is_success() {
         return Err(format!(
@@ -87,7 +87,7 @@ pub async fn search_work_items(
     let wiql_result: serde_json::Value = resp
         .json()
         .await
-        .map_err(|e| format!("Failed to parse WIQL response: {}", e))?;
+        .map_err(|e| format!("Failed to parse WIQL response: {e}"))?;
 
     let work_item_refs = wiql_result["workItems"]
         .as_array()
@@ -119,7 +119,7 @@ pub async fn search_work_items(
         .bearer_auth(&config.access_token)
         .send()
         .await
-        .map_err(|e| format!("Failed to fetch work item details: {}", e))?;
+        .map_err(|e| format!("Failed to fetch work item details: {e}"))?;
 
     if !detail_resp.status().is_success() {
         return Err(format!(
@@ -131,7 +131,7 @@ pub async fn search_work_items(
     let details: serde_json::Value = detail_resp
         .json()
         .await
-        .map_err(|e| format!("Failed to parse work item details: {}", e))?;
+        .map_err(|e| format!("Failed to parse work item details: {e}"))?;
 
     let work_items = details["value"]
         .as_array()
@@ -199,7 +199,7 @@ pub async fn create_work_item(
         .json(&operations)
         .send()
         .await
-        .map_err(|e| format!("Failed to create work item: {}", e))?;
+        .map_err(|e| format!("Failed to create work item: {e}"))?;
 
     if !resp.status().is_success() {
         return Err(format!(
@@ -212,7 +212,7 @@ pub async fn create_work_item(
     let result: serde_json::Value = resp
         .json()
         .await
-        .map_err(|e| format!("Failed to parse response: {}", e))?;
+        .map_err(|e| format!("Failed to parse response: {e}"))?;
 
     let work_item_id = result["id"].as_i64().unwrap_or(0);
     let work_item_url = format!(
@@ -223,7 +223,7 @@ pub async fn create_work_item(
 
     Ok(TicketResult {
         id: work_item_id.to_string(),
-        ticket_number: format!("#{}", work_item_id),
+        ticket_number: format!("#{work_item_id}"),
         url: work_item_url,
     })
 }
@@ -246,7 +246,7 @@ pub async fn get_work_item(
         .bearer_auth(&config.access_token)
         .send()
         .await
-        .map_err(|e| format!("Failed to get work item: {}", e))?;
+        .map_err(|e| format!("Failed to get work item: {e}"))?;
 
     if !resp.status().is_success() {
         return Err(format!(
@@ -259,7 +259,7 @@ pub async fn get_work_item(
     let result: serde_json::Value = resp
         .json()
         .await
-        .map_err(|e| format!("Failed to parse response: {}", e))?;
+        .map_err(|e| format!("Failed to parse response: {e}"))?;
 
     Ok(WorkItem {
         id: result["id"]
@@ -305,7 +305,7 @@ pub async fn update_work_item(
         .json(&updates)
         .send()
         .await
-        .map_err(|e| format!("Failed to update work item: {}", e))?;
+        .map_err(|e| format!("Failed to update work item: {e}"))?;
 
     if !resp.status().is_success() {
         return Err(format!(
@@ -318,7 +318,7 @@ pub async fn update_work_item(
     let result: serde_json::Value = resp
         .json()
         .await
-        .map_err(|e| format!("Failed to parse response: {}", e))?;
+        .map_err(|e| format!("Failed to parse response: {e}"))?;
 
     let updated_work_item_id = result["id"].as_i64().unwrap_or(work_item_id);
     let work_item_url = format!(
@@ -329,7 +329,7 @@ pub async fn update_work_item(
 
     Ok(TicketResult {
         id: updated_work_item_id.to_string(),
-        ticket_number: format!("#{}", updated_work_item_id),
+        ticket_number: format!("#{updated_work_item_id}"),
         url: work_item_url,
     })
 }

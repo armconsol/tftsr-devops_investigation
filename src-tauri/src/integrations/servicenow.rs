@@ -34,7 +34,7 @@ pub async fn test_connection(config: &ServiceNowConfig) -> Result<ConnectionResu
         .query(&[("sysparm_limit", "1")])
         .send()
         .await
-        .map_err(|e| format!("Connection failed: {}", e))?;
+        .map_err(|e| format!("Connection failed: {e}"))?;
 
     if resp.status().is_success() {
         Ok(ConnectionResult {
@@ -60,7 +60,7 @@ pub async fn search_incidents(
         config.instance_url.trim_end_matches('/')
     );
 
-    let sysparm_query = format!("short_descriptionLIKE{}", query);
+    let sysparm_query = format!("short_descriptionLIKE{query}");
 
     let resp = client
         .get(&url)
@@ -71,7 +71,7 @@ pub async fn search_incidents(
         ])
         .send()
         .await
-        .map_err(|e| format!("Search failed: {}", e))?;
+        .map_err(|e| format!("Search failed: {e}"))?;
 
     if !resp.status().is_success() {
         return Err(format!(
@@ -84,7 +84,7 @@ pub async fn search_incidents(
     let body: serde_json::Value = resp
         .json()
         .await
-        .map_err(|e| format!("Failed to parse response: {}", e))?;
+        .map_err(|e| format!("Failed to parse response: {e}"))?;
 
     let incidents = body["result"]
         .as_array()
@@ -134,7 +134,7 @@ pub async fn create_incident(
         .json(&body)
         .send()
         .await
-        .map_err(|e| format!("Failed to create incident: {}", e))?;
+        .map_err(|e| format!("Failed to create incident: {e}"))?;
 
     if !resp.status().is_success() {
         return Err(format!(
@@ -147,7 +147,7 @@ pub async fn create_incident(
     let result: serde_json::Value = resp
         .json()
         .await
-        .map_err(|e| format!("Failed to parse response: {}", e))?;
+        .map_err(|e| format!("Failed to parse response: {e}"))?;
 
     let incident_number = result["result"]["number"].as_str().unwrap_or("");
     let sys_id = result["result"]["sys_id"].as_str().unwrap_or("");
@@ -198,13 +198,13 @@ pub async fn get_incident(
         .basic_auth(&config.username, Some(&config.password));
 
     if use_query {
-        request = request.query(&[("sysparm_query", &format!("number={}", incident_id))]);
+        request = request.query(&[("sysparm_query", &format!("number={incident_id}"))]);
     }
 
     let resp = request
         .send()
         .await
-        .map_err(|e| format!("Failed to get incident: {}", e))?;
+        .map_err(|e| format!("Failed to get incident: {e}"))?;
 
     if !resp.status().is_success() {
         return Err(format!(
@@ -217,7 +217,7 @@ pub async fn get_incident(
     let body: serde_json::Value = resp
         .json()
         .await
-        .map_err(|e| format!("Failed to parse response: {}", e))?;
+        .map_err(|e| format!("Failed to parse response: {e}"))?;
 
     let incident_data = if use_query {
         // Query response has "result" array
@@ -273,7 +273,7 @@ pub async fn update_incident(
         .json(&updates)
         .send()
         .await
-        .map_err(|e| format!("Failed to update incident: {}", e))?;
+        .map_err(|e| format!("Failed to update incident: {e}"))?;
 
     if !resp.status().is_success() {
         return Err(format!(
@@ -286,7 +286,7 @@ pub async fn update_incident(
     let result: serde_json::Value = resp
         .json()
         .await
-        .map_err(|e| format!("Failed to parse response: {}", e))?;
+        .map_err(|e| format!("Failed to parse response: {e}"))?;
 
     let incident_number = result["result"]["number"].as_str().unwrap_or("");
     let updated_sys_id = result["result"]["sys_id"].as_str().unwrap_or(sys_id);

@@ -88,7 +88,7 @@ pub async fn exchange_code(
         .form(&params)
         .send()
         .await
-        .map_err(|e| format!("Failed to send token exchange request: {}", e))?;
+        .map_err(|e| format!("Failed to send token exchange request: {e}"))?;
 
     if !resp.status().is_success() {
         return Err(format!(
@@ -101,7 +101,7 @@ pub async fn exchange_code(
     let body: serde_json::Value = resp
         .json()
         .await
-        .map_err(|e| format!("Failed to parse token response: {}", e))?;
+        .map_err(|e| format!("Failed to parse token response: {e}"))?;
 
     let access_token = body["access_token"]
         .as_str()
@@ -208,7 +208,7 @@ pub fn encrypt_token(token: &str) -> Result<String, String> {
     // Encrypt
     let ciphertext = cipher
         .encrypt(nonce, token.as_bytes())
-        .map_err(|e| format!("Encryption failed: {}", e))?;
+        .map_err(|e| format!("Encryption failed: {e}"))?;
 
     // Prepend nonce to ciphertext
     let mut result = nonce_bytes.to_vec();
@@ -232,7 +232,7 @@ pub fn decrypt_token(encrypted: &str) -> Result<String, String> {
     use base64::Engine;
     let data = STANDARD
         .decode(encrypted)
-        .map_err(|e| format!("Base64 decode failed: {}", e))?;
+        .map_err(|e| format!("Base64 decode failed: {e}"))?;
 
     if data.len() < 12 {
         return Err("Invalid encrypted data: too short".to_string());
@@ -256,9 +256,9 @@ pub fn decrypt_token(encrypted: &str) -> Result<String, String> {
     // Decrypt
     let plaintext = cipher
         .decrypt(nonce, ciphertext)
-        .map_err(|e| format!("Decryption failed: {}", e))?;
+        .map_err(|e| format!("Decryption failed: {e}"))?;
 
-    String::from_utf8(plaintext).map_err(|e| format!("Invalid UTF-8: {}", e))
+    String::from_utf8(plaintext).map_err(|e| format!("Invalid UTF-8: {e}"))
 }
 
 #[cfg(test)]

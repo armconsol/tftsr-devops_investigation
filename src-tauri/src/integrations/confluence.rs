@@ -35,7 +35,7 @@ pub async fn test_connection(config: &ConfluenceConfig) -> Result<ConnectionResu
         .bearer_auth(&config.access_token)
         .send()
         .await
-        .map_err(|e| format!("Connection failed: {}", e))?;
+        .map_err(|e| format!("Connection failed: {e}"))?;
 
     if resp.status().is_success() {
         Ok(ConnectionResult {
@@ -61,7 +61,7 @@ pub async fn list_spaces(config: &ConfluenceConfig) -> Result<Vec<Space>, String
         .query(&[("limit", "100")])
         .send()
         .await
-        .map_err(|e| format!("Failed to list spaces: {}", e))?;
+        .map_err(|e| format!("Failed to list spaces: {e}"))?;
 
     if !resp.status().is_success() {
         return Err(format!(
@@ -74,7 +74,7 @@ pub async fn list_spaces(config: &ConfluenceConfig) -> Result<Vec<Space>, String
     let body: serde_json::Value = resp
         .json()
         .await
-        .map_err(|e| format!("Failed to parse response: {}", e))?;
+        .map_err(|e| format!("Failed to parse response: {e}"))?;
 
     let spaces = body["results"]
         .as_array()
@@ -114,7 +114,7 @@ pub async fn search_pages(
         .query(&[("cql", &cql), ("limit", &"50".to_string())])
         .send()
         .await
-        .map_err(|e| format!("Search failed: {}", e))?;
+        .map_err(|e| format!("Search failed: {e}"))?;
 
     if !resp.status().is_success() {
         return Err(format!(
@@ -127,7 +127,7 @@ pub async fn search_pages(
     let body: serde_json::Value = resp
         .json()
         .await
-        .map_err(|e| format!("Failed to parse response: {}", e))?;
+        .map_err(|e| format!("Failed to parse response: {e}"))?;
 
     let pages = body["results"]
         .as_array()
@@ -182,7 +182,7 @@ pub async fn publish_page(
         .json(&body)
         .send()
         .await
-        .map_err(|e| format!("Failed to publish page: {}", e))?;
+        .map_err(|e| format!("Failed to publish page: {e}"))?;
 
     if !resp.status().is_success() {
         return Err(format!(
@@ -195,7 +195,7 @@ pub async fn publish_page(
     let result: serde_json::Value = resp
         .json()
         .await
-        .map_err(|e| format!("Failed to parse response: {}", e))?;
+        .map_err(|e| format!("Failed to parse response: {e}"))?;
 
     let page_id = result["id"].as_str().unwrap_or("");
     let page_url = format!(
@@ -245,7 +245,7 @@ pub async fn update_page(
         .json(&body)
         .send()
         .await
-        .map_err(|e| format!("Failed to update page: {}", e))?;
+        .map_err(|e| format!("Failed to update page: {e}"))?;
 
     if !resp.status().is_success() {
         return Err(format!(
@@ -258,7 +258,7 @@ pub async fn update_page(
     let result: serde_json::Value = resp
         .json()
         .await
-        .map_err(|e| format!("Failed to parse response: {}", e))?;
+        .map_err(|e| format!("Failed to parse response: {e}"))?;
 
     let updated_page_id = result["id"].as_str().unwrap_or(page_id);
     let page_url = format!(
