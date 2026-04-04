@@ -36,9 +36,7 @@ pub enum AuthMethod {
         expires_at: Option<i64>,
     },
     #[serde(rename = "cookies")]
-    Cookies {
-        cookies: Vec<webview_auth::Cookie>,
-    },
+    Cookies { cookies: Vec<webview_auth::Cookie> },
     #[serde(rename = "token")]
     Token {
         token: String,

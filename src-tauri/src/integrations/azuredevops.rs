@@ -344,9 +344,10 @@ mod tests {
         let mock = server
             .mock("GET", "/_apis/projects/TestProject")
             .match_header("authorization", "Bearer test_token")
-            .match_query(mockito::Matcher::AllOf(vec![
-                mockito::Matcher::UrlEncoded("api-version".into(), "7.0".into()),
-            ]))
+            .match_query(mockito::Matcher::AllOf(vec![mockito::Matcher::UrlEncoded(
+                "api-version".into(),
+                "7.0".into(),
+            )]))
             .with_status(200)
             .with_body(r#"{"name":"TestProject","id":"abc123"}"#)
             .create_async()
@@ -372,9 +373,10 @@ mod tests {
         let mut server = mockito::Server::new_async().await;
         let mock = server
             .mock("GET", "/_apis/projects/TestProject")
-            .match_query(mockito::Matcher::AllOf(vec![
-                mockito::Matcher::UrlEncoded("api-version".into(), "7.0".into()),
-            ]))
+            .match_query(mockito::Matcher::AllOf(vec![mockito::Matcher::UrlEncoded(
+                "api-version".into(),
+                "7.0".into(),
+            )]))
             .with_status(401)
             .create_async()
             .await;
@@ -400,9 +402,10 @@ mod tests {
         let wiql_mock = server
             .mock("POST", "/TestProject/_apis/wit/wiql")
             .match_header("authorization", "Bearer test_token")
-            .match_query(mockito::Matcher::AllOf(vec![
-                mockito::Matcher::UrlEncoded("api-version".into(), "7.0".into()),
-            ]))
+            .match_query(mockito::Matcher::AllOf(vec![mockito::Matcher::UrlEncoded(
+                "api-version".into(),
+                "7.0".into(),
+            )]))
             .with_status(200)
             .with_body(r#"{"workItems":[{"id":123}]}"#)
             .create_async()
@@ -456,9 +459,10 @@ mod tests {
             .mock("POST", "/TestProject/_apis/wit/workitems/$Bug")
             .match_header("authorization", "Bearer test_token")
             .match_header("content-type", "application/json-patch+json")
-            .match_query(mockito::Matcher::AllOf(vec![
-                mockito::Matcher::UrlEncoded("api-version".into(), "7.0".into()),
-            ]))
+            .match_query(mockito::Matcher::AllOf(vec![mockito::Matcher::UrlEncoded(
+                "api-version".into(),
+                "7.0".into(),
+            )]))
             .with_status(200)
             .with_body(r#"{"id":456}"#)
             .create_async()
@@ -486,9 +490,10 @@ mod tests {
         let mock = server
             .mock("GET", "/TestProject/_apis/wit/workitems/123")
             .match_header("authorization", "Bearer test_token")
-            .match_query(mockito::Matcher::AllOf(vec![
-                mockito::Matcher::UrlEncoded("api-version".into(), "7.0".into()),
-            ]))
+            .match_query(mockito::Matcher::AllOf(vec![mockito::Matcher::UrlEncoded(
+                "api-version".into(),
+                "7.0".into(),
+            )]))
             .with_status(200)
             .with_body(
                 r#"{
@@ -526,9 +531,10 @@ mod tests {
             .mock("PATCH", "/TestProject/_apis/wit/workitems/123")
             .match_header("authorization", "Bearer test_token")
             .match_header("content-type", "application/json-patch+json")
-            .match_query(mockito::Matcher::AllOf(vec![
-                mockito::Matcher::UrlEncoded("api-version".into(), "7.0".into()),
-            ]))
+            .match_query(mockito::Matcher::AllOf(vec![mockito::Matcher::UrlEncoded(
+                "api-version".into(),
+                "7.0".into(),
+            )]))
             .with_status(200)
             .with_body(r#"{"id":123}"#)
             .create_async()

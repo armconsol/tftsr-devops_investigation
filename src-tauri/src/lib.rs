@@ -34,6 +34,7 @@ pub fn run() {
         db: Arc::new(Mutex::new(conn)),
         settings: Arc::new(Mutex::new(state::AppSettings::default())),
         app_data_dir: data_dir.clone(),
+        integration_webviews: Arc::new(Mutex::new(std::collections::HashMap::new())),
     };
 
     tauri::Builder::default()
@@ -90,6 +91,9 @@ pub fn run() {
             commands::integrations::authenticate_with_webview,
             commands::integrations::extract_cookies_from_webview,
             commands::integrations::save_manual_token,
+            commands::integrations::save_integration_config,
+            commands::integrations::get_integration_config,
+            commands::integrations::get_all_integration_configs,
             // System / Settings
             commands::system::check_ollama_installed,
             commands::system::get_ollama_install_guide,

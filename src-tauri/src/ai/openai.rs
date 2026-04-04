@@ -70,7 +70,10 @@ impl OpenAiProvider {
         }
 
         // Use custom auth header and prefix if provided
-        let auth_header = config.custom_auth_header.as_deref().unwrap_or("Authorization");
+        let auth_header = config
+            .custom_auth_header
+            .as_deref()
+            .unwrap_or("Authorization");
         let auth_prefix = config.custom_auth_prefix.as_deref().unwrap_or("Bearer ");
         let auth_value = format!("{}{}", auth_prefix, config.api_key);
 
@@ -164,7 +167,7 @@ impl OpenAiProvider {
         if let Some(max_tokens) = config.max_tokens {
             model_config["max_tokens"] = serde_json::Value::from(max_tokens);
         }
-        if !model_config.is_null() && model_config.as_object().map_or(false, |obj| !obj.is_empty()) {
+        if !model_config.is_null() && model_config.as_object().is_some_and(|obj| !obj.is_empty()) {
             body["modelConfig"] = model_config;
         }
 

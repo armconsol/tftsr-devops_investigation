@@ -409,6 +409,14 @@ export interface TokenAuthRequest {
   base_url: string;
 }
 
+export interface IntegrationConfig {
+  service: string;
+  base_url: string;
+  username?: string;
+  project_name?: string;
+  space_key?: string;
+}
+
 export const authenticateWithWebviewCmd = (service: string, baseUrl: string) =>
   invoke<WebviewAuthResponse>("authenticate_with_webview", { service, baseUrl });
 
@@ -417,3 +425,14 @@ export const extractCookiesFromWebviewCmd = (service: string, webviewId: string)
 
 export const saveManualTokenCmd = (request: TokenAuthRequest) =>
   invoke<ConnectionResult>("save_manual_token", { request });
+
+// ─── Integration Configuration Persistence ────────────────────────────────────
+
+export const saveIntegrationConfigCmd = (config: IntegrationConfig) =>
+  invoke<void>("save_integration_config", { config });
+
+export const getIntegrationConfigCmd = (service: string) =>
+  invoke<IntegrationConfig | null>("get_integration_config", { service });
+
+export const getAllIntegrationConfigsCmd = () =>
+  invoke<IntegrationConfig[]>("get_all_integration_configs");

@@ -65,7 +65,10 @@ pub async fn search_incidents(
     let resp = client
         .get(&url)
         .basic_auth(&config.username, Some(&config.password))
-        .query(&[("sysparm_query", &sysparm_query), ("sysparm_limit", &"10".to_string())])
+        .query(&[
+            ("sysparm_query", &sysparm_query),
+            ("sysparm_limit", &"10".to_string()),
+        ])
         .send()
         .await
         .map_err(|e| format!("Search failed: {}", e))?;
@@ -240,7 +243,10 @@ pub async fn get_incident(
             .as_str()
             .ok_or_else(|| "Missing short_description".to_string())?
             .to_string(),
-        description: incident_data["description"].as_str().unwrap_or("").to_string(),
+        description: incident_data["description"]
+            .as_str()
+            .unwrap_or("")
+            .to_string(),
         urgency: incident_data["urgency"].as_str().unwrap_or("3").to_string(),
         impact: incident_data["impact"].as_str().unwrap_or("3").to_string(),
         state: incident_data["state"].as_str().unwrap_or("1").to_string(),
@@ -307,9 +313,10 @@ mod tests {
         let mock = server
             .mock("GET", "/api/now/table/incident")
             .match_header("authorization", mockito::Matcher::Regex("Basic .+".into()))
-            .match_query(mockito::Matcher::AllOf(vec![
-                mockito::Matcher::UrlEncoded("sysparm_limit".into(), "1".into()),
-            ]))
+            .match_query(mockito::Matcher::AllOf(vec![mockito::Matcher::UrlEncoded(
+                "sysparm_limit".into(),
+                "1".into(),
+            )]))
             .with_status(200)
             .with_body(r#"{"result":[]}"#)
             .create_async()
@@ -335,9 +342,10 @@ mod tests {
         let mut server = mockito::Server::new_async().await;
         let mock = server
             .mock("GET", "/api/now/table/incident")
-            .match_query(mockito::Matcher::AllOf(vec![
-                mockito::Matcher::UrlEncoded("sysparm_limit".into(), "1".into()),
-            ]))
+            .match_query(mockito::Matcher::AllOf(vec![mockito::Matcher::UrlEncoded(
+                "sysparm_limit".into(),
+                "1".into(),
+            )]))
             .with_status(401)
             .create_async()
             .await;
@@ -363,7 +371,10 @@ mod tests {
             .mock("GET", "/api/now/table/incident")
             .match_header("authorization", mockito::Matcher::Regex("Basic .+".into()))
             .match_query(mockito::Matcher::AllOf(vec![
-                mockito::Matcher::UrlEncoded("sysparm_query".into(), "short_descriptionLIKElogin".into()),
+                mockito::Matcher::UrlEncoded(
+                    "sysparm_query".into(),
+                    "short_descriptionLIKElogin".into(),
+                ),
                 mockito::Matcher::UrlEncoded("sysparm_limit".into(), "10".into()),
             ]))
             .with_status(200)
@@ -480,9 +491,10 @@ mod tests {
         let mock = server
             .mock("GET", "/api/now/table/incident")
             .match_header("authorization", mockito::Matcher::Regex("Basic .+".into()))
-            .match_query(mockito::Matcher::AllOf(vec![
-                mockito::Matcher::UrlEncoded("sysparm_query".into(), "number=INC0010001".into()),
-            ]))
+            .match_query(mockito::Matcher::AllOf(vec![mockito::Matcher::UrlEncoded(
+                "sysparm_query".into(),
+                "number=INC0010001".into(),
+            )]))
             .with_status(200)
             .with_body(
                 r#"{

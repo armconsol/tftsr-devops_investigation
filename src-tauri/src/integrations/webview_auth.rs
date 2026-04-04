@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Listener, WebviewUrl, WebviewWindowBuilder, WebviewWindow};
+use tauri::{AppHandle, Listener, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExtractedCredentials {
@@ -35,21 +35,38 @@ pub async fn authenticate_with_webview(
         _ => return Err(format!("Unknown service: {}", service)),
     };
 
-    tracing::info!("Opening embedded browser for {} at {}", service, login_url);
+    tracing::info!(
+        "Opening persistent browser for {} at {}",
+        service,
+        login_url
+    );
 
-    // Create embedded webview window
-    let webview_label = format!("{}-auth-window", service);
-    let _webview = WebviewWindowBuilder::new(
+    // Create persistent browser window (stays open for browsing and fresh cookie extraction)
+    let webview_label = format!("{}-auth", service);
+    let webview = WebviewWindowBuilder::new(
         &app_handle,
         &webview_label,
-        WebviewUrl::External(login_url.parse().map_err(|e| format!("Invalid URL: {}", e))?),
+        WebviewUrl::External(
+            login_url
+                .parse()
+                .map_err(|e| format!("Invalid URL: {}", e))?,
+        ),
     )
-    .title(format!("Login to {}", service))
-    .inner_size(800.0, 700.0)
+    .title(format!("{} Browser (TFTSR)", service))
+    .inner_size(1000.0, 800.0)
+    .min_inner_size(800.0, 600.0)
     .resizable(true)
     .center()
+    .focused(true)
+    .visible(true)
     .build()
     .map_err(|e| format!("Failed to create webview: {}", e))?;
+
+    // Focus the window
+    webview
+        .set_focus()
+        .map_err(|e| tracing::warn!("Failed to focus webview: {}", e))
+        .ok();
 
     // Wait for user to complete login
     // User will click "Complete Login" button in the UI after successful authentication

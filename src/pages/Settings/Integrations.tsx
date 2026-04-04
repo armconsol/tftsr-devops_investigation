@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { ExternalLink, Check, X, Loader2, Key, Globe, Lock } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import {
@@ -21,6 +21,8 @@ import {
   testConfluenceConnectionCmd,
   testServiceNowConnectionCmd,
   testAzureDevOpsConnectionCmd,
+  saveIntegrationConfigCmd,
+  getAllIntegrationConfigsCmd,
 } from "@/lib/tauriCommands";
 
 type AuthMode = "oauth2" | "webview" | "token";
@@ -68,6 +70,35 @@ export default function Integrations() {
 
   const [loading, setLoading] = useState<Record<string, boolean>>({});
   const [testResults, setTestResults] = useState<Record<string, { success: boolean; message: string } | null>>({});
+
+  // Load configs from database on mount
+  useEffect(() => {
+    const loadConfigs = async () => {
+      try {
+        const savedConfigs = await getAllIntegrationConfigsCmd();
+        const configMap: Record<string, Partial<IntegrationConfig>> = {};
+
+        savedConfigs.forEach((cfg) => {
+          configMap[cfg.service] = {
+            baseUrl: cfg.base_url,
+            username: cfg.username || "",
+            projectName: cfg.project_name || "",
+            spaceKey: cfg.space_key || "",
+          };
+        });
+
+        setConfigs((prev) => ({
+          confluence: { ...prev.confluence, ...configMap.confluence },
+          servicenow: { ...prev.servicenow, ...configMap.servicenow },
+          azuredevops: { ...prev.azuredevops, ...configMap.azuredevops },
+        }));
+      } catch (err) {
+        console.error("Failed to load integration configs:", err);
+      }
+    };
+
+    loadConfigs();
+  }, []);
 
   const handleAuthModeChange = (service: string, mode: AuthMode) => {
     setConfigs((prev) => ({
@@ -249,11 +280,26 @@ export default function Integrations() {
     }
   };
 
-  const updateConfig = (service: string, field: string, value: string) => {
+  const updateConfig = async (service: string, field: string, value: string) => {
+    const updatedConfig = { ...configs[service], [field]: value };
+
     setConfigs((prev) => ({
       ...prev,
-      [service]: { ...prev[service], [field]: value },
+      [service]: updatedConfig,
     }));
+
+    // Save to database (debounced save happens after user stops typing)
+    try {
+      await saveIntegrationConfigCmd({
+        service,
+        base_url: updatedConfig.baseUrl,
+        username: updatedConfig.username,
+        project_name: updatedConfig.projectName,
+        space_key: updatedConfig.spaceKey,
+      });
+    } catch (err) {
+      console.error("Failed to save integration config:", err);
+    }
   };
 
   const renderAuthSection = (service: string) => {

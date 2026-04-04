@@ -1,5 +1,6 @@
 use crate::integrations::{ConnectionResult, PublishResult, TicketResult};
 use crate::state::AppState;
+use rusqlite::OptionalExtension;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -105,12 +106,14 @@ pub async fn initiate_oauth(
         let db = app_state.db.clone();
         let settings = app_state.settings.clone();
         let app_data_dir = app_state.app_data_dir.clone();
+        let integration_webviews = app_state.integration_webviews.clone();
 
         tokio::spawn(async move {
             let app_state_for_callback = AppState {
                 db,
                 settings,
                 app_data_dir,
+                integration_webviews,
             };
             while let Some(callback) = callback_rx.recv().await {
                 tracing::info!("Received OAuth callback for state: {}", callback.state);
@@ -407,6 +410,83 @@ mod tests {
         assert_eq!(deserialized.auth_url, response.auth_url);
         assert_eq!(deserialized.state, response.state);
     }
+
+    #[test]
+    fn test_integration_config_serialization() {
+        let config = IntegrationConfig {
+            service: "confluence".to_string(),
+            base_url: "https://example.atlassian.net".to_string(),
+            username: Some("user@example.com".to_string()),
+            project_name: None,
+            space_key: Some("DEV".to_string()),
+        };
+
+        let json = serde_json::to_string(&config).unwrap();
+        assert!(json.contains("confluence"));
+        assert!(json.contains("https://example.atlassian.net"));
+        assert!(json.contains("user@example.com"));
+        assert!(json.contains("DEV"));
+
+        let deserialized: IntegrationConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.service, config.service);
+        assert_eq!(deserialized.base_url, config.base_url);
+        assert_eq!(deserialized.username, config.username);
+        assert_eq!(deserialized.space_key, config.space_key);
+    }
+
+    #[test]
+    fn test_webview_tracking() {
+        use std::collections::HashMap;
+        use std::sync::{Arc, Mutex};
+
+        let webview_tracking: Arc<Mutex<HashMap<String, String>>> =
+            Arc::new(Mutex::new(HashMap::new()));
+
+        // Add webview
+        {
+            let mut tracking = webview_tracking.lock().unwrap();
+            tracking.insert("confluence".to_string(), "confluence-auth".to_string());
+        }
+
+        // Verify exists
+        {
+            let tracking = webview_tracking.lock().unwrap();
+            assert_eq!(
+                tracking.get("confluence"),
+                Some(&"confluence-auth".to_string())
+            );
+        }
+
+        // Remove webview
+        {
+            let mut tracking = webview_tracking.lock().unwrap();
+            tracking.remove("confluence");
+        }
+
+        // Verify removed
+        {
+            let tracking = webview_tracking.lock().unwrap();
+            assert!(!tracking.contains_key("confluence"));
+        }
+    }
+
+    #[test]
+    fn test_token_auth_request_serialization() {
+        let request = TokenAuthRequest {
+            service: "azuredevops".to_string(),
+            token: "secret_token_123".to_string(),
+            token_type: "Bearer".to_string(),
+            base_url: "https://dev.azure.com/org".to_string(),
+        };
+
+        let json = serde_json::to_string(&request).unwrap();
+        let deserialized: TokenAuthRequest = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(deserialized.service, request.service);
+        assert_eq!(deserialized.token, request.token);
+        assert_eq!(deserialized.token_type, request.token_type);
+        assert_eq!(deserialized.base_url, request.base_url);
+    }
 }
 
 // ─── Webview-Based Authentication (Option C) ────────────────────────────────
@@ -424,27 +504,56 @@ pub struct WebviewAuthResponse {
     pub webview_id: String,
 }
 
-/// Open embedded browser window for user to log in.
-/// After successful login, call extract_cookies_from_webview to capture session.
+/// Open persistent browser window for user to log in.
+/// Window stays open for browsing and fresh cookie extraction.
+/// User can close it manually when no longer needed.
 #[tauri::command]
 pub async fn authenticate_with_webview(
     service: String,
     base_url: String,
     app_handle: tauri::AppHandle,
+    app_state: State<'_, AppState>,
 ) -> Result<WebviewAuthResponse, String> {
     let webview_id = format!("{}-auth", service);
 
-    // Open login page in embedded browser
+    // Check if window already exists
+    if let Some(existing_label) = app_state
+        .integration_webviews
+        .lock()
+        .map_err(|e| format!("Failed to lock webviews: {}", e))?
+        .get(&service)
+    {
+        if app_handle.get_webview_window(existing_label).is_some() {
+            return Ok(WebviewAuthResponse {
+                success: true,
+                message: format!(
+                    "{} browser window is already open. Switch to it to log in.",
+                    service
+                ),
+                webview_id: existing_label.clone(),
+            });
+        }
+    }
+
+    // Open persistent browser window
     let _credentials = crate::integrations::webview_auth::authenticate_with_webview(
-        app_handle,
-        &service,
-        &base_url,
+        app_handle, &service, &base_url,
     )
     .await?;
 
+    // Store window reference
+    app_state
+        .integration_webviews
+        .lock()
+        .map_err(|e| format!("Failed to lock webviews: {}", e))?
+        .insert(service.clone(), webview_id.clone());
+
     Ok(WebviewAuthResponse {
         success: true,
-        message: format!("Login window opened. Complete authentication in the browser."),
+        message: format!(
+            "{} browser window opened. This window will stay open - use it to browse and authenticate. Cookies will be extracted automatically for API calls.",
+            service
+        ),
         webview_id,
     })
 }
@@ -464,19 +573,17 @@ pub async fn extract_cookies_from_webview(
         .ok_or_else(|| "Webview window not found".to_string())?;
 
     // Extract cookies using IPC mechanism (more reliable than platform-specific APIs)
-    let cookies = crate::integrations::webview_auth::extract_cookies_via_ipc(
-        &webview_window,
-        &app_handle,
-    )
-    .await?;
+    let cookies =
+        crate::integrations::webview_auth::extract_cookies_via_ipc(&webview_window, &app_handle)
+            .await?;
 
     if cookies.is_empty() {
         return Err("No cookies found. Make sure you completed the login.".to_string());
     }
 
     // Encrypt and store cookies in database
-    let cookies_json =
-        serde_json::to_string(&cookies).map_err(|e| format!("Failed to serialize cookies: {}", e))?;
+    let cookies_json = serde_json::to_string(&cookies)
+        .map_err(|e| format!("Failed to serialize cookies: {}", e))?;
     let encrypted_cookies = crate::integrations::auth::encrypt_token(&cookies_json)?;
 
     let token_hash = {
@@ -631,4 +738,162 @@ pub async fn save_manual_token(
         success: true,
         message: format!("{} token saved and validated successfully", request.service),
     })
+}
+
+// ============================================================================
+// Fresh Cookie Extraction (called before each API request)
+// ============================================================================
+
+/// Get fresh cookies from an open webview window for immediate use.
+/// This is called before each integration API call to handle token rotation.
+/// Returns None if window is closed or cookies unavailable.
+pub async fn get_fresh_cookies_from_webview(
+    service: &str,
+    app_handle: &tauri::AppHandle,
+    app_state: &State<'_, AppState>,
+) -> Result<Option<Vec<crate::integrations::webview_auth::Cookie>>, String> {
+    // Check if webview exists for this service
+    let webview_label = {
+        let webviews = app_state
+            .integration_webviews
+            .lock()
+            .map_err(|e| format!("Failed to lock webviews: {}", e))?;
+
+        match webviews.get(service) {
+            Some(label) => label.clone(),
+            None => return Ok(None), // No webview open for this service
+        }
+    };
+
+    // Get window handle
+    let webview_window = match app_handle.get_webview_window(&webview_label) {
+        Some(window) => window,
+        None => {
+            // Window was closed, remove from tracking
+            app_state
+                .integration_webviews
+                .lock()
+                .map_err(|e| format!("Failed to lock webviews: {}", e))?
+                .remove(service);
+            return Ok(None);
+        }
+    };
+
+    // Extract current cookies
+    match crate::integrations::webview_auth::extract_cookies_via_ipc(&webview_window, app_handle)
+        .await
+    {
+        Ok(cookies) if !cookies.is_empty() => Ok(Some(cookies)),
+        Ok(_) => Ok(None), // No cookies available
+        Err(e) => {
+            tracing::warn!("Failed to extract cookies from {}: {}", service, e);
+            Ok(None)
+        }
+    }
+}
+
+// ============================================================================
+// Integration Configuration Persistence
+// ============================================================================
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IntegrationConfig {
+    pub service: String,
+    pub base_url: String,
+    pub username: Option<String>,
+    pub project_name: Option<String>,
+    pub space_key: Option<String>,
+}
+
+/// Save or update integration configuration (base URL, username, project, etc.)
+#[tauri::command]
+pub async fn save_integration_config(
+    config: IntegrationConfig,
+    app_state: State<'_, AppState>,
+) -> Result<(), String> {
+    let db = app_state
+        .db
+        .lock()
+        .map_err(|e| format!("Failed to lock database: {}", e))?;
+
+    db.execute(
+        "INSERT OR REPLACE INTO integration_config
+         (id, service, base_url, username, project_name, space_key, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, datetime('now'))",
+        rusqlite::params![
+            uuid::Uuid::now_v7().to_string(),
+            config.service,
+            config.base_url,
+            config.username,
+            config.project_name,
+            config.space_key,
+        ],
+    )
+    .map_err(|e| format!("Failed to save integration config: {}", e))?;
+
+    Ok(())
+}
+
+/// Get integration configuration for a specific service
+#[tauri::command]
+pub async fn get_integration_config(
+    service: String,
+    app_state: State<'_, AppState>,
+) -> Result<Option<IntegrationConfig>, String> {
+    let db = app_state
+        .db
+        .lock()
+        .map_err(|e| format!("Failed to lock database: {}", e))?;
+
+    let mut stmt = db
+        .prepare("SELECT service, base_url, username, project_name, space_key FROM integration_config WHERE service = ?1")
+        .map_err(|e| format!("Failed to prepare query: {}", e))?;
+
+    let config = stmt
+        .query_row([&service], |row| {
+            Ok(IntegrationConfig {
+                service: row.get(0)?,
+                base_url: row.get(1)?,
+                username: row.get(2)?,
+                project_name: row.get(3)?,
+                space_key: row.get(4)?,
+            })
+        })
+        .optional()
+        .map_err(|e| format!("Failed to query integration config: {}", e))?;
+
+    Ok(config)
+}
+
+/// Get all integration configurations
+#[tauri::command]
+pub async fn get_all_integration_configs(
+    app_state: State<'_, AppState>,
+) -> Result<Vec<IntegrationConfig>, String> {
+    let db = app_state
+        .db
+        .lock()
+        .map_err(|e| format!("Failed to lock database: {}", e))?;
+
+    let mut stmt = db
+        .prepare(
+            "SELECT service, base_url, username, project_name, space_key FROM integration_config",
+        )
+        .map_err(|e| format!("Failed to prepare query: {}", e))?;
+
+    let configs = stmt
+        .query_map([], |row| {
+            Ok(IntegrationConfig {
+                service: row.get(0)?,
+                base_url: row.get(1)?,
+                username: row.get(2)?,
+                project_name: row.get(3)?,
+                space_key: row.get(4)?,
+            })
+        })
+        .map_err(|e| format!("Failed to query integration configs: {}", e))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("Failed to collect integration configs: {}", e))?;
+
+    Ok(configs)
 }

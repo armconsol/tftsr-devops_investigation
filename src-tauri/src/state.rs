@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
@@ -67,4 +68,7 @@ pub struct AppState {
     pub db: Arc<Mutex<rusqlite::Connection>>,
     pub settings: Arc<Mutex<AppSettings>>,
     pub app_data_dir: PathBuf,
+    /// Track open integration webview windows by service name -> window label
+    /// These windows stay open for the user to browse and for fresh cookie extraction
+    pub integration_webviews: Arc<Mutex<HashMap<String, String>>>,
 }

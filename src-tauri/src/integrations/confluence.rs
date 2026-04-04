@@ -25,7 +25,10 @@ pub struct Page {
 /// Test connection to Confluence by fetching current user info
 pub async fn test_connection(config: &ConfluenceConfig) -> Result<ConnectionResult, String> {
     let client = reqwest::Client::new();
-    let url = format!("{}/rest/api/user/current", config.base_url.trim_end_matches('/'));
+    let url = format!(
+        "{}/rest/api/user/current",
+        config.base_url.trim_end_matches('/')
+    );
 
     let resp = client
         .get(&url)
@@ -327,9 +330,10 @@ mod tests {
         let mock = server
             .mock("GET", "/rest/api/space")
             .match_header("authorization", "Bearer test_token")
-            .match_query(mockito::Matcher::AllOf(vec![
-                mockito::Matcher::UrlEncoded("limit".into(), "100".into()),
-            ]))
+            .match_query(mockito::Matcher::AllOf(vec![mockito::Matcher::UrlEncoded(
+                "limit".into(),
+                "100".into(),
+            )]))
             .with_status(200)
             .with_body(
                 r#"{
@@ -362,9 +366,10 @@ mod tests {
         let mut server = mockito::Server::new_async().await;
         let mock = server
             .mock("GET", "/rest/api/content/search")
-            .match_query(mockito::Matcher::AllOf(vec![
-                mockito::Matcher::UrlEncoded("cql".into(), "text ~ \"kubernetes\"".into()),
-            ]))
+            .match_query(mockito::Matcher::AllOf(vec![mockito::Matcher::UrlEncoded(
+                "cql".into(),
+                "text ~ \"kubernetes\"".into(),
+            )]))
             .with_status(200)
             .with_body(
                 r#"{
