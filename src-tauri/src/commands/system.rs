@@ -109,7 +109,10 @@ pub async fn get_audit_log(
         params.push(Box::new(entity_type.clone()));
     }
     if let Some(ref entity_id) = filter.entity_id {
-        sql.push_str(&format!(" AND entity_id = ?{index}", index = params.len() + 1));
+        sql.push_str(&format!(
+            " AND entity_id = ?{index}",
+            index = params.len() + 1
+        ));
         params.push(Box::new(entity_id.clone()));
     }
 

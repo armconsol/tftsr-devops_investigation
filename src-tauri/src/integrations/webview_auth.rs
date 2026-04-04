@@ -196,7 +196,13 @@ pub async fn extract_cookies_via_ipc<R: tauri::Runtime>(
 pub fn cookies_to_header(cookies: &[Cookie]) -> String {
     cookies
         .iter()
-        .map(|c| format!("{name}={value}", name = c.name.as_str(), value = c.value.as_str()))
+        .map(|c| {
+            format!(
+                "{name}={value}",
+                name = c.name.as_str(),
+                value = c.value.as_str()
+            )
+        })
         .collect::<Vec<_>>()
         .join("; ")
 }

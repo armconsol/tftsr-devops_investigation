@@ -295,19 +295,31 @@ pub async fn list_issues(
     let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = vec![];
 
     if let Some(ref status) = filter.status {
-        sql.push_str(&format!(" AND i.status = ?{index}", index = params.len() + 1));
+        sql.push_str(&format!(
+            " AND i.status = ?{index}",
+            index = params.len() + 1
+        ));
         params.push(Box::new(status.clone()));
     }
     if let Some(ref severity) = filter.severity {
-        sql.push_str(&format!(" AND i.severity = ?{index}", index = params.len() + 1));
+        sql.push_str(&format!(
+            " AND i.severity = ?{index}",
+            index = params.len() + 1
+        ));
         params.push(Box::new(severity.clone()));
     }
     if let Some(ref category) = filter.category {
-        sql.push_str(&format!(" AND i.category = ?{index}", index = params.len() + 1));
+        sql.push_str(&format!(
+            " AND i.category = ?{index}",
+            index = params.len() + 1
+        ));
         params.push(Box::new(category.clone()));
     }
     if let Some(ref domain) = filter.domain {
-        sql.push_str(&format!(" AND i.category = ?{index}", index = params.len() + 1));
+        sql.push_str(&format!(
+            " AND i.category = ?{index}",
+            index = params.len() + 1
+        ));
         params.push(Box::new(domain.clone()));
     }
     if let Some(ref search) = filter.search {

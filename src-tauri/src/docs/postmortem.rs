@@ -12,9 +12,18 @@ pub fn generate_postmortem_markdown(detail: &IssueDetail) -> String {
 
     // Header metadata
     md.push_str("## Metadata\n\n");
-    md.push_str(&format!("- **Date:** {created_at}\n", created_at = issue.created_at));
-    md.push_str(&format!("- **Severity:** {severity}\n", severity = issue.severity));
-    md.push_str(&format!("- **Category:** {category}\n", category = issue.category));
+    md.push_str(&format!(
+        "- **Date:** {created_at}\n",
+        created_at = issue.created_at
+    ));
+    md.push_str(&format!(
+        "- **Severity:** {severity}\n",
+        severity = issue.severity
+    ));
+    md.push_str(&format!(
+        "- **Category:** {category}\n",
+        category = issue.category
+    ));
     md.push_str(&format!("- **Status:** {status}\n", status = issue.status));
     md.push_str(&format!(
         "- **Last Updated:** {updated_at}\n",
@@ -51,7 +60,10 @@ pub fn generate_postmortem_markdown(detail: &IssueDetail) -> String {
     md.push_str("## Timeline\n\n");
     md.push_str("| Time (UTC) | Event |\n");
     md.push_str("|------------|-------|\n");
-    md.push_str(&format!("| {created_at} | Issue created |\n", created_at = issue.created_at));
+    md.push_str(&format!(
+        "| {created_at} | Issue created |\n",
+        created_at = issue.created_at
+    ));
     if let Some(ref resolved) = issue.resolved_at {
         md.push_str(&format!("| {resolved} | Issue resolved |\n"));
     }
@@ -83,7 +95,10 @@ pub fn generate_postmortem_markdown(detail: &IssueDetail) -> String {
 
         if let Some(last) = detail.resolution_steps.last() {
             if !last.answer.is_empty() {
-                md.push_str(&format!("**Root Cause:** {answer}\n\n", answer = last.answer));
+                md.push_str(&format!(
+                    "**Root Cause:** {answer}\n\n",
+                    answer = last.answer
+                ));
             }
         }
     }

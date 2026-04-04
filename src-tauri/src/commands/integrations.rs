@@ -526,7 +526,9 @@ pub async fn authenticate_with_webview(
         if app_handle.get_webview_window(existing_label).is_some() {
             return Ok(WebviewAuthResponse {
                 success: true,
-                message: format!("{service} browser window is already open. Switch to it to log in."),
+                message: format!(
+                    "{service} browser window is already open. Switch to it to log in."
+                ),
                 webview_id: existing_label.clone(),
             });
         }
@@ -665,7 +667,12 @@ pub async fn save_manual_token(
             };
             crate::integrations::servicenow::test_connection(&config).await
         }
-        _ => return Err(format!("Unknown service: {service}", service = request.service)),
+        _ => {
+            return Err(format!(
+                "Unknown service: {service}",
+                service = request.service
+            ))
+        }
     };
 
     // If test fails, don't save the token
