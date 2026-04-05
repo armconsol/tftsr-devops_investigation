@@ -18,7 +18,8 @@ jobs:
         env:
           RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
         run: |
-          apk add --no-cache curl jq
+          set -eu
+          apk add --no-cache curl jq git
 
           API="http://172.0.0.29:3000/api/v1/repos/$GITHUB_REPOSITORY"
 
@@ -39,10 +40,20 @@ jobs:
 
           echo "Latest tag: ${LATEST:-none}  →  Next: $NEXT"
 
-          # Create the new tag pointing at the commit that triggered this push
-          curl -sf -X POST "$API/tags" \
-            -H "Authorization: token $RELEASE_TOKEN" \
-            -H "Content-Type: application/json" \
-            -d "{\"tag_name\":\"$NEXT\",\"message\":\"Release $NEXT\",\"target\":\"$GITHUB_SHA\"}"
+          # Create and push the tag via git so the tag push event triggers release.yml.
+          git init
+          git remote add origin "http://oauth2:${RELEASE_TOKEN}@172.0.0.29:3000/${GITHUB_REPOSITORY}.git"
+          git fetch --depth=1 origin "$GITHUB_SHA"
+          git checkout FETCH_HEAD
+          git config user.name "gitea-actions[bot]"
+          git config user.email "gitea-actions@local"
 
-          echo "Tag $NEXT created successfully"
+          if git ls-remote --exit-code --tags origin "refs/tags/$NEXT" >/dev/null 2>&1; then
+            echo "Tag $NEXT already exists; skipping."
+            exit 0
+          fi
+
+          git tag -a "$NEXT" -m "Release $NEXT"
+          git push origin "refs/tags/$NEXT"
+
+          echo "Tag $NEXT pushed successfully"

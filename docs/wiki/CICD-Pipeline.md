@@ -69,6 +69,9 @@ steps:
 
 **Triggers:** Git tags matching `v*`
 
+Auto tags are created by `.gitea/workflows/auto-tag.yml` using `git tag` + `git push`
+(not the tag API endpoint), so the tag push event reliably triggers this workflow.
+
 ```
 Jobs (run in parallel):
   build-linux-amd64   → cargo tauri build (x86_64-unknown-linux-gnu)
