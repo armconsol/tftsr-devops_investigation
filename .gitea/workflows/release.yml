@@ -50,8 +50,13 @@ jobs:
             exit 1
           fi
           echo "Release ID: $RELEASE_ID"
-          find src-tauri/target/x86_64-unknown-linux-gnu/release/bundle \
-            \( -name "*.deb" -o -name "*.rpm" -o -name "*.AppImage" \) | while read f; do
+          ARTIFACTS=$(find src-tauri/target/x86_64-unknown-linux-gnu/release/bundle -type f \
+            \( -name "*.deb" -o -name "*.rpm" -o -name "*.AppImage" \))
+          if [ -z "$ARTIFACTS" ]; then
+            echo "ERROR: No Linux amd64 artifacts were found to upload."
+            exit 1
+          fi
+          printf '%s\n' "$ARTIFACTS" | while IFS= read -r f; do
             echo "Uploading $(basename $f)..."
             curl -sf -X POST "$API/releases/$RELEASE_ID/assets" \
               -H "Authorization: token $RELEASE_TOKEN" \
@@ -81,6 +86,8 @@ jobs:
           CXX_x86_64_pc_windows_gnu: x86_64-w64-mingw32-g++
           AR_x86_64_pc_windows_gnu: x86_64-w64-mingw32-ar
           CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER: x86_64-w64-mingw32-gcc
+          OPENSSL_NO_VENDOR: "0"
+          OPENSSL_STATIC: "1"
         run: |
           npm ci --legacy-peer-deps
           rustup target add x86_64-pc-windows-gnu
@@ -217,8 +224,13 @@ jobs:
             exit 1
           fi
           echo "Release ID: $RELEASE_ID"
-          find src-tauri/target/release/bundle \
-            \( -name "*.deb" -o -name "*.rpm" -o -name "*.AppImage" \) | while read f; do
+          ARTIFACTS=$(find src-tauri/target/release/bundle -type f \
+            \( -name "*.deb" -o -name "*.rpm" -o -name "*.AppImage" \))
+          if [ -z "$ARTIFACTS" ]; then
+            echo "ERROR: No Linux arm64 artifacts were found to upload."
+            exit 1
+          fi
+          printf '%s\n' "$ARTIFACTS" | while IFS= read -r f; do
             echo "Uploading $(basename $f)..."
             curl -sf -X POST "$API/releases/$RELEASE_ID/assets" \
               -H "Authorization: token $RELEASE_TOKEN" \
