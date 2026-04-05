@@ -36,6 +36,7 @@ jobs:
         env:
           RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
         run: |
+          set -eu
           API="http://172.0.0.29:3000/api/v1/repos/$GITHUB_REPOSITORY"
           TAG="$GITHUB_REF_NAME"
           echo "Creating release for $TAG..."
@@ -57,10 +58,33 @@ jobs:
             exit 1
           fi
           printf '%s\n' "$ARTIFACTS" | while IFS= read -r f; do
-            echo "Uploading $(basename $f)..."
-            curl -sf -X POST "$API/releases/$RELEASE_ID/assets" \
+            NAME=$(basename "$f")
+            echo "Uploading $NAME..."
+            EXISTING_IDS=$(curl -sf "$API/releases/$RELEASE_ID" \
               -H "Authorization: token $RELEASE_TOKEN" \
-              -F "attachment=@$f;filename=$(basename $f)" && echo "✓ Uploaded $(basename $f)" || echo "✗ Upload failed: $f"
+              | jq -r --arg name "$NAME" '.assets[]? | select(.name == $name) | .id')
+            if [ -n "$EXISTING_IDS" ]; then
+              printf '%s\n' "$EXISTING_IDS" | while IFS= read -r id; do
+                [ -n "$id" ] || continue
+                echo "Deleting existing asset id=$id name=$NAME before upload..."
+                curl -sf -X DELETE "$API/releases/$RELEASE_ID/assets/$id" \
+                  -H "Authorization: token $RELEASE_TOKEN"
+              done
+            fi
+            RESP_FILE=$(mktemp)
+            HTTP_CODE=$(curl -sS -o "$RESP_FILE" -w "%{http_code}" -X POST "$API/releases/$RELEASE_ID/assets" \
+              -H "Authorization: token $RELEASE_TOKEN" \
+              -F "attachment=@$f;filename=$NAME")
+            if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
+              echo "✓ Uploaded $NAME"
+            else
+              echo "✗ Upload failed for $NAME (HTTP $HTTP_CODE)"
+              python - "$RESP_FILE" <<'PY'
+import pathlib, sys
+print(pathlib.Path(sys.argv[1]).read_text(errors="replace")[:2000])
+PY
+              exit 1
+            fi
           done
 
   build-windows-amd64:
@@ -97,6 +121,7 @@ jobs:
         env:
           RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
         run: |
+          set -eu
           API="http://172.0.0.29:3000/api/v1/repos/$GITHUB_REPOSITORY"
           TAG="$GITHUB_REF_NAME"
           echo "Creating release for $TAG..."
@@ -111,12 +136,40 @@ jobs:
             exit 1
           fi
           echo "Release ID: $RELEASE_ID"
-          find src-tauri/target/x86_64-pc-windows-gnu/release/bundle \
-            \( -name "*.exe" -o -name "*.msi" \) 2>/dev/null | while read f; do
-            echo "Uploading $(basename $f)..."
-            curl -sf -X POST "$API/releases/$RELEASE_ID/assets" \
+          ARTIFACTS=$(find src-tauri/target/x86_64-pc-windows-gnu/release/bundle -type f \
+            \( -name "*.exe" -o -name "*.msi" \) 2>/dev/null)
+          if [ -z "$ARTIFACTS" ]; then
+            echo "ERROR: No Windows amd64 artifacts were found to upload."
+            exit 1
+          fi
+          printf '%s\n' "$ARTIFACTS" | while IFS= read -r f; do
+            NAME=$(basename "$f")
+            echo "Uploading $NAME..."
+            EXISTING_IDS=$(curl -sf "$API/releases/$RELEASE_ID" \
               -H "Authorization: token $RELEASE_TOKEN" \
-              -F "attachment=@$f;filename=$(basename $f)" && echo "✓ Uploaded $(basename $f)" || echo "✗ Upload failed: $f"
+              | jq -r --arg name "$NAME" '.assets[]? | select(.name == $name) | .id')
+            if [ -n "$EXISTING_IDS" ]; then
+              printf '%s\n' "$EXISTING_IDS" | while IFS= read -r id; do
+                [ -n "$id" ] || continue
+                echo "Deleting existing asset id=$id name=$NAME before upload..."
+                curl -sf -X DELETE "$API/releases/$RELEASE_ID/assets/$id" \
+                  -H "Authorization: token $RELEASE_TOKEN"
+              done
+            fi
+            RESP_FILE=$(mktemp)
+            HTTP_CODE=$(curl -sS -o "$RESP_FILE" -w "%{http_code}" -X POST "$API/releases/$RELEASE_ID/assets" \
+              -H "Authorization: token $RELEASE_TOKEN" \
+              -F "attachment=@$f;filename=$NAME")
+            if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
+              echo "✓ Uploaded $NAME"
+            else
+              echo "✗ Upload failed for $NAME (HTTP $HTTP_CODE)"
+              python - "$RESP_FILE" <<'PY'
+import pathlib, sys
+print(pathlib.Path(sys.argv[1]).read_text(errors="replace")[:2000])
+PY
+              exit 1
+            fi
           done
 
   build-macos-arm64:
@@ -153,6 +206,7 @@ jobs:
         env:
           RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
         run: |
+          set -eu
           API="http://172.0.0.29:3000/api/v1/repos/$GITHUB_REPOSITORY"
           TAG="$GITHUB_REF_NAME"
           # Create release (idempotent)
@@ -171,12 +225,39 @@ jobs:
             exit 1
           fi
           echo "Release ID: $RELEASE_ID"
-          # Upload DMG
-          find src-tauri/target/aarch64-apple-darwin/release/bundle -name "*.dmg" | while read f; do
-            echo "Uploading $(basename $f)..."
-            curl -sf -X POST "$API/releases/$RELEASE_ID/assets" \
+          ARTIFACTS=$(find src-tauri/target/aarch64-apple-darwin/release/bundle -type f -name "*.dmg")
+          if [ -z "$ARTIFACTS" ]; then
+            echo "ERROR: No macOS arm64 DMG artifacts were found to upload."
+            exit 1
+          fi
+          printf '%s\n' "$ARTIFACTS" | while IFS= read -r f; do
+            NAME=$(basename "$f")
+            echo "Uploading $NAME..."
+            EXISTING_IDS=$(curl -sf "$API/releases/$RELEASE_ID" \
               -H "Authorization: token $RELEASE_TOKEN" \
-              -F "attachment=@$f;filename=$(basename $f)" && echo "✓ Uploaded $(basename $f)" || echo "✗ Upload failed: $f"
+              | jq -r --arg name "$NAME" '.assets[]? | select(.name == $name) | .id')
+            if [ -n "$EXISTING_IDS" ]; then
+              printf '%s\n' "$EXISTING_IDS" | while IFS= read -r id; do
+                [ -n "$id" ] || continue
+                echo "Deleting existing asset id=$id name=$NAME before upload..."
+                curl -sf -X DELETE "$API/releases/$RELEASE_ID/assets/$id" \
+                  -H "Authorization: token $RELEASE_TOKEN"
+              done
+            fi
+            RESP_FILE=$(mktemp)
+            HTTP_CODE=$(curl -sS -o "$RESP_FILE" -w "%{http_code}" -X POST "$API/releases/$RELEASE_ID/assets" \
+              -H "Authorization: token $RELEASE_TOKEN" \
+              -F "attachment=@$f;filename=$NAME")
+            if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
+              echo "✓ Uploaded $NAME"
+            else
+              echo "✗ Upload failed for $NAME (HTTP $HTTP_CODE)"
+              python - "$RESP_FILE" <<'PY'
+import pathlib, sys
+print(pathlib.Path(sys.argv[1]).read_text(errors="replace")[:2000])
+PY
+              exit 1
+            fi
           done
 
   build-linux-arm64:
@@ -210,6 +291,7 @@ jobs:
         env:
           RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
         run: |
+          set -eu
           API="http://172.0.0.29:3000/api/v1/repos/$GITHUB_REPOSITORY"
           TAG="$GITHUB_REF_NAME"
           echo "Creating release for $TAG..."
@@ -231,8 +313,31 @@ jobs:
             exit 1
           fi
           printf '%s\n' "$ARTIFACTS" | while IFS= read -r f; do
-            echo "Uploading $(basename $f)..."
-            curl -sf -X POST "$API/releases/$RELEASE_ID/assets" \
+            NAME=$(basename "$f")
+            echo "Uploading $NAME..."
+            EXISTING_IDS=$(curl -sf "$API/releases/$RELEASE_ID" \
               -H "Authorization: token $RELEASE_TOKEN" \
-              -F "attachment=@$f;filename=$(basename $f)" && echo "✓ Uploaded $(basename $f)" || echo "✗ Upload failed: $f"
+              | jq -r --arg name "$NAME" '.assets[]? | select(.name == $name) | .id')
+            if [ -n "$EXISTING_IDS" ]; then
+              printf '%s\n' "$EXISTING_IDS" | while IFS= read -r id; do
+                [ -n "$id" ] || continue
+                echo "Deleting existing asset id=$id name=$NAME before upload..."
+                curl -sf -X DELETE "$API/releases/$RELEASE_ID/assets/$id" \
+                  -H "Authorization: token $RELEASE_TOKEN"
+              done
+            fi
+            RESP_FILE=$(mktemp)
+            HTTP_CODE=$(curl -sS -o "$RESP_FILE" -w "%{http_code}" -X POST "$API/releases/$RELEASE_ID/assets" \
+              -H "Authorization: token $RELEASE_TOKEN" \
+              -F "attachment=@$f;filename=$NAME")
+            if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
+              echo "✓ Uploaded $NAME"
+            else
+              echo "✗ Upload failed for $NAME (HTTP $HTTP_CODE)"
+              python - "$RESP_FILE" <<'PY'
+import pathlib, sys
+print(pathlib.Path(sys.argv[1]).read_text(errors="replace")[:2000])
+PY
+              exit 1
+            fi
           done
