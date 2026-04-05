@@ -75,8 +75,10 @@ pub fn get_patterns() -> Vec<(PiiType, Regex)> {
         // Hostname / FQDN
         (
             PiiType::Hostname,
-            Regex::new(r"\b(?=.{1,253}\b)(?:[A-Za-z0-9](?:[A-Za-z0-9\-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}\b")
-                .unwrap(),
+            Regex::new(
+                r"\b(?:[A-Za-z0-9](?:[A-Za-z0-9\-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}\b",
+            )
+            .unwrap(),
         ),
     ]
 }

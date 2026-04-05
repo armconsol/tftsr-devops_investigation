@@ -250,10 +250,8 @@ mod tests {
 
     #[test]
     fn test_validate_log_file_path_accepts_small_file() {
-        let file_path = std::env::temp_dir().join(format!(
-            "tftsr-analysis-test-{}.log",
-            uuid::Uuid::now_v7()
-        ));
+        let file_path =
+            std::env::temp_dir().join(format!("tftsr-analysis-test-{}.log", uuid::Uuid::now_v7()));
         std::fs::write(&file_path, "hello").unwrap();
         let result = validate_log_file_path(file_path.to_string_lossy().as_ref());
         assert!(result.is_ok());
