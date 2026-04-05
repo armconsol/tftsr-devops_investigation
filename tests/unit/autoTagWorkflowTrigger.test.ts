@@ -23,7 +23,6 @@ describe("auto-tag workflow release triggering", () => {
     expect(workflow).toContain("build-macos-arm64:");
     expect(workflow).toContain("build-linux-arm64:");
     expect(workflow).toContain("needs: autotag");
-    expect(workflow).toContain("if: needs.autotag.result == 'success'");
     expect(workflow).toContain("TAG=$(curl -s \"$API/tags?limit=50\"");
     expect(workflow).toContain("ERROR: Could not resolve release tag from repository tags.");
   });

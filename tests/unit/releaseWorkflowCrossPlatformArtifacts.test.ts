@@ -19,9 +19,7 @@ describe("auto-tag release cross-platform artifact handling", () => {
     const workflow = readFileSync(autoTagWorkflowPath, "utf-8");
 
     expect(workflow).toContain("ERROR: No Linux amd64 artifacts were found to upload.");
-    expect(workflow).toContain(
-      "ERROR: No Linux arm64 artifacts were found to upload (arm64/aarch64 filename filter).",
-    );
+    expect(workflow).toContain("ERROR: No Linux arm64 artifacts were found to upload.");
     expect(workflow).toContain(
       "ERROR: linux-arm64 job is not running on an ARM64 host (uname -m=$ARCH).",
     );
@@ -42,5 +40,7 @@ describe("auto-tag release cross-platform artifact handling", () => {
 
     expect(workflow).toContain("Deleting existing asset id=$id name=$NAME before upload...");
     expect(workflow).toContain("-X DELETE \"$API/releases/$RELEASE_ID/assets/$id\"");
+    expect(workflow).toContain("UPLOAD_NAME=\"linux-amd64-$NAME\"");
+    expect(workflow).toContain("UPLOAD_NAME=\"linux-arm64-$NAME\"");
   });
 });
