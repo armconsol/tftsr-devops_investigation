@@ -80,7 +80,8 @@ Jobs (run in parallel):
   build-windows-amd64 → cargo tauri build (x86_64-pc-windows-gnu) via mingw-w64
                          → {.exe, .msi} uploaded to Gitea release
                          → fails fast if no Windows artifacts are produced
-  build-linux-arm64   → cargo tauri build (aarch64-unknown-linux-gnu)
+  build-linux-arm64   → Ubuntu 22.04 base (ports.ubuntu.com for arm64 packages)
+                         → cargo tauri build (aarch64-unknown-linux-gnu)
                          → {.deb, .rpm, .AppImage} uploaded to Gitea release
                          → fails fast if no Linux artifacts are produced
   build-macos-arm64   → cargo tauri build (aarch64-apple-darwin) — runs on local Mac
@@ -209,6 +210,18 @@ UPDATE protect_branch SET protected=true, require_pull_request=true WHERE repo_i
 ---
 
 ## Known Issues & Fixes
+
+### Debian Multiarch Breaks arm64 Cross-Compile (`held broken packages`)
+When using `rust:1.88-slim` (Debian Bookworm) with `dpkg --add-architecture arm64`, apt
+resolves amd64 and arm64 simultaneously against the same mirror. The `binary-all` package
+index is duplicated and certain `-dev` package pairs cannot be co-installed because they
+don't declare `Multi-Arch: same`. This produces `E: Unable to correct problems, you have
+held broken packages` and cannot be fixed by tweaking `sources.list` entries.
+
+**Fix**: Use `ubuntu:22.04` as the container image. Ubuntu routes arm64 through
+`ports.ubuntu.com/ubuntu-ports` — a separate mirror from `archive.ubuntu.com` (amd64).
+There are no cross-arch index overlaps and the dependency resolver succeeds. Rust must be
+installed manually via `rustup` since it is not pre-installed in the Ubuntu base image.
 
 ### Step Containers Cannot Reach `gitea_app`
 Default Docker bridge containers cannot resolve `gitea_app` or reach `172.0.0.29:3000`
