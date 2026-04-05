@@ -455,7 +455,7 @@ jobs:
           . "$HOME/.cargo/env"
           npm ci --legacy-peer-deps
           rustup target add aarch64-unknown-linux-gnu
-          CI=true npx tauri build --target aarch64-unknown-linux-gnu
+          CI=true npx tauri build --target aarch64-unknown-linux-gnu --bundles deb,rpm
       - name: Upload artifacts
         env:
           RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
