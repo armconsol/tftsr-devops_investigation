@@ -43,4 +43,12 @@ describe("auto-tag release cross-platform artifact handling", () => {
     expect(workflow).toContain("UPLOAD_NAME=\"linux-amd64-$NAME\"");
     expect(workflow).toContain("UPLOAD_NAME=\"linux-arm64-$NAME\"");
   });
+
+  it("uses Ubuntu 22.04 with ports mirror for arm64 cross-compile", () => {
+    const workflow = readFileSync(autoTagWorkflowPath, "utf-8");
+
+    expect(workflow).toContain("ubuntu:22.04");
+    expect(workflow).toContain("ports.ubuntu.com/ubuntu-ports");
+    expect(workflow).toContain("jammy");
+  });
 });
