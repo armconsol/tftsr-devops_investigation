@@ -407,7 +407,7 @@ jobs:
         run: |
           # Step 1: Host tools + cross-compiler (all amd64, no multiarch yet)
           apt-get update -qq
-          apt-get install -y -qq curl git gcc g++ patchelf pkg-config perl jq \
+          apt-get install -y -qq curl git gcc g++ make patchelf pkg-config perl jq \
             gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
 
           # Step 2: Multiarch — Ubuntu uses ports.ubuntu.com for arm64,
