@@ -1,9 +1,32 @@
 use sha2::{Digest, Sha256};
+use std::path::{Path, PathBuf};
 use tauri::State;
+use tracing::warn;
 
 use crate::db::models::{AuditEntry, LogFile, PiiSpanRecord};
 use crate::pii::{self, PiiDetectionResult, PiiDetector, RedactedLogFile};
 use crate::state::AppState;
+
+const MAX_LOG_FILE_BYTES: u64 = 50 * 1024 * 1024;
+
+fn validate_log_file_path(file_path: &str) -> Result<PathBuf, String> {
+    let path = Path::new(file_path);
+    let canonical = std::fs::canonicalize(path).map_err(|_| "Unable to access selected file")?;
+    let metadata = std::fs::metadata(&canonical).map_err(|_| "Unable to read file metadata")?;
+
+    if !metadata.is_file() {
+        return Err("Selected path is not a file".to_string());
+    }
+
+    if metadata.len() > MAX_LOG_FILE_BYTES {
+        return Err(format!(
+            "File exceeds maximum supported size ({} MB)",
+            MAX_LOG_FILE_BYTES / 1024 / 1024
+        ));
+    }
+
+    Ok(canonical)
+}
 
 #[tauri::command]
 pub async fn upload_log_file(
@@ -11,10 +34,10 @@ pub async fn upload_log_file(
     file_path: String,
     state: State<'_, AppState>,
 ) -> Result<LogFile, String> {
-    let path = std::path::Path::new(&file_path);
-    let content = std::fs::read(path).map_err(|e| e.to_string())?;
+    let canonical_path = validate_log_file_path(&file_path)?;
+    let content = std::fs::read(&canonical_path).map_err(|_| "Failed to read selected log file")?;
     let content_hash = format!("{:x}", Sha256::digest(&content));
-    let file_name = path
+    let file_name = canonical_path
         .file_name()
         .and_then(|n| n.to_str())
         .unwrap_or("unknown")
@@ -28,7 +51,8 @@ pub async fn upload_log_file(
         "text/plain"
     };
 
-    let log_file = LogFile::new(issue_id.clone(), file_name, file_path.clone(), file_size);
+    let canonical_file_path = canonical_path.to_string_lossy().to_string();
+    let log_file = LogFile::new(issue_id.clone(), file_name, canonical_file_path, file_size);
     let log_file = LogFile {
         content_hash: content_hash.clone(),
         mime_type: mime_type.to_string(),
@@ -51,7 +75,7 @@ pub async fn upload_log_file(
             log_file.redacted as i32,
         ],
     )
-    .map_err(|e| e.to_string())?;
+    .map_err(|_| "Failed to store uploaded log metadata".to_string())?;
 
     // Audit
     let entry = AuditEntry::new(
@@ -60,19 +84,15 @@ pub async fn upload_log_file(
         log_file.id.clone(),
         serde_json::json!({ "issue_id": issue_id, "file_name": log_file.file_name }).to_string(),
     );
-    let _ = db.execute(
-        "INSERT INTO audit_log (id, timestamp, action, entity_type, entity_id, user_id, details) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-        rusqlite::params![
-            entry.id,
-            entry.timestamp,
-            entry.action,
-            entry.entity_type,
-            entry.entity_id,
-            entry.user_id,
-            entry.details
-        ],
-    );
+    if let Err(err) = crate::audit::log::write_audit_event(
+        &db,
+        &entry.action,
+        &entry.entity_type,
+        &entry.entity_id,
+        &entry.details,
+    ) {
+        warn!(error = %err, "failed to write upload_log_file audit entry");
+    }
 
     Ok(log_file)
 }
@@ -87,10 +107,11 @@ pub async fn detect_pii(
         let db = state.db.lock().map_err(|e| e.to_string())?;
         db.prepare("SELECT file_path FROM log_files WHERE id = ?1")
             .and_then(|mut stmt| stmt.query_row([&log_file_id], |row| row.get(0)))
-            .map_err(|e| e.to_string())?
+            .map_err(|_| "Failed to load log file metadata".to_string())?
     };
 
-    let content = std::fs::read_to_string(&file_path).map_err(|e| e.to_string())?;
+    let content =
+        std::fs::read_to_string(&file_path).map_err(|_| "Failed to read log file content")?;
 
     let detector = PiiDetector::new();
     let spans = detector.detect(&content);
@@ -105,10 +126,10 @@ pub async fn detect_pii(
                 pii_type: span.pii_type.clone(),
                 start_offset: span.start as i64,
                 end_offset: span.end as i64,
-                original_value: span.original.clone(),
+                original_value: String::new(),
                 replacement: span.replacement.clone(),
             };
-            let _ = db.execute(
+            if let Err(err) = db.execute(
                 "INSERT OR REPLACE INTO pii_spans (id, log_file_id, pii_type, start_offset, end_offset, original_value, replacement) \
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
                 rusqlite::params![
@@ -116,7 +137,9 @@ pub async fn detect_pii(
                     record.start_offset, record.end_offset,
                     record.original_value, record.replacement
                 ],
-            );
+            ) {
+                warn!(error = %err, span_id = %span.id, "failed to persist pii span");
+            }
         }
     }
 
@@ -138,10 +161,11 @@ pub async fn apply_redactions(
         let db = state.db.lock().map_err(|e| e.to_string())?;
         db.prepare("SELECT file_path FROM log_files WHERE id = ?1")
             .and_then(|mut stmt| stmt.query_row([&log_file_id], |row| row.get(0)))
-            .map_err(|e| e.to_string())?
+            .map_err(|_| "Failed to load log file metadata".to_string())?
     };
 
-    let content = std::fs::read_to_string(&file_path).map_err(|e| e.to_string())?;
+    let content =
+        std::fs::read_to_string(&file_path).map_err(|_| "Failed to read log file content")?;
 
     // Load PII spans from DB, filtering to only approved ones
     let spans: Vec<pii::PiiSpan> = {
@@ -188,7 +212,8 @@ pub async fn apply_redactions(
 
     // Save redacted file alongside original
     let redacted_path = format!("{file_path}.redacted");
-    std::fs::write(&redacted_path, &redacted_text).map_err(|e| e.to_string())?;
+    std::fs::write(&redacted_path, &redacted_text)
+        .map_err(|_| "Failed to write redacted output file".to_string())?;
 
     // Mark the log file as redacted in DB
     {
@@ -197,7 +222,12 @@ pub async fn apply_redactions(
             "UPDATE log_files SET redacted = 1 WHERE id = ?1",
             [&log_file_id],
         )
-        .map_err(|e| e.to_string())?;
+        .map_err(|_| "Failed to mark file as redacted".to_string())?;
+        db.execute(
+            "UPDATE pii_spans SET original_value = '' WHERE log_file_id = ?1",
+            [&log_file_id],
+        )
+        .map_err(|_| "Failed to finalize redaction metadata".to_string())?;
     }
 
     Ok(RedactedLogFile {
@@ -205,4 +235,28 @@ pub async fn apply_redactions(
         redacted_text,
         data_hash,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_validate_log_file_path_rejects_non_file() {
+        let dir = std::env::temp_dir();
+        let result = validate_log_file_path(dir.to_string_lossy().as_ref());
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_validate_log_file_path_accepts_small_file() {
+        let file_path = std::env::temp_dir().join(format!(
+            "tftsr-analysis-test-{}.log",
+            uuid::Uuid::now_v7()
+        ));
+        std::fs::write(&file_path, "hello").unwrap();
+        let result = validate_log_file_path(file_path.to_string_lossy().as_ref());
+        assert!(result.is_ok());
+        let _ = std::fs::remove_file(file_path);
+    }
 }

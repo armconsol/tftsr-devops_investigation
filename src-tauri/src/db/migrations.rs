@@ -150,6 +150,11 @@ pub fn run_migrations(conn: &Connection) -> anyhow::Result<()> {
                 UNIQUE(service)
             );",
         ),
+        (
+            "012_audit_hash_chain",
+            "ALTER TABLE audit_log ADD COLUMN prev_hash TEXT NOT NULL DEFAULT '';
+             ALTER TABLE audit_log ADD COLUMN entry_hash TEXT NOT NULL DEFAULT '';",
+        ),
     ];
 
     for (name, sql) in migrations {

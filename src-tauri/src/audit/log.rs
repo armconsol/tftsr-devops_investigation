@@ -1,4 +1,20 @@
 use crate::db::models::AuditEntry;
+use sha2::{Digest, Sha256};
+
+fn compute_entry_hash(entry: &AuditEntry, prev_hash: &str) -> String {
+    let payload = format!(
+        "{}|{}|{}|{}|{}|{}|{}|{}",
+        prev_hash,
+        entry.id,
+        entry.timestamp,
+        entry.action,
+        entry.entity_type,
+        entry.entity_id,
+        entry.user_id,
+        entry.details
+    );
+    format!("{:x}", Sha256::digest(payload.as_bytes()))
+}
 
 /// Write an audit event to the audit_log table.
 pub fn write_audit_event(
@@ -14,9 +30,16 @@ pub fn write_audit_event(
         entity_id.to_string(),
         details.to_string(),
     );
+    let prev_hash: String = conn
+        .prepare(
+            "SELECT entry_hash FROM audit_log WHERE entry_hash <> '' ORDER BY timestamp DESC, id DESC LIMIT 1",
+        )?
+        .query_row([], |row| row.get(0))
+        .unwrap_or_default();
+    let entry_hash = compute_entry_hash(&entry, &prev_hash);
     conn.execute(
-        "INSERT INTO audit_log (id, timestamp, action, entity_type, entity_id, user_id, details) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        "INSERT INTO audit_log (id, timestamp, action, entity_type, entity_id, user_id, details, prev_hash, entry_hash) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
         rusqlite::params![
             entry.id,
             entry.timestamp,
@@ -25,6 +48,8 @@ pub fn write_audit_event(
             entry.entity_id,
             entry.user_id,
             entry.details,
+            prev_hash,
+            entry_hash,
         ],
     )?;
     Ok(())
@@ -44,7 +69,9 @@ mod tests {
                 entity_type TEXT NOT NULL DEFAULT '',
                 entity_id TEXT NOT NULL DEFAULT '',
                 user_id TEXT NOT NULL DEFAULT 'local',
-                details TEXT NOT NULL DEFAULT '{}'
+                details TEXT NOT NULL DEFAULT '{}',
+                prev_hash TEXT NOT NULL DEFAULT '',
+                entry_hash TEXT NOT NULL DEFAULT ''
             );",
         )
         .unwrap();
@@ -127,5 +154,27 @@ mod tests {
             .collect();
         assert_eq!(ids.len(), 2);
         assert_ne!(ids[0], ids[1]);
+    }
+
+    #[test]
+    fn test_write_audit_event_hash_chain_links_entries() {
+        let conn = setup_test_db();
+        write_audit_event(&conn, "first", "issue", "1", "{}").unwrap();
+        write_audit_event(&conn, "second", "issue", "2", "{}").unwrap();
+
+        let mut stmt = conn
+            .prepare("SELECT prev_hash, entry_hash FROM audit_log ORDER BY timestamp ASC, id ASC")
+            .unwrap();
+        let rows: Vec<(String, String)> = stmt
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].0, "");
+        assert!(!rows[0].1.is_empty());
+        assert_eq!(rows[1].0, rows[0].1);
+        assert!(!rows[1].1.is_empty());
     }
 }

@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use std::time::Duration;
 
 use crate::ai::provider::Provider;
 use crate::ai::{ChatResponse, Message, ProviderInfo, TokenUsage};
@@ -29,7 +30,9 @@ impl Provider for AnthropicProvider {
         messages: Vec<Message>,
         config: &ProviderConfig,
     ) -> anyhow::Result<ChatResponse> {
-        let client = reqwest::Client::new();
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(60))
+            .build()?;
         let url = format!(
             "{}/v1/messages",
             config

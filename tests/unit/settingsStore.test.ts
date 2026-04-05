@@ -11,6 +11,7 @@ const mockProvider: ProviderConfig = {
 
 describe("Settings Store", () => {
   beforeEach(() => {
+    localStorage.clear();
     useSettingsStore.setState({
       theme: "dark",
       ai_providers: [],
@@ -42,5 +43,12 @@ describe("Settings Store", () => {
   it("toggles theme", () => {
     useSettingsStore.getState().setTheme("light");
     expect(useSettingsStore.getState().theme).toBe("light");
+  });
+
+  it("does not persist API keys to localStorage", () => {
+    useSettingsStore.getState().addProvider(mockProvider);
+    const raw = localStorage.getItem("tftsr-settings");
+    expect(raw).toBeTruthy();
+    expect(raw).not.toContain("sk-test-key");
   });
 });

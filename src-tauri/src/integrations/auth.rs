@@ -1,5 +1,6 @@
 use rusqlite::OptionalExtension;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PkceChallenge {
@@ -23,19 +24,11 @@ pub struct PatCredential {
 
 /// Generate a PKCE code verifier and challenge for OAuth flows.
 pub fn generate_pkce() -> PkceChallenge {
-    use sha2::{Digest, Sha256};
+    use rand::{thread_rng, RngCore};
 
     // Generate a random 32-byte verifier
-    let verifier_bytes: Vec<u8> = (0..32)
-        .map(|_| {
-            let r: u8 = (std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .subsec_nanos()
-                % 256) as u8;
-            r
-        })
-        .collect();
+    let mut verifier_bytes = [0u8; 32];
+    thread_rng().fill_bytes(&mut verifier_bytes);
 
     let code_verifier = base64_url_encode(&verifier_bytes);
     let challenge_hash = Sha256::digest(code_verifier.as_bytes());
@@ -162,7 +155,6 @@ pub fn get_pat(conn: &rusqlite::Connection, service: &str) -> Result<Option<Stri
 }
 
 fn hash_token(token: &str) -> String {
-    use sha2::{Digest, Sha256};
     format!("{:x}", Sha256::digest(token.as_bytes()))
 }
 
@@ -173,10 +165,29 @@ fn base64_url_encode(data: &[u8]) -> String {
 }
 
 fn urlencoding_encode(s: &str) -> String {
-    s.replace(' ', "%20")
-        .replace('&', "%26")
-        .replace('=', "%3D")
-        .replace('+', "%2B")
+    urlencoding::encode(s).into_owned()
+}
+
+fn get_encryption_key_material() -> Result<String, String> {
+    if let Ok(key) = std::env::var("TFTSR_ENCRYPTION_KEY") {
+        if !key.trim().is_empty() {
+            return Ok(key);
+        }
+    }
+
+    if cfg!(debug_assertions) {
+        return Ok("dev-key-change-me-in-production-32b".to_string());
+    }
+
+    Err("TFTSR_ENCRYPTION_KEY must be set in release builds".to_string())
+}
+
+fn derive_aes_key() -> Result<[u8; 32], String> {
+    let key_material = get_encryption_key_material()?;
+    let digest = Sha256::digest(key_material.as_bytes());
+    let mut key_bytes = [0u8; 32];
+    key_bytes.copy_from_slice(&digest);
+    Ok(key_bytes)
 }
 
 /// Encrypt a token using AES-256-GCM.
@@ -189,14 +200,7 @@ pub fn encrypt_token(token: &str) -> Result<String, String> {
     };
     use rand::{thread_rng, RngCore};
 
-    // Get encryption key from env or use default (WARNING: insecure for production)
-    let key_material = std::env::var("TFTSR_ENCRYPTION_KEY")
-        .unwrap_or_else(|_| "dev-key-change-me-in-production-32b".to_string());
-
-    let mut key_bytes = [0u8; 32];
-    let src = key_material.as_bytes();
-    let len = std::cmp::min(src.len(), 32);
-    key_bytes[..len].copy_from_slice(&src[..len]);
+    let key_bytes = derive_aes_key()?;
 
     let cipher = Aes256Gcm::new(&key_bytes.into());
 
@@ -242,14 +246,7 @@ pub fn decrypt_token(encrypted: &str) -> Result<String, String> {
     let nonce = Nonce::from_slice(&data[..12]);
     let ciphertext = &data[12..];
 
-    // Get encryption key
-    let key_material = std::env::var("TFTSR_ENCRYPTION_KEY")
-        .unwrap_or_else(|_| "dev-key-change-me-in-production-32b".to_string());
-
-    let mut key_bytes = [0u8; 32];
-    let src = key_material.as_bytes();
-    let len = std::cmp::min(src.len(), 32);
-    key_bytes[..len].copy_from_slice(&src[..len]);
+    let key_bytes = derive_aes_key()?;
 
     let cipher = Aes256Gcm::new(&key_bytes.into());
 
@@ -562,5 +559,21 @@ mod tests {
         // Should retrieve the most recent token
         let retrieved = get_pat(&conn, "servicenow").unwrap();
         assert_eq!(retrieved, Some("token-v2".to_string()));
+    }
+
+    #[test]
+    fn test_generate_pkce_is_not_deterministic() {
+        let a = generate_pkce();
+        let b = generate_pkce();
+        assert_ne!(a.code_verifier, b.code_verifier);
+    }
+
+    #[test]
+    fn test_derive_aes_key_is_stable_for_same_input() {
+        std::env::set_var("TFTSR_ENCRYPTION_KEY", "stable-test-key");
+        let k1 = derive_aes_key().unwrap();
+        let k2 = derive_aes_key().unwrap();
+        assert_eq!(k1, k2);
+        std::env::remove_var("TFTSR_ENCRYPTION_KEY");
     }
 }

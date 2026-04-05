@@ -488,20 +488,14 @@ pub async fn add_timeline_event(
         issue_id.clone(),
         serde_json::json!({ "description": description }).to_string(),
     );
-    db.execute(
-        "INSERT INTO audit_log (id, timestamp, action, entity_type, entity_id, user_id, details) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-        rusqlite::params![
-            entry.id,
-            entry.timestamp,
-            entry.action,
-            entry.entity_type,
-            entry.entity_id,
-            entry.user_id,
-            entry.details
-        ],
+    crate::audit::log::write_audit_event(
+        &db,
+        &entry.action,
+        &entry.entity_type,
+        &entry.entity_id,
+        &entry.details,
     )
-    .map_err(|e| e.to_string())?;
+    .map_err(|_| "Failed to write security audit entry".to_string())?;
 
     // Update issue timestamp
     let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();

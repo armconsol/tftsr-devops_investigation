@@ -1,6 +1,22 @@
 use rusqlite::Connection;
 use std::path::Path;
 
+fn get_db_key() -> anyhow::Result<String> {
+    if let Ok(key) = std::env::var("TFTSR_DB_KEY") {
+        if !key.trim().is_empty() {
+            return Ok(key);
+        }
+    }
+
+    if cfg!(debug_assertions) {
+        return Ok("dev-key-change-in-prod".to_string());
+    }
+
+    Err(anyhow::anyhow!(
+        "TFTSR_DB_KEY must be set in release builds"
+    ))
+}
+
 pub fn open_encrypted_db(path: &Path, key: &str) -> anyhow::Result<Connection> {
     let conn = Connection::open(path)?;
     // ALL cipher settings MUST be set before the first database access.
@@ -30,8 +46,7 @@ pub fn init_db(data_dir: &Path) -> anyhow::Result<Connection> {
     let db_path = data_dir.join("tftsr.db");
 
     // In dev/test mode use unencrypted DB; in production use encryption
-    let key =
-        std::env::var("TFTSR_DB_KEY").unwrap_or_else(|_| "dev-key-change-in-prod".to_string());
+    let key = get_db_key()?;
 
     let conn = if cfg!(debug_assertions) {
         open_dev_db(&db_path)?
@@ -41,4 +56,25 @@ pub fn init_db(data_dir: &Path) -> anyhow::Result<Connection> {
 
     crate::db::migrations::run_migrations(&conn)?;
     Ok(conn)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_get_db_key_uses_env_var_when_present() {
+        std::env::set_var("TFTSR_DB_KEY", "test-db-key");
+        let key = get_db_key().unwrap();
+        assert_eq!(key, "test-db-key");
+        std::env::remove_var("TFTSR_DB_KEY");
+    }
+
+    #[test]
+    fn test_get_db_key_debug_fallback_for_empty_env() {
+        std::env::set_var("TFTSR_DB_KEY", "   ");
+        let key = get_db_key().unwrap();
+        assert_eq!(key, "dev-key-change-in-prod");
+        std::env::remove_var("TFTSR_DB_KEY");
+    }
 }

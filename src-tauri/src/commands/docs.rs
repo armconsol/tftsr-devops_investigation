@@ -1,4 +1,5 @@
 use tauri::State;
+use tracing::warn;
 
 use crate::db::models::AuditEntry;
 use crate::docs::{exporter, generate_postmortem_markdown, generate_rca_markdown};
@@ -60,19 +61,15 @@ pub async fn generate_rca(
         doc_id,
         audit_details.to_string(),
     );
-    let _ = db.execute(
-        "INSERT INTO audit_log (id, timestamp, action, entity_type, entity_id, user_id, details) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-        rusqlite::params![
-            entry.id,
-            entry.timestamp,
-            entry.action,
-            entry.entity_type,
-            entry.entity_id,
-            entry.user_id,
-            entry.details
-        ],
-    );
+    if let Err(err) = crate::audit::log::write_audit_event(
+        &db,
+        &entry.action,
+        &entry.entity_type,
+        &entry.entity_id,
+        &entry.details,
+    ) {
+        warn!(error = %err, "failed to write generate_rca audit entry");
+    }
 
     Ok(document)
 }
@@ -119,19 +116,15 @@ pub async fn generate_postmortem(
         doc_id,
         audit_details.to_string(),
     );
-    let _ = db.execute(
-        "INSERT INTO audit_log (id, timestamp, action, entity_type, entity_id, user_id, details) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-        rusqlite::params![
-            entry.id,
-            entry.timestamp,
-            entry.action,
-            entry.entity_type,
-            entry.entity_id,
-            entry.user_id,
-            entry.details
-        ],
-    );
+    if let Err(err) = crate::audit::log::write_audit_event(
+        &db,
+        &entry.action,
+        &entry.entity_type,
+        &entry.entity_id,
+        &entry.details,
+    ) {
+        warn!(error = %err, "failed to write generate_postmortem audit entry");
+    }
 
     Ok(document)
 }

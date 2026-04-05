@@ -46,7 +46,7 @@ Built with **Tauri 2** (Rust + WebView), **React 18**, **TypeScript**, and **SQL
 | UI | Tailwind CSS (custom shadcn-style components) |
 | Database | rusqlite + `bundled-sqlcipher` (AES-256) |
 | Secret storage | `tauri-plugin-stronghold` |
-| State management | Zustand (persisted settings store) |
+| State management | Zustand (persisted settings store with API key redaction) |
 | AI providers | reqwest (async HTTP) |
 | PII detection | regex + aho-corasick multi-pattern engine |
 
@@ -270,10 +270,10 @@ The project uses **Gitea Actions** (act_runner v0.3.1) connected to the Gitea in
 
 | Concern | Implementation |
 |---|---|
-| API keys / tokens | `tauri-plugin-stronghold` encrypted vault |
+| API keys / tokens | AES-256-GCM encrypted at rest (backend), not persisted in browser storage |
 | Database at rest | SQLCipher AES-256; key derived via PBKDF2 |
 | PII before AI send | Rust-side detection + mandatory user approval in UI |
-| Audit trail | Every `ai_send` / `publish` event logged with SHA-256 hash |
+| Audit trail | Hash-chained audit entries (`prev_hash` + `entry_hash`) for tamper evidence |
 | Network | `reqwest` with TLS; HTTP blocked by Tauri capability config |
 | Capabilities | Least-privilege: scoped fs access, no arbitrary shell by default |
 | CSP | Strict CSP in `tauri.conf.json`; no inline scripts |
@@ -300,7 +300,8 @@ Override with the `TFTSR_DATA_DIR` environment variable.
 | Variable | Default | Purpose |
 |---|---|---|
 | `TFTSR_DATA_DIR` | Platform data dir | Override database location |
-| `TFTSR_DB_KEY` | `dev-key-change-in-prod` | Database encryption key (release builds) |
+| `TFTSR_DB_KEY` | _(none)_ | Database encryption key (required in release builds) |
+| `TFTSR_ENCRYPTION_KEY` | _(none)_ | Credential encryption key (required in release builds) |
 | `RUST_LOG` | `info` | Tracing log level (`debug`, `info`, `warn`, `error`) |
 
 ---

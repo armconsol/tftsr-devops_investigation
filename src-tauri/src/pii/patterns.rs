@@ -35,8 +35,10 @@ pub fn get_patterns() -> Vec<(PiiType, Regex)> {
         // Credit card
         (
             PiiType::CreditCard,
-            Regex::new(r"\b(?:4[0-9]{12}(?:[0-9]{3})?|5[1-5][0-9]{14}|3[47][0-9]{13})\b")
-                .unwrap(),
+            Regex::new(
+                r"\b(?:4[0-9]{12}(?:[0-9]{3})?|5[1-5][0-9]{14}|3[47][0-9]{13}|6(?:011|5[0-9]{2})[0-9]{12}|3(?:0[0-5]|[68][0-9])[0-9]{11}|35(?:2[89]|[3-8][0-9])[0-9]{12})\b",
+            )
+            .unwrap(),
         ),
         // Email
         (
@@ -68,6 +70,12 @@ pub fn get_patterns() -> Vec<(PiiType, Regex)> {
         (
             PiiType::PhoneNumber,
             Regex::new(r"\b(?:\+?1[-.\s]?)?\(?[0-9]{3}\)?[-.\s]?[0-9]{3}[-.\s]?[0-9]{4}\b")
+                .unwrap(),
+        ),
+        // Hostname / FQDN
+        (
+            PiiType::Hostname,
+            Regex::new(r"\b(?=.{1,253}\b)(?:[A-Za-z0-9](?:[A-Za-z0-9\-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}\b")
                 .unwrap(),
         ),
     ]

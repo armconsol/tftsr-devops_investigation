@@ -35,7 +35,8 @@ npm install --legacy-peer-deps
 | Variable | Default | Purpose |
 |----------|---------|---------|
 | `TFTSR_DATA_DIR` | Platform data dir | Override DB location |
-| `TFTSR_DB_KEY` | `dev-key-change-in-prod` | DB encryption key (required in production) |
+| `TFTSR_DB_KEY` | _(none)_ | DB encryption key (required in release builds) |
+| `TFTSR_ENCRYPTION_KEY` | _(none)_ | Credential encryption key (required in release builds) |
 | `RUST_LOG` | `info` | Tracing verbosity: `debug`, `info`, `warn`, `error` |
 
 Application data is stored at:
@@ -120,7 +121,7 @@ cargo tauri build
 # Outputs: .deb, .rpm, .AppImage (Linux)
 ```
 
-Release builds enable **SQLCipher AES-256** encryption. Set `TFTSR_DB_KEY` before building.
+Release builds enforce secure key configuration. Set both `TFTSR_DB_KEY` and `TFTSR_ENCRYPTION_KEY` before building.
 
 ---
 

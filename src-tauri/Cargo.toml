@@ -42,6 +42,7 @@ aes-gcm = "0.10"
 rand = "0.8"
 lazy_static = "1.4"
 warp = "0.3"
+urlencoding = "2"
 
 [dev-dependencies]
 tokio-test = "0.4"

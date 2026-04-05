@@ -10,7 +10,7 @@ Before any text is sent to an AI provider, TFTSR scans it for personally identif
 1. Upload log file
       ↓
 2. detect_pii(log_file_id)
-   → Scans content with 13 regex patterns
+   → Scans content with PII regex patterns (including hostname + expanded card brands)
    → Resolves overlapping matches (longest wins)
    → Returns Vec<PiiSpan> with byte offsets + replacements
       ↓
@@ -24,7 +24,7 @@ Before any text is sent to an AI provider, TFTSR scans it for personally identif
 5. Redacted text safe to send to AI
 ```
 
-## Detection Patterns (13 Types)
+## Detection Patterns
 
 | Type | Replacement | Pattern notes |
 |------|-------------|---------------|
@@ -33,13 +33,13 @@ Before any text is sent to an AI provider, TFTSR scans it for personally identif
 | `ApiKey` | `[ApiKey]` | `api_key=`, `apikey=`, `access_token=` + 16+ char value |
 | `Password` | `[Password]` | `password=`, `passwd=`, `pwd=` + non-whitespace value |
 | `Ssn` | `[SSN]` | `\b\d{3}-\d{2}-\d{4}\b` |
-| `CreditCard` | `[CreditCard]` | Visa/MC/Amex Luhn-format numbers |
+| `CreditCard` | `[CreditCard]` | Visa/MC/Amex/Discover/JCB/Diners patterns |
 | `Email` | `[Email]` | RFC-compliant email addresses |
 | `MacAddress` | `[MAC]` | `XX:XX:XX:XX:XX:XX` and `XX-XX-XX-XX-XX-XX` |
 | `Ipv6` | `[IPv6]` | Full and compressed IPv6 addresses |
 | `Ipv4` | `[IPv4]` | Standard dotted-quad notation |
 | `PhoneNumber` | `[Phone]` | US and international phone formats |
-| `Hostname` | _(patterns.rs)_ | Configurable hostname patterns |
+| `Hostname` | `[Hostname]` | FQDN/hostname detection for internal names |
 | `UrlCredentials` | _(covered by UrlWithCredentials)_ | |
 
 ## Overlap Resolution
@@ -71,7 +71,7 @@ pub struct PiiSpan {
     pub pii_type: PiiType,
     pub start: usize,        // byte offset in original text
     pub end: usize,
-    pub original_value: String,
+    pub original: String,
     pub replacement: String, // e.g., "[IPv4]"
 }
 ```
@@ -111,3 +111,4 @@ write_audit_event(
 - Only the redacted text is sent to AI providers
 - The SHA-256 hash in the audit log allows integrity verification
 - If redaction is skipped (no PII detected), the audit log still records the send
+- Stored `pii_spans.original_value` metadata is cleared after redaction is finalized
