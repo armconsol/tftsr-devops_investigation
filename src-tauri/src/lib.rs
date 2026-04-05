@@ -124,13 +124,13 @@ fn dirs_data_dir() -> std::path::PathBuf {
     #[cfg(target_os = "linux")]
     {
         if let Ok(xdg) = std::env::var("XDG_DATA_HOME") {
-            return std::path::PathBuf::from(xdg).join("tftsr");
+            return std::path::PathBuf::from(xdg).join("trcaa");
         }
         if let Ok(home) = std::env::var("HOME") {
             return std::path::PathBuf::from(home)
                 .join(".local")
                 .join("share")
-                .join("tftsr");
+                .join("trcaa");
         }
     }
 
@@ -140,17 +140,17 @@ fn dirs_data_dir() -> std::path::PathBuf {
             return std::path::PathBuf::from(home)
                 .join("Library")
                 .join("Application Support")
-                .join("tftsr");
+                .join("trcaa");
         }
     }
 
     #[cfg(target_os = "windows")]
     {
         if let Ok(appdata) = std::env::var("APPDATA") {
-            return std::path::PathBuf::from(appdata).join("tftsr");
+            return std::path::PathBuf::from(appdata).join("trcaa");
         }
     }
 
     // Fallback
-    std::path::PathBuf::from("./tftsr-data")
+    std::path::PathBuf::from("./trcaa-data")
 }
