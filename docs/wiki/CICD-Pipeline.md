@@ -73,12 +73,16 @@ steps:
 Jobs (run in parallel):
   build-linux-amd64   → cargo tauri build (x86_64-unknown-linux-gnu)
                          → {.deb, .rpm, .AppImage} uploaded to Gitea release
+                         → fails fast if no Linux artifacts are produced
   build-windows-amd64 → cargo tauri build (x86_64-pc-windows-gnu) via mingw-w64
                          → {.exe, .msi} uploaded to Gitea release
+                         → fails fast if no Windows artifacts are produced
   build-linux-arm64   → cargo tauri build (aarch64-unknown-linux-gnu)
                          → {.deb, .rpm, .AppImage} uploaded to Gitea release
+                         → fails fast if no Linux artifacts are produced
   build-macos-arm64   → cargo tauri build (aarch64-apple-darwin) — runs on local Mac
                          → {.dmg} uploaded to Gitea release
+                         → existing same-name assets are deleted before upload (rerun-safe)
                          → unsigned; after install run: xattr -cr /Applications/TFTSR.app
 ```
 
