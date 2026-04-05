@@ -22,8 +22,8 @@ describe("auto-tag workflow release triggering", () => {
     expect(workflow).toContain("build-windows-amd64:");
     expect(workflow).toContain("build-macos-arm64:");
     expect(workflow).toContain("build-linux-arm64:");
-    expect(workflow).toContain("needs: auto-tag");
-    expect(workflow).toContain("needs.auto-tag.outputs.tag_created == 'true'");
-    expect(workflow).toContain("TAG=\"${{ needs.auto-tag.outputs.release_tag }}\"");
+    expect(workflow).toContain("needs: autotag");
+    expect(workflow).toContain("needs.autotag.outputs.tag_created == 'true'");
+    expect(workflow).toContain("TAG=\"${{ needs.autotag.outputs.release_tag }}\"");
   });
 });

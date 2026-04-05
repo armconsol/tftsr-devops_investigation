@@ -9,7 +9,7 @@ on:
       - master
 
 jobs:
-  auto-tag:
+  autotag:
     runs-on: linux-amd64
     container:
       image: alpine:latest
@@ -66,8 +66,8 @@ jobs:
           echo "Tag $NEXT pushed successfully"
 
   build-linux-amd64:
-    needs: auto-tag
-    if: needs.auto-tag.outputs.tag_created == 'true'
+    needs: autotag
+    if: needs.autotag.outputs.tag_created == 'true'
     runs-on: linux-amd64
     container:
       image: rust:1.88-slim
@@ -99,7 +99,7 @@ jobs:
         run: |
           set -eu
           API="http://172.0.0.29:3000/api/v1/repos/$GITHUB_REPOSITORY"
-          TAG="${{ needs.auto-tag.outputs.release_tag }}"
+          TAG="${{ needs.autotag.outputs.release_tag }}"
           echo "Creating release for $TAG..."
           curl -sf -X POST "$API/releases" \
             -H "Authorization: token $RELEASE_TOKEN" \
@@ -149,8 +149,8 @@ PY
           done
 
   build-windows-amd64:
-    needs: auto-tag
-    if: needs.auto-tag.outputs.tag_created == 'true'
+    needs: autotag
+    if: needs.autotag.outputs.tag_created == 'true'
     runs-on: linux-amd64
     container:
       image: rust:1.88-slim
@@ -186,7 +186,7 @@ PY
         run: |
           set -eu
           API="http://172.0.0.29:3000/api/v1/repos/$GITHUB_REPOSITORY"
-          TAG="${{ needs.auto-tag.outputs.release_tag }}"
+          TAG="${{ needs.autotag.outputs.release_tag }}"
           echo "Creating release for $TAG..."
           curl -sf -X POST "$API/releases" \
             -H "Authorization: token $RELEASE_TOKEN" \
@@ -236,8 +236,8 @@ PY
           done
 
   build-macos-arm64:
-    needs: auto-tag
-    if: needs.auto-tag.outputs.tag_created == 'true'
+    needs: autotag
+    if: needs.autotag.outputs.tag_created == 'true'
     runs-on: macos-arm64
     steps:
       - name: Checkout
@@ -270,7 +270,7 @@ PY
         run: |
           set -eu
           API="http://172.0.0.29:3000/api/v1/repos/$GITHUB_REPOSITORY"
-          TAG="${{ needs.auto-tag.outputs.release_tag }}"
+          TAG="${{ needs.autotag.outputs.release_tag }}"
           echo "Creating release for $TAG..."
           curl -sf -X POST "$API/releases" \
             -H "Authorization: token $RELEASE_TOKEN" \
@@ -319,8 +319,8 @@ PY
           done
 
   build-linux-arm64:
-    needs: auto-tag
-    if: needs.auto-tag.outputs.tag_created == 'true'
+    needs: autotag
+    if: needs.autotag.outputs.tag_created == 'true'
     runs-on: linux-arm64
     container:
       image: rust:1.88-slim
@@ -351,7 +351,7 @@ PY
         run: |
           set -eu
           API="http://172.0.0.29:3000/api/v1/repos/$GITHUB_REPOSITORY"
-          TAG="${{ needs.auto-tag.outputs.release_tag }}"
+          TAG="${{ needs.autotag.outputs.release_tag }}"
           echo "Creating release for $TAG..."
           curl -sf -X POST "$API/releases" \
             -H "Authorization: token $RELEASE_TOKEN" \
