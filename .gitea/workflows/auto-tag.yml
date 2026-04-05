@@ -436,9 +436,9 @@ jobs:
           apt-get install -y nodejs
 
           # Step 5: Rust (not pre-installed in ubuntu:22.04)
+          # source "$HOME/.cargo/env" in the Build step handles PATH — no GITHUB_PATH needed
           curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y \
             --default-toolchain 1.88.0 --profile minimal --no-modify-path
-          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
       - name: Build
         env:
           CC_aarch64_unknown_linux_gnu: aarch64-linux-gnu-gcc
