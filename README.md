@@ -217,7 +217,7 @@ tftsr/
 └── .gitea/
     └── workflows/
         ├── test.yml     # CI: rustfmt · clippy · cargo test · tsc · vitest (every push/PR)
-        └── release.yml  # Release: linux/amd64 + windows/amd64 + linux/arm64 → Gitea release
+        └── auto-tag.yml # Auto tag + release: linux/amd64 + windows/amd64 + linux/arm64 + macOS
 ```
 
 ---
@@ -251,7 +251,7 @@ The project uses **Gitea Actions** (act_runner v0.3.1) connected to the Gitea in
 | Workflow | Trigger | Jobs |
 |---|---|---|
 | `.gitea/workflows/test.yml` | Every push / PR | rustfmt · clippy · cargo test (64) · tsc · vitest (13) |
-| `.gitea/workflows/release.yml` | Tag `v*` or manual dispatch | Build linux/amd64 + windows/amd64 + linux/arm64 → upload to Gitea release |
+| `.gitea/workflows/auto-tag.yml` | Push to `master` | Auto-tag, then build linux/amd64 + windows/amd64 + linux/arm64 + macOS and upload assets |
 
 **Runners:**
 

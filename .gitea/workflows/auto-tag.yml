@@ -1,7 +1,7 @@
 name: Auto Tag
 
 # Runs on every merge to master — reads the latest semver tag, increments
-# the patch version, and pushes a new tag (which triggers release.yml).
+# the patch version, pushes a new tag, then runs release builds in this workflow.
 
 on:
   push:
@@ -41,7 +41,7 @@ jobs:
 
           echo "Latest tag: ${LATEST:-none}  →  Next: $NEXT"
 
-          # Create and push the tag via git so the tag push event triggers release.yml.
+          # Create and push the tag via git.
           git init
           git remote add origin "http://oauth2:${RELEASE_TOKEN}@172.0.0.29:3000/${GITHUB_REPOSITORY}.git"
           git fetch --depth=1 origin "$GITHUB_SHA"
@@ -61,6 +61,7 @@ jobs:
 
   build-linux-amd64:
     needs: autotag
+    if: needs.autotag.result == 'success'
     runs-on: linux-amd64
     container:
       image: rust:1.88-slim
@@ -147,6 +148,7 @@ jobs:
 
   build-windows-amd64:
     needs: autotag
+    if: needs.autotag.result == 'success'
     runs-on: linux-amd64
     container:
       image: rust:1.88-slim
@@ -237,6 +239,7 @@ jobs:
 
   build-macos-arm64:
     needs: autotag
+    if: needs.autotag.result == 'success'
     runs-on: macos-arm64
     steps:
       - name: Checkout
@@ -323,6 +326,7 @@ jobs:
 
   build-linux-arm64:
     needs: autotag
+    if: needs.autotag.result == 'success'
     runs-on: linux-arm64
     container:
       image: rust:1.88-slim

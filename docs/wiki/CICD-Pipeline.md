@@ -65,16 +65,12 @@ steps:
 
 ---
 
-## Release Pipeline (`.gitea/workflows/release.yml`)
+## Release Pipeline (`.gitea/workflows/auto-tag.yml`)
 
-**Triggers:** Git tags matching `v*`
+**Triggers:** Pushes to `master` (auto-tag), then release build/upload jobs run after `autotag`.
 
-Auto tags are created by `.gitea/workflows/auto-tag.yml` using `git tag` + `git push`
-(not the tag API endpoint), so the tag push event reliably triggers this workflow.
-
-In addition, `.gitea/workflows/auto-tag.yml` now runs the same release build/upload
-jobs after tagging (`needs: auto-tag`) to guarantee release execution even if the
-separate tag-triggered workflow is not dispatched by the server.
+Auto tags are created by `.gitea/workflows/auto-tag.yml` using `git tag` + `git push`.
+Release jobs are executed in the same workflow and depend on `autotag` completion.
 
 ```
 Jobs (run in parallel):
@@ -113,7 +109,7 @@ the repo directly within its commands (using `http://172.0.0.29:3000`, accessibl
 the local machine) and uploads its artifacts inline. The `upload-release` step (amd64)
 handles amd64 + windows artifacts only.
 
-**Clone override (release.yml — amd64 workspace):**
+**Clone override (auto-tag.yml — amd64 workspace):**
 
 ```yaml
 clone:
