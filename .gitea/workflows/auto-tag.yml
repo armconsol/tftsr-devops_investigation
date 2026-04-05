@@ -349,8 +349,9 @@ jobs:
       - name: Build
         run: |
           npm ci --legacy-peer-deps
+          rustup target add aarch64-unknown-linux-gnu
           cargo install tauri-cli --version "^2" --locked
-          CI=true cargo tauri build
+          CI=true cargo tauri build --target aarch64-unknown-linux-gnu
       - name: Upload artifacts
         env:
           RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
@@ -377,7 +378,7 @@ jobs:
             exit 1
           fi
           echo "Release ID: $RELEASE_ID"
-          ARTIFACTS=$(find src-tauri/target/release/bundle -type f \
+          ARTIFACTS=$(find src-tauri/target/aarch64-unknown-linux-gnu/release/bundle -type f \
             \( -name "*.deb" -o -name "*.rpm" -o -name "*.AppImage" \))
           if [ -z "$ARTIFACTS" ]; then
             echo "ERROR: No Linux arm64 artifacts were found to upload."

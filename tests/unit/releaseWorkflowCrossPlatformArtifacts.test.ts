@@ -20,6 +20,10 @@ describe("auto-tag release cross-platform artifact handling", () => {
 
     expect(workflow).toContain("ERROR: No Linux amd64 artifacts were found to upload.");
     expect(workflow).toContain("ERROR: No Linux arm64 artifacts were found to upload.");
+    expect(workflow).toContain("cargo tauri build --target aarch64-unknown-linux-gnu");
+    expect(workflow).toContain(
+      "find src-tauri/target/aarch64-unknown-linux-gnu/release/bundle -type f",
+    );
   });
 
   it("fails windows uploads when no artifacts are found", () => {
