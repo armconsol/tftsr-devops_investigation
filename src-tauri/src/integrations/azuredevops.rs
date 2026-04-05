@@ -18,6 +18,10 @@ pub struct WorkItem {
     pub description: String,
 }
 
+fn escape_wiql_literal(value: &str) -> String {
+    value.replace('\'', "''")
+}
+
 /// Test connection to Azure DevOps by querying project info
 pub async fn test_connection(config: &AzureDevOpsConfig) -> Result<ConnectionResult, String> {
     let client = reqwest::Client::new();
@@ -61,8 +65,9 @@ pub async fn search_work_items(
     );
 
     // Build WIQL query
+    let escaped_query = escape_wiql_literal(query);
     let wiql = format!(
-        "SELECT [System.Id], [System.Title], [System.WorkItemType], [System.State] FROM WorkItems WHERE [System.Title] CONTAINS '{query}' ORDER BY [System.CreatedDate] DESC"
+        "SELECT [System.Id], [System.Title], [System.WorkItemType], [System.State] FROM WorkItems WHERE [System.Title] CONTAINS '{escaped_query}' ORDER BY [System.CreatedDate] DESC"
     );
 
     let body = serde_json::json!({ "query": wiql });
@@ -337,6 +342,12 @@ pub async fn update_work_item(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_escape_wiql_literal_escapes_single_quotes() {
+        let escaped = escape_wiql_literal("can't deploy");
+        assert_eq!(escaped, "can''t deploy");
+    }
 
     #[tokio::test]
     async fn test_connection_success() {

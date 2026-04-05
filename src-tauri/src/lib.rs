@@ -8,6 +8,7 @@ pub mod ollama;
 pub mod pii;
 pub mod state;
 
+use sha2::{Digest, Sha256};
 use state::AppState;
 use std::sync::{Arc, Mutex};
 
@@ -36,14 +37,17 @@ pub fn run() {
         app_data_dir: data_dir.clone(),
         integration_webviews: Arc::new(Mutex::new(std::collections::HashMap::new())),
     };
+    let stronghold_salt = format!(
+        "tftsr-stronghold-salt-v1-{:x}",
+        Sha256::digest(data_dir.to_string_lossy().as_bytes())
+    );
 
     tauri::Builder::default()
         .plugin(
-            tauri_plugin_stronghold::Builder::new(|password| {
-                use sha2::{Digest, Sha256};
+            tauri_plugin_stronghold::Builder::new(move |password| {
                 let mut hasher = Sha256::new();
                 hasher.update(password);
-                hasher.update(b"tftsr-stronghold-salt-v1");
+                hasher.update(stronghold_salt.as_bytes());
                 hasher.finalize().to_vec()
             })
             .build(),

@@ -55,10 +55,18 @@ Covers: OpenAI, Azure OpenAI, LM Studio, vLLM, **LiteLLM (AWS Bedrock)**, and an
 |-------|-------|
 | `config.name` | `"gemini"` |
 | URL | `https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent` |
-| Auth | API key as `?key=` query parameter |
+| Auth | `x-goog-api-key: <api_key>` header |
 | Max tokens | 4096 |
 
 **Models:** `gemini-2.0-flash`, `gemini-2.0-pro`, `gemini-1.5-pro`, `gemini-1.5-flash`
+
+---
+
+## Transport Security Notes
+
+- Provider clients use TLS certificate verification via `reqwest`
+- Provider calls are configured with explicit request timeouts to avoid indefinite hangs
+- Credentials are sent in headers (not URL query strings)
 
 ---
 

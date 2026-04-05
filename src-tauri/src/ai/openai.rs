@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use std::time::Duration;
 
 use crate::ai::provider::Provider;
 use crate::ai::{ChatResponse, Message, ProviderInfo, TokenUsage};
@@ -73,7 +74,9 @@ impl OpenAiProvider {
         messages: Vec<Message>,
         config: &ProviderConfig,
     ) -> anyhow::Result<ChatResponse> {
-        let client = reqwest::Client::new();
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(60))
+            .build()?;
 
         // Use custom endpoint path if provided, otherwise default to /chat/completions
         let endpoint_path = config
@@ -145,7 +148,9 @@ impl OpenAiProvider {
         messages: Vec<Message>,
         config: &ProviderConfig,
     ) -> anyhow::Result<ChatResponse> {
-        let client = reqwest::Client::new();
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(60))
+            .build()?;
 
         // Use custom endpoint path, default to empty (API URL already includes /api/v2/chat)
         let endpoint_path = config.custom_endpoint_path.as_deref().unwrap_or("");

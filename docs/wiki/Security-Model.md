@@ -18,20 +18,25 @@ Production builds use SQLCipher:
 - **Cipher:** AES-256-CBC
 - **KDF:** PBKDF2-HMAC-SHA512, 256,000 iterations
 - **HMAC:** HMAC-SHA512
-- **Page size:** 4096 bytes
+- **Page size:** 16384 bytes
 - **Key source:** `TFTSR_DB_KEY` environment variable
 
 Debug builds use plain SQLite (no encryption) for developer convenience.
 
-> ⚠️ **Never** use the default key (`dev-key-change-in-prod`) in a production environment.
+Release builds now fail startup if `TFTSR_DB_KEY` is missing or empty.
 
 ---
 
-## API Key Storage (Stronghold)
+## Credential Encryption
 
-AI provider API keys are stored in `tauri-plugin-stronghold` — an encrypted vault backed by the [IOTA Stronghold](https://github.com/iotaledger/stronghold.rs) library.
+Integration tokens are encrypted with AES-256-GCM before persistence:
+- **Key source:** `TFTSR_ENCRYPTION_KEY` (required in release builds)
+- **Key derivation:** SHA-256 hash of key material to a fixed 32-byte AES key
+- **Nonce:** Cryptographically secure random nonce per encryption
 
-The vault is initialized with a password-derived key using Argon2. API keys are never written to disk in plaintext or to the SQLite database.
+Release builds fail secure operations if `TFTSR_ENCRYPTION_KEY` is unset or empty.
+
+The Stronghold plugin remains enabled and now uses a per-installation salt derived from the app data directory path hash instead of a fixed static salt.
 
 ---
 
@@ -46,6 +51,7 @@ log file → detect_pii() → user approves spans → apply_redactions() → AI 
 - Original text **never leaves the machine**
 - Only the redacted version is transmitted
 - The SHA-256 hash of the redacted text is recorded in the audit log for integrity verification
+- `pii_spans.original_value` is cleared after redaction to avoid retaining raw detected secrets in storage
 - See [PII Detection](PII-Detection) for the full list of detected patterns
 
 ---
@@ -66,6 +72,14 @@ write_audit_event(
 
 The audit log is stored in the encrypted SQLite database. It cannot be deleted through the UI.
 
+### Tamper Evidence
+
+`audit_log` entries now include:
+- `prev_hash` — hash of the previous audit entry
+- `entry_hash` — SHA-256 hash of current entry payload + `prev_hash`
+
+This creates a hash chain and makes post-hoc modification detectable.
+
 **Audit entry fields:**
 - `action` — what was done
 - `entity_type` — type of record involved
@@ -84,7 +98,7 @@ Defined in `src-tauri/capabilities/default.json`:
 |--------|-------------------|
 | `dialog` | `allow-open`, `allow-save` |
 | `fs` | `read-text`, `write-text`, `read`, `write`, `mkdir` — scoped to app dir and temp |
-| `shell` | `allow-execute` — for running system commands |
+| `shell` | `allow-open` only |
 | `http` | default — connect only to approved origins |
 
 ---
@@ -109,7 +123,9 @@ HTTP is blocked by default. Only whitelisted HTTPS endpoints (and localhost for 
 
 ## TLS
 
-All outbound HTTP requests use `reqwest` with default TLS settings (TLS 1.2+ required). Certificate verification is enabled. No custom trust anchors are added.
+All outbound HTTP requests use `reqwest` with certificate verification enabled and a request timeout configured for provider calls.
+
+CI/CD currently uses internal `http://` endpoints for self-hosted Gitea release automation on a trusted LAN. Recommended hardening: migrate runners and API calls to HTTPS with internal certificates.
 
 ---
 
@@ -120,3 +136,4 @@ All outbound HTTP requests use `reqwest` with default TLS settings (TLS 1.2+ req
 - [ ] Does it store secrets? → Use Stronghold, not the SQLite DB
 - [ ] Does it need filesystem access? → Scope the fs capability
 - [ ] Does it need a new HTTP endpoint? → Add to CSP `connect-src`
+- [ ] Does it add a new provider endpoint? → Avoid query-param secrets, use auth headers

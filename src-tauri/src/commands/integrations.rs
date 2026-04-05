@@ -288,18 +288,12 @@ async fn handle_oauth_callback_internal(
         "expires_at": expires_at,
     });
 
-    db.execute(
-        "INSERT INTO audit_log (id, timestamp, action, entity_type, entity_id, user_id, details)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-        rusqlite::params![
-            uuid::Uuid::now_v7().to_string(),
-            chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string(),
-            "oauth_callback_success",
-            "credential",
-            service,
-            "local",
-            audit_details.to_string(),
-        ],
+    crate::audit::log::write_audit_event(
+        &db,
+        "oauth_callback_success",
+        "credential",
+        &service,
+        &audit_details.to_string(),
     )
     .map_err(|e| format!("Failed to log audit event: {e}"))?;
 
@@ -718,22 +712,16 @@ pub async fn save_manual_token(
     .map_err(|e| format!("Failed to store token: {e}"))?;
 
     // Log audit event
-    db.execute(
-        "INSERT INTO audit_log (id, timestamp, action, entity_type, entity_id, user_id, details)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-        rusqlite::params![
-            uuid::Uuid::now_v7().to_string(),
-            chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string(),
-            "manual_token_saved",
-            "credential",
-            request.service,
-            "local",
-            serde_json::json!({
-                "token_type": request.token_type,
-                "token_hash": token_hash,
-            })
-            .to_string(),
-        ],
+    crate::audit::log::write_audit_event(
+        &db,
+        "manual_token_saved",
+        "credential",
+        &request.service,
+        &serde_json::json!({
+            "token_type": request.token_type,
+            "token_hash": token_hash,
+        })
+        .to_string(),
     )
     .map_err(|e| format!("Failed to log audit event: {e}"))?;
 

@@ -22,6 +22,10 @@ pub struct Page {
     pub url: String,
 }
 
+fn escape_cql_literal(value: &str) -> String {
+    value.replace('\\', "\\\\").replace('"', "\\\"")
+}
+
 /// Test connection to Confluence by fetching current user info
 pub async fn test_connection(config: &ConfluenceConfig) -> Result<ConnectionResult, String> {
     let client = reqwest::Client::new();
@@ -105,9 +109,11 @@ pub async fn search_pages(
         config.base_url.trim_end_matches('/')
     );
 
-    let mut cql = format!("text ~ \"{query}\"");
+    let escaped_query = escape_cql_literal(query);
+    let mut cql = format!("text ~ \"{escaped_query}\"");
     if let Some(space) = space_key {
-        cql = format!("{cql} AND space = {space}");
+        let escaped_space = escape_cql_literal(space);
+        cql = format!("{cql} AND space = \"{escaped_space}\"");
     }
 
     let resp = client
@@ -279,6 +285,12 @@ pub async fn update_page(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_escape_cql_literal_escapes_quotes_and_backslashes() {
+        let escaped = escape_cql_literal(r#"C:\logs\"prod""#);
+        assert_eq!(escaped, r#"C:\\logs\\\"prod\""#);
+    }
 
     #[tokio::test]
     async fn test_connection_success() {

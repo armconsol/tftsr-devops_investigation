@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use std::time::Duration;
 
 use crate::ai::provider::Provider;
 use crate::ai::{ChatResponse, Message, ProviderInfo, TokenUsage};
@@ -30,10 +31,12 @@ impl Provider for GeminiProvider {
         messages: Vec<Message>,
         config: &ProviderConfig,
     ) -> anyhow::Result<ChatResponse> {
-        let client = reqwest::Client::new();
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(60))
+            .build()?;
         let url = format!(
-            "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}",
-            config.model, config.api_key
+            "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent",
+            config.model
         );
 
         // Map OpenAI-style messages to Gemini format
@@ -79,6 +82,7 @@ impl Provider for GeminiProvider {
         let resp = client
             .post(&url)
             .header("Content-Type", "application/json")
+            .header("x-goog-api-key", &config.api_key)
             .json(&body)
             .send()
             .await?;

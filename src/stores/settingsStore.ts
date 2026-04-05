@@ -41,6 +41,15 @@ export const useSettingsStore = create<SettingsState>()(
           ?? state.ai_providers[0];
       },
     }),
-    { name: "tftsr-settings" }
+    {
+      name: "tftsr-settings",
+      partialize: (state) => ({
+        ...state,
+        ai_providers: state.ai_providers.map((provider) => ({
+          ...provider,
+          api_key: "",
+        })),
+      }),
+    }
   )
 );

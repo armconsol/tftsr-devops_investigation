@@ -24,7 +24,6 @@
     "fs:allow-temp-write-recursive",
     "fs:scope-app-recursive",
     "fs:scope-temp-recursive",
-    "shell:allow-execute",
     "shell:allow-open",
     "http:default"
   ]

@@ -1,4 +1,5 @@
 use tauri::State;
+use tracing::warn;
 
 use crate::ai::provider::create_provider;
 use crate::ai::{AnalysisResult, ChatResponse, Message, ProviderInfo};
@@ -12,22 +13,27 @@ pub async fn analyze_logs(
     provider_config: ProviderConfig,
     state: State<'_, AppState>,
 ) -> Result<AnalysisResult, String> {
-    // Load log file contents
+    // Load log file contents — only redacted files may be sent to an AI provider
     let mut log_contents = String::new();
     {
         let db = state.db.lock().map_err(|e| e.to_string())?;
         for file_id in &log_file_ids {
             let mut stmt = db
-                .prepare("SELECT file_name, file_path FROM log_files WHERE id = ?1")
+                .prepare("SELECT file_name, file_path, redacted FROM log_files WHERE id = ?1")
                 .map_err(|e| e.to_string())?;
-            if let Ok((name, path)) = stmt.query_row([file_id], |row| {
-                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            if let Ok((name, path, redacted)) = stmt.query_row([file_id], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, i32>(2)? != 0,
+                ))
             }) {
+                let redacted_path = redacted_path_for(&name, &path, redacted)?;
                 log_contents.push_str(&format!("--- {name} ---\n"));
-                if let Ok(content) = std::fs::read_to_string(&path) {
+                if let Ok(content) = std::fs::read_to_string(&redacted_path) {
                     log_contents.push_str(&content);
                 } else {
-                    log_contents.push_str("[Could not read file]\n");
+                    log_contents.push_str("[Could not read redacted file]\n");
                 }
                 log_contents.push('\n');
             }
@@ -55,7 +61,10 @@ pub async fn analyze_logs(
     let response = provider
         .chat(messages, &provider_config)
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| {
+            warn!(error = %e, "ai analyze_logs provider request failed");
+            "AI analysis request failed".to_string()
+        })?;
 
     let content = &response.content;
     let summary = extract_section(content, "SUMMARY:").unwrap_or_else(|| {
@@ -81,14 +90,14 @@ pub async fn analyze_logs(
             serde_json::json!({ "log_file_ids": log_file_ids, "provider": provider_config.name })
                 .to_string(),
         );
-        db.execute(
-            "INSERT INTO audit_log (id, timestamp, action, entity_type, entity_id, user_id, details) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-            rusqlite::params![
-                entry.id, entry.timestamp, entry.action,
-                entry.entity_type, entry.entity_id, entry.user_id, entry.details
-            ],
-        ).map_err(|e| e.to_string())?;
+        crate::audit::log::write_audit_event(
+            &db,
+            &entry.action,
+            &entry.entity_type,
+            &entry.entity_id,
+            &entry.details,
+        )
+        .map_err(|_| "Failed to write security audit entry".to_string())?;
     }
 
     Ok(AnalysisResult {
@@ -97,6 +106,17 @@ pub async fn analyze_logs(
         suggested_why1,
         severity_assessment,
     })
+}
+
+/// Returns the path to the `.redacted` file, or an error if the file has not been redacted.
+fn redacted_path_for(name: &str, path: &str, redacted: bool) -> Result<String, String> {
+    if !redacted {
+        return Err(format!(
+            "Log file '{name}' has not been scanned and redacted. \
+             Run PII detection and apply redactions before sending to AI."
+        ));
+    }
+    Ok(format!("{path}.redacted"))
 }
 
 fn extract_section(text: &str, header: &str) -> Option<String> {
@@ -207,7 +227,10 @@ pub async fn chat_message(
     let response = provider
         .chat(messages, &provider_config)
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| {
+            warn!(error = %e, "ai chat provider request failed");
+            "AI provider request failed".to_string()
+        })?;
 
     // Save both user message and response to DB
     {
@@ -258,14 +281,15 @@ pub async fn chat_message(
             issue_id,
             audit_details.to_string(),
         );
-        let _ = db.execute(
-            "INSERT INTO audit_log (id, timestamp, action, entity_type, entity_id, user_id, details) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-            rusqlite::params![
-                entry.id, entry.timestamp, entry.action,
-                entry.entity_type, entry.entity_id, entry.user_id, entry.details
-            ],
-        );
+        if let Err(err) = crate::audit::log::write_audit_event(
+            &db,
+            &entry.action,
+            &entry.entity_type,
+            &entry.entity_id,
+            &entry.details,
+        ) {
+            warn!(error = %err, "failed to write ai_chat audit entry");
+        }
     }
 
     Ok(response)
@@ -285,7 +309,10 @@ pub async fn test_provider_connection(
     provider
         .chat(messages, &provider_config)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| {
+            warn!(error = %e, "ai test_provider_connection failed");
+            "Provider connection test failed".to_string()
+        })
 }
 
 #[tauri::command]
@@ -371,6 +398,19 @@ mod tests {
         let text = "KEY_FINDINGS:\n* Item one\n* Item two\nFIRST_WHY: Why?";
         let list = extract_list(text, "KEY_FINDINGS:");
         assert_eq!(list, vec!["Item one", "Item two"]);
+    }
+
+    #[test]
+    fn test_redacted_path_rejects_unredacted_file() {
+        let err = redacted_path_for("app.log", "/data/app.log", false).unwrap_err();
+        assert!(err.contains("app.log"));
+        assert!(err.contains("redacted"));
+    }
+
+    #[test]
+    fn test_redacted_path_returns_dotredacted_suffix() {
+        let path = redacted_path_for("app.log", "/data/app.log", true).unwrap();
+        assert_eq!(path, "/data/app.log.redacted");
     }
 
     #[test]
