@@ -348,10 +348,14 @@ jobs:
           apt-get install -y nodejs
       - name: Build
         run: |
+          ARCH=$(uname -m)
+          if [ "$ARCH" != "aarch64" ] && [ "$ARCH" != "arm64" ]; then
+            echo "ERROR: linux-arm64 job is not running on an ARM64 host (uname -m=$ARCH)."
+            exit 1
+          fi
           npm ci --legacy-peer-deps
-          rustup target add aarch64-unknown-linux-gnu
           cargo install tauri-cli --version "^2" --locked
-          CI=true cargo tauri build --target aarch64-unknown-linux-gnu
+          CI=true cargo tauri build
       - name: Upload artifacts
         env:
           RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
@@ -378,10 +382,10 @@ jobs:
             exit 1
           fi
           echo "Release ID: $RELEASE_ID"
-          ARTIFACTS=$(find src-tauri/target/aarch64-unknown-linux-gnu/release/bundle -type f \
-            \( -name "*.deb" -o -name "*.rpm" -o -name "*.AppImage" \))
+          ARTIFACTS=$(find src-tauri/target/release/bundle -type f \
+            \( -name "*arm64*.deb" -o -name "*aarch64*.deb" -o -name "*arm64*.rpm" -o -name "*aarch64*.rpm" -o -name "*arm64*.AppImage" -o -name "*aarch64*.AppImage" \))
           if [ -z "$ARTIFACTS" ]; then
-            echo "ERROR: No Linux arm64 artifacts were found to upload."
+            echo "ERROR: No Linux arm64 artifacts were found to upload (arm64/aarch64 filename filter)."
             exit 1
           fi
           printf '%s\n' "$ARTIFACTS" | while IFS= read -r f; do

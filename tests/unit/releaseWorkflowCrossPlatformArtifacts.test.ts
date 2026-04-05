@@ -19,11 +19,14 @@ describe("auto-tag release cross-platform artifact handling", () => {
     const workflow = readFileSync(autoTagWorkflowPath, "utf-8");
 
     expect(workflow).toContain("ERROR: No Linux amd64 artifacts were found to upload.");
-    expect(workflow).toContain("ERROR: No Linux arm64 artifacts were found to upload.");
-    expect(workflow).toContain("cargo tauri build --target aarch64-unknown-linux-gnu");
     expect(workflow).toContain(
-      "find src-tauri/target/aarch64-unknown-linux-gnu/release/bundle -type f",
+      "ERROR: No Linux arm64 artifacts were found to upload (arm64/aarch64 filename filter).",
     );
+    expect(workflow).toContain(
+      "ERROR: linux-arm64 job is not running on an ARM64 host (uname -m=$ARCH).",
+    );
+    expect(workflow).toContain("CI=true cargo tauri build");
+    expect(workflow).toContain("find src-tauri/target/release/bundle -type f");
   });
 
   it("fails windows uploads when no artifacts are found", () => {
