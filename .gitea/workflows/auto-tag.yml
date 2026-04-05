@@ -140,10 +140,7 @@ jobs:
               echo "✓ Uploaded $NAME"
             else
               echo "✗ Upload failed for $NAME (HTTP $HTTP_CODE)"
-              python - "$RESP_FILE" <<'PY'
-import pathlib, sys
-print(pathlib.Path(sys.argv[1]).read_text(errors="replace")[:2000])
-PY
+              python -c 'import pathlib,sys;print(pathlib.Path(sys.argv[1]).read_text(errors="replace")[:2000])' "$RESP_FILE"
               exit 1
             fi
           done
@@ -233,10 +230,7 @@ PY
               echo "✓ Uploaded $NAME"
             else
               echo "✗ Upload failed for $NAME (HTTP $HTTP_CODE)"
-              python - "$RESP_FILE" <<'PY'
-import pathlib, sys
-print(pathlib.Path(sys.argv[1]).read_text(errors="replace")[:2000])
-PY
+              python -c 'import pathlib,sys;print(pathlib.Path(sys.argv[1]).read_text(errors="replace")[:2000])' "$RESP_FILE"
               exit 1
             fi
           done
@@ -322,10 +316,7 @@ PY
               echo "✓ Uploaded $NAME"
             else
               echo "✗ Upload failed for $NAME (HTTP $HTTP_CODE)"
-              python - "$RESP_FILE" <<'PY'
-import pathlib, sys
-print(pathlib.Path(sys.argv[1]).read_text(errors="replace")[:2000])
-PY
+              python -c 'import pathlib,sys;print(pathlib.Path(sys.argv[1]).read_text(errors="replace")[:2000])' "$RESP_FILE"
               exit 1
             fi
           done
@@ -410,10 +401,7 @@ PY
               echo "✓ Uploaded $NAME"
             else
               echo "✗ Upload failed for $NAME (HTTP $HTTP_CODE)"
-              python - "$RESP_FILE" <<'PY'
-import pathlib, sys
-print(pathlib.Path(sys.argv[1]).read_text(errors="replace")[:2000])
-PY
+              python -c 'import pathlib,sys;print(pathlib.Path(sys.argv[1]).read_text(errors="replace")[:2000])' "$RESP_FILE"
               exit 1
             fi
           done
