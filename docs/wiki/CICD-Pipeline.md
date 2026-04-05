@@ -72,6 +72,10 @@ steps:
 Auto tags are created by `.gitea/workflows/auto-tag.yml` using `git tag` + `git push`
 (not the tag API endpoint), so the tag push event reliably triggers this workflow.
 
+In addition, `.gitea/workflows/auto-tag.yml` now runs the same release build/upload
+jobs after tagging (`needs: auto-tag`) to guarantee release execution even if the
+separate tag-triggered workflow is not dispatched by the server.
+
 ```
 Jobs (run in parallel):
   build-linux-amd64   → cargo tauri build (x86_64-unknown-linux-gnu)

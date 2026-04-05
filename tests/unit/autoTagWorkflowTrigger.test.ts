@@ -14,4 +14,16 @@ describe("auto-tag workflow release triggering", () => {
     expect(workflow).toContain("git push origin \"refs/tags/$NEXT\"");
     expect(workflow).not.toContain("POST \"$API/tags\"");
   });
+
+  it("runs release build jobs after auto-tag succeeds", () => {
+    const workflow = readFileSync(autoTagWorkflowPath, "utf-8");
+
+    expect(workflow).toContain("build-linux-amd64:");
+    expect(workflow).toContain("build-windows-amd64:");
+    expect(workflow).toContain("build-macos-arm64:");
+    expect(workflow).toContain("build-linux-arm64:");
+    expect(workflow).toContain("needs: auto-tag");
+    expect(workflow).toContain("needs.auto-tag.outputs.tag_created == 'true'");
+    expect(workflow).toContain("TAG=\"${{ needs.auto-tag.outputs.release_tag }}\"");
+  });
 });
