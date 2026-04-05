@@ -2,11 +2,17 @@ name: Auto Tag
 
 # Runs on every merge to master — reads the latest semver tag, increments
 # the patch version, pushes a new tag, then runs release builds in this workflow.
+# workflow_dispatch allows manual triggering when Gitea drops a push event.
 
 on:
   push:
     branches:
       - master
+  workflow_dispatch:
+
+concurrency:
+  group: auto-tag-master
+  cancel-in-progress: false
 
 jobs:
   autotag:
