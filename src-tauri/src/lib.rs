@@ -26,7 +26,7 @@ pub fn run() {
     tracing::info!("Starting Troubleshooting and RCA Assistant application");
 
     // Determine data directory
-    let data_dir = dirs_data_dir();
+    let data_dir = state::get_app_data_dir().expect("Failed to determine app data directory");
 
     // Initialize database
     let conn = db::connection::init_db(&data_dir).expect("Failed to initialize database");
@@ -146,45 +146,4 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("Error running Troubleshooting and RCA Assistant application");
-}
-
-/// Determine the application data directory.
-fn dirs_data_dir() -> std::path::PathBuf {
-    if let Ok(dir) = std::env::var("TFTSR_DATA_DIR") {
-        return std::path::PathBuf::from(dir);
-    }
-
-    // Use platform-appropriate data directory
-    #[cfg(target_os = "linux")]
-    {
-        if let Ok(xdg) = std::env::var("XDG_DATA_HOME") {
-            return std::path::PathBuf::from(xdg).join("trcaa");
-        }
-        if let Ok(home) = std::env::var("HOME") {
-            return std::path::PathBuf::from(home)
-                .join(".local")
-                .join("share")
-                .join("trcaa");
-        }
-    }
-
-    #[cfg(target_os = "macos")]
-    {
-        if let Ok(home) = std::env::var("HOME") {
-            return std::path::PathBuf::from(home)
-                .join("Library")
-                .join("Application Support")
-                .join("trcaa");
-        }
-    }
-
-    #[cfg(target_os = "windows")]
-    {
-        if let Ok(appdata) = std::env::var("APPDATA") {
-            return std::path::PathBuf::from(appdata).join("trcaa");
-        }
-    }
-
-    // Fallback
-    std::path::PathBuf::from("./trcaa-data")
 }

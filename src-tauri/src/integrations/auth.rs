@@ -179,7 +179,60 @@ fn get_encryption_key_material() -> Result<String, String> {
         return Ok("dev-key-change-me-in-production-32b".to_string());
     }
 
-    Err("TFTSR_ENCRYPTION_KEY must be set in release builds".to_string())
+    // Release: load or auto-generate a per-installation encryption key
+    // stored in the app data directory, similar to the database key.
+    if let Some(app_data_dir) = crate::state::get_app_data_dir() {
+        let key_path = app_data_dir.join(".enckey");
+
+        // Try to load existing key
+        if key_path.exists() {
+            if let Ok(key) = std::fs::read_to_string(&key_path) {
+                let key = key.trim().to_string();
+                if !key.is_empty() {
+                    return Ok(key);
+                }
+            }
+        }
+
+        // Generate and store new key
+        use rand::RngCore;
+        let mut bytes = [0u8; 32];
+        rand::rngs::OsRng.fill_bytes(&mut bytes);
+        let key = hex::encode(bytes);
+
+        // Ensure directory exists
+        if let Err(e) = std::fs::create_dir_all(&app_data_dir) {
+            tracing::warn!("Failed to create app data directory: {}", e);
+            return Err(format!("Failed to create app data directory: {}", e));
+        }
+
+        // Write key with restricted permissions
+        #[cfg(unix)]
+        {
+            use std::io::Write;
+            use std::os::unix::fs::OpenOptionsExt;
+            let mut f = std::fs::OpenOptions::new()
+                .write(true)
+                .create(true)
+                .truncate(true)
+                .mode(0o600)
+                .open(&key_path)
+                .map_err(|e| format!("Failed to write encryption key: {}", e))?;
+            f.write_all(key.as_bytes())
+                .map_err(|e| format!("Failed to write encryption key: {}", e))?;
+        }
+
+        #[cfg(not(unix))]
+        {
+            std::fs::write(&key_path, &key)
+                .map_err(|e| format!("Failed to write encryption key: {}", e))?;
+        }
+
+        tracing::info!("Generated new encryption key at {:?}", key_path);
+        return Ok(key);
+    }
+
+    Err("Failed to determine app data directory for encryption key storage".to_string())
 }
 
 fn derive_aes_key() -> Result<[u8; 32], String> {

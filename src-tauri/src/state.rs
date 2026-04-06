@@ -72,3 +72,49 @@ pub struct AppState {
     /// These windows stay open for the user to browse and for fresh cookie extraction
     pub integration_webviews: Arc<Mutex<HashMap<String, String>>>,
 }
+
+/// Determine the application data directory.
+/// Returns None if the directory cannot be determined.
+pub fn get_app_data_dir() -> Option<PathBuf> {
+    if let Ok(dir) = std::env::var("TFTSR_DATA_DIR") {
+        return Some(PathBuf::from(dir));
+    }
+
+    // Use platform-appropriate data directory
+    #[cfg(target_os = "linux")]
+    {
+        if let Ok(xdg) = std::env::var("XDG_DATA_HOME") {
+            return Some(PathBuf::from(xdg).join("trcaa"));
+        }
+        if let Ok(home) = std::env::var("HOME") {
+            return Some(
+                PathBuf::from(home)
+                    .join(".local")
+                    .join("share")
+                    .join("trcaa"),
+            );
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        if let Ok(home) = std::env::var("HOME") {
+            return Some(
+                PathBuf::from(home)
+                    .join("Library")
+                    .join("Application Support")
+                    .join("trcaa"),
+            );
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        if let Ok(appdata) = std::env::var("APPDATA") {
+            return Some(PathBuf::from(appdata).join("trcaa"));
+        }
+    }
+
+    // Fallback
+    Some(PathBuf::from("./trcaa-data"))
+}
