@@ -347,22 +347,6 @@ jobs:
           git remote add origin http://172.0.0.29:3000/sarman/tftsr-devops_investigation.git
           git fetch --depth=1 origin "$GITHUB_SHA"
           git checkout FETCH_HEAD
-      - name: Download Ollama
-        run: |
-          OLLAMA_VER=$(curl -fsSL https://api.github.com/repos/ollama/ollama/releases/latest \
-            | python3 -c "import sys,json; print(json.load(sys.stdin)['tag_name'])")
-          mkdir -p src-tauri/resources/ollama
-          curl -fsSL "https://github.com/ollama/ollama/releases/download/${OLLAMA_VER}/ollama-darwin" \
-            -o src-tauri/resources/ollama/ollama
-          curl -fsSL "https://github.com/ollama/ollama/releases/download/${OLLAMA_VER}/sha256sums.txt" \
-            -o /tmp/ollama-sha256sums.txt
-          EXPECTED=$(awk '$2 == "ollama-darwin" {print $1}' /tmp/ollama-sha256sums.txt)
-          if [ -z "$EXPECTED" ]; then echo "ERROR: SHA256 entry not found"; exit 1; fi
-          ACTUAL=$(shasum -a 256 src-tauri/resources/ollama/ollama | awk '{print $1}')
-          if [ "$EXPECTED" != "$ACTUAL" ]; then echo "ERROR: SHA256 mismatch. Expected: $EXPECTED Got: $ACTUAL"; exit 1; fi
-          chmod +x src-tauri/resources/ollama/ollama
-          rm /tmp/ollama-sha256sums.txt
-          echo "Bundled Ollama ${OLLAMA_VER} for macOS (checksum verified)"
       - name: Build
         env:
           MACOSX_DEPLOYMENT_TARGET: "11.0"
