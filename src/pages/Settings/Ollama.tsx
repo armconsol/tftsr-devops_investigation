@@ -24,7 +24,6 @@ import {
   deleteOllamaModelCmd,
   listOllamaModelsCmd,
   getOllamaInstallGuideCmd,
-  installOllamaFromBundleCmd,
   type OllamaStatus,
   type HardwareInfo,
   type ModelRecommendation,
@@ -44,7 +43,6 @@ export default function Ollama() {
   const [customModel, setCustomModel] = useState("");
   const [isPulling, setIsPulling] = useState(false);
   const [pullProgress, setPullProgress] = useState(0);
-  const [isInstallingBundle, setIsInstallingBundle] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const loadData = async () => {
@@ -104,19 +102,6 @@ export default function Ollama() {
     } catch (err) {
       setError(String(err));
       setIsPulling(false);
-    }
-  };
-
-  const handleInstallFromBundle = async () => {
-    setIsInstallingBundle(true);
-    setError(null);
-    try {
-      await installOllamaFromBundleCmd();
-      await loadData();
-    } catch (err) {
-      setError(String(err));
-    } finally {
-      setIsInstallingBundle(false);
     }
   };
 
@@ -184,33 +169,16 @@ export default function Ollama() {
       {status && !status.installed && installGuide && (
         <Card className="border-yellow-500/50">
           <CardHeader>
-            <CardTitle className="text-lg flex items-center gap-2">
-              <Download className="w-5 h-5 text-yellow-500" />
+            <CardTitle className="text-lg">
               Ollama Not Detected — Installation Required
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent>
             <ol className="space-y-2 list-decimal list-inside">
               {installGuide.steps.map((step, i) => (
                 <li key={i} className="text-sm text-muted-foreground">{step}</li>
               ))}
             </ol>
-            <div className="flex flex-wrap gap-2">
-              <Button
-                variant="outline"
-                onClick={() => window.open(installGuide.url, "_blank")}
-              >
-                <Download className="w-4 h-4 mr-2" />
-                Download Ollama for {installGuide.platform}
-              </Button>
-              <Button
-                onClick={handleInstallFromBundle}
-                disabled={isInstallingBundle}
-              >
-                <Download className="w-4 h-4 mr-2" />
-                {isInstallingBundle ? "Installing..." : "Install Ollama (Offline)"}
-              </Button>
-            </div>
           </CardContent>
         </Card>
       )}
