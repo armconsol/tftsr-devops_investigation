@@ -218,6 +218,16 @@ getAuditLogCmd(filter: AuditLogFilter) → AuditEntry[]
 ```
 Returns audit log entries. Filter by action, entity_type, date range.
 
+### `install_ollama_from_bundle`
+```typescript
+installOllamaFromBundleCmd() → string
+```
+Copies the Ollama binary bundled inside the app resources to the system install path:
+- **Linux/macOS**: `/usr/local/bin/ollama` (requires write permission — user may need to run app with elevated privileges or `sudo`)
+- **Windows**: `%LOCALAPPDATA%\Programs\Ollama\ollama.exe`
+
+Returns a success message with the install path. Errors if the bundled binary is not present in the app resources (i.e., the app was built without an Ollama bundle step in CI).
+
 ---
 
 ## Integration Commands

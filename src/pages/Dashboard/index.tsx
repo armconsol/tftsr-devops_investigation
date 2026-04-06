@@ -39,7 +39,7 @@ export default function Dashboard() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={() => loadIssues()} disabled={isLoading}>
+          <Button variant="outline" size="sm" onClick={() => loadIssues()} disabled={isLoading} className="border-border text-foreground bg-card hover:bg-accent">
             <RefreshCw className={`w-4 h-4 mr-2 ${isLoading ? "animate-spin" : ""}`} />
             Refresh
           </Button>

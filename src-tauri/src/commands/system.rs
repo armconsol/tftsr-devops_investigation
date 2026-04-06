@@ -141,3 +141,74 @@ pub async fn get_audit_log(
 
     Ok(rows)
 }
+
+// Security note: the bundled binary's integrity is guaranteed by the CI release pipeline
+// which verifies SHA256 checksums against Ollama's published sha256sums.txt before bundling.
+// Runtime re-verification is not performed here; the app bundle itself is the trust boundary.
+// On Unix, writing to /usr/local/bin requires elevated privileges. If the operation fails with
+// PermissionDenied the caller receives an actionable error message.
+#[tauri::command]
+pub async fn install_ollama_from_bundle(app: tauri::AppHandle) -> Result<String, String> {
+    use std::fs;
+    use std::path::PathBuf;
+    use tauri::Manager;
+
+    let resource_dir = app
+        .path()
+        .resource_dir()
+        .map_err(|e: tauri::Error| e.to_string())?;
+
+    let resource_path = resource_dir.join("ollama").join(if cfg!(windows) {
+        "ollama.exe"
+    } else {
+        "ollama"
+    });
+
+    if !resource_path.exists() {
+        return Err("Bundled Ollama not found in resources".to_string());
+    }
+
+    // Defense-in-depth: verify resolved path stays within the resource directory.
+    let canonical_resource = resource_path.canonicalize().map_err(|e| e.to_string())?;
+    let canonical_dir = resource_dir.canonicalize().map_err(|e| e.to_string())?;
+    if !canonical_resource.starts_with(&canonical_dir) {
+        return Err("Resource path validation failed".to_string());
+    }
+
+    #[cfg(unix)]
+    let install_path = PathBuf::from("/usr/local/bin/ollama");
+    #[cfg(windows)]
+    let install_path = {
+        let local_app_data = std::env::var("LOCALAPPDATA").map_err(|e| e.to_string())?;
+        PathBuf::from(local_app_data)
+            .join("Programs")
+            .join("Ollama")
+            .join("ollama.exe")
+    };
+
+    if let Some(parent) = install_path.parent() {
+        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+
+    fs::copy(&resource_path, &install_path).map_err(|e| {
+        if e.kind() == std::io::ErrorKind::PermissionDenied {
+            format!(
+                "Permission denied writing to {}. On Linux, re-run the app with elevated \
+                 privileges or install manually: sudo cp \"{}\" /usr/local/bin/ollama",
+                install_path.display(),
+                resource_path.display()
+            )
+        } else {
+            e.to_string()
+        }
+    })?;
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&install_path, fs::Permissions::from_mode(0o755))
+            .map_err(|e| e.to_string())?;
+    }
+
+    Ok(format!("Ollama installed to {}", install_path.display()))
+}

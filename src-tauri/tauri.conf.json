@@ -34,7 +34,7 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "resources": [],
+    "resources": ["resources/ollama/*"],
     "externalBin": [],
     "copyright": "Troubleshooting and RCA Assistant Contributors",
     "category": "Utility",

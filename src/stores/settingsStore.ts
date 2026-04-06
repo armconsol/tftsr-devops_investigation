@@ -9,6 +9,8 @@ interface SettingsState extends AppSettings {
   setActiveProvider: (name: string) => void;
   setTheme: (theme: "light" | "dark") => void;
   getActiveProvider: () => ProviderConfig | undefined;
+  pii_enabled_patterns: Record<string, boolean>;
+  setPiiPattern: (id: string, enabled: boolean) => void;
 }
 
 export const useSettingsStore = create<SettingsState>()(
@@ -35,6 +37,14 @@ export const useSettingsStore = create<SettingsState>()(
         })),
       setActiveProvider: (name) => set({ active_provider: name }),
       setTheme: (theme) => set({ theme }),
+      pii_enabled_patterns: Object.fromEntries(
+        ["email", "ip_address", "phone", "ssn", "credit_card", "hostname", "password", "api_key"]
+          .map((id) => [id, true])
+      ) as Record<string, boolean>,
+      setPiiPattern: (id: string, enabled: boolean) =>
+        set((state) => ({
+          pii_enabled_patterns: { ...state.pii_enabled_patterns, [id]: enabled },
+        })),
       getActiveProvider: () => {
         const state = get();
         return state.ai_providers.find((p) => p.name === state.active_provider)
