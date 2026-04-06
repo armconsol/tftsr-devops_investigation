@@ -1,0 +1,20 @@
+# Pre-baked cross-compiler for Windows amd64 Tauri releases (runs on Linux amd64).
+# All MinGW and Node.js dependencies are installed once here; CI jobs skip apt-get entirely.
+# Rebuild when: Rust toolchain version changes or Node.js major version changes.
+# Tag format: rust<VER>-node<VER>
+FROM rust:1.88-slim
+
+RUN apt-get update -qq \
+    && apt-get install -y -qq --no-install-recommends \
+       mingw-w64 \
+       curl \
+       nsis \
+       perl \
+       make \
+       jq \
+       git \
+    && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN rustup target add x86_64-pc-windows-gnu
