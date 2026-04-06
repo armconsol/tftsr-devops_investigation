@@ -149,24 +149,6 @@ jobs:
             pkg-config curl perl jq
           curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
           apt-get install -y nodejs
-      - name: Download Ollama
-        run: |
-          OLLAMA_VER=$(curl -fsSL https://api.github.com/repos/ollama/ollama/releases/latest \
-            | grep '"tag_name"' | cut -d'"' -f4)
-          mkdir -p src-tauri/resources/ollama /tmp/ollama-extract
-          curl -fsSL "https://github.com/ollama/ollama/releases/download/${OLLAMA_VER}/ollama-linux-amd64.tgz" \
-            -o /tmp/ollama.tgz
-          curl -fsSL "https://github.com/ollama/ollama/releases/download/${OLLAMA_VER}/sha256sums.txt" \
-            -o /tmp/ollama-sha256sums.txt
-          EXPECTED=$(awk '$2 == "ollama-linux-amd64.tgz" {print $1}' /tmp/ollama-sha256sums.txt)
-          if [ -z "$EXPECTED" ]; then echo "ERROR: SHA256 entry not found"; exit 1; fi
-          ACTUAL=$(sha256sum /tmp/ollama.tgz | awk '{print $1}')
-          if [ "$EXPECTED" != "$ACTUAL" ]; then echo "ERROR: SHA256 mismatch. Expected: $EXPECTED Got: $ACTUAL"; exit 1; fi
-          tar -xzf /tmp/ollama.tgz -C /tmp/ollama-extract/
-          cp "$(find /tmp/ollama-extract -name 'ollama' -type f | head -1)" src-tauri/resources/ollama/ollama
-          chmod +x src-tauri/resources/ollama/ollama
-          rm -rf /tmp/ollama.tgz /tmp/ollama-extract /tmp/ollama-sha256sums.txt
-          echo "Bundled Ollama ${OLLAMA_VER} (checksum verified)"
       - name: Build
         run: |
           npm ci --legacy-peer-deps
@@ -247,25 +229,9 @@ jobs:
           git checkout FETCH_HEAD
       - name: Install dependencies
         run: |
-          apt-get update -qq && apt-get install -y -qq mingw-w64 curl nsis perl make jq unzip
+          apt-get update -qq && apt-get install -y -qq mingw-w64 curl nsis perl make jq
           curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
           apt-get install -y nodejs
-      - name: Download Ollama
-        run: |
-          OLLAMA_VER=$(curl -fsSL https://api.github.com/repos/ollama/ollama/releases/latest \
-            | grep '"tag_name"' | cut -d'"' -f4)
-          mkdir -p src-tauri/resources/ollama
-          curl -fsSL "https://github.com/ollama/ollama/releases/download/${OLLAMA_VER}/ollama-windows-amd64.zip" \
-            -o /tmp/ollama-win.zip
-          curl -fsSL "https://github.com/ollama/ollama/releases/download/${OLLAMA_VER}/sha256sums.txt" \
-            -o /tmp/ollama-sha256sums.txt
-          EXPECTED=$(awk '$2 == "ollama-windows-amd64.zip" {print $1}' /tmp/ollama-sha256sums.txt)
-          if [ -z "$EXPECTED" ]; then echo "ERROR: SHA256 entry not found"; exit 1; fi
-          ACTUAL=$(sha256sum /tmp/ollama-win.zip | awk '{print $1}')
-          if [ "$EXPECTED" != "$ACTUAL" ]; then echo "ERROR: SHA256 mismatch. Expected: $EXPECTED Got: $ACTUAL"; exit 1; fi
-          unzip -jo /tmp/ollama-win.zip 'ollama.exe' -d src-tauri/resources/ollama/
-          rm /tmp/ollama-win.zip /tmp/ollama-sha256sums.txt
-          echo "Bundled Ollama ${OLLAMA_VER} for Windows (checksum verified)"
       - name: Build
         env:
           CC_x86_64_pc_windows_gnu: x86_64-w64-mingw32-gcc
@@ -473,24 +439,6 @@ jobs:
           # source "$HOME/.cargo/env" in the Build step handles PATH — no GITHUB_PATH needed
           curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y \
             --default-toolchain 1.88.0 --profile minimal --no-modify-path
-      - name: Download Ollama
-        run: |
-          OLLAMA_VER=$(curl -fsSL https://api.github.com/repos/ollama/ollama/releases/latest \
-            | grep '"tag_name"' | cut -d'"' -f4)
-          mkdir -p src-tauri/resources/ollama /tmp/ollama-extract
-          curl -fsSL "https://github.com/ollama/ollama/releases/download/${OLLAMA_VER}/ollama-linux-arm64.tgz" \
-            -o /tmp/ollama.tgz
-          curl -fsSL "https://github.com/ollama/ollama/releases/download/${OLLAMA_VER}/sha256sums.txt" \
-            -o /tmp/ollama-sha256sums.txt
-          EXPECTED=$(awk '$2 == "ollama-linux-arm64.tgz" {print $1}' /tmp/ollama-sha256sums.txt)
-          if [ -z "$EXPECTED" ]; then echo "ERROR: SHA256 entry not found"; exit 1; fi
-          ACTUAL=$(sha256sum /tmp/ollama.tgz | awk '{print $1}')
-          if [ "$EXPECTED" != "$ACTUAL" ]; then echo "ERROR: SHA256 mismatch. Expected: $EXPECTED Got: $ACTUAL"; exit 1; fi
-          tar -xzf /tmp/ollama.tgz -C /tmp/ollama-extract/
-          cp "$(find /tmp/ollama-extract -name 'ollama' -type f | head -1)" src-tauri/resources/ollama/ollama
-          chmod +x src-tauri/resources/ollama/ollama
-          rm -rf /tmp/ollama.tgz /tmp/ollama-extract /tmp/ollama-sha256sums.txt
-          echo "Bundled Ollama ${OLLAMA_VER} (checksum verified)"
       - name: Build
         env:
           CC_aarch64_unknown_linux_gnu: aarch64-linux-gnu-gcc
