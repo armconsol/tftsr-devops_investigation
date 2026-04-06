@@ -33,21 +33,20 @@ pub async fn search_confluence(
         .header("Accept", "application/json")
         .send()
         .await
-        .map_err(|e| format!("Confluence search request failed: {}", e))?;
+        .map_err(|e| format!("Confluence search request failed: {e}"))?;
 
     if !resp.status().is_success() {
         let status = resp.status();
         let text = resp.text().await.unwrap_or_default();
         return Err(format!(
-            "Confluence search failed with status {}: {}",
-            status, text
+            "Confluence search failed with status {status}: {text}"
         ));
     }
 
     let json: serde_json::Value = resp
         .json()
         .await
-        .map_err(|e| format!("Failed to parse Confluence search response: {}", e))?;
+        .map_err(|e| format!("Failed to parse Confluence search response: {e}"))?;
 
     let mut results = Vec::new();
 
@@ -120,16 +119,17 @@ async fn fetch_page_content(
         .header("Accept", "application/json")
         .send()
         .await
-        .map_err(|e| format!("Failed to fetch page content: {}", e))?;
+        .map_err(|e| format!("Failed to fetch page content: {e}"))?;
 
     if !resp.status().is_success() {
-        return Err(format!("Failed to fetch page: {}", resp.status()));
+        let status = resp.status();
+        return Err(format!("Failed to fetch page: {status}"));
     }
 
     let json: serde_json::Value = resp
         .json()
         .await
-        .map_err(|e| format!("Failed to parse page content: {}", e))?;
+        .map_err(|e| format!("Failed to parse page content: {e}"))?;
 
     // Extract plain text from HTML storage format
     let html = json["body"]["storage"]["value"]

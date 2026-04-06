@@ -25,21 +25,20 @@ pub async fn search_servicenow(
         .header("Accept", "application/json")
         .send()
         .await
-        .map_err(|e| format!("ServiceNow search request failed: {}", e))?;
+        .map_err(|e| format!("ServiceNow search request failed: {e}"))?;
 
     if !resp.status().is_success() {
         let status = resp.status();
         let text = resp.text().await.unwrap_or_default();
         return Err(format!(
-            "ServiceNow search failed with status {}: {}",
-            status, text
+            "ServiceNow search failed with status {status}: {text}"
         ));
     }
 
     let json: serde_json::Value = resp
         .json()
         .await
-        .map_err(|e| format!("Failed to parse ServiceNow search response: {}", e))?;
+        .map_err(|e| format!("Failed to parse ServiceNow search response: {e}"))?;
 
     let mut results = Vec::new();
 
@@ -113,7 +112,7 @@ pub async fn search_incidents(
         .header("Accept", "application/json")
         .send()
         .await
-        .map_err(|e| format!("ServiceNow incident search failed: {}", e))?;
+        .map_err(|e| format!("ServiceNow incident search failed: {e}"))?;
 
     if !resp.status().is_success() {
         return Ok(Vec::new()); // Don't fail if incident search fails
@@ -146,7 +145,7 @@ pub async fn search_incidents(
 
             let resolution = item["close_notes"].as_str().unwrap_or("").to_string();
 
-            let content = format!("Description: {}\nResolution: {}", description, resolution);
+            let content = format!("Description: {description}\nResolution: {resolution}");
 
             let excerpt = content.chars().take(200).collect::<String>();
 

@@ -60,8 +60,8 @@ pub async fn authenticate_with_webview(
     tracing::info!("Creating webview window with label: {}", webview_label);
 
     let parsed_url = login_url.parse().map_err(|e| {
-        let err_msg = format!("Failed to parse URL '{}': {}", login_url, e);
-        tracing::error!("{}", err_msg);
+        let err_msg = format!("Failed to parse URL '{login_url}': {e}");
+        tracing::error!("{err_msg}");
         err_msg
     })?;
 

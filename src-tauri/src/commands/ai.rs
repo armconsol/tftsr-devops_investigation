@@ -239,15 +239,14 @@ pub async fn chat_message(
         let context_message = Message {
             role: "system".into(),
             content: format!(
-                "INTERNAL DOCUMENTATION SOURCES:\n\n{}\n\n\
+                "INTERNAL DOCUMENTATION SOURCES:\n\n{integration_context}\n\n\
                  Instructions: The above content is from internal company documentation systems \
                  (Confluence, ServiceNow, Azure DevOps). \
                  \n\n**IMPORTANT**: First determine if this documentation is RELEVANT to the user's question:\
                  \n- If the documentation directly addresses the question → Use it and cite sources with URLs\
                  \n- If the documentation is tangentially related but doesn't answer the question → Briefly mention what internal docs exist, then provide a complete answer using general knowledge\
                  \n- If the documentation is completely unrelated → Ignore it and answer using general knowledge\
-                 \n\nDo NOT force irrelevant internal documentation into your answer. The user needs accurate information, not forced citations.",
-                integration_context
+                 \n\nDo NOT force irrelevant internal documentation into your answer. The user needs accurate information, not forced citations."
             ),
             tool_call_id: None,
             tool_calls: None,
@@ -280,7 +279,7 @@ pub async fn chat_message(
             .chat(messages.clone(), &provider_config, tools.clone())
             .await
             .map_err(|e| {
-                let error_msg = format!("AI provider request failed: {}", e);
+                let error_msg = format!("AI provider request failed: {e}");
                 warn!("{}", error_msg);
                 error_msg
             })?;
@@ -298,7 +297,7 @@ pub async fn chat_message(
                 // Format result
                 let result_content = match tool_result {
                     Ok(result) => result,
-                    Err(e) => format!("Error executing tool: {}", e),
+                    Err(e) => format!("Error executing tool: {e}"),
                 };
 
                 // Add tool result as a message
@@ -795,7 +794,7 @@ async fn search_integration_sources(
         context.push_str(&format!("URL: {}\n", result.url));
 
         if let Some(content) = &result.content {
-            context.push_str(&format!("Content:\n{}\n\n", content));
+            context.push_str(&format!("Content:\n{content}\n\n"));
         } else {
             context.push_str(&format!("Excerpt: {}\n\n", result.excerpt));
         }
@@ -818,7 +817,7 @@ async fn execute_tool_call(
         "add_ado_comment" => {
             // Parse arguments
             let args: serde_json::Value = serde_json::from_str(&tool_call.arguments)
-                .map_err(|e| format!("Failed to parse tool arguments: {}", e))?;
+                .map_err(|e| format!("Failed to parse tool arguments: {e}"))?;
 
             let work_item_id = args
                 .get("work_item_id")

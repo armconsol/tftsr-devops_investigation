@@ -176,7 +176,7 @@ pub async fn save_ai_provider(
             provider.user_id,
         ],
     )
-    .map_err(|e| format!("Failed to save AI provider: {}", e))?;
+    .map_err(|e| format!("Failed to save AI provider: {e}"))?;
 
     Ok(())
 }
@@ -267,7 +267,7 @@ pub async fn delete_ai_provider(
     let db = state.db.lock().map_err(|e| e.to_string())?;
 
     db.execute("DELETE FROM ai_providers WHERE name = ?1", [&name])
-        .map_err(|e| format!("Failed to delete AI provider: {}", e))?;
+        .map_err(|e| format!("Failed to delete AI provider: {e}"))?;
 
     Ok(())
 }

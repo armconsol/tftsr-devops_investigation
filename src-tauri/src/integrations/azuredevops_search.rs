@@ -34,21 +34,20 @@ pub async fn search_wiki(
         .json(&search_body)
         .send()
         .await
-        .map_err(|e| format!("Azure DevOps wiki search failed: {}", e))?;
+        .map_err(|e| format!("Azure DevOps wiki search failed: {e}"))?;
 
     if !resp.status().is_success() {
         let status = resp.status();
         let text = resp.text().await.unwrap_or_default();
         return Err(format!(
-            "Azure DevOps wiki search failed with status {}: {}",
-            status, text
+            "Azure DevOps wiki search failed with status {status}: {text}"
         ));
     }
 
     let json: serde_json::Value = resp
         .json()
         .await
-        .map_err(|e| format!("Failed to parse ADO wiki search response: {}", e))?;
+        .map_err(|e| format!("Failed to parse ADO wiki search response: {e}"))?;
 
     let mut results = Vec::new();
 
@@ -118,16 +117,17 @@ async fn fetch_wiki_page(
         .header("Accept", "application/json")
         .send()
         .await
-        .map_err(|e| format!("Failed to fetch wiki page: {}", e))?;
+        .map_err(|e| format!("Failed to fetch wiki page: {e}"))?;
 
     if !resp.status().is_success() {
-        return Err(format!("Failed to fetch wiki page: {}", resp.status()));
+        let status = resp.status();
+        return Err(format!("Failed to fetch wiki page: {status}"));
     }
 
     let json: serde_json::Value = resp
         .json()
         .await
-        .map_err(|e| format!("Failed to parse wiki page: {}", e))?;
+        .map_err(|e| format!("Failed to parse wiki page: {e}"))?;
 
     let content = json["content"].as_str().unwrap_or("").to_string();
 
@@ -158,8 +158,7 @@ pub async fn search_work_items(
     );
 
     let wiql_query = format!(
-        "SELECT [System.Id], [System.Title], [System.Description], [System.State] FROM WorkItems WHERE [System.TeamProject] = '{}' AND ([System.Title] CONTAINS '{}' OR [System.Description] CONTAINS '{}') ORDER BY [System.ChangedDate] DESC",
-        project, query, query
+        "SELECT [System.Id], [System.Title], [System.Description], [System.State] FROM WorkItems WHERE [System.TeamProject] = '{project}' AND ([System.Title] CONTAINS '{query}' OR [System.Description] CONTAINS '{query}') ORDER BY [System.ChangedDate] DESC"
     );
 
     let wiql_body = serde_json::json!({
@@ -176,7 +175,7 @@ pub async fn search_work_items(
         .json(&wiql_body)
         .send()
         .await
-        .map_err(|e| format!("ADO work item search failed: {}", e))?;
+        .map_err(|e| format!("ADO work item search failed: {e}"))?;
 
     if !resp.status().is_success() {
         return Ok(Vec::new()); // Don't fail if work item search fails
@@ -222,16 +221,17 @@ async fn fetch_work_item_details(
         .header("Accept", "application/json")
         .send()
         .await
-        .map_err(|e| format!("Failed to fetch work item: {}", e))?;
+        .map_err(|e| format!("Failed to fetch work item: {e}"))?;
 
     if !resp.status().is_success() {
-        return Err(format!("Failed to fetch work item: {}", resp.status()));
+        let status = resp.status();
+        return Err(format!("Failed to fetch work item: {status}"));
     }
 
     let json: serde_json::Value = resp
         .json()
         .await
-        .map_err(|e| format!("Failed to parse work item: {}", e))?;
+        .map_err(|e| format!("Failed to parse work item: {e}"))?;
 
     let fields = &json["fields"];
     let title = format!(
@@ -251,7 +251,7 @@ async fn fetch_work_item_details(
         .to_string();
 
     let state = fields["System.State"].as_str().unwrap_or("Unknown");
-    let content = format!("State: {}\n\nDescription: {}", state, description);
+    let content = format!("State: {state}\n\nDescription: {description}");
 
     let excerpt = content.chars().take(200).collect::<String>();
 

@@ -21,7 +21,7 @@ pub async fn fetch_from_webview<R: tauri::Runtime>(
         // For POST/PUT with JSON body
         (
             "headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' }",
-            format!(", body: JSON.stringify({})", b),
+            format!(", body: JSON.stringify({b})"),
         )
     } else {
         // For GET requests
@@ -34,13 +34,13 @@ pub async fn fetch_from_webview<R: tauri::Runtime>(
     let fetch_script = format!(
         r#"
         (async function() {{
-            const requestId = '{}';
+            const requestId = '{request_id}';
 
             try {{
-                const response = await fetch('{}', {{
-                    method: '{}',
-                    {},
-                    credentials: 'include'{}
+                const response = await fetch('{url}', {{
+                    method: '{method}',
+                    {headers_js},
+                    credentials: 'include'{body_js}
                 }});
 
                 if (!response.ok) {{
@@ -59,14 +59,13 @@ pub async fn fetch_from_webview<R: tauri::Runtime>(
                 }}));
             }}
         }})();
-        "#,
-        request_id, url, method, headers_js, body_js
+        "#
     );
 
     // Execute the fetch
     webview_window
         .eval(&fetch_script)
-        .map_err(|e| format!("Failed to execute fetch: {}", e))?;
+        .map_err(|e| format!("Failed to execute fetch: {e}"))?;
 
     // Poll for result by checking window URL/hash
     for i in 0..50 {
@@ -77,7 +76,7 @@ pub async fn fetch_from_webview<R: tauri::Runtime>(
             let url_string = url_str.to_string();
 
             // Check for success
-            let success_marker = format!("#trcaa-success-{}-", request_id);
+            let success_marker = format!("#trcaa-success-{request_id}-");
             if url_string.contains(&success_marker) {
                 // Extract the JSON from the hash
                 if let Some(json_start) = url_string.find(&success_marker) {
@@ -96,7 +95,7 @@ pub async fn fetch_from_webview<R: tauri::Runtime>(
             }
 
             // Check for error
-            let error_marker = format!("#trcaa-error-{}-", request_id);
+            let error_marker = format!("#trcaa-error-{request_id}-");
             if url_string.contains(&error_marker) {
                 if let Some(json_start) = url_string.find(&error_marker) {
                     let json_encoded = &url_string[json_start + error_marker.len()..];
@@ -104,7 +103,7 @@ pub async fn fetch_from_webview<R: tauri::Runtime>(
                         // Clear the hash
                         webview_window.eval("window.location.hash = '';").ok();
 
-                        return Err(format!("Webview fetch error: {}", decoded));
+                        return Err(format!("Webview fetch error: {decoded}"));
                     }
                 }
             }
@@ -133,15 +132,16 @@ pub async fn search_confluence_webview<R: tauri::Runtime>(
         // Multiple keywords - search for any of them
         let keyword_conditions: Vec<String> = keywords
             .iter()
-            .map(|k| format!("text ~ \"{}\"", k))
+            .map(|k| format!("text ~ \"{k}\""))
             .collect();
         keyword_conditions.join(" OR ")
     } else if !keywords.is_empty() {
         // Single keyword
-        format!("text ~ \"{}\"", keywords[0])
+        let keyword = &keywords[0];
+        format!("text ~ \"{keyword}\"")
     } else {
         // Fallback to original query
-        format!("text ~ \"{}\"", query)
+        format!("text ~ \"{query}\"")
     };
 
     let search_url = format!(
@@ -182,9 +182,8 @@ pub async fn search_confluence_webview<R: tauri::Runtime>(
             // Fetch full page content
             let content = if let Some(id) = content_id {
                 let content_url = format!(
-                    "{}/rest/api/content/{}?expand=body.storage",
-                    base_url.trim_end_matches('/'),
-                    id
+                    "{}/rest/api/content/{id}?expand=body.storage",
+                    base_url.trim_end_matches('/')
                 );
                 if let Ok(content_resp) =
                     fetch_from_webview(webview_window, &content_url, "GET", None).await
@@ -320,9 +319,8 @@ pub async fn search_servicenow_webview<R: tauri::Runtime>(
                     .to_string();
                 let sys_id = item["sys_id"].as_str().unwrap_or("");
                 let url = format!(
-                    "{}/kb_view.do?sysparm_article={}",
-                    instance_url.trim_end_matches('/'),
-                    sys_id
+                    "{}/kb_view.do?sysparm_article={sys_id}",
+                    instance_url.trim_end_matches('/')
                 );
                 let text = item["text"].as_str().unwrap_or("");
                 let excerpt = text.chars().take(300).collect();
@@ -362,13 +360,12 @@ pub async fn search_servicenow_webview<R: tauri::Runtime>(
                 );
                 let sys_id = item["sys_id"].as_str().unwrap_or("");
                 let url = format!(
-                    "{}/incident.do?sys_id={}",
-                    instance_url.trim_end_matches('/'),
-                    sys_id
+                    "{}/incident.do?sys_id={sys_id}",
+                    instance_url.trim_end_matches('/')
                 );
                 let description = item["description"].as_str().unwrap_or("");
                 let resolution = item["close_notes"].as_str().unwrap_or("");
-                let content = format!("Description: {}\nResolution: {}", description, resolution);
+                let content = format!("Description: {description}\nResolution: {resolution}");
                 let excerpt = content.chars().take(200).collect();
 
                 results.push(SearchResult {
@@ -479,7 +476,7 @@ fn search_page_recursive(
     page: &Value,
     search_text: &str,
     org_url: &str,
-    project: &str,
+    _project: &str,
     wiki_id: &str,
     results: &mut Vec<SearchResult>,
 ) {
@@ -509,7 +506,7 @@ fn search_page_recursive(
 
             // Create excerpt from first occurrence
             let excerpt = if let Some(pos) =
-                content_lower.find(&search_lower.split_whitespace().next().unwrap_or(""))
+                content_lower.find(search_lower.split_whitespace().next().unwrap_or(""))
             {
                 let start = pos.saturating_sub(50);
                 let end = (pos + 200).min(content.len());
@@ -537,7 +534,7 @@ fn search_page_recursive(
     // Recurse into subpages
     if let Some(subpages) = page.get("subPages").and_then(|s| s.as_array()) {
         for subpage in subpages {
-            search_page_recursive(subpage, search_text, org_url, project, wiki_id, results);
+            search_page_recursive(subpage, search_text, org_url, _project, wiki_id, results);
         }
     }
 }
@@ -633,7 +630,7 @@ pub async fn search_azuredevops_workitems_webview<R: tauri::Runtime>(
                         let excerpt = clean_description.chars().take(200).collect();
 
                         let url =
-                            format!("{}/_workitems/edit/{}", org_url.trim_end_matches('/'), id);
+                            format!("{}/_workitems/edit/{id}", org_url.trim_end_matches('/'));
 
                         let full_content = if clean_description.len() > 3000 {
                             format!("{}...", &clean_description[..3000])
@@ -642,7 +639,7 @@ pub async fn search_azuredevops_workitems_webview<R: tauri::Runtime>(
                         };
 
                         results.push(SearchResult {
-                            title: format!("{} #{}: {}", work_item_type, id, title),
+                            title: format!("{work_item_type} #{id}: {title}"),
                             url,
                             excerpt,
                             content: Some(full_content),
@@ -669,9 +666,8 @@ pub async fn add_azuredevops_comment_webview<R: tauri::Runtime>(
     comment_text: &str,
 ) -> Result<String, String> {
     let comment_url = format!(
-        "{}/_apis/wit/workitems/{}/comments?api-version=7.0",
-        org_url.trim_end_matches('/'),
-        work_item_id
+        "{}/_apis/wit/workitems/{work_item_id}/comments?api-version=7.0",
+        org_url.trim_end_matches('/')
     );
 
     let body = serde_json::json!({
@@ -690,9 +686,7 @@ pub async fn add_azuredevops_comment_webview<R: tauri::Runtime>(
         .ok_or_else(|| "Failed to get comment ID from response".to_string())?;
 
     tracing::info!(
-        "Successfully added comment {} to work item {}",
-        comment_id,
-        work_item_id
+        "Successfully added comment {comment_id} to work item {work_item_id}"
     );
-    Ok(format!("Comment added successfully (ID: {})", comment_id))
+    Ok(format!("Comment added successfully (ID: {comment_id})"))
 }
