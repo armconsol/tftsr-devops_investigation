@@ -202,8 +202,8 @@ fn get_encryption_key_material() -> Result<String, String> {
 
         // Ensure directory exists
         if let Err(e) = std::fs::create_dir_all(&app_data_dir) {
-            tracing::warn!("Failed to create app data directory: {}", e);
-            return Err(format!("Failed to create app data directory: {}", e));
+            tracing::warn!("Failed to create app data directory: {e}");
+            return Err(format!("Failed to create app data directory: {e}"));
         }
 
         // Write key with restricted permissions
@@ -217,15 +217,15 @@ fn get_encryption_key_material() -> Result<String, String> {
                 .truncate(true)
                 .mode(0o600)
                 .open(&key_path)
-                .map_err(|e| format!("Failed to write encryption key: {}", e))?;
+                .map_err(|e| format!("Failed to write encryption key: {e}"))?;
             f.write_all(key.as_bytes())
-                .map_err(|e| format!("Failed to write encryption key: {}", e))?;
+                .map_err(|e| format!("Failed to write encryption key: {e}"))?;
         }
 
         #[cfg(not(unix))]
         {
             std::fs::write(&key_path, &key)
-                .map_err(|e| format!("Failed to write encryption key: {}", e))?;
+                .map_err(|e| format!("Failed to write encryption key: {e}"))?;
         }
 
         tracing::info!("Generated new encryption key at {:?}", key_path);
