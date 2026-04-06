@@ -148,9 +148,7 @@ pub async fn get_audit_log(
 // On Unix, writing to /usr/local/bin requires elevated privileges. If the operation fails with
 // PermissionDenied the caller receives an actionable error message.
 #[tauri::command]
-pub async fn install_ollama_from_bundle(
-    app: tauri::AppHandle,
-) -> Result<String, String> {
+pub async fn install_ollama_from_bundle(app: tauri::AppHandle) -> Result<String, String> {
     use std::fs;
     use std::path::PathBuf;
     use tauri::Manager;
@@ -160,9 +158,11 @@ pub async fn install_ollama_from_bundle(
         .resource_dir()
         .map_err(|e: tauri::Error| e.to_string())?;
 
-    let resource_path = resource_dir
-        .join("ollama")
-        .join(if cfg!(windows) { "ollama.exe" } else { "ollama" });
+    let resource_path = resource_dir.join("ollama").join(if cfg!(windows) {
+        "ollama.exe"
+    } else {
+        "ollama"
+    });
 
     if !resource_path.exists() {
         return Err("Bundled Ollama not found in resources".to_string());
