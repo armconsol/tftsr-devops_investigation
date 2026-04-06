@@ -111,8 +111,10 @@ describe("build-images.yml workflow", () => {
     expect(wf).toContain("workflow_dispatch:");
   });
 
-  it("mounts the host Docker socket for image builds", () => {
-    expect(wf).toContain("-v /var/run/docker.sock:/var/run/docker.sock");
+  it("does not explicitly mount the Docker socket (act_runner mounts it automatically)", () => {
+    // act_runner already mounts /var/run/docker.sock; an explicit options: mount
+    // causes a 'Duplicate mount point' error and must not be present.
+    expect(wf).not.toContain("-v /var/run/docker.sock:/var/run/docker.sock");
   });
 
   it("authenticates to the local Gitea registry before pushing", () => {
