@@ -130,10 +130,8 @@ pub async fn search_confluence_webview<R: tauri::Runtime>(
     // Build CQL query with OR logic for keywords
     let cql = if keywords.len() > 1 {
         // Multiple keywords - search for any of them
-        let keyword_conditions: Vec<String> = keywords
-            .iter()
-            .map(|k| format!("text ~ \"{k}\""))
-            .collect();
+        let keyword_conditions: Vec<String> =
+            keywords.iter().map(|k| format!("text ~ \"{k}\"")).collect();
         keyword_conditions.join(" OR ")
     } else if !keywords.is_empty() {
         // Single keyword
@@ -629,8 +627,7 @@ pub async fn search_azuredevops_workitems_webview<R: tauri::Runtime>(
                         let clean_description = strip_html_simple(description);
                         let excerpt = clean_description.chars().take(200).collect();
 
-                        let url =
-                            format!("{}/_workitems/edit/{id}", org_url.trim_end_matches('/'));
+                        let url = format!("{}/_workitems/edit/{id}", org_url.trim_end_matches('/'));
 
                         let full_content = if clean_description.len() > 3000 {
                             format!("{}...", &clean_description[..3000])
@@ -685,8 +682,6 @@ pub async fn add_azuredevops_comment_webview<R: tauri::Runtime>(
         .and_then(|id| id.as_i64())
         .ok_or_else(|| "Failed to get comment ID from response".to_string())?;
 
-    tracing::info!(
-        "Successfully added comment {comment_id} to work item {work_item_id}"
-    );
+    tracing::info!("Successfully added comment {comment_id} to work item {work_item_id}");
     Ok(format!("Comment added successfully (ID: {comment_id})"))
 }
