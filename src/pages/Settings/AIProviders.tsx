@@ -291,24 +291,16 @@ export default function AIProviders() {
                   placeholder="sk-..."
                 />
               </div>
-              <div className="space-y-2">
-                <Label>Model</Label>
-                {form.provider_type === "custom"
-                && normalizeApiFormat(form.api_format) === CUSTOM_REST_FORMAT ? (
-                  <Input
-                    value={form.model}
-                    onChange={(e) => setForm({ ...form, model: e.target.value })}
-                    placeholder="Select API Format below to choose model"
-                    disabled
-                  />
-                ) : (
+              {!(form.provider_type === "custom" && normalizeApiFormat(form.api_format) === CUSTOM_REST_FORMAT) && (
+                <div className="space-y-2">
+                  <Label>Model</Label>
                   <Input
                     value={form.model}
                     onChange={(e) => setForm({ ...form, model: e.target.value })}
                     placeholder="gpt-4o"
                   />
-                )}
-              </div>
+                </div>
+              )}
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
@@ -347,7 +339,7 @@ export default function AIProviders() {
                           format === CUSTOM_REST_FORMAT
                             ? {
                                 custom_endpoint_path: "",
-                                custom_auth_header: "x-msi-genai-api-key",
+                                custom_auth_header: "",
                                 custom_auth_prefix: "",
                               }
                             : {
@@ -399,7 +391,7 @@ export default function AIProviders() {
                         placeholder="Authorization"
                       />
                       <p className="text-xs text-muted-foreground">
-                        Header name for authentication (e.g., "Authorization" or "x-msi-genai-api-key")
+                        Header name for authentication (e.g., "Authorization" or "x-api-key")
                       </p>
                     </div>
                   </div>
@@ -419,14 +411,14 @@ export default function AIProviders() {
                   {/* Custom REST specific: User ID field */}
                   {normalizeApiFormat(form.api_format) === CUSTOM_REST_FORMAT && (
                     <div className="space-y-2">
-                      <Label>User ID (CORE ID)</Label>
+                      <Label>Email Address</Label>
                       <Input
                         value={form.user_id ?? ""}
                         onChange={(e) => setForm({ ...form, user_id: e.target.value })}
-                        placeholder="your.name@motorolasolutions.com"
+                        placeholder="user@example.com"
                       />
                       <p className="text-xs text-muted-foreground">
-                        Optional: Your Motorola CORE ID email. If omitted, costs are tracked to API key owner.
+                        Optional: Email address for usage tracking. If omitted, costs are attributed to the API key owner.
                       </p>
                     </div>
                   )}

@@ -141,3 +141,52 @@ pub async fn get_audit_log(
 
     Ok(rows)
 }
+
+// Security note: the bundled binary's integrity is guaranteed by the CI release pipeline
+// which verifies SHA256 checksums against Ollama's published sha256sums.txt before bundling.
+// Runtime re-verification is not performed here; the app bundle itself is the trust boundary.
+#[tauri::command]
+pub async fn install_ollama_from_bundle(
+    app: tauri::AppHandle,
+) -> Result<String, String> {
+    use std::fs;
+    use std::path::PathBuf;
+    use tauri::Manager;
+
+    let resource_path = app
+        .path()
+        .resource_dir()
+        .map_err(|e: tauri::Error| e.to_string())?
+        .join("ollama")
+        .join(if cfg!(windows) { "ollama.exe" } else { "ollama" });
+
+    if !resource_path.exists() {
+        return Err("Bundled Ollama not found in resources".to_string());
+    }
+
+    #[cfg(unix)]
+    let install_path = PathBuf::from("/usr/local/bin/ollama");
+    #[cfg(windows)]
+    let install_path = {
+        let local_app_data = std::env::var("LOCALAPPDATA").map_err(|e| e.to_string())?;
+        PathBuf::from(local_app_data)
+            .join("Programs")
+            .join("Ollama")
+            .join("ollama.exe")
+    };
+
+    if let Some(parent) = install_path.parent() {
+        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+
+    fs::copy(&resource_path, &install_path).map_err(|e| e.to_string())?;
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&install_path, fs::Permissions::from_mode(0o755))
+            .map_err(|e| e.to_string())?;
+    }
+
+    Ok(format!("Ollama installed to {}", install_path.display()))
+}

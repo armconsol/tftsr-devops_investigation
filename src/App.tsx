@@ -11,6 +11,8 @@ import {
   Link,
   ChevronLeft,
   ChevronRight,
+  Sun,
+  Moon,
 } from "lucide-react";
 import { useSettingsStore } from "@/stores/settingsStore";
 
@@ -43,7 +45,7 @@ const settingsItems = [
 export default function App() {
   const [collapsed, setCollapsed] = useState(false);
   const [appVersion, setAppVersion] = useState("");
-  const theme = useSettingsStore((s) => s.theme);
+  const { theme, setTheme } = useSettingsStore();
   const location = useLocation();
 
   useEffect(() => {
@@ -116,12 +118,21 @@ export default function App() {
             </div>
           </nav>
 
-          {/* Version */}
-          {!collapsed && (
-            <div className="px-4 py-3 border-t text-xs text-muted-foreground">
-              {appVersion ? `v${appVersion}` : ""}
-            </div>
-          )}
+          {/* Version + Theme toggle */}
+          <div className="px-4 py-3 border-t flex items-center justify-between">
+            {!collapsed && (
+              <span className="text-xs text-muted-foreground">
+                {appVersion ? `v${appVersion}` : ""}
+              </span>
+            )}
+            <button
+              onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+              className="p-1 rounded hover:bg-accent text-muted-foreground"
+              title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+            >
+              {theme === "dark" ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+            </button>
+          </div>
         </aside>
 
         {/* Main content */}

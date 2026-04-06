@@ -24,6 +24,7 @@ import {
   deleteOllamaModelCmd,
   listOllamaModelsCmd,
   getOllamaInstallGuideCmd,
+  installOllamaFromBundleCmd,
   type OllamaStatus,
   type HardwareInfo,
   type ModelRecommendation,
@@ -43,6 +44,7 @@ export default function Ollama() {
   const [customModel, setCustomModel] = useState("");
   const [isPulling, setIsPulling] = useState(false);
   const [pullProgress, setPullProgress] = useState(0);
+  const [isInstallingBundle, setIsInstallingBundle] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const loadData = async () => {
@@ -105,6 +107,19 @@ export default function Ollama() {
     }
   };
 
+  const handleInstallFromBundle = async () => {
+    setIsInstallingBundle(true);
+    setError(null);
+    try {
+      await installOllamaFromBundleCmd();
+      await loadData();
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setIsInstallingBundle(false);
+    }
+  };
+
   const handleDelete = async (modelName: string) => {
     try {
       await deleteOllamaModelCmd(modelName);
@@ -123,7 +138,7 @@ export default function Ollama() {
             Manage local AI models via Ollama for privacy-first inference.
           </p>
         </div>
-        <Button variant="outline" onClick={loadData} disabled={isLoading}>
+        <Button variant="outline" onClick={loadData} disabled={isLoading} className="border-border text-foreground bg-card hover:bg-accent">
           <RefreshCw className={`w-4 h-4 mr-2 ${isLoading ? "animate-spin" : ""}`} />
           Refresh
         </Button>
@@ -180,13 +195,22 @@ export default function Ollama() {
                 <li key={i} className="text-sm text-muted-foreground">{step}</li>
               ))}
             </ol>
-            <Button
-              variant="outline"
-              onClick={() => window.open(installGuide.url, "_blank")}
-            >
-              <Download className="w-4 h-4 mr-2" />
-              Download Ollama for {installGuide.platform}
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant="outline"
+                onClick={() => window.open(installGuide.url, "_blank")}
+              >
+                <Download className="w-4 h-4 mr-2" />
+                Download Ollama for {installGuide.platform}
+              </Button>
+              <Button
+                onClick={handleInstallFromBundle}
+                disabled={isInstallingBundle}
+              >
+                <Download className="w-4 h-4 mr-2" />
+                {isInstallingBundle ? "Installing..." : "Install Ollama (Offline)"}
+              </Button>
+            </div>
           </CardContent>
         </Card>
       )}

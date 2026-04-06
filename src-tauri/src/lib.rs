@@ -109,6 +109,7 @@ pub fn run() {
             commands::system::get_settings,
             commands::system::update_settings,
             commands::system::get_audit_log,
+            commands::system::install_ollama_from_bundle,
         ])
         .run(tauri::generate_context!())
         .expect("Error running Troubleshooting and RCA Assistant application");

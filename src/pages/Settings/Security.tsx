@@ -9,6 +9,7 @@ import {
   Separator,
 } from "@/components/ui";
 import { getAuditLogCmd, type AuditEntry } from "@/lib/tauriCommands";
+import { useSettingsStore } from "@/stores/settingsStore";
 
 const piiPatterns = [
   { id: "email", label: "Email Addresses", description: "Detect email addresses in logs" },
@@ -22,9 +23,7 @@ const piiPatterns = [
 ];
 
 export default function Security() {
-  const [enabledPatterns, setEnabledPatterns] = useState<Record<string, boolean>>(() =>
-    Object.fromEntries(piiPatterns.map((p) => [p.id, true]))
-  );
+  const { pii_enabled_patterns, setPiiPattern } = useSettingsStore();
   const [auditEntries, setAuditEntries] = useState<AuditEntry[]>([]);
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   const [isLoading, setIsLoading] = useState(false);
@@ -44,10 +43,6 @@ export default function Security() {
     } finally {
       setIsLoading(false);
     }
-  };
-
-  const togglePattern = (id: string) => {
-    setEnabledPatterns((prev) => ({ ...prev, [id]: !prev[id] }));
   };
 
   const toggleRow = (entryId: string) => {
@@ -92,15 +87,15 @@ export default function Security() {
               <button
                 type="button"
                 role="switch"
-                aria-checked={enabledPatterns[pattern.id]}
-                onClick={() => togglePattern(pattern.id)}
+                aria-checked={pii_enabled_patterns[pattern.id]}
+                onClick={() => setPiiPattern(pattern.id, !pii_enabled_patterns[pattern.id])}
                 className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                  enabledPatterns[pattern.id] ? "bg-blue-500" : "bg-muted"
+                  pii_enabled_patterns[pattern.id] ? "bg-blue-500" : "bg-muted"
                 }`}
               >
                 <span
                   className={`inline-block h-5 w-5 rounded-full bg-white transition-transform ${
-                    enabledPatterns[pattern.id] ? "translate-x-5" : "translate-x-0.5"
+                    pii_enabled_patterns[pattern.id] ? "translate-x-5" : "translate-x-0.5"
                   }`}
                 />
               </button>
