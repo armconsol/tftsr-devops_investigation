@@ -29,6 +29,7 @@ impl Provider for AnthropicProvider {
         &self,
         messages: Vec<Message>,
         config: &ProviderConfig,
+        _tools: Option<Vec<crate::ai::Tool>>,
     ) -> anyhow::Result<ChatResponse> {
         let client = reqwest::Client::builder()
             .timeout(Duration::from_secs(60))
@@ -115,6 +116,7 @@ impl Provider for AnthropicProvider {
             content,
             model,
             usage,
+            tool_calls: None,
         })
     }
 }

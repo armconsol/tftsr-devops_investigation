@@ -11,6 +11,7 @@ pub mod state;
 use sha2::{Digest, Sha256};
 use state::AppState;
 use std::sync::{Arc, Mutex};
+use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -57,6 +58,35 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_http::init())
         .manage(app_state)
+        .setup(|app| {
+            // Restore persistent browser windows from previous session
+            let app_handle = app.handle().clone();
+            let state: tauri::State<AppState> = app.state();
+
+            // Clone Arc fields for 'static lifetime
+            let db = state.db.clone();
+            let settings = state.settings.clone();
+            let app_data_dir = state.app_data_dir.clone();
+            let integration_webviews = state.integration_webviews.clone();
+
+            tauri::async_runtime::spawn(async move {
+                let app_state = AppState {
+                    db,
+                    settings,
+                    app_data_dir,
+                    integration_webviews,
+                };
+
+                if let Err(e) =
+                    commands::integrations::restore_persistent_webviews(&app_handle, &app_state)
+                        .await
+                {
+                    tracing::warn!("Failed to restore persistent webviews: {}", e);
+                }
+            });
+
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             // DB / Issue CRUD
             commands::db::create_issue,
@@ -98,6 +128,7 @@ pub fn run() {
             commands::integrations::save_integration_config,
             commands::integrations::get_integration_config,
             commands::integrations::get_all_integration_configs,
+            commands::integrations::add_ado_comment,
             // System / Settings
             commands::system::check_ollama_installed,
             commands::system::get_ollama_install_guide,
@@ -109,6 +140,9 @@ pub fn run() {
             commands::system::get_settings,
             commands::system::update_settings,
             commands::system::get_audit_log,
+            commands::system::save_ai_provider,
+            commands::system::load_ai_providers,
+            commands::system::delete_ai_provider,
         ])
         .run(tauri::generate_context!())
         .expect("Error running Troubleshooting and RCA Assistant application");

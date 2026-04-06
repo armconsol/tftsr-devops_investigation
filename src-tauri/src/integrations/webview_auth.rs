@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Listener, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
+use tauri::{AppHandle, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExtractedCredentials {
@@ -24,30 +24,53 @@ pub async fn authenticate_with_webview(
     app_handle: AppHandle,
     service: &str,
     base_url: &str,
+    project_name: Option<&str>,
 ) -> Result<ExtractedCredentials, String> {
     let trimmed_base_url = base_url.trim_end_matches('/');
+
+    tracing::info!(
+        "authenticate_with_webview called: service={}, base_url={}, project_name={:?}",
+        service,
+        base_url,
+        project_name
+    );
+
     let login_url = match service {
         "confluence" => format!("{trimmed_base_url}/login.action"),
         "azuredevops" => {
-            // Azure DevOps login - user will be redirected through Microsoft SSO
-            format!("{trimmed_base_url}/_signin")
+            // Azure DevOps - go directly to project if provided, otherwise org home
+            if let Some(project) = project_name {
+                let url = format!("{trimmed_base_url}/{project}");
+                tracing::info!("Azure DevOps URL with project: {}", url);
+                url
+            } else {
+                tracing::info!("Azure DevOps URL without project: {}", trimmed_base_url);
+                trimmed_base_url.to_string()
+            }
         }
         "servicenow" => format!("{trimmed_base_url}/login.do"),
         _ => return Err(format!("Unknown service: {service}")),
     };
 
-    tracing::info!(
-        "Opening persistent browser for {} at {}",
-        service,
-        login_url
-    );
+    tracing::info!("Final login_url for {} = {}", service, login_url);
 
     // Create persistent browser window (stays open for browsing and fresh cookie extraction)
     let webview_label = format!("{service}-auth");
+
+    tracing::info!("Creating webview window with label: {}", webview_label);
+
+    let parsed_url = login_url.parse().map_err(|e| {
+        let err_msg = format!("Failed to parse URL '{}': {}", login_url, e);
+        tracing::error!("{}", err_msg);
+        err_msg
+    })?;
+
+    tracing::info!("Parsed URL successfully: {:?}", parsed_url);
+
     let webview = WebviewWindowBuilder::new(
         &app_handle,
         &webview_label,
-        WebviewUrl::External(login_url.parse().map_err(|e| format!("Invalid URL: {e}"))?),
+        WebviewUrl::External(parsed_url),
     )
     .title(format!(
         "{service} Browser (Troubleshooting and RCA Assistant)"
@@ -57,14 +80,20 @@ pub async fn authenticate_with_webview(
     .resizable(true)
     .center()
     .focused(true)
-    .visible(true)
+    .visible(true)  // Show immediately - let user see loading
+    .user_agent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+    .zoom_hotkeys_enabled(true)
+    .devtools(true)
+    .initialization_script("console.log('Webview initialized');")
     .build()
     .map_err(|e| format!("Failed to create webview: {e}"))?;
 
-    // Focus the window
+    tracing::info!("Webview window created successfully, setting focus");
+
+    // Ensure window is focused
     webview
         .set_focus()
-        .map_err(|e| tracing::warn!("Failed to focus webview: {e}"))
+        .map_err(|e| tracing::warn!("Failed to set focus: {}", e))
         .ok();
 
     // Wait for user to complete login
@@ -77,121 +106,158 @@ pub async fn authenticate_with_webview(
     })
 }
 
-/// Extract cookies from a webview using Tauri's IPC mechanism.
-/// This is the most reliable cross-platform approach.
+/// Extract cookies from a webview using localStorage as intermediary.
+/// This works for external URLs where window.__TAURI__ is not available.
 pub async fn extract_cookies_via_ipc<R: tauri::Runtime>(
     webview_window: &WebviewWindow<R>,
-    app_handle: &AppHandle<R>,
+    _app_handle: &AppHandle<R>,
 ) -> Result<Vec<Cookie>, String> {
-    // Inject JavaScript that will send cookies via IPC
-    // Note: We use window.__TAURI__ which is the Tauri 2.x API exposed to webviews
+    // Step 1: Inject JavaScript to extract cookies and store in a global variable
+    // We can't use __TAURI__ for external URLs, so we use a polling approach
     let cookie_extraction_script = r#"
-        (async function() {
+        (function() {
             try {
-                // Wait for Tauri API to be available
-                if (typeof window.__TAURI__ === 'undefined') {
-                    console.error('Tauri API not available');
-                    return;
-                }
-
                 const cookieString = document.cookie;
-                if (!cookieString || cookieString.trim() === '') {
-                    await window.__TAURI__.event.emit('tftsr-cookies-extracted', { cookies: [] });
-                    return;
+                const cookies = [];
+
+                if (cookieString && cookieString.trim() !== '') {
+                    const cookieList = cookieString.split(';').map(c => c.trim()).filter(c => c.length > 0);
+                    for (const cookie of cookieList) {
+                        const equalIndex = cookie.indexOf('=');
+                        if (equalIndex === -1) continue;
+
+                        const name = cookie.substring(0, equalIndex).trim();
+                        const value = cookie.substring(equalIndex + 1).trim();
+
+                        cookies.push({
+                            name: name,
+                            value: value,
+                            domain: window.location.hostname,
+                            path: '/',
+                            secure: window.location.protocol === 'https:',
+                            http_only: false,
+                            expires: null
+                        });
+                    }
                 }
 
-                const cookies = cookieString.split(';').map(c => c.trim()).filter(c => c.length > 0);
-                const parsed = cookies.map(cookie => {
-                    const equalIndex = cookie.indexOf('=');
-                    if (equalIndex === -1) return null;
-
-                    const name = cookie.substring(0, equalIndex).trim();
-                    const value = cookie.substring(equalIndex + 1).trim();
-
-                    return {
-                        name: name,
-                        value: value,
-                        domain: window.location.hostname,
-                        path: '/',
-                        secure: window.location.protocol === 'https:',
-                        http_only: false,
-                        expires: null
-                    };
-                }).filter(c => c !== null);
-
-                // Use Tauri's event API to send cookies back to Rust
-                await window.__TAURI__.event.emit('tftsr-cookies-extracted', { cookies: parsed });
-                console.log('Cookies extracted and emitted:', parsed.length);
+                // Store in a global variable that Rust can read
+                window.__TFTSR_COOKIES__ = cookies;
+                console.log('[TFTSR] Extracted', cookies.length, 'cookies');
+                return cookies.length;
             } catch (e) {
-                console.error('Cookie extraction failed:', e);
-                try {
-                    await window.__TAURI__.event.emit('tftsr-cookies-extracted', { cookies: [], error: e.message });
-                } catch (emitError) {
-                    console.error('Failed to emit error:', emitError);
-                }
+                console.error('[TFTSR] Cookie extraction failed:', e);
+                window.__TFTSR_COOKIES__ = [];
+                window.__TFTSR_ERROR__ = e.message;
+                return -1;
             }
         })();
     "#;
 
-    // Set up event listener first
-    let (tx, mut rx) = tokio::sync::mpsc::channel::<Result<Vec<Cookie>, String>>(1);
-
-    // Listen for the custom event from the webview
-    let listen_id = app_handle.listen("tftsr-cookies-extracted", move |event| {
-        tracing::debug!("Received cookies-extracted event");
-
-        let payload_str = event.payload();
-
-        // Parse the payload JSON
-        match serde_json::from_str::<serde_json::Value>(payload_str) {
-            Ok(payload) => {
-                if let Some(error_msg) = payload.get("error").and_then(|e| e.as_str()) {
-                    let _ = tx.try_send(Err(format!("JavaScript error: {error_msg}")));
-                    return;
-                }
-
-                if let Some(cookies_value) = payload.get("cookies") {
-                    match serde_json::from_value::<Vec<Cookie>>(cookies_value.clone()) {
-                        Ok(cookies) => {
-                            tracing::info!("Parsed {} cookies from webview", cookies.len());
-                            let _ = tx.try_send(Ok(cookies));
-                        }
-                        Err(e) => {
-                            tracing::error!("Failed to parse cookies: {e}");
-                            let _ = tx.try_send(Err(format!("Failed to parse cookies: {e}")));
-                        }
-                    }
-                } else {
-                    let _ = tx.try_send(Err("No cookies field in payload".to_string()));
-                }
-            }
-            Err(e) => {
-                tracing::error!("Failed to parse event payload: {e}");
-                let _ = tx.try_send(Err(format!("Failed to parse event payload: {e}")));
-            }
-        }
-    });
-
-    // Inject the script into the webview
+    // Inject the extraction script
     webview_window
         .eval(cookie_extraction_script)
         .map_err(|e| format!("Failed to inject cookie extraction script: {e}"))?;
 
-    tracing::info!("Cookie extraction script injected, waiting for response...");
+    tracing::info!("Cookie extraction script injected, waiting for cookies...");
 
-    // Wait for cookies with timeout
-    let result = tokio::time::timeout(tokio::time::Duration::from_secs(10), rx.recv())
-        .await
-        .map_err(|_| {
-            "Timeout waiting for cookies. Make sure you are logged in and on the correct page."
-                .to_string()
-        })?
-        .ok_or_else(|| "Failed to receive cookies from webview".to_string())?;
+    // Give JavaScript a moment to execute
+    tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
 
-    // Clean up event listener
-    app_handle.unlisten(listen_id);
+    // Step 2: Poll for the extracted cookies using document.title as communication channel
+    let mut attempts = 0;
+    let max_attempts = 20; // 10 seconds total (500ms * 20)
 
-    result
+    loop {
+        attempts += 1;
+
+        // Store result in localStorage, then copy to document.title for Rust to read
+        let check_and_signal_script = r#"
+            try {
+                if (typeof window.__TFTSR_ERROR__ !== 'undefined') {
+                    window.localStorage.setItem('tftsr_result', JSON.stringify({ error: window.__TFTSR_ERROR__ }));
+                } else if (typeof window.__TFTSR_COOKIES__ !== 'undefined' && window.__TFTSR_COOKIES__.length > 0) {
+                    window.localStorage.setItem('tftsr_result', JSON.stringify({ cookies: window.__TFTSR_COOKIES__ }));
+                } else if (typeof window.__TFTSR_COOKIES__ !== 'undefined') {
+                    window.localStorage.setItem('tftsr_result', JSON.stringify({ cookies: [] }));
+                }
+            } catch (e) {
+                window.localStorage.setItem('tftsr_result', JSON.stringify({ error: e.message }));
+            }
+        "#;
+
+        webview_window.eval(check_and_signal_script).ok();
+
+        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+
+        // We can't get return values from eval(), so let's use a different approach:
+        // Execute script that sets document.title temporarily
+        let read_via_title = r#"
+            (function() {
+                const result = window.localStorage.getItem('tftsr_result');
+                if (result) {
+                    window.localStorage.removeItem('tftsr_result');
+                    // Store in title temporarily for Rust to read
+                    window.__TFTSR_ORIGINAL_TITLE__ = document.title;
+                    document.title = 'TFTSR_RESULT:' + result;
+                }
+            })();
+        "#;
+
+        webview_window.eval(read_via_title).ok();
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+
+        // Read the title
+        if let Ok(title) = webview_window.title() {
+            if let Some(json_str) = title.strip_prefix("TFTSR_RESULT:") {
+                // Restore original title
+                let restore_title = r#"
+                    if (typeof window.__TFTSR_ORIGINAL_TITLE__ !== 'undefined') {
+                        document.title = window.__TFTSR_ORIGINAL_TITLE__;
+                    }
+                "#;
+                webview_window.eval(restore_title).ok();
+
+                // Parse the JSON
+                match serde_json::from_str::<serde_json::Value>(json_str) {
+                    Ok(result) => {
+                        if let Some(error) = result.get("error").and_then(|e| e.as_str()) {
+                            return Err(format!("Cookie extraction error: {error}"));
+                        }
+
+                        if let Some(cookies_value) = result.get("cookies") {
+                            match serde_json::from_value::<Vec<Cookie>>(cookies_value.clone()) {
+                                Ok(cookies) => {
+                                    tracing::info!(
+                                        "Successfully extracted {} cookies",
+                                        cookies.len()
+                                    );
+                                    return Ok(cookies);
+                                }
+                                Err(e) => {
+                                    return Err(format!("Failed to parse cookies: {e}"));
+                                }
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        tracing::warn!("Failed to parse result JSON: {e}");
+                    }
+                }
+            }
+        }
+
+        if attempts >= max_attempts {
+            return Err(
+                "Timeout extracting cookies. This may be because:\n\
+                1. Confluence uses HttpOnly cookies that JavaScript cannot access\n\
+                2. You're not logged in yet\n\
+                3. The page hasn't finished loading\n\n\
+                Recommendation: Use 'Manual Token' authentication with a Confluence Personal Access Token instead."
+                    .to_string(),
+            );
+        }
+    }
 }
 
 /// Build cookie header string for HTTP requests

@@ -83,7 +83,7 @@ pub fn open_dev_db(path: &Path) -> anyhow::Result<Connection> {
 
 pub fn init_db(data_dir: &Path) -> anyhow::Result<Connection> {
     std::fs::create_dir_all(data_dir)?;
-    let db_path = data_dir.join("tftsr.db");
+    let db_path = data_dir.join("trcaa.db");
 
     let key = get_db_key(data_dir)?;
 

@@ -19,10 +19,105 @@ lazy_static::lazy_static! {
 
 #[tauri::command]
 pub async fn test_confluence_connection(
-    _base_url: String,
+    base_url: String,
     _credentials: serde_json::Value,
+    app_handle: tauri::AppHandle,
+    app_state: State<'_, AppState>,
 ) -> Result<ConnectionResult, String> {
-    Err("Integrations available in v0.2. Please update to the latest version.".to_string())
+    // Try to get fresh cookies from persistent webview
+    let cookies = get_fresh_cookies_from_webview("confluence", &app_handle, &app_state).await?;
+
+    if let Some(cookie_list) = cookies {
+        // Use cookies for authentication
+        let cookie_header = crate::integrations::webview_auth::cookies_to_header(&cookie_list);
+
+        let client = reqwest::Client::new();
+        let url = format!("{}/rest/api/user/current", base_url.trim_end_matches('/'));
+
+        let resp = client
+            .get(&url)
+            .header("Cookie", cookie_header)
+            .send()
+            .await
+            .map_err(|e| format!("Connection failed: {e}"))?;
+
+        if resp.status().is_success() {
+            Ok(ConnectionResult {
+                success: true,
+                message: "Successfully connected to Confluence using browser session".to_string(),
+            })
+        } else {
+            let status = resp.status();
+            let text = resp.text().await.unwrap_or_default();
+            Ok(ConnectionResult {
+                success: false,
+                message: format!("Connection failed with status {status}: {text}"),
+            })
+        }
+    } else {
+        // No webview open, check if we have stored credentials
+        let encrypted_token: Option<String> = {
+            let db = app_state
+                .db
+                .lock()
+                .map_err(|e| format!("Failed to lock database: {e}"))?;
+
+            db.query_row(
+                "SELECT encrypted_token FROM credentials WHERE service = ?1",
+                ["confluence"],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|e| format!("Failed to query credentials: {e}"))?
+        };
+
+        if let Some(token) = encrypted_token {
+            let decrypted = crate::integrations::auth::decrypt_token(&token)?;
+
+            // Try to parse as cookies JSON first
+            if let Ok(cookie_list) =
+                serde_json::from_str::<Vec<crate::integrations::webview_auth::Cookie>>(&decrypted)
+            {
+                let cookie_header =
+                    crate::integrations::webview_auth::cookies_to_header(&cookie_list);
+
+                let client = reqwest::Client::new();
+                let url = format!("{}/rest/api/user/current", base_url.trim_end_matches('/'));
+
+                let resp = client
+                    .get(&url)
+                    .header("Cookie", cookie_header)
+                    .send()
+                    .await
+                    .map_err(|e| format!("Connection failed: {e}"))?;
+
+                if resp.status().is_success() {
+                    Ok(ConnectionResult {
+                        success: true,
+                        message: "Successfully connected to Confluence using stored session"
+                            .to_string(),
+                    })
+                } else {
+                    let status = resp.status();
+                    Ok(ConnectionResult {
+                        success: false,
+                        message: format!(
+                            "Connection failed with status {status}. Session may have expired - try reopening the browser window."
+                        ),
+                    })
+                }
+            } else {
+                // Treat as bearer token
+                let config = crate::integrations::confluence::ConfluenceConfig {
+                    base_url: base_url.clone(),
+                    access_token: decrypted,
+                };
+                crate::integrations::confluence::test_connection(&config).await
+            }
+        } else {
+            Err("Not authenticated. Please open the browser window and log in, or provide a manual token.".to_string())
+        }
+    }
 }
 
 #[tauri::command]
@@ -36,10 +131,71 @@ pub async fn publish_to_confluence(
 
 #[tauri::command]
 pub async fn test_servicenow_connection(
-    _instance_url: String,
+    instance_url: String,
     _credentials: serde_json::Value,
+    app_handle: tauri::AppHandle,
+    app_state: State<'_, AppState>,
 ) -> Result<ConnectionResult, String> {
-    Err("Integrations available in v0.2. Please update to the latest version.".to_string())
+    // Try to get fresh cookies from persistent webview
+    let cookies = get_fresh_cookies_from_webview("servicenow", &app_handle, &app_state).await?;
+
+    if let Some(cookie_list) = cookies {
+        let cookie_header = crate::integrations::webview_auth::cookies_to_header(&cookie_list);
+
+        let client = reqwest::Client::new();
+        let url = format!(
+            "{}/api/now/table/sys_user?sysparm_limit=1",
+            instance_url.trim_end_matches('/')
+        );
+
+        let resp = client
+            .get(&url)
+            .header("Cookie", cookie_header)
+            .send()
+            .await
+            .map_err(|e| format!("Connection failed: {e}"))?;
+
+        if resp.status().is_success() {
+            Ok(ConnectionResult {
+                success: true,
+                message: "Successfully connected to ServiceNow using browser session".to_string(),
+            })
+        } else {
+            let status = resp.status();
+            Ok(ConnectionResult {
+                success: false,
+                message: format!("Connection failed with status {status}"),
+            })
+        }
+    } else {
+        // Check stored credentials
+        let encrypted_token: Option<String> = {
+            let db = app_state
+                .db
+                .lock()
+                .map_err(|e| format!("Failed to lock database: {e}"))?;
+
+            db.query_row(
+                "SELECT encrypted_token FROM credentials WHERE service = ?1",
+                ["servicenow"],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|e| format!("Failed to query credentials: {e}"))?
+        };
+
+        if let Some(token) = encrypted_token {
+            let password = crate::integrations::auth::decrypt_token(&token)?;
+            let config = crate::integrations::servicenow::ServiceNowConfig {
+                instance_url: instance_url.clone(),
+                username: "".to_string(),
+                password,
+            };
+            crate::integrations::servicenow::test_connection(&config).await
+        } else {
+            Err("Not authenticated. Please open the browser window and log in, or provide a manual token.".to_string())
+        }
+    }
 }
 
 #[tauri::command]
@@ -52,10 +208,71 @@ pub async fn create_servicenow_incident(
 
 #[tauri::command]
 pub async fn test_azuredevops_connection(
-    _org_url: String,
+    org_url: String,
     _credentials: serde_json::Value,
+    app_handle: tauri::AppHandle,
+    app_state: State<'_, AppState>,
 ) -> Result<ConnectionResult, String> {
-    Err("Integrations available in v0.2. Please update to the latest version.".to_string())
+    // Try to get fresh cookies from persistent webview
+    let cookies = get_fresh_cookies_from_webview("azuredevops", &app_handle, &app_state).await?;
+
+    if let Some(cookie_list) = cookies {
+        let cookie_header = crate::integrations::webview_auth::cookies_to_header(&cookie_list);
+
+        let client = reqwest::Client::new();
+        let url = format!(
+            "{}/_apis/projects?api-version=6.0",
+            org_url.trim_end_matches('/')
+        );
+
+        let resp = client
+            .get(&url)
+            .header("Cookie", cookie_header)
+            .send()
+            .await
+            .map_err(|e| format!("Connection failed: {e}"))?;
+
+        if resp.status().is_success() {
+            Ok(ConnectionResult {
+                success: true,
+                message: "Successfully connected to Azure DevOps using browser session".to_string(),
+            })
+        } else {
+            let status = resp.status();
+            Ok(ConnectionResult {
+                success: false,
+                message: format!("Connection failed with status {status}"),
+            })
+        }
+    } else {
+        // Check stored credentials
+        let encrypted_token: Option<String> = {
+            let db = app_state
+                .db
+                .lock()
+                .map_err(|e| format!("Failed to lock database: {e}"))?;
+
+            db.query_row(
+                "SELECT encrypted_token FROM credentials WHERE service = ?1",
+                ["azuredevops"],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|e| format!("Failed to query credentials: {e}"))?
+        };
+
+        if let Some(token) = encrypted_token {
+            let access_token = crate::integrations::auth::decrypt_token(&token)?;
+            let config = crate::integrations::azuredevops::AzureDevOpsConfig {
+                organization_url: org_url.clone(),
+                access_token,
+                project: "".to_string(),
+            };
+            crate::integrations::azuredevops::test_connection(&config).await
+        } else {
+            Err("Not authenticated. Please open the browser window and log in, or provide a manual token.".to_string())
+        }
+    }
 }
 
 #[tauri::command]
@@ -505,6 +722,7 @@ pub struct WebviewAuthResponse {
 pub async fn authenticate_with_webview(
     service: String,
     base_url: String,
+    project_name: Option<String>,
     app_handle: tauri::AppHandle,
     app_state: State<'_, AppState>,
 ) -> Result<WebviewAuthResponse, String> {
@@ -530,21 +748,81 @@ pub async fn authenticate_with_webview(
 
     // Open persistent browser window
     let _credentials = crate::integrations::webview_auth::authenticate_with_webview(
-        app_handle, &service, &base_url,
+        app_handle.clone(),
+        &service,
+        &base_url,
+        project_name.as_deref(),
     )
     .await?;
 
-    // Store window reference
+    // Store window reference in memory
     app_state
         .integration_webviews
         .lock()
         .map_err(|e| format!("Failed to lock webviews: {e}"))?
         .insert(service.clone(), webview_id.clone());
 
+    // Persist to database for restoration on app restart
+    let db = app_state
+        .db
+        .lock()
+        .map_err(|e| format!("Failed to lock database: {e}"))?;
+
+    db.execute(
+        "INSERT OR REPLACE INTO persistent_webviews
+         (id, service, webview_label, base_url, last_active)
+         VALUES (?1, ?2, ?3, ?4, datetime('now'))",
+        rusqlite::params![
+            uuid::Uuid::now_v7().to_string(),
+            service.clone(),
+            webview_id.clone(),
+            base_url.clone(),
+        ],
+    )
+    .map_err(|e| format!("Failed to persist webview: {e}"))?;
+
+    tracing::info!("Persisted webview {} for service {}", webview_id, service);
+
+    // Set up window close handler to remove from tracking and database
+    if let Some(webview_window) = app_handle.get_webview_window(&webview_id) {
+        let service_clone = service.clone();
+        let db_arc = app_state.db.clone();
+        let webviews_arc = app_state.integration_webviews.clone();
+
+        webview_window.on_window_event(move |event| {
+            if let tauri::WindowEvent::CloseRequested { .. } = event {
+                let service = service_clone.clone();
+                let db = db_arc.clone();
+                let webviews = webviews_arc.clone();
+
+                // Spawn async task to clean up
+                tauri::async_runtime::spawn(async move {
+                    // Remove from in-memory tracking
+                    if let Ok(mut webviews_lock) = webviews.lock() {
+                        webviews_lock.remove(&service);
+                        tracing::info!("Removed {} from webview tracking", service);
+                    }
+
+                    // Remove from database
+                    if let Ok(db_lock) = db.lock() {
+                        if let Err(e) = db_lock.execute(
+                            "DELETE FROM persistent_webviews WHERE service = ?1",
+                            rusqlite::params![service],
+                        ) {
+                            tracing::warn!("Failed to remove persistent webview from DB: {}", e);
+                        } else {
+                            tracing::info!("Removed {} from persistent webviews database", service);
+                        }
+                    }
+                });
+            }
+        });
+    }
+
     Ok(WebviewAuthResponse {
         success: true,
         message: format!(
-            "{service} browser window opened. This window will stay open - use it to browse and authenticate. Cookies will be extracted automatically for API calls."
+            "{service} browser window opened. This window will stay open across app restarts - use it to browse and authenticate. Cookies are maintained automatically."
         ),
         webview_id,
     })
@@ -605,16 +883,11 @@ pub async fn extract_cookies_from_webview(
     )
     .map_err(|e| format!("Failed to store cookies: {e}"))?;
 
-    // Close the webview window
-    if let Some(webview) = app_handle.get_webview_window(&webview_id) {
-        webview
-            .close()
-            .map_err(|e| format!("Failed to close webview: {e}"))?;
-    }
+    // NOTE: Window stays open for persistent browsing - no longer closing after cookie extraction
 
     Ok(ConnectionResult {
         success: true,
-        message: format!("{service} authentication saved successfully"),
+        message: format!("{service} authentication saved successfully. The browser window will stay open for future use."),
     })
 }
 
@@ -787,6 +1060,122 @@ pub async fn get_fresh_cookies_from_webview(
 }
 
 // ============================================================================
+// Persistent Webview Restoration
+// ============================================================================
+
+/// Restore persistent browser windows from database on app startup.
+/// This recreates integration browser windows that were open when the app last closed.
+pub async fn restore_persistent_webviews(
+    app_handle: &tauri::AppHandle,
+    app_state: &AppState,
+) -> Result<(), String> {
+    let webviews_to_restore: Vec<(String, String, String)> = {
+        let db = app_state
+            .db
+            .lock()
+            .map_err(|e| format!("Failed to lock database: {e}"))?;
+
+        let mut stmt = db
+            .prepare("SELECT service, webview_label, base_url FROM persistent_webviews")
+            .map_err(|e| format!("Failed to prepare query: {e}"))?;
+
+        let rows: Vec<(String, String, String)> = stmt
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?, // service
+                    row.get::<_, String>(1)?, // webview_label
+                    row.get::<_, String>(2)?, // base_url
+                ))
+            })
+            .map_err(|e| format!("Failed to query persistent webviews: {e}"))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("Failed to collect webviews: {e}"))?;
+
+        rows
+    };
+
+    for (service, webview_label, base_url) in webviews_to_restore {
+        tracing::info!(
+            "Restoring persistent webview {} for service {} at {}",
+            webview_label,
+            service,
+            base_url
+        );
+
+        // Get project name from integration config if available
+        let project_name: Option<String> = {
+            let db = app_state
+                .db
+                .lock()
+                .map_err(|e| format!("Failed to lock database: {e}"))?;
+            db.query_row(
+                "SELECT project_name FROM integration_config WHERE service = ?1",
+                [&service],
+                |row| row.get(0),
+            )
+            .ok()
+        };
+
+        // Recreate the webview window
+        match crate::integrations::webview_auth::authenticate_with_webview(
+            app_handle.clone(),
+            &service,
+            &base_url,
+            project_name.as_deref(),
+        )
+        .await
+        {
+            Ok(_) => {
+                // Store in memory tracking
+                app_state
+                    .integration_webviews
+                    .lock()
+                    .map_err(|e| format!("Failed to lock webviews: {e}"))?
+                    .insert(service.clone(), webview_label.clone());
+
+                tracing::info!("Successfully restored webview for {}", service);
+            }
+            Err(e) => {
+                tracing::warn!("Failed to restore webview for {}: {}", service, e);
+                // Remove from database if restoration failed
+                let db = app_state
+                    .db
+                    .lock()
+                    .map_err(|e| format!("Failed to lock database: {e}"))?;
+
+                db.execute(
+                    "DELETE FROM persistent_webviews WHERE service = ?1",
+                    rusqlite::params![service],
+                )
+                .map_err(|e| format!("Failed to remove failed webview: {e}"))?;
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Remove persistent webview from database (called when window is closed).
+pub async fn remove_persistent_webview(
+    service: &str,
+    app_state: &State<'_, AppState>,
+) -> Result<(), String> {
+    let db = app_state
+        .db
+        .lock()
+        .map_err(|e| format!("Failed to lock database: {e}"))?;
+
+    db.execute(
+        "DELETE FROM persistent_webviews WHERE service = ?1",
+        rusqlite::params![service],
+    )
+    .map_err(|e| format!("Failed to remove persistent webview: {e}"))?;
+
+    tracing::info!("Removed persistent webview for service: {}", service);
+    Ok(())
+}
+
+// ============================================================================
 // Integration Configuration Persistence
 // ============================================================================
 
@@ -890,4 +1279,52 @@ pub async fn get_all_integration_configs(
         .map_err(|e| format!("Failed to collect integration configs: {e}"))?;
 
     Ok(configs)
+}
+
+/// Add a comment to an Azure DevOps work item
+#[tauri::command]
+pub async fn add_ado_comment(
+    work_item_id: i64,
+    comment_text: String,
+    app_handle: tauri::AppHandle,
+    app_state: State<'_, AppState>,
+) -> Result<String, String> {
+    // Get ADO configuration
+    let (org_url, _project_name) = {
+        let db = app_state
+            .db
+            .lock()
+            .map_err(|e| format!("Failed to lock database: {e}"))?;
+        let mut stmt = db.prepare(
+            "SELECT base_url, project_name FROM integration_config WHERE service = 'azuredevops'"
+        ).map_err(|e| format!("Failed to prepare query: {e}"))?;
+
+        stmt.query_row([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?))
+        })
+        .map_err(|e| format!("Azure DevOps not configured: {e}"))?
+    };
+
+    // Get webview window
+    let webview_label = {
+        let webviews = app_state
+            .integration_webviews
+            .lock()
+            .map_err(|e| format!("Failed to lock webviews: {e}"))?;
+        webviews.get("azuredevops").cloned()
+            .ok_or_else(|| "Azure DevOps browser window not open. Please open it in Settings → Integrations first.".to_string())?
+    };
+
+    let webview_window = app_handle
+        .get_webview_window(&webview_label)
+        .ok_or_else(|| "Azure DevOps browser window not found".to_string())?;
+
+    // Add the comment
+    crate::integrations::webview_fetch::add_azuredevops_comment_webview(
+        &webview_window,
+        &org_url,
+        work_item_id,
+        &comment_text,
+    )
+    .await
 }

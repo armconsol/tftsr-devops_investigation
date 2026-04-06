@@ -33,15 +33,16 @@ impl Provider for OpenAiProvider {
         &self,
         messages: Vec<Message>,
         config: &ProviderConfig,
+        tools: Option<Vec<crate::ai::Tool>>,
     ) -> anyhow::Result<ChatResponse> {
         // Check if using custom REST format
         let api_format = config.api_format.as_deref().unwrap_or("openai");
 
         // Backward compatibility: accept legacy msi_genai identifier
         if is_custom_rest_format(Some(api_format)) {
-            self.chat_custom_rest(messages, config).await
+            self.chat_custom_rest(messages, config, tools).await
         } else {
-            self.chat_openai(messages, config).await
+            self.chat_openai(messages, config, tools).await
         }
     }
 }
@@ -73,6 +74,7 @@ impl OpenAiProvider {
         &self,
         messages: Vec<Message>,
         config: &ProviderConfig,
+        tools: Option<Vec<crate::ai::Tool>>,
     ) -> anyhow::Result<ChatResponse> {
         let client = reqwest::Client::builder()
             .timeout(Duration::from_secs(60))
@@ -99,6 +101,25 @@ impl OpenAiProvider {
             body["temperature"] = serde_json::Value::from(temp);
         }
 
+        // Add tools if provided (OpenAI function calling format)
+        if let Some(tools_list) = tools {
+            let formatted_tools: Vec<serde_json::Value> = tools_list
+                .iter()
+                .map(|tool| {
+                    serde_json::json!({
+                        "type": "function",
+                        "function": {
+                            "name": tool.name,
+                            "description": tool.description,
+                            "parameters": tool.parameters
+                        }
+                    })
+                })
+                .collect();
+            body["tools"] = serde_json::Value::from(formatted_tools);
+            body["tool_choice"] = serde_json::Value::from("auto");
+        }
+
         // Use custom auth header and prefix if provided
         let auth_header = config
             .custom_auth_header
@@ -122,10 +143,32 @@ impl OpenAiProvider {
         }
 
         let json: serde_json::Value = resp.json().await?;
-        let content = json["choices"][0]["message"]["content"]
-            .as_str()
-            .ok_or_else(|| anyhow::anyhow!("No content in response"))?
-            .to_string();
+        let message = &json["choices"][0]["message"];
+
+        let content = message["content"].as_str().unwrap_or("").to_string();
+
+        // Parse tool_calls if present
+        let tool_calls = message.get("tool_calls").and_then(|tc| {
+            if let Some(arr) = tc.as_array() {
+                let calls: Vec<crate::ai::ToolCall> = arr
+                    .iter()
+                    .filter_map(|call| {
+                        Some(crate::ai::ToolCall {
+                            id: call["id"].as_str()?.to_string(),
+                            name: call["function"]["name"].as_str()?.to_string(),
+                            arguments: call["function"]["arguments"].as_str()?.to_string(),
+                        })
+                    })
+                    .collect();
+                if calls.is_empty() {
+                    None
+                } else {
+                    Some(calls)
+                }
+            } else {
+                None
+            }
+        });
 
         let usage = json.get("usage").and_then(|u| {
             Some(TokenUsage {
@@ -139,6 +182,7 @@ impl OpenAiProvider {
             content,
             model: config.model.clone(),
             usage,
+            tool_calls,
         })
     }
 
@@ -147,6 +191,7 @@ impl OpenAiProvider {
         &self,
         messages: Vec<Message>,
         config: &ProviderConfig,
+        tools: Option<Vec<crate::ai::Tool>>,
     ) -> anyhow::Result<ChatResponse> {
         let client = reqwest::Client::builder()
             .timeout(Duration::from_secs(60))
@@ -204,11 +249,33 @@ impl OpenAiProvider {
             body["modelConfig"] = model_config;
         }
 
-        // Use custom auth header and prefix (no prefix for this custom REST contract)
+        // Add tools if provided (OpenAI-style format, most common standard)
+        if let Some(tools_list) = tools {
+            let formatted_tools: Vec<serde_json::Value> = tools_list
+                .iter()
+                .map(|tool| {
+                    serde_json::json!({
+                        "type": "function",
+                        "function": {
+                            "name": tool.name,
+                            "description": tool.description,
+                            "parameters": tool.parameters
+                        }
+                    })
+                })
+                .collect();
+            let tool_count = formatted_tools.len();
+            body["tools"] = serde_json::Value::from(formatted_tools);
+            body["tool_choice"] = serde_json::Value::from("auto");
+
+            tracing::info!("MSI GenAI: Sending {} tools in request", tool_count);
+        }
+
+        // Use custom auth header and prefix (no default prefix for custom REST)
         let auth_header = config
             .custom_auth_header
             .as_deref()
-            .unwrap_or("x-msi-genai-api-key");
+            .unwrap_or("Authorization");
         let auth_prefix = config.custom_auth_prefix.as_deref().unwrap_or("");
         let auth_value = format!("{auth_prefix}{api_key}", api_key = config.api_key);
 
@@ -216,7 +283,6 @@ impl OpenAiProvider {
             .post(&url)
             .header(auth_header, auth_value)
             .header("Content-Type", "application/json")
-            .header("X-msi-genai-client", "troubleshooting-rca-assistant")
             .json(&body)
             .send()
             .await?;
@@ -229,11 +295,83 @@ impl OpenAiProvider {
 
         let json: serde_json::Value = resp.json().await?;
 
+        tracing::debug!(
+            "MSI GenAI response: {}",
+            serde_json::to_string_pretty(&json).unwrap_or_else(|_| "invalid JSON".to_string())
+        );
+
         // Extract response content from "msg" field
         let content = json["msg"]
             .as_str()
             .ok_or_else(|| anyhow::anyhow!("No 'msg' field in response"))?
             .to_string();
+
+        // Parse tool_calls if present (check multiple possible field names)
+        let tool_calls = json
+            .get("tool_calls")
+            .or_else(|| json.get("toolCalls"))
+            .or_else(|| json.get("function_calls"))
+            .and_then(|tc| {
+                if let Some(arr) = tc.as_array() {
+                    let calls: Vec<crate::ai::ToolCall> = arr
+                        .iter()
+                        .filter_map(|call| {
+                            // Try OpenAI format first
+                            if let (Some(id), Some(name), Some(args)) = (
+                                call.get("id").and_then(|v| v.as_str()),
+                                call.get("function")
+                                    .and_then(|f| f.get("name"))
+                                    .and_then(|n| n.as_str())
+                                    .or_else(|| call.get("name").and_then(|n| n.as_str())),
+                                call.get("function")
+                                    .and_then(|f| f.get("arguments"))
+                                    .and_then(|a| a.as_str())
+                                    .or_else(|| call.get("arguments").and_then(|a| a.as_str())),
+                            ) {
+                                tracing::info!("MSI GenAI: Parsed tool call: {} ({})", name, id);
+                                return Some(crate::ai::ToolCall {
+                                    id: id.to_string(),
+                                    name: name.to_string(),
+                                    arguments: args.to_string(),
+                                });
+                            }
+
+                            // Try simpler format
+                            if let (Some(name), Some(args)) = (
+                                call.get("name").and_then(|n| n.as_str()),
+                                call.get("arguments").and_then(|a| a.as_str()),
+                            ) {
+                                let id = call
+                                    .get("id")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or_else(|| "tool_call_0")
+                                    .to_string();
+                                tracing::info!(
+                                    "MSI GenAI: Parsed tool call (simple format): {} ({})",
+                                    name,
+                                    id
+                                );
+                                return Some(crate::ai::ToolCall {
+                                    id,
+                                    name: name.to_string(),
+                                    arguments: args.to_string(),
+                                });
+                            }
+
+                            tracing::warn!("MSI GenAI: Failed to parse tool call: {:?}", call);
+                            None
+                        })
+                        .collect();
+                    if calls.is_empty() {
+                        None
+                    } else {
+                        tracing::info!("MSI GenAI: Found {} tool calls", calls.len());
+                        Some(calls)
+                    }
+                } else {
+                    None
+                }
+            });
 
         // Note: sessionId from response should be stored back to config.session_id
         // This would require making config mutable or returning it as part of ChatResponse
@@ -244,6 +382,7 @@ impl OpenAiProvider {
             content,
             model: config.model.clone(),
             usage: None, // This custom REST contract doesn't provide token usage in response
+            tool_calls,
         })
     }
 }
