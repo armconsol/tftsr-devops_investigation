@@ -436,6 +436,3 @@ export const getIntegrationConfigCmd = (service: string) =>
 
 export const getAllIntegrationConfigsCmd = () =>
   invoke<IntegrationConfig[]>("get_all_integration_configs");
-
-export const installOllamaFromBundleCmd = () =>
-  invoke<string>("install_ollama_from_bundle");
