@@ -145,6 +145,8 @@ pub async fn get_audit_log(
 // Security note: the bundled binary's integrity is guaranteed by the CI release pipeline
 // which verifies SHA256 checksums against Ollama's published sha256sums.txt before bundling.
 // Runtime re-verification is not performed here; the app bundle itself is the trust boundary.
+// On Unix, writing to /usr/local/bin requires elevated privileges. If the operation fails with
+// PermissionDenied the caller receives an actionable error message.
 #[tauri::command]
 pub async fn install_ollama_from_bundle(
     app: tauri::AppHandle,
@@ -153,15 +155,24 @@ pub async fn install_ollama_from_bundle(
     use std::path::PathBuf;
     use tauri::Manager;
 
-    let resource_path = app
+    let resource_dir = app
         .path()
         .resource_dir()
-        .map_err(|e: tauri::Error| e.to_string())?
+        .map_err(|e: tauri::Error| e.to_string())?;
+
+    let resource_path = resource_dir
         .join("ollama")
         .join(if cfg!(windows) { "ollama.exe" } else { "ollama" });
 
     if !resource_path.exists() {
         return Err("Bundled Ollama not found in resources".to_string());
+    }
+
+    // Defense-in-depth: verify resolved path stays within the resource directory.
+    let canonical_resource = resource_path.canonicalize().map_err(|e| e.to_string())?;
+    let canonical_dir = resource_dir.canonicalize().map_err(|e| e.to_string())?;
+    if !canonical_resource.starts_with(&canonical_dir) {
+        return Err("Resource path validation failed".to_string());
     }
 
     #[cfg(unix)]
@@ -179,7 +190,18 @@ pub async fn install_ollama_from_bundle(
         fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
 
-    fs::copy(&resource_path, &install_path).map_err(|e| e.to_string())?;
+    fs::copy(&resource_path, &install_path).map_err(|e| {
+        if e.kind() == std::io::ErrorKind::PermissionDenied {
+            format!(
+                "Permission denied writing to {}. On Linux, re-run the app with elevated \
+                 privileges or install manually: sudo cp \"{}\" /usr/local/bin/ollama",
+                install_path.display(),
+                resource_path.display()
+            )
+        } else {
+            e.to_string()
+        }
+    })?;
 
     #[cfg(unix)]
     {
