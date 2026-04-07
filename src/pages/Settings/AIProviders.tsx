@@ -110,7 +110,7 @@ export default function AIProviders() {
 
   const startEdit = (index: number) => {
     const provider = ai_providers[index];
-    const apiFormat = normalizeApiFormat(provider.api_format);
+    const apiFormat = provider.api_format;
     const nextForm = { ...provider, api_format: apiFormat };
 
     setForm(nextForm);
@@ -329,7 +329,7 @@ export default function AIProviders() {
                   placeholder="sk-..."
                 />
               </div>
-              {!(form.provider_type === "custom" && normalizeApiFormat(form.api_format) === CUSTOM_REST_FORMAT) && (
+              {!(form.provider_type === "custom" && form.api_format === CUSTOM_REST_FORMAT) && (
                 <div className="space-y-2">
                   <Label>Model</Label>
                   <Input
@@ -447,7 +447,7 @@ export default function AIProviders() {
                   </div>
 
                   {/* Custom REST specific: User ID field */}
-                  {normalizeApiFormat(form.api_format) === CUSTOM_REST_FORMAT && (
+                  {form.api_format === CUSTOM_REST_FORMAT && (
                     <div className="space-y-2">
                       <Label>Email Address</Label>
                       <Input
@@ -462,7 +462,7 @@ export default function AIProviders() {
                   )}
 
                   {/* Custom REST specific: model dropdown with custom option */}
-                  {normalizeApiFormat(form.api_format) === CUSTOM_REST_FORMAT && (
+                  {form.api_format === CUSTOM_REST_FORMAT && (
                     <div className="space-y-2">
                       <Label>Model</Label>
                       <Select
