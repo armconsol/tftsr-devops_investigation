@@ -16,7 +16,6 @@ import {
 import {
   initiateOauthCmd,
   authenticateWithWebviewCmd,
-  extractCookiesFromWebviewCmd,
   saveManualTokenCmd,
   testConfluenceConnectionCmd,
   testServiceNowConnectionCmd,
@@ -142,16 +141,24 @@ export default function Integrations() {
     setLoading((prev) => ({ ...prev, [service]: true }));
 
     try {
-      const response = await authenticateWithWebviewCmd(service, config.baseUrl);
+      const response = await authenticateWithWebviewCmd(
+        service,
+        config.baseUrl,
+        config.projectName
+      );
 
       setConfigs((prev) => ({
         ...prev,
-        [service]: { ...prev[service], webviewId: response.webview_id },
+        [service]: {
+          ...prev[service],
+          webviewId: response.webview_id,
+          connected: true, // Mark as connected since window persists
+        },
       }));
 
       setTestResults((prev) => ({
         ...prev,
-        [service]: { success: true, message: response.message + " Click 'Complete Login' when done." },
+        [service]: { success: true, message: response.message },
       }));
     } catch (err) {
       console.error("Failed to open webview:", err);
@@ -161,41 +168,6 @@ export default function Integrations() {
       }));
     } finally {
       setLoading((prev) => ({ ...prev, [service]: false }));
-    }
-  };
-
-  const handleCompleteWebviewLogin = async (service: string) => {
-    const config = configs[service];
-    if (!config.webviewId) {
-      setTestResults((prev) => ({
-        ...prev,
-        [service]: { success: false, message: "No webview session found. Click 'Login via Browser' first." },
-      }));
-      return;
-    }
-
-    setLoading((prev) => ({ ...prev, [`complete-${service}`]: true }));
-
-    try {
-      const result = await extractCookiesFromWebviewCmd(service, config.webviewId);
-
-      setConfigs((prev) => ({
-        ...prev,
-        [service]: { ...prev[service], connected: true, webviewId: undefined },
-      }));
-
-      setTestResults((prev) => ({
-        ...prev,
-        [service]: { success: result.success, message: result.message },
-      }));
-    } catch (err) {
-      console.error("Failed to extract cookies:", err);
-      setTestResults((prev) => ({
-        ...prev,
-        [service]: { success: false, message: String(err) },
-      }));
-    } finally {
-      setLoading((prev) => ({ ...prev, [`complete-${service}`]: false }));
     }
   };
 
@@ -372,9 +344,16 @@ export default function Integrations() {
         {config.authMode === "webview" && (
           <div className="space-y-3 p-4 bg-muted/30 rounded-lg">
             <p className="text-sm text-muted-foreground">
-              Opens an embedded browser for you to log in normally. Works even when off-VPN. Captures session cookies for API access.
+              Opens a persistent browser window for you to log in. Works even when off-VPN.
+              The browser window stays open across app restarts and maintains your session automatically.
             </p>
-            <div className="flex gap-2">
+            {config.webviewId ? (
+              <div className="p-3 bg-green-500/10 text-green-700 dark:text-green-400 rounded text-sm">
+                <Check className="w-4 h-4 inline mr-2" />
+                Browser window is open. Log in there and leave it open - your session will persist across app restarts.
+                You can close this window manually when done.
+              </div>
+            ) : (
               <Button
                 onClick={() => handleConnectWebview(service)}
                 disabled={loading[service] || !config.baseUrl}
@@ -385,26 +364,10 @@ export default function Integrations() {
                     Opening...
                   </>
                 ) : (
-                  "Login via Browser"
+                  "Open Browser"
                 )}
               </Button>
-              {config.webviewId && (
-                <Button
-                  variant="secondary"
-                  onClick={() => handleCompleteWebviewLogin(service)}
-                  disabled={loading[`complete-${service}`]}
-                >
-                  {loading[`complete-${service}`] ? (
-                    <>
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      Saving...
-                    </>
-                  ) : (
-                    "Complete Login"
-                  )}
-                </Button>
-              )}
-            </div>
+            )}
           </div>
         )}
 
@@ -671,7 +634,7 @@ export default function Integrations() {
         <p className="text-sm font-semibold">Authentication Method Comparison:</p>
         <ul className="text-xs text-muted-foreground space-y-1 list-disc list-inside">
           <li><strong>OAuth2:</strong> Most secure, but requires pre-registered app. May not work with enterprise SSO.</li>
-          <li><strong>Browser Login:</strong> Best for VPN environments. Lets you authenticate off-VPN, extracts session cookies for API use.</li>
+          <li><strong>Browser Login:</strong> Best for VPN environments. Opens a persistent browser window that stays open across app restarts. Your session is maintained automatically.</li>
           <li><strong>Manual Token:</strong> Most reliable fallback. Requires generating API tokens manually from each service.</li>
         </ul>
       </div>

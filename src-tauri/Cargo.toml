@@ -44,6 +44,11 @@ lazy_static = "1.4"
 warp = "0.3"
 urlencoding = "2"
 
+# Platform-specific dependencies for native cookie extraction
+[target.'cfg(target_os = "macos")'.dependencies]
+cocoa = "0.25"
+objc = "0.2"
+
 [dev-dependencies]
 tokio-test = "0.4"
 mockito = "1.2"

@@ -367,6 +367,17 @@ export const updateSettingsCmd = (partialSettings: Partial<AppSettings>) =>
 export const getAuditLogCmd = (filter: AuditFilter) =>
   invoke<AuditEntry[]>("get_audit_log", { filter });
 
+// ─── AI Provider Persistence ──────────────────────────────────────────────────
+
+export const saveAiProviderCmd = (provider: ProviderConfig) =>
+  invoke<void>("save_ai_provider", { provider });
+
+export const loadAiProvidersCmd = () =>
+  invoke<ProviderConfig[]>("load_ai_providers");
+
+export const deleteAiProviderCmd = (name: string) =>
+  invoke<void>("delete_ai_provider", { name });
+
 // ─── OAuth & Integrations ─────────────────────────────────────────────────────
 
 export interface OAuthInitResponse {
@@ -417,8 +428,16 @@ export interface IntegrationConfig {
   space_key?: string;
 }
 
-export const authenticateWithWebviewCmd = (service: string, baseUrl: string) =>
-  invoke<WebviewAuthResponse>("authenticate_with_webview", { service, baseUrl });
+export const authenticateWithWebviewCmd = (
+  service: string,
+  baseUrl: string,
+  projectName?: string
+) =>
+  invoke<WebviewAuthResponse>("authenticate_with_webview", {
+    service,
+    baseUrl,
+    projectName,
+  });
 
 export const extractCookiesFromWebviewCmd = (service: string, webviewId: string) =>
   invoke<ConnectionResult>("extract_cookies_from_webview", { service, webviewId });
@@ -436,3 +455,6 @@ export const getIntegrationConfigCmd = (service: string) =>
 
 export const getAllIntegrationConfigsCmd = () =>
   invoke<IntegrationConfig[]>("get_all_integration_configs");
+
+export const addAdoCommentCmd = (workItemId: number, commentText: string) =>
+  invoke<string>("add_ado_comment", { workItemId, commentText });

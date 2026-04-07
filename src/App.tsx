@@ -15,6 +15,7 @@ import {
   Moon,
 } from "lucide-react";
 import { useSettingsStore } from "@/stores/settingsStore";
+import { loadAiProvidersCmd, testProviderConnectionCmd } from "@/lib/tauriCommands";
 
 import Dashboard from "@/pages/Dashboard";
 import NewIssue from "@/pages/NewIssue";
@@ -45,12 +46,37 @@ const settingsItems = [
 export default function App() {
   const [collapsed, setCollapsed] = useState(false);
   const [appVersion, setAppVersion] = useState("");
-  const { theme, setTheme } = useSettingsStore();
+  const { theme, setTheme, setProviders, getActiveProvider } = useSettingsStore();
   const location = useLocation();
 
   useEffect(() => {
     getVersion().then(setAppVersion).catch(() => {});
   }, []);
+
+  // Load providers and auto-test active provider on startup
+  useEffect(() => {
+    const initializeProviders = async () => {
+      try {
+        const providers = await loadAiProvidersCmd();
+        setProviders(providers);
+
+        // Auto-test the active provider
+        const activeProvider = getActiveProvider();
+        if (activeProvider) {
+          console.log("Auto-testing active AI provider:", activeProvider.name);
+          try {
+            await testProviderConnectionCmd(activeProvider);
+            console.log("✓ Active provider connection verified:", activeProvider.name);
+          } catch (err) {
+            console.warn("⚠ Active provider connection test failed:", activeProvider.name, err);
+          }
+        }
+      } catch (err) {
+        console.error("Failed to initialize AI providers:", err);
+      }
+    };
+    initializeProviders();
+  }, [setProviders, getActiveProvider]);
 
   return (
     <div className={theme === "dark" ? "dark" : ""}>

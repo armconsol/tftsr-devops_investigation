@@ -155,6 +155,41 @@ pub fn run_migrations(conn: &Connection) -> anyhow::Result<()> {
             "ALTER TABLE audit_log ADD COLUMN prev_hash TEXT NOT NULL DEFAULT '';
              ALTER TABLE audit_log ADD COLUMN entry_hash TEXT NOT NULL DEFAULT '';",
         ),
+        (
+            "013_create_persistent_webviews",
+            "CREATE TABLE IF NOT EXISTS persistent_webviews (
+                id TEXT PRIMARY KEY,
+                service TEXT NOT NULL CHECK(service IN ('confluence','servicenow','azuredevops')),
+                webview_label TEXT NOT NULL,
+                base_url TEXT NOT NULL,
+                last_active TEXT NOT NULL DEFAULT (datetime('now')),
+                window_x INTEGER,
+                window_y INTEGER,
+                window_width INTEGER,
+                window_height INTEGER,
+                UNIQUE(service)
+            );",
+        ),
+        (
+            "014_create_ai_providers",
+            "CREATE TABLE IF NOT EXISTS ai_providers (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL UNIQUE,
+                provider_type TEXT NOT NULL,
+                api_url TEXT NOT NULL,
+                encrypted_api_key TEXT NOT NULL,
+                model TEXT NOT NULL,
+                max_tokens INTEGER,
+                temperature REAL,
+                custom_endpoint_path TEXT,
+                custom_auth_header TEXT,
+                custom_auth_prefix TEXT,
+                api_format TEXT,
+                user_id TEXT,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );",
+        ),
     ];
 
     for (name, sql) in migrations {

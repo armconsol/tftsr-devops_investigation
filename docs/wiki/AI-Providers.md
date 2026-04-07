@@ -147,33 +147,25 @@ Standard OpenAI `/chat/completions` endpoint with Bearer authentication.
 
 ### Format: Custom REST
 
-**Motorola Solutions Internal GenAI Service** — Enterprise AI platform with centralized cost tracking and model access.
+**Enterprise AI Gateway** — For AI platforms that use a non-OpenAI request/response format with centralized cost tracking and model access.
 
 | Field | Value |
 |-------|-------|
 | `config.provider_type` | `"custom"` |
 | `config.api_format` | `"custom_rest"` |
-| API URL | `https://genai-service.commandcentral.com/app-gateway` (prod)<br>`https://genai-service.stage.commandcentral.com/app-gateway` (stage) |
-| Auth Header | `x-msi-genai-api-key` |
-| Auth Prefix | `` (empty - no Bearer prefix) |
-| Endpoint Path | `` (empty - URL includes full path `/api/v2/chat`) |
-
-**Available Models (dropdown in Settings):**
-- `VertexGemini` — Gemini 2.0 Flash (Private/GCP)
-- `Claude-Sonnet-4` — Claude Sonnet 4 (Public/Anthropic)
-- `ChatGPT4o` — GPT-4o (Public/OpenAI)
-- `ChatGPT-5_2-Chat` — GPT-4.5 (Public/OpenAI)
-- Full list is sourced from [GenAI API User Guide](../GenAI%20API%20User%20Guide.md)
-- Includes a `Custom model...` option to manually enter any model ID
+| API URL | Your gateway's base URL |
+| Auth Header | Your gateway's auth header name |
+| Auth Prefix | `` (empty if no prefix needed) |
+| Endpoint Path | `` (empty if URL already includes full path) |
 
 **Request Format:**
 ```json
 {
-  "model": "VertexGemini",
+  "model": "model-name",
   "prompt": "User's latest message",
   "system": "Optional system prompt",
   "sessionId": "uuid-for-conversation-continuity",
-  "userId": "user.name@motorolasolutions.com"
+  "userId": "user@example.com"
 }
 ```
 
@@ -191,32 +183,27 @@ Standard OpenAI `/chat/completions` endpoint with Bearer authentication.
 - **Single prompt** instead of message array (server manages history via `sessionId`)
 - **Response in `msg` field** instead of `choices[0].message.content`
 - **Session-based** conversation continuity (no need to resend history)
-- **Cost tracking** via `userId` field (optional — defaults to API key owner if omitted)
-- **Custom client header**: `X-msi-genai-client: tftsr-devops-investigation`
+- **Cost tracking** via `userId` field (optional)
 
 **Configuration (Settings → AI Providers → Add Provider):**
 ```
-Name:             Custom REST (MSI GenAI)
+Name:             Custom REST Gateway
 Type:             Custom
 API Format:       Custom REST
-API URL:          https://genai-service.stage.commandcentral.com/app-gateway
-Model:            VertexGemini
-API Key:          (your MSI GenAI API key from portal)
-User ID:          your.name@motorolasolutions.com (optional)
-Endpoint Path:    (leave empty)
-Auth Header:      x-msi-genai-api-key
-Auth Prefix:      (leave empty)
+API URL:          https://your-gateway/api/v2/chat
+Model:            your-model-name
+API Key:          (your API key)
+User ID:          user@example.com (optional, for cost tracking)
+Endpoint Path:    (leave empty if URL includes full path)
+Auth Header:      x-custom-api-key
+Auth Prefix:      (leave empty if no prefix)
 ```
-
-**Rate Limits:**
-- $50/user/month (enforced server-side)
-- Per-API-key quotas available
 
 **Troubleshooting:**
 
 | Error | Cause | Solution |
 |-------|-------|----------|
-| 403 Forbidden | Invalid API key or insufficient permissions | Verify key in MSI GenAI portal, check model access |
+| 403 Forbidden | Invalid API key or insufficient permissions | Verify key in your gateway portal, check model access |
 | Missing `userId` field | Configuration not saved | Ensure UI shows User ID field when `api_format=custom_rest` |
 | No conversation history | `sessionId` not persisted | Session ID stored in `ProviderConfig.session_id` — currently per-provider, not per-conversation |
 
@@ -224,7 +211,6 @@ Auth Prefix:      (leave empty)
 - Backend: `src-tauri/src/ai/openai.rs::chat_custom_rest()`
 - Schema: `src-tauri/src/state.rs::ProviderConfig` (added `user_id`, `api_format`, custom auth fields)
 - Frontend: `src/pages/Settings/AIProviders.tsx` (conditional UI for Custom REST + model dropdown)
-- CSP whitelist: `https://genai-service.stage.commandcentral.com` and production domain
 
 ---
 
@@ -239,7 +225,7 @@ All providers support the following optional configuration fields (v0.2.6+):
 | `custom_auth_prefix` | `Option<String>` | Prefix before API key | `Bearer ` |
 | `api_format` | `Option<String>` | API format (`openai` or `custom_rest`) | `openai` |
 | `session_id` | `Option<String>` | Session ID for stateful APIs | None |
-| `user_id` | `Option<String>` | User ID for cost tracking (Custom REST MSI contract) | None |
+| `user_id` | `Option<String>` | User ID for cost tracking (Custom REST gateways) | None |
 
 **Backward Compatibility:**
 All fields are optional and default to OpenAI-compatible behavior. Existing provider configurations are unaffected.

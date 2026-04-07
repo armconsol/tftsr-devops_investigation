@@ -30,6 +30,7 @@ impl Provider for MistralProvider {
         &self,
         messages: Vec<Message>,
         config: &ProviderConfig,
+        _tools: Option<Vec<crate::ai::Tool>>,
     ) -> anyhow::Result<ChatResponse> {
         // Mistral uses OpenAI-compatible format
         let client = reqwest::Client::builder()
@@ -83,6 +84,7 @@ impl Provider for MistralProvider {
             content,
             model: config.model.clone(),
             usage,
+            tool_calls: None,
         })
     }
 }

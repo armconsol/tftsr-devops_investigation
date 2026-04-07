@@ -1,9 +1,13 @@
 pub mod auth;
 pub mod azuredevops;
+pub mod azuredevops_search;
 pub mod callback_server;
 pub mod confluence;
+pub mod confluence_search;
 pub mod servicenow;
+pub mod servicenow_search;
 pub mod webview_auth;
+pub mod webview_fetch;
 
 use serde::{Deserialize, Serialize};
 

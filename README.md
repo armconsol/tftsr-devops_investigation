@@ -130,6 +130,7 @@ Launch the app and go to **Settings → AI Providers** to add a provider:
 | Ollama (local) | `http://localhost:11434` | No key needed — fully offline |
 | Azure OpenAI | `https://<resource>.openai.azure.com/openai/deployments/<deployment>` | Requires API key |
 | **AWS Bedrock (via LiteLLM)** | `http://localhost:8000/v1` | See [LiteLLM + AWS Bedrock](#litellm--aws-bedrock-setup) below |
+| **Custom REST Gateway** | Your gateway URL | See [Custom REST format](docs/wiki/AI-Providers.md) |
 
 For offline use, install [Ollama](https://ollama.com) and pull a model:
 ```bash
@@ -287,9 +288,9 @@ All data is stored locally in a SQLCipher-encrypted database at:
 
 | OS | Path |
 |---|---|
-| Linux | `~/.local/share/tftsr/tftsr.db` |
-| macOS | `~/Library/Application Support/tftsr/tftsr.db` |
-| Windows | `%APPDATA%\tftsr\tftsr.db` |
+| Linux | `~/.local/share/trcaa/trcaa.db` |
+| macOS | `~/Library/Application Support/trcaa/trcaa.db` |
+| Windows | `%APPDATA%\trcaa\trcaa.db` |
 
 Override with the `TFTSR_DATA_DIR` environment variable.
 
@@ -300,8 +301,8 @@ Override with the `TFTSR_DATA_DIR` environment variable.
 | Variable | Default | Purpose |
 |---|---|---|
 | `TFTSR_DATA_DIR` | Platform data dir | Override database location |
-| `TFTSR_DB_KEY` | _(none)_ | Database encryption key (required in release builds) |
-| `TFTSR_ENCRYPTION_KEY` | _(none)_ | Credential encryption key (required in release builds) |
+| `TFTSR_DB_KEY` | _(auto-generated)_ | Database encryption key override — auto-generated at first launch if unset |
+| `TFTSR_ENCRYPTION_KEY` | _(auto-generated)_ | Credential encryption key override — auto-generated at first launch if unset |
 | `RUST_LOG` | `info` | Tracing log level (`debug`, `info`, `warn`, `error`) |
 
 ---
@@ -325,6 +326,14 @@ Override with the `TFTSR_DATA_DIR` environment variable.
 
 ---
 
+## Support
+
+If this tool has been useful to you, consider buying me a coffee!
+
+[![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-buymeacoffee.com%2Ftftsr-FFDD00?style=flat&logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/tftsr)
+
+---
+
 ## License
 
-Private — internal tooling. All rights reserved.
+MIT

@@ -9,3 +9,15 @@ secrets.yaml
 artifacts/
 *.png
 /screenshots/
+
+# Internal / private documents — never commit
+USER_GUIDE.md
+USER_GUIDE.docx
+~$ER_GUIDE.docx
+TICKET_USER_GUIDE.md
+BUGFIX_SUMMARY.md
+PR_DESCRIPTION.md
+GenAI API User Guide.md
+HANDOFF-MSI-GENAI.md
+TICKET_SUMMARY.md
+docs/images/user-guide/

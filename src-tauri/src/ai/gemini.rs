@@ -30,6 +30,7 @@ impl Provider for GeminiProvider {
         &self,
         messages: Vec<Message>,
         config: &ProviderConfig,
+        _tools: Option<Vec<crate::ai::Tool>>,
     ) -> anyhow::Result<ChatResponse> {
         let client = reqwest::Client::builder()
             .timeout(Duration::from_secs(60))
@@ -118,6 +119,7 @@ impl Provider for GeminiProvider {
             content,
             model: config.model.clone(),
             usage,
+            tool_calls: None,
         })
     }
 }

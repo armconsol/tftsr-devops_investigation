@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Plus, Pencil, Trash2, CheckCircle, XCircle, Zap } from "lucide-react";
 import {
   Card,
@@ -17,7 +17,13 @@ import {
   Separator,
 } from "@/components/ui";
 import { useSettingsStore } from "@/stores/settingsStore";
-import { testProviderConnectionCmd, type ProviderConfig } from "@/lib/tauriCommands";
+import {
+  testProviderConnectionCmd,
+  saveAiProviderCmd,
+  loadAiProvidersCmd,
+  deleteAiProviderCmd,
+  type ProviderConfig,
+} from "@/lib/tauriCommands";
 
 export const CUSTOM_REST_MODELS = [
   "ChatGPT4o",
@@ -42,11 +48,7 @@ export const CUSTOM_REST_MODELS = [
 ] as const;
 
 export const CUSTOM_MODEL_OPTION = "__custom_model__";
-export const LEGACY_API_FORMAT = "msi_genai";
 export const CUSTOM_REST_FORMAT = "custom_rest";
-
-export const normalizeApiFormat = (format?: string): string | undefined =>
-  format === LEGACY_API_FORMAT ? CUSTOM_REST_FORMAT : format;
 
 const emptyProvider: ProviderConfig = {
   name: "",
@@ -72,6 +74,7 @@ export default function AIProviders() {
     updateProvider,
     removeProvider,
     setActiveProvider,
+    setProviders,
   } = useSettingsStore();
 
   const [editIndex, setEditIndex] = useState<number | null>(null);
@@ -81,6 +84,20 @@ export default function AIProviders() {
   const [isTesting, setIsTesting] = useState(false);
   const [isCustomModel, setIsCustomModel] = useState(false);
   const [customModelInput, setCustomModelInput] = useState("");
+
+  // Load providers from database on mount
+  // Note: Auto-testing of active provider is handled in App.tsx on startup
+  useEffect(() => {
+    const loadProviders = async () => {
+      try {
+        const providers = await loadAiProvidersCmd();
+        setProviders(providers);
+      } catch (err) {
+        console.error("Failed to load AI providers:", err);
+      }
+    };
+    loadProviders();
+  }, [setProviders]);
 
   const startAdd = () => {
     setForm({ ...emptyProvider });
@@ -93,7 +110,7 @@ export default function AIProviders() {
 
   const startEdit = (index: number) => {
     const provider = ai_providers[index];
-    const apiFormat = normalizeApiFormat(provider.api_format);
+    const apiFormat = provider.api_format;
     const nextForm = { ...provider, api_format: apiFormat };
 
     setForm(nextForm);
@@ -114,16 +131,27 @@ export default function AIProviders() {
     }
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!form.name || !form.api_url || !form.model) return;
-    if (editIndex != null) {
-      updateProvider(editIndex, form);
-    } else {
-      addProvider(form);
+
+    try {
+      // Save to database
+      await saveAiProviderCmd(form);
+
+      // Update local state
+      if (editIndex != null) {
+        updateProvider(editIndex, form);
+      } else {
+        addProvider(form);
+      }
+
+      setIsAdding(false);
+      setEditIndex(null);
+      setForm({ ...emptyProvider });
+    } catch (err) {
+      console.error("Failed to save provider:", err);
+      setTestResult({ success: false, message: `Failed to save: ${err}` });
     }
-    setIsAdding(false);
-    setEditIndex(null);
-    setForm({ ...emptyProvider });
   };
 
   const handleCancel = () => {
@@ -131,6 +159,16 @@ export default function AIProviders() {
     setEditIndex(null);
     setForm({ ...emptyProvider });
     setTestResult(null);
+  };
+
+  const handleRemove = async (index: number) => {
+    const provider = ai_providers[index];
+    try {
+      await deleteAiProviderCmd(provider.name);
+      removeProvider(index);
+    } catch (err) {
+      console.error("Failed to delete provider:", err);
+    }
   };
 
   const handleTest = async () => {
@@ -215,7 +253,7 @@ export default function AIProviders() {
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={() => removeProvider(idx)}
+                  onClick={() => handleRemove(idx)}
                 >
                   <Trash2 className="w-3 h-3 text-destructive" />
                 </Button>
@@ -291,7 +329,7 @@ export default function AIProviders() {
                   placeholder="sk-..."
                 />
               </div>
-              {!(form.provider_type === "custom" && normalizeApiFormat(form.api_format) === CUSTOM_REST_FORMAT) && (
+              {!(form.provider_type === "custom" && form.api_format === CUSTOM_REST_FORMAT) && (
                 <div className="space-y-2">
                   <Label>Model</Label>
                   <Input
@@ -409,7 +447,7 @@ export default function AIProviders() {
                   </div>
 
                   {/* Custom REST specific: User ID field */}
-                  {normalizeApiFormat(form.api_format) === CUSTOM_REST_FORMAT && (
+                  {form.api_format === CUSTOM_REST_FORMAT && (
                     <div className="space-y-2">
                       <Label>Email Address</Label>
                       <Input
@@ -424,7 +462,7 @@ export default function AIProviders() {
                   )}
 
                   {/* Custom REST specific: model dropdown with custom option */}
-                  {normalizeApiFormat(form.api_format) === CUSTOM_REST_FORMAT && (
+                  {form.api_format === CUSTOM_REST_FORMAT && (
                     <div className="space-y-2">
                       <Label>Model</Label>
                       <Select

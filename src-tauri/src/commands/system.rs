@@ -3,7 +3,7 @@ use crate::ollama::{
     hardware, installer, manager, recommender, InstallGuide, ModelRecommendation, OllamaModel,
     OllamaStatus,
 };
-use crate::state::{AppSettings, AppState};
+use crate::state::{AppSettings, AppState, ProviderConfig};
 
 // --- Ollama commands ---
 
@@ -140,4 +140,134 @@ pub async fn get_audit_log(
         .collect::<Vec<_>>();
 
     Ok(rows)
+}
+
+// --- AI Provider persistence commands ---
+
+/// Save an AI provider configuration to encrypted database
+#[tauri::command]
+pub async fn save_ai_provider(
+    provider: ProviderConfig,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    // Encrypt the API key
+    let encrypted_key = crate::integrations::auth::encrypt_token(&provider.api_key)?;
+
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+
+    db.execute(
+        "INSERT OR REPLACE INTO ai_providers
+         (id, name, provider_type, api_url, encrypted_api_key, model, max_tokens, temperature,
+          custom_endpoint_path, custom_auth_header, custom_auth_prefix, api_format, user_id, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, datetime('now'))",
+        rusqlite::params![
+            uuid::Uuid::now_v7().to_string(),
+            provider.name,
+            provider.provider_type,
+            provider.api_url,
+            encrypted_key,
+            provider.model,
+            provider.max_tokens,
+            provider.temperature,
+            provider.custom_endpoint_path,
+            provider.custom_auth_header,
+            provider.custom_auth_prefix,
+            provider.api_format,
+            provider.user_id,
+        ],
+    )
+    .map_err(|e| format!("Failed to save AI provider: {e}"))?;
+
+    Ok(())
+}
+
+/// Load all AI provider configurations from database
+#[tauri::command]
+pub async fn load_ai_providers(
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<ProviderConfig>, String> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+
+    let mut stmt = db
+        .prepare(
+            "SELECT name, provider_type, api_url, encrypted_api_key, model, max_tokens, temperature,
+                    custom_endpoint_path, custom_auth_header, custom_auth_prefix, api_format, user_id
+             FROM ai_providers
+             ORDER BY name",
+        )
+        .map_err(|e| e.to_string())?;
+
+    let providers = stmt
+        .query_map([], |row| {
+            let encrypted_key: String = row.get(3)?;
+
+            Ok((
+                row.get::<_, String>(0)?,          // name
+                row.get::<_, String>(1)?,          // provider_type
+                row.get::<_, String>(2)?,          // api_url
+                encrypted_key,                     // encrypted_api_key
+                row.get::<_, String>(4)?,          // model
+                row.get::<_, Option<u32>>(5)?,     // max_tokens
+                row.get::<_, Option<f64>>(6)?,     // temperature
+                row.get::<_, Option<String>>(7)?,  // custom_endpoint_path
+                row.get::<_, Option<String>>(8)?,  // custom_auth_header
+                row.get::<_, Option<String>>(9)?,  // custom_auth_prefix
+                row.get::<_, Option<String>>(10)?, // api_format
+                row.get::<_, Option<String>>(11)?, // user_id
+            ))
+        })
+        .map_err(|e| e.to_string())?
+        .filter_map(|r| r.ok())
+        .filter_map(
+            |(
+                name,
+                provider_type,
+                api_url,
+                encrypted_key,
+                model,
+                max_tokens,
+                temperature,
+                custom_endpoint_path,
+                custom_auth_header,
+                custom_auth_prefix,
+                api_format,
+                user_id,
+            )| {
+                // Decrypt the API key
+                let api_key = crate::integrations::auth::decrypt_token(&encrypted_key).ok()?;
+
+                Some(ProviderConfig {
+                    name,
+                    provider_type,
+                    api_url,
+                    api_key,
+                    model,
+                    max_tokens,
+                    temperature,
+                    custom_endpoint_path,
+                    custom_auth_header,
+                    custom_auth_prefix,
+                    api_format,
+                    session_id: None, // Session IDs are not persisted
+                    user_id,
+                })
+            },
+        )
+        .collect();
+
+    Ok(providers)
+}
+
+/// Delete an AI provider configuration
+#[tauri::command]
+pub async fn delete_ai_provider(
+    name: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+
+    db.execute("DELETE FROM ai_providers WHERE name = ?1", [&name])
+        .map_err(|e| format!("Failed to delete AI provider: {e}"))?;
+
+    Ok(())
 }

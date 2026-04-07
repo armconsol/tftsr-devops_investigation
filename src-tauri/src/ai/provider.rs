@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 
-use crate::ai::{ChatResponse, Message, ProviderInfo};
+use crate::ai::{ChatResponse, Message, ProviderInfo, Tool};
 use crate::state::ProviderConfig;
 
 #[async_trait]
@@ -11,6 +11,7 @@ pub trait Provider: Send + Sync {
         &self,
         messages: Vec<Message>,
         config: &ProviderConfig,
+        tools: Option<Vec<Tool>>,
     ) -> anyhow::Result<ChatResponse>;
 }
 

@@ -24,7 +24,7 @@
 
 - **5-Whys AI Triage** — Interactive guided root cause analysis via multi-turn AI chat
 - **PII Auto-Redaction** — Detects and redacts sensitive data before any AI send
-- **Multi-Provider AI** — OpenAI, Anthropic Claude, Google Gemini, Mistral, AWS Bedrock (via LiteLLM), MSI GenAI (Motorola internal), local Ollama (fully offline)
+- **Multi-Provider AI** — OpenAI, Anthropic Claude, Google Gemini, Mistral, AWS Bedrock (via LiteLLM), Custom REST gateways, local Ollama (fully offline)
 - **Custom Provider Support** — Flexible authentication (Bearer, custom headers) and API formats (OpenAI-compatible, Custom REST)
 - **External Integrations** — Confluence, ServiceNow, Azure DevOps with OAuth2 PKCE flows
 - **SQLCipher AES-256** — All issue history and credentials encrypted at rest
@@ -37,7 +37,7 @@
 
 | Version | Status | Highlights |
 |---------|--------|-----------|
-| v0.2.6 | 🚀 Latest | MSI GenAI support, OAuth2 shell permissions, user ID tracking |
+| v0.2.6 | 🚀 Latest | Custom REST AI gateway support, OAuth2 shell permissions, user ID tracking |
 | v0.2.3 | Released | Confluence/ServiceNow/ADO REST API clients (19 TDD tests) |
 | v0.1.1 | Released | Core application with PII detection, RCA generation |
 

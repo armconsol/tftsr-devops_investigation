@@ -1,4 +1,5 @@
-use tauri::State;
+use rusqlite::OptionalExtension;
+use tauri::{Manager, State};
 use tracing::warn;
 
 use crate::ai::provider::create_provider;
@@ -51,15 +52,19 @@ pub async fn analyze_logs(
                       FIRST_WHY: (initial why question for 5-whys analysis), \
                       SEVERITY: (critical/high/medium/low)"
                 .into(),
+            tool_call_id: None,
+            tool_calls: None,
         },
         Message {
             role: "user".into(),
             content: format!("Analyze logs for issue {issue_id}:\n\n{log_contents}"),
+            tool_call_id: None,
+            tool_calls: None,
         },
     ];
 
     let response = provider
-        .chat(messages, &provider_config)
+        .chat(messages, &provider_config, None)
         .await
         .map_err(|e| {
             warn!(error = %e, "ai analyze_logs provider request failed");
@@ -160,6 +165,7 @@ pub async fn chat_message(
     issue_id: String,
     message: String,
     provider_config: ProviderConfig,
+    app_handle: tauri::AppHandle,
     state: State<'_, AppState>,
 ) -> Result<ChatResponse, String> {
     // Find or create a conversation for this issue + provider
@@ -212,25 +218,105 @@ pub async fn chat_message(
             .unwrap_or_default();
         drop(db);
         raw.into_iter()
-            .map(|(role, content)| Message { role, content })
+            .map(|(role, content)| Message {
+                role,
+                content,
+                tool_call_id: None,
+                tool_calls: None,
+            })
             .collect()
     };
 
     let provider = create_provider(&provider_config);
 
+    // Search integration sources for relevant context
+    let integration_context = search_integration_sources(&message, &app_handle, &state).await;
+
     let mut messages = history;
+
+    // If we found integration content, add it to the conversation context
+    if !integration_context.is_empty() {
+        let context_message = Message {
+            role: "system".into(),
+            content: format!(
+                "INTERNAL DOCUMENTATION SOURCES:\n\n{integration_context}\n\n\
+                 Instructions: The above content is from internal company documentation systems \
+                 (Confluence, ServiceNow, Azure DevOps). \
+                 \n\n**IMPORTANT**: First determine if this documentation is RELEVANT to the user's question:\
+                 \n- If the documentation directly addresses the question → Use it and cite sources with URLs\
+                 \n- If the documentation is tangentially related but doesn't answer the question → Briefly mention what internal docs exist, then provide a complete answer using general knowledge\
+                 \n- If the documentation is completely unrelated → Ignore it and answer using general knowledge\
+                 \n\nDo NOT force irrelevant internal documentation into your answer. The user needs accurate information, not forced citations."
+            ),
+            tool_call_id: None,
+            tool_calls: None,
+        };
+        messages.push(context_message);
+    }
+
     messages.push(Message {
         role: "user".into(),
         content: message.clone(),
+        tool_call_id: None,
+        tool_calls: None,
     });
 
-    let response = provider
-        .chat(messages, &provider_config)
-        .await
-        .map_err(|e| {
-            warn!(error = %e, "ai chat provider request failed");
-            "AI provider request failed".to_string()
-        })?;
+    // Get available tools
+    let tools = Some(crate::ai::tools::get_available_tools());
+
+    // Tool-calling loop: keep calling until AI gives final answer
+    let final_response;
+    let max_iterations = 10; // Prevent infinite loops
+    let mut iteration = 0;
+
+    loop {
+        iteration += 1;
+        if iteration > max_iterations {
+            return Err("Tool-calling loop exceeded maximum iterations".to_string());
+        }
+
+        let response = provider
+            .chat(messages.clone(), &provider_config, tools.clone())
+            .await
+            .map_err(|e| {
+                let error_msg = format!("AI provider request failed: {e}");
+                warn!("{}", error_msg);
+                error_msg
+            })?;
+
+        // Check if AI wants to call tools
+        if let Some(tool_calls) = &response.tool_calls {
+            tracing::info!("AI requested {} tool call(s)", tool_calls.len());
+
+            // Execute each tool call
+            for tool_call in tool_calls {
+                tracing::info!("Executing tool: {}", tool_call.name);
+
+                let tool_result = execute_tool_call(tool_call, &app_handle, &state).await;
+
+                // Format result
+                let result_content = match tool_result {
+                    Ok(result) => result,
+                    Err(e) => format!("Error executing tool: {e}"),
+                };
+
+                // Add tool result as a message
+                messages.push(Message {
+                    role: "tool".into(),
+                    content: result_content,
+                    tool_call_id: Some(tool_call.id.clone()),
+                    tool_calls: None,
+                });
+            }
+
+            // Continue loop to get AI's next response
+            continue;
+        }
+
+        // No tool calls - this is the final answer
+        final_response = response;
+        break;
+    }
 
     // Save both user message and response to DB
     {
@@ -239,7 +325,7 @@ pub async fn chat_message(
         let asst_msg = AiMessage::new(
             conversation_id,
             "assistant".to_string(),
-            response.content.clone(),
+            final_response.content.clone(),
         );
 
         db.execute(
@@ -268,10 +354,10 @@ pub async fn chat_message(
             "model": provider_config.model,
             "api_url": provider_config.api_url,
             "user_message": user_msg.content,
-            "response_preview": if response.content.len() > 200 {
-                format!("{preview}...", preview = &response.content[..200])
+            "response_preview": if final_response.content.len() > 200 {
+                format!("{preview}...", preview = &final_response.content[..200])
             } else {
-                response.content.clone()
+                final_response.content.clone()
             },
             "token_count": user_msg.token_count,
         });
@@ -292,7 +378,7 @@ pub async fn chat_message(
         }
     }
 
-    Ok(response)
+    Ok(final_response)
 }
 
 #[tauri::command]
@@ -305,9 +391,11 @@ pub async fn test_provider_connection(
         content:
             "Reply with exactly: Troubleshooting and RCA Assistant connection test successful."
                 .into(),
+        tool_call_id: None,
+        tool_calls: None,
     }];
     provider
-        .chat(messages, &provider_config)
+        .chat(messages, &provider_config, None)
         .await
         .map_err(|e| {
             warn!(error = %e, "ai test_provider_connection failed");
@@ -350,6 +438,417 @@ pub async fn list_providers() -> Result<Vec<ProviderInfo>, String> {
             models: vec!["llama3.2:3b".to_string(), "llama3.1:8b".to_string()],
         },
     ])
+}
+
+/// Search integration sources (Confluence, ServiceNow, Azure DevOps) for relevant context
+async fn search_integration_sources(
+    query: &str,
+    app_handle: &tauri::AppHandle,
+    state: &State<'_, AppState>,
+) -> String {
+    let mut all_results = Vec::new();
+
+    // Try to get integration configurations
+    let configs: Vec<crate::commands::integrations::IntegrationConfig> = {
+        let db = match state.db.lock() {
+            Ok(db) => db,
+            Err(e) => {
+                tracing::warn!("Failed to lock database: {}", e);
+                return String::new();
+            }
+        };
+
+        let mut stmt = match db.prepare(
+            "SELECT service, base_url, username, project_name, space_key FROM integration_config",
+        ) {
+            Ok(stmt) => stmt,
+            Err(e) => {
+                tracing::warn!("Failed to prepare statement: {}", e);
+                return String::new();
+            }
+        };
+
+        let rows = match stmt.query_map([], |row| {
+            Ok(crate::commands::integrations::IntegrationConfig {
+                service: row.get(0)?,
+                base_url: row.get(1)?,
+                username: row.get(2)?,
+                project_name: row.get(3)?,
+                space_key: row.get(4)?,
+            })
+        }) {
+            Ok(rows) => rows,
+            Err(e) => {
+                tracing::warn!("Failed to query integration configs: {}", e);
+                return String::new();
+            }
+        };
+
+        rows.filter_map(|r| r.ok()).collect()
+    };
+
+    // Search each available integration in parallel
+    let mut search_tasks = Vec::new();
+
+    for config in configs {
+        // Authentication priority:
+        // 1. Try cookies from persistent browser (may fail for HttpOnly)
+        // 2. Try stored credentials from database
+        // 3. Fall back to webview-based search (uses browser's session directly)
+
+        let cookies_opt = match crate::commands::integrations::get_fresh_cookies_from_webview(
+            &config.service,
+            app_handle,
+            state,
+        )
+        .await
+        {
+            Ok(Some(cookies)) => {
+                tracing::info!("Using extracted cookies for {}", config.service);
+                Some(cookies)
+            }
+            _ => {
+                // Fallback: check for stored credentials in database
+                tracing::info!(
+                    "Cookie extraction failed for {}, checking stored credentials",
+                    config.service
+                );
+                let encrypted_token: Option<String> = {
+                    let db = match state.db.lock() {
+                        Ok(db) => db,
+                        Err(_) => continue,
+                    };
+                    db.query_row(
+                        "SELECT encrypted_token FROM credentials WHERE service = ?1",
+                        [&config.service],
+                        |row| row.get::<_, String>(0),
+                    )
+                    .optional()
+                    .ok()
+                    .flatten()
+                };
+
+                if let Some(token) = encrypted_token {
+                    if let Ok(decrypted) = crate::integrations::auth::decrypt_token(&token) {
+                        // Try to parse as cookies JSON
+                        if let Ok(cookie_list) = serde_json::from_str::<
+                            Vec<crate::integrations::webview_auth::Cookie>,
+                        >(&decrypted)
+                        {
+                            tracing::info!(
+                                "Using stored cookies for {} (count: {})",
+                                config.service,
+                                cookie_list.len()
+                            );
+                            Some(cookie_list)
+                        } else {
+                            tracing::warn!(
+                                "Stored credentials for {} not in cookie format",
+                                config.service
+                            );
+                            None
+                        }
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            }
+        };
+
+        // If we have cookies (from extraction or database), use standard API search
+        if let Some(cookies) = cookies_opt {
+            match config.service.as_str() {
+                "confluence" => {
+                    let base_url = config.base_url.clone();
+                    let query = query.to_string();
+                    let cookies_clone = cookies.clone();
+                    search_tasks.push(tokio::spawn(async move {
+                        crate::integrations::confluence_search::search_confluence(
+                            &base_url,
+                            &query,
+                            &cookies_clone,
+                        )
+                        .await
+                        .unwrap_or_default()
+                    }));
+                }
+                "servicenow" => {
+                    let instance_url = config.base_url.clone();
+                    let query = query.to_string();
+                    let cookies_clone = cookies.clone();
+                    search_tasks.push(tokio::spawn(async move {
+                        let mut results = Vec::new();
+                        // Search knowledge base
+                        if let Ok(kb_results) =
+                            crate::integrations::servicenow_search::search_servicenow(
+                                &instance_url,
+                                &query,
+                                &cookies_clone,
+                            )
+                            .await
+                        {
+                            results.extend(kb_results);
+                        }
+                        // Search incidents
+                        if let Ok(incident_results) =
+                            crate::integrations::servicenow_search::search_incidents(
+                                &instance_url,
+                                &query,
+                                &cookies_clone,
+                            )
+                            .await
+                        {
+                            results.extend(incident_results);
+                        }
+                        results
+                    }));
+                }
+                "azuredevops" => {
+                    let org_url = config.base_url.clone();
+                    let project = config.project_name.unwrap_or_default();
+                    let query = query.to_string();
+                    let cookies_clone = cookies.clone();
+                    search_tasks.push(tokio::spawn(async move {
+                        let mut results = Vec::new();
+                        // Search wiki
+                        if let Ok(wiki_results) =
+                            crate::integrations::azuredevops_search::search_wiki(
+                                &org_url,
+                                &project,
+                                &query,
+                                &cookies_clone,
+                            )
+                            .await
+                        {
+                            results.extend(wiki_results);
+                        }
+                        // Search work items
+                        if let Ok(wi_results) =
+                            crate::integrations::azuredevops_search::search_work_items(
+                                &org_url,
+                                &project,
+                                &query,
+                                &cookies_clone,
+                            )
+                            .await
+                        {
+                            results.extend(wi_results);
+                        }
+                        results
+                    }));
+                }
+                _ => {}
+            }
+        } else {
+            // Final fallback: try webview-based fetch (includes HttpOnly cookies automatically)
+            // This makes HTTP requests FROM the authenticated webview, which includes all cookies
+            tracing::info!(
+                "No extracted cookies for {}, trying webview-based fetch",
+                config.service
+            );
+
+            // Check if webview exists for this service
+            let webview_label = {
+                let webviews = match state.integration_webviews.lock() {
+                    Ok(w) => w,
+                    Err(_) => continue,
+                };
+                webviews.get(&config.service).cloned()
+            };
+
+            if let Some(label) = webview_label {
+                // Get window handle
+                if let Some(webview_window) = app_handle.get_webview_window(&label) {
+                    let base_url = config.base_url.clone();
+                    let service = config.service.clone();
+                    let query_str = query.to_string();
+
+                    match service.as_str() {
+                        "confluence" => {
+                            search_tasks.push(tokio::spawn(async move {
+                                tracing::info!("Executing Confluence search via webview fetch");
+                                match crate::integrations::webview_fetch::search_confluence_webview(
+                                    &webview_window,
+                                    &base_url,
+                                    &query_str,
+                                )
+                                .await
+                                {
+                                    Ok(results) => {
+                                        tracing::info!(
+                                            "Webview fetch for Confluence returned {} results",
+                                            results.len()
+                                        );
+                                        results
+                                    }
+                                    Err(e) => {
+                                        tracing::warn!(
+                                            "Webview fetch failed for Confluence: {}",
+                                            e
+                                        );
+                                        Vec::new()
+                                    }
+                                }
+                            }));
+                        }
+                        "servicenow" => {
+                            search_tasks.push(tokio::spawn(async move {
+                                tracing::info!("Executing ServiceNow search via webview fetch");
+                                match crate::integrations::webview_fetch::search_servicenow_webview(
+                                    &webview_window,
+                                    &base_url,
+                                    &query_str,
+                                )
+                                .await
+                                {
+                                    Ok(results) => {
+                                        tracing::info!(
+                                            "Webview fetch for ServiceNow returned {} results",
+                                            results.len()
+                                        );
+                                        results
+                                    }
+                                    Err(e) => {
+                                        tracing::warn!(
+                                            "Webview fetch failed for ServiceNow: {}",
+                                            e
+                                        );
+                                        Vec::new()
+                                    }
+                                }
+                            }));
+                        }
+                        "azuredevops" => {
+                            let project = config.project_name.unwrap_or_default();
+                            search_tasks.push(tokio::spawn(async move {
+                                tracing::info!("Executing Azure DevOps search via webview fetch");
+                                let mut results = Vec::new();
+
+                                // Search wiki
+                                match crate::integrations::webview_fetch::search_azuredevops_wiki_webview(
+                                    &webview_window,
+                                    &base_url,
+                                    &project,
+                                    &query_str
+                                ).await {
+                                    Ok(wiki_results) => {
+                                        tracing::info!("Webview fetch for ADO wiki returned {} results", wiki_results.len());
+                                        results.extend(wiki_results);
+                                    }
+                                    Err(e) => {
+                                        tracing::warn!("Webview fetch failed for ADO wiki: {}", e);
+                                    }
+                                }
+
+                                // Search work items
+                                match crate::integrations::webview_fetch::search_azuredevops_workitems_webview(
+                                    &webview_window,
+                                    &base_url,
+                                    &project,
+                                    &query_str
+                                ).await {
+                                    Ok(wi_results) => {
+                                        tracing::info!("Webview fetch for ADO work items returned {} results", wi_results.len());
+                                        results.extend(wi_results);
+                                    }
+                                    Err(e) => {
+                                        tracing::warn!("Webview fetch failed for ADO work items: {}", e);
+                                    }
+                                }
+
+                                results
+                            }));
+                        }
+                        _ => {}
+                    }
+                } else {
+                    tracing::warn!("Webview window not found for {}", config.service);
+                }
+            } else {
+                tracing::warn!(
+                    "No webview open for {} - cannot search. Please open browser window in Settings → Integrations",
+                    config.service
+                );
+            }
+        }
+    }
+
+    // Wait for all searches to complete
+    for task in search_tasks {
+        if let Ok(results) = task.await {
+            all_results.extend(results);
+        }
+    }
+
+    // Format results for AI context
+    if all_results.is_empty() {
+        return String::new();
+    }
+
+    let mut context = String::new();
+    for (idx, result) in all_results.iter().enumerate() {
+        context.push_str(&format!("--- SOURCE {} ({}) ---\n", idx + 1, result.source));
+        context.push_str(&format!("Title: {}\n", result.title));
+        context.push_str(&format!("URL: {}\n", result.url));
+
+        if let Some(content) = &result.content {
+            context.push_str(&format!("Content:\n{content}\n\n"));
+        } else {
+            context.push_str(&format!("Excerpt: {}\n\n", result.excerpt));
+        }
+    }
+
+    tracing::info!(
+        "Found {} integration sources for AI context",
+        all_results.len()
+    );
+    context
+}
+
+/// Execute a tool call made by the AI
+async fn execute_tool_call(
+    tool_call: &crate::ai::ToolCall,
+    app_handle: &tauri::AppHandle,
+    app_state: &State<'_, AppState>,
+) -> Result<String, String> {
+    match tool_call.name.as_str() {
+        "add_ado_comment" => {
+            // Parse arguments
+            let args: serde_json::Value = serde_json::from_str(&tool_call.arguments)
+                .map_err(|e| format!("Failed to parse tool arguments: {e}"))?;
+
+            let work_item_id = args
+                .get("work_item_id")
+                .and_then(|v| v.as_i64())
+                .ok_or_else(|| "Missing or invalid work_item_id parameter".to_string())?;
+
+            let comment_text = args
+                .get("comment_text")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| "Missing or invalid comment_text parameter".to_string())?;
+
+            // Execute the add_ado_comment command
+            tracing::info!(
+                "AI executing tool: add_ado_comment({}, \"{}\")",
+                work_item_id,
+                comment_text
+            );
+            crate::commands::integrations::add_ado_comment(
+                work_item_id,
+                comment_text.to_string(),
+                app_handle.clone(),
+                app_state.clone(),
+            )
+            .await
+        }
+        _ => {
+            let error = format!("Unknown tool: {}", tool_call.name);
+            tracing::warn!("{}", error);
+            Err(error)
+        }
+    }
 }
 
 #[cfg(test)]
