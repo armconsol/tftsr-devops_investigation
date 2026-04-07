@@ -287,9 +287,9 @@ All data is stored locally in a SQLCipher-encrypted database at:
 
 | OS | Path |
 |---|---|
-| Linux | `~/.local/share/tftsr/tftsr.db` |
-| macOS | `~/Library/Application Support/tftsr/tftsr.db` |
-| Windows | `%APPDATA%\tftsr\tftsr.db` |
+| Linux | `~/.local/share/trcaa/trcaa.db` |
+| macOS | `~/Library/Application Support/trcaa/trcaa.db` |
+| Windows | `%APPDATA%\trcaa\trcaa.db` |
 
 Override with the `TFTSR_DATA_DIR` environment variable.
 
@@ -300,8 +300,8 @@ Override with the `TFTSR_DATA_DIR` environment variable.
 | Variable | Default | Purpose |
 |---|---|---|
 | `TFTSR_DATA_DIR` | Platform data dir | Override database location |
-| `TFTSR_DB_KEY` | _(none)_ | Database encryption key (required in release builds) |
-| `TFTSR_ENCRYPTION_KEY` | _(none)_ | Credential encryption key (required in release builds) |
+| `TFTSR_DB_KEY` | _(auto-generated)_ | Database encryption key override — auto-generated at first launch if unset |
+| `TFTSR_ENCRYPTION_KEY` | _(auto-generated)_ | Credential encryption key override — auto-generated at first launch if unset |
 | `RUST_LOG` | `info` | Tracing log level (`debug`, `info`, `warn`, `error`) |
 
 ---

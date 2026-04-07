@@ -29,7 +29,8 @@ TFTSR uses a Tauri 2.x architecture: a Rust backend runs natively, and a React/T
 pub struct AppState {
     pub db: Arc<Mutex<rusqlite::Connection>>,
     pub settings: Arc<Mutex<AppSettings>>,
-    pub app_data_dir: PathBuf,   // ~/.local/share/tftsr on Linux
+    pub app_data_dir: PathBuf,   // ~/.local/share/trcaa on Linux
+    pub integration_webviews: Arc<Mutex<HashMap<String, String>>>,
 }
 ```
 
@@ -46,10 +47,10 @@ All command handlers receive `State<'_, AppState>` as a Tauri-injected parameter
 | `commands/analysis.rs` | Log file upload, PII detection, redaction |
 | `commands/docs.rs` | RCA and post-mortem generation, document export |
 | `commands/system.rs` | Ollama management, hardware probe, settings, audit log |
-| `commands/integrations.rs` | Confluence / ServiceNow / ADO — v0.2 stubs |
+| `commands/integrations.rs` | Confluence / ServiceNow / ADO — OAuth2, WebView auth, tool calling |
 | `ai/provider.rs` | `Provider` trait + `create_provider()` factory |
 | `pii/detector.rs` | Multi-pattern PII scanner with overlap resolution |
-| `db/migrations.rs` | Versioned schema (10 migrations in `_migrations` table) |
+| `db/migrations.rs` | Versioned schema (14 migrations tracked in `_migrations` table) |
 | `db/models.rs` | All DB types — see `IssueDetail` note below |
 | `docs/rca.rs` + `docs/postmortem.rs` | Markdown template builders |
 | `audit/log.rs` | `write_audit_event()` — called before every external send |
@@ -178,13 +179,30 @@ Use `detail.issue.title`, **not** `detail.title`.
 
 ```
 1. Initialize tracing (RUST_LOG controls level)
-2. Determine data directory (~/.local/share/tftsr or TFTSR_DATA_DIR)
-3. Open / create SQLite database (run migrations)
-4. Create AppState (db + settings + app_data_dir)
-5. Register Tauri plugins (stronghold, dialog, fs, shell, http, cli, updater)
-6. Register all 39 IPC command handlers
-7. Start WebView with React app
+2. Determine data directory (state::get_app_data_dir() or TFTSR_DATA_DIR)
+3. Auto-generate or load .dbkey / .enckey (mode 0600) — see ADR-005
+4. Open / create SQLCipher encrypted database
+   - If plain SQLite detected (debug→release upgrade): auto-migrate + backup
+5. Run DB migrations (14 schema versions)
+6. Create AppState (db + settings + app_data_dir + integration_webviews)
+7. Register Tauri plugins (stronghold, dialog, fs, shell, http)
+8. Register all IPC command handlers via generate_handler![]
+9. Start WebView with React app
 ```
+
+## Architecture Documentation
+
+Full architecture documentation with C4 diagrams, data flow diagrams, and Architecture Decision Records (ADRs) is available in [`docs/architecture/`](../architecture/README.md):
+
+| Document | Contents |
+|----------|----------|
+| [Architecture Overview](../architecture/README.md) | C4 diagrams, data flows, security model |
+| [ADR-001](../architecture/adrs/ADR-001-tauri-desktop-framework.md) | Why Tauri over Electron |
+| [ADR-002](../architecture/adrs/ADR-002-sqlcipher-encrypted-database.md) | SQLCipher encryption choices |
+| [ADR-003](../architecture/adrs/ADR-003-provider-trait-pattern.md) | AI provider trait design |
+| [ADR-004](../architecture/adrs/ADR-004-pii-regex-aho-corasick.md) | PII detection implementation |
+| [ADR-005](../architecture/adrs/ADR-005-auto-generate-encryption-keys.md) | Key auto-generation design |
+| [ADR-006](../architecture/adrs/ADR-006-zustand-state-management.md) | Frontend state management |
 
 ## Data Flow
 
