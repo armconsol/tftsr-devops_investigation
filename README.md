@@ -4,7 +4,8 @@ A structured, AI-backed desktop tool for IT incident triage, 5-Whys root cause a
 
 Built with **Tauri 2** (Rust + WebView), **React 18**, **TypeScript**, and **SQLCipher AES-256** encrypted storage.
 
-**CI status:** ![CI](http://172.0.0.29:3000/sarman/tftsr-devops_investigation/actions/workflows/test.yml/badge.svg) — all checks green (rustfmt · clippy · 64 Rust tests · tsc · vitest)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
+![CI](http://172.0.0.29:3000/sarman/tftsr-devops_investigation/actions/workflows/test.yml/badge.svg)
 
 ---
 
@@ -336,4 +337,6 @@ If this tool has been useful to you, consider buying me a coffee!
 
 ## License
 
-MIT
+MIT © 2025 [Shaun Arman](https://github.com/sarman)
+
+See [LICENSE](./LICENSE) for the full text. You are free to use, modify, and distribute this software — personal, commercial, or enterprise — as long as the original copyright notice is retained.
