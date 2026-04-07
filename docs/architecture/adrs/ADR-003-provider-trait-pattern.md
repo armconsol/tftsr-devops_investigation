@@ -10,7 +10,7 @@
 
 The application must support multiple AI providers (OpenAI, Anthropic, Google Gemini, Mistral, Ollama) with different API formats, authentication methods, and response structures. Provider selection must be runtime-configurable by the user without recompiling.
 
-Additionally, enterprise environments may need custom AI endpoints (e.g., MSI GenAI gateway at `genai-service.commandcentral.com`) that speak OpenAI-compatible APIs with custom auth headers.
+Additionally, enterprise environments may need custom AI endpoints (e.g., an enterprise AI gateway) that speak OpenAI-compatible APIs with custom auth headers.
 
 ---
 
@@ -47,7 +47,7 @@ pub struct ProviderConfig {
     pub api_format: Option<String>,   // "openai" | "custom_rest"
 }
 ```
-This allows a single `OpenAiProvider` implementation to handle both standard OpenAI and arbitrary OpenAI-compatible endpoints — the user configures the auth header name and prefix to match their gateway.
+This allows a single `OpenAiProvider` implementation to handle both standard OpenAI and arbitrary custom endpoints — the user configures the auth header name and prefix to match their gateway.
 
 ---
 

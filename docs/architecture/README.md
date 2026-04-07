@@ -35,7 +35,7 @@ C4Context
     System_Ext(openai, "OpenAI API", "GPT-4o, GPT-4o-mini for cloud AI inference")
     System_Ext(anthropic, "Anthropic API", "Claude 3.5 Sonnet, Claude Haiku")
     System_Ext(gemini, "Google Gemini API", "Gemini Pro for cloud AI inference")
-    System_Ext(msi_genai, "MSI GenAI Gateway", "Enterprise AI gateway (commandcentral.com)")
+    System_Ext(custom_rest, "Custom REST Gateway", "Enterprise AI gateway (custom REST format)")
 
     System_Ext(confluence, "Confluence", "Atlassian wiki — publish RCA docs")
     System_Ext(servicenow, "ServiceNow", "ITSM platform — create incident tickets")
@@ -46,7 +46,7 @@ C4Context
     Rel(trcaa, openai, "AI inference", "HTTPS/REST")
     Rel(trcaa, anthropic, "AI inference", "HTTPS/REST")
     Rel(trcaa, gemini, "AI inference", "HTTPS/REST")
-    Rel(trcaa, msi_genai, "AI inference", "HTTPS/REST")
+    Rel(trcaa, custom_rest, "AI inference", "HTTPS/REST")
     Rel(trcaa, confluence, "Publish RCA docs", "HTTPS/REST + OAuth2")
     Rel(trcaa, servicenow, "Create incidents", "HTTPS/REST + OAuth2")
     Rel(trcaa, ado, "Create work items", "HTTPS/REST + OAuth2")

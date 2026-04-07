@@ -48,11 +48,7 @@ export const CUSTOM_REST_MODELS = [
 ] as const;
 
 export const CUSTOM_MODEL_OPTION = "__custom_model__";
-export const LEGACY_API_FORMAT = "msi_genai";
 export const CUSTOM_REST_FORMAT = "custom_rest";
-
-export const normalizeApiFormat = (format?: string): string | undefined =>
-  format === LEGACY_API_FORMAT ? CUSTOM_REST_FORMAT : format;
 
 const emptyProvider: ProviderConfig = {
   name: "",

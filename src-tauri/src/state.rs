@@ -21,7 +21,7 @@ pub struct ProviderConfig {
     /// If None, defaults to "/chat/completions" for OpenAI compatibility
     #[serde(skip_serializing_if = "Option::is_none")]
     pub custom_endpoint_path: Option<String>,
-    /// Optional: Custom auth header name (e.g., "x-msi-genai-api-key")
+    /// Optional: Custom auth header name (e.g., "x-custom-api-key")
     /// If None, defaults to "Authorization"
     #[serde(skip_serializing_if = "Option::is_none")]
     pub custom_auth_header: Option<String>,

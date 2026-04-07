@@ -130,6 +130,7 @@ Launch the app and go to **Settings → AI Providers** to add a provider:
 | Ollama (local) | `http://localhost:11434` | No key needed — fully offline |
 | Azure OpenAI | `https://<resource>.openai.azure.com/openai/deployments/<deployment>` | Requires API key |
 | **AWS Bedrock (via LiteLLM)** | `http://localhost:8000/v1` | See [LiteLLM + AWS Bedrock](#litellm--aws-bedrock-setup) below |
+| **Custom REST Gateway** | Your gateway URL | See [Custom REST format](docs/wiki/AI-Providers.md) |
 
 For offline use, install [Ollama](https://ollama.com) and pull a model:
 ```bash
@@ -325,6 +326,14 @@ Override with the `TFTSR_DATA_DIR` environment variable.
 
 ---
 
+## Support
+
+If this tool has been useful to you, consider buying me a coffee!
+
+[![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-buymeacoffee.com%2Ftftsr-FFDD00?style=flat&logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/tftsr)
+
+---
+
 ## License
 
-Private — internal tooling. All rights reserved.
+MIT

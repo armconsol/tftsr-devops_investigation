@@ -8,7 +8,7 @@ use crate::state::ProviderConfig;
 pub struct OpenAiProvider;
 
 fn is_custom_rest_format(api_format: Option<&str>) -> bool {
-    matches!(api_format, Some("custom_rest") | Some("msi_genai"))
+    matches!(api_format, Some("custom_rest"))
 }
 
 #[async_trait]
@@ -38,7 +38,6 @@ impl Provider for OpenAiProvider {
         // Check if using custom REST format
         let api_format = config.api_format.as_deref().unwrap_or("openai");
 
-        // Backward compatibility: accept legacy msi_genai identifier
         if is_custom_rest_format(Some(api_format)) {
             self.chat_custom_rest(messages, config, tools).await
         } else {
@@ -54,11 +53,6 @@ mod tests {
     #[test]
     fn custom_rest_format_is_recognized() {
         assert!(is_custom_rest_format(Some("custom_rest")));
-    }
-
-    #[test]
-    fn legacy_msi_format_is_recognized_for_compatibility() {
-        assert!(is_custom_rest_format(Some("msi_genai")));
     }
 
     #[test]
@@ -186,7 +180,7 @@ impl OpenAiProvider {
         })
     }
 
-    /// Custom REST format (MSI GenAI payload contract)
+    /// Custom REST format (non-OpenAI payload contract)
     async fn chat_custom_rest(
         &self,
         messages: Vec<Message>,
@@ -268,7 +262,7 @@ impl OpenAiProvider {
             body["tools"] = serde_json::Value::from(formatted_tools);
             body["tool_choice"] = serde_json::Value::from("auto");
 
-            tracing::info!("MSI GenAI: Sending {} tools in request", tool_count);
+            tracing::info!("Custom REST: Sending {} tools in request", tool_count);
         }
 
         // Use custom auth header and prefix (no default prefix for custom REST)
@@ -296,7 +290,7 @@ impl OpenAiProvider {
         let json: serde_json::Value = resp.json().await?;
 
         tracing::debug!(
-            "MSI GenAI response: {}",
+            "Custom REST response: {}",
             serde_json::to_string_pretty(&json).unwrap_or_else(|_| "invalid JSON".to_string())
         );
 
@@ -328,7 +322,7 @@ impl OpenAiProvider {
                                     .and_then(|a| a.as_str())
                                     .or_else(|| call.get("arguments").and_then(|a| a.as_str())),
                             ) {
-                                tracing::info!("MSI GenAI: Parsed tool call: {} ({})", name, id);
+                                tracing::info!("Custom REST: Parsed tool call: {} ({})", name, id);
                                 return Some(crate::ai::ToolCall {
                                     id: id.to_string(),
                                     name: name.to_string(),
@@ -344,10 +338,10 @@ impl OpenAiProvider {
                                 let id = call
                                     .get("id")
                                     .and_then(|v| v.as_str())
-                                    .unwrap_or_else(|| "tool_call_0")
+                                    .unwrap_or("tool_call_0")
                                     .to_string();
                                 tracing::info!(
-                                    "MSI GenAI: Parsed tool call (simple format): {} ({})",
+                                    "Custom REST: Parsed tool call (simple format): {} ({})",
                                     name,
                                     id
                                 );
@@ -358,14 +352,14 @@ impl OpenAiProvider {
                                 });
                             }
 
-                            tracing::warn!("MSI GenAI: Failed to parse tool call: {:?}", call);
+                            tracing::warn!("Custom REST: Failed to parse tool call: {:?}", call);
                             None
                         })
                         .collect();
                     if calls.is_empty() {
                         None
                     } else {
-                        tracing::info!("MSI GenAI: Found {} tool calls", calls.len());
+                        tracing::info!("Custom REST: Found {} tool calls", calls.len());
                         Some(calls)
                     }
                 } else {
