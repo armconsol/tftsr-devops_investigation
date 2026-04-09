@@ -1,8 +1,8 @@
 use tauri::State;
 
 use crate::db::models::{
-    AiConversation, AiMessage, Issue, IssueDetail, IssueFilter, IssueSummary, IssueUpdate, LogFile,
-    ResolutionStep,
+    AiConversation, AiMessage, ImageAttachment, Issue, IssueDetail, IssueFilter, IssueSummary,
+    IssueUpdate, LogFile, ResolutionStep,
 };
 use crate::state::AppState;
 
@@ -100,6 +100,32 @@ pub async fn get_issue(
         .filter_map(|r| r.ok())
         .collect();
 
+    // Load image attachments
+    let mut img_stmt = db
+        .prepare(
+            "SELECT id, issue_id, file_name, file_path, file_size, mime_type, upload_hash, uploaded_at, pii_warning_acknowledged, is_paste \
+             FROM image_attachments WHERE issue_id = ?1 ORDER BY uploaded_at ASC",
+        )
+        .map_err(|e| e.to_string())?;
+    let image_attachments: Vec<ImageAttachment> = img_stmt
+        .query_map([&issue_id], |row| {
+            Ok(ImageAttachment {
+                id: row.get(0)?,
+                issue_id: row.get(1)?,
+                file_name: row.get(2)?,
+                file_path: row.get(3)?,
+                file_size: row.get(4)?,
+                mime_type: row.get(5)?,
+                upload_hash: row.get(6)?,
+                uploaded_at: row.get(7)?,
+                pii_warning_acknowledged: row.get::<_, i32>(8)? != 0,
+                is_paste: row.get::<_, i32>(9)? != 0,
+            })
+        })
+        .map_err(|e| e.to_string())?
+        .filter_map(|r| r.ok())
+        .collect();
+
     // Load resolution steps (5-whys)
     let mut rs_stmt = db
         .prepare(
@@ -148,6 +174,7 @@ pub async fn get_issue(
     Ok(IssueDetail {
         issue,
         log_files,
+        image_attachments,
         resolution_steps,
         conversations,
     })
@@ -265,6 +292,11 @@ pub async fn delete_issue(issue_id: String, state: State<'_, AppState>) -> Resul
     .map_err(|e| e.to_string())?;
     db.execute("DELETE FROM log_files WHERE issue_id = ?1", [&issue_id])
         .map_err(|e| e.to_string())?;
+    db.execute(
+        "DELETE FROM image_attachments WHERE issue_id = ?1",
+        [&issue_id],
+    )
+    .map_err(|e| e.to_string())?;
     db.execute(
         "DELETE FROM resolution_steps WHERE issue_id = ?1",
         [&issue_id],

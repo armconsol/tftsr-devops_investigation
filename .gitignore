@@ -10,14 +10,13 @@ artifacts/
 *.png
 /screenshots/
 
+SECURITY_AUDIT.md
+
 # Internal / private documents — never commit
 USER_GUIDE.md
 USER_GUIDE.docx
-~$ER_GUIDE.docx
-TICKET_USER_GUIDE.md
+~$*.docx
+TICKET_*.md
 BUGFIX_SUMMARY.md
 PR_DESCRIPTION.md
-GenAI API User Guide.md
-HANDOFF-MSI-GENAI.md
-TICKET_SUMMARY.md
 docs/images/user-guide/

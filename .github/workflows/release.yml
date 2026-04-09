@@ -1,0 +1,504 @@
+name: Auto Tag
+
+# Runs on every merge to master — reads the latest semver tag, increments
+# the patch version, pushes a new tag, then runs release builds in this workflow.
+# workflow_dispatch allows manual triggering when Gitea drops a push event.
+
+on:
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+
+concurrency:
+  group: auto-tag-master
+  cancel-in-progress: false
+
+jobs:
+  autotag:
+    runs-on: linux-amd64
+    container:
+      image: alpine:latest
+    steps:
+      - name: Bump patch version and create tag
+        id: bump
+        env:
+          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        run: |
+          set -eu
+          apk add --no-cache curl jq git
+
+          API="http://172.0.0.29:3000/api/v1/repos/$GITHUB_REPOSITORY"
+
+          # Get the latest clean semver tag (vX.Y.Z only, ignore rc/test suffixes)
+          LATEST=$(curl -s "$API/tags?limit=50" \
+            -H "Authorization: token $RELEASE_TOKEN" | \
+            jq -r '.[].name' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | \
+            sort -V | tail -1)
+
+          if [ -z "$LATEST" ]; then
+            NEXT="v0.1.0"
+          else
+            MAJOR=$(echo "$LATEST" | cut -d. -f1 | tr -d 'v')
+            MINOR=$(echo "$LATEST" | cut -d. -f2)
+            PATCH=$(echo "$LATEST" | cut -d. -f3)
+            NEXT="v${MAJOR}.${MINOR}.$((PATCH + 1))"
+          fi
+
+          echo "Latest tag: ${LATEST:-none}  →  Next: $NEXT"
+
+          # Create and push the tag via git.
+          git init
+          git remote add origin "http://oauth2:${RELEASE_TOKEN}@172.0.0.29:3000/${GITHUB_REPOSITORY}.git"
+          git fetch --depth=1 origin "$GITHUB_SHA"
+          git checkout FETCH_HEAD
+          git config user.name "gitea-actions[bot]"
+          git config user.email "gitea-actions@local"
+
+          if git ls-remote --exit-code --tags origin "refs/tags/$NEXT" >/dev/null 2>&1; then
+            echo "Tag $NEXT already exists; skipping."
+            exit 0
+          fi
+
+          git tag -a "$NEXT" -m "Release $NEXT"
+          git push origin "refs/tags/$NEXT"
+
+          echo "Tag $NEXT pushed successfully"
+
+  wiki-sync:
+    runs-on: linux-amd64
+    container:
+      image: alpine:latest
+    steps:
+      - name: Install dependencies
+        run: apk add --no-cache git
+
+      - name: Checkout main repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Configure git
+        run: |
+          git config --global user.email "actions@gitea.local"
+          git config --global user.name "Gitea Actions"
+          git config --global credential.helper ''
+
+      - name: Clone and sync wiki
+        env:
+          WIKI_TOKEN: ${{ secrets.Wiki }}
+        run: |
+          cd /tmp
+          if [ -n "$WIKI_TOKEN" ]; then
+            WIKI_URL="http://${WIKI_TOKEN}@172.0.0.29:3000/sarman/tftsr-devops_investigation.wiki.git"
+          else
+            WIKI_URL="http://172.0.0.29:3000/sarman/tftsr-devops_investigation.wiki.git"
+          fi
+
+          if ! git clone "$WIKI_URL" wiki 2>/dev/null; then
+            echo "Wiki doesn't exist yet, creating initial structure..."
+            mkdir -p wiki
+            cd wiki
+            git init
+            git checkout -b master
+            echo "# Wiki" > Home.md
+            git add Home.md
+            git commit -m "Initial wiki commit"
+            git remote add origin "$WIKI_URL"
+          fi
+
+          cd /tmp/wiki
+          if [ -d "$GITHUB_WORKSPACE/docs/wiki" ]; then
+            cp -v "$GITHUB_WORKSPACE"/docs/wiki/*.md . 2>/dev/null || echo "No wiki files to copy"
+          fi
+
+          git add -A
+          if ! git diff --staged --quiet; then
+            git commit -m "docs: sync from docs/wiki/ at commit ${GITHUB_SHA:0:8}"
+            echo "Pushing to wiki..."
+            if git push origin master; then
+              echo "✓ Wiki successfully synced"
+            else
+              echo "⚠ Wiki push failed - check token permissions"
+              exit 1
+            fi
+          else
+            echo "No wiki changes to commit"
+          fi
+
+  build-linux-amd64:
+    needs: autotag
+    runs-on: linux-amd64
+    container:
+      image: rust:1.88-slim
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - name: Install dependencies
+        run: |
+          apt-get update -qq && apt-get install -y -qq \
+            libwebkit2gtk-4.1-dev libssl-dev libgtk-3-dev \
+            libayatana-appindicator3-dev librsvg2-dev patchelf \
+            pkg-config curl perl jq
+          curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+          apt-get install -y nodejs
+      - name: Build
+        run: |
+          npm ci --legacy-peer-deps
+          rustup target add x86_64-unknown-linux-gnu
+          CI=true npx tauri build --target x86_64-unknown-linux-gnu
+      - name: Upload artifacts
+        env:
+          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        run: |
+          set -eu
+          API="http://172.0.0.29:3000/api/v1/repos/$GITHUB_REPOSITORY"
+          TAG=$(curl -s "$API/tags?limit=50" \
+            -H "Authorization: token $RELEASE_TOKEN" | \
+            jq -r '.[].name' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | \
+            sort -V | tail -1 || true)
+          if [ -z "$TAG" ]; then
+            echo "ERROR: Could not resolve release tag from repository tags."
+            exit 1
+          fi
+          echo "Creating release for $TAG..."
+          curl -sf -X POST "$API/releases" \
+            -H "Authorization: token $RELEASE_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "{\"tag_name\":\"$TAG\",\"name\":\"TFTSR $TAG\",\"body\":\"Release $TAG\",\"draft\":false}" || true
+          RELEASE_ID=$(curl -sf "$API/releases/tags/$TAG" \
+            -H "Authorization: token $RELEASE_TOKEN" | jq -r '.id')
+          if [ -z "$RELEASE_ID" ] || [ "$RELEASE_ID" = "null" ]; then
+            echo "ERROR: Failed to get release ID for $TAG"
+            exit 1
+          fi
+          echo "Release ID: $RELEASE_ID"
+          ARTIFACTS=$(find src-tauri/target/x86_64-unknown-linux-gnu/release/bundle -type f \
+            \( -name "*.deb" -o -name "*.rpm" -o -name "*.AppImage" \))
+          if [ -z "$ARTIFACTS" ]; then
+            echo "ERROR: No Linux amd64 artifacts were found to upload."
+            exit 1
+          fi
+          printf '%s\n' "$ARTIFACTS" | while IFS= read -r f; do
+            NAME=$(basename "$f")
+            UPLOAD_NAME="linux-amd64-$NAME"
+            echo "Uploading $UPLOAD_NAME..."
+            EXISTING_IDS=$(curl -sf "$API/releases/$RELEASE_ID" \
+              -H "Authorization: token $RELEASE_TOKEN" \
+              | jq -r --arg name "$UPLOAD_NAME" '.assets[]? | select(.name == $name) | .id')
+            if [ -n "$EXISTING_IDS" ]; then
+              printf '%s\n' "$EXISTING_IDS" | while IFS= read -r id; do
+                [ -n "$id" ] || continue
+                echo "Deleting existing asset id=$id name=$UPLOAD_NAME before upload..."
+                curl -sf -X DELETE "$API/releases/$RELEASE_ID/assets/$id" \
+                  -H "Authorization: token $RELEASE_TOKEN"
+              done
+            fi
+            RESP_FILE=$(mktemp)
+            HTTP_CODE=$(curl -sS -o "$RESP_FILE" -w "%{http_code}" -X POST "$API/releases/$RELEASE_ID/assets" \
+              -H "Authorization: token $RELEASE_TOKEN" \
+              -F "attachment=@$f;filename=$UPLOAD_NAME")
+            if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
+              echo "✓ Uploaded $UPLOAD_NAME"
+            else
+              echo "✗ Upload failed for $UPLOAD_NAME (HTTP $HTTP_CODE)"
+              python -c 'import pathlib,sys;print(pathlib.Path(sys.argv[1]).read_text(errors="replace")[:2000])' "$RESP_FILE"
+              exit 1
+            fi
+          done
+
+  build-windows-amd64:
+    needs: autotag
+    runs-on: linux-amd64
+    container:
+      image: rust:1.88-slim
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - name: Install dependencies
+        run: |
+          apt-get update -qq && apt-get install -y -qq mingw-w64 curl nsis perl make jq
+          curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+          apt-get install -y nodejs
+      - name: Build
+        env:
+          CC_x86_64_pc_windows_gnu: x86_64-w64-mingw32-gcc
+          CXX_x86_64_pc_windows_gnu: x86_64-w64-mingw32-g++
+          AR_x86_64_pc_windows_gnu: x86_64-w64-mingw32-ar
+          CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER: x86_64-w64-mingw32-gcc
+          OPENSSL_NO_VENDOR: "0"
+          OPENSSL_STATIC: "1"
+        run: |
+          npm ci --legacy-peer-deps
+          rustup target add x86_64-pc-windows-gnu
+          CI=true npx tauri build --target x86_64-pc-windows-gnu
+      - name: Upload artifacts
+        env:
+          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        run: |
+          set -eu
+          API="http://172.0.0.29:3000/api/v1/repos/$GITHUB_REPOSITORY"
+          TAG=$(curl -s "$API/tags?limit=50" \
+            -H "Authorization: token $RELEASE_TOKEN" | \
+            jq -r '.[].name' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | \
+            sort -V | tail -1 || true)
+          if [ -z "$TAG" ]; then
+            echo "ERROR: Could not resolve release tag from repository tags."
+            exit 1
+          fi
+          echo "Creating release for $TAG..."
+          curl -sf -X POST "$API/releases" \
+            -H "Authorization: token $RELEASE_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "{\"tag_name\":\"$TAG\",\"name\":\"TFTSR $TAG\",\"body\":\"Release $TAG\",\"draft\":false}" || true
+          RELEASE_ID=$(curl -sf "$API/releases/tags/$TAG" \
+            -H "Authorization: token $RELEASE_TOKEN" | jq -r '.id')
+          if [ -z "$RELEASE_ID" ] || [ "$RELEASE_ID" = "null" ]; then
+            echo "ERROR: Failed to get release ID for $TAG"
+            exit 1
+          fi
+          echo "Release ID: $RELEASE_ID"
+          ARTIFACTS=$(find src-tauri/target/x86_64-pc-windows-gnu/release/bundle -type f \
+            \( -name "*.exe" -o -name "*.msi" \) 2>/dev/null)
+          if [ -z "$ARTIFACTS" ]; then
+            echo "ERROR: No Windows amd64 artifacts were found to upload."
+            exit 1
+          fi
+          printf '%s\n' "$ARTIFACTS" | while IFS= read -r f; do
+            NAME=$(basename "$f")
+            echo "Uploading $NAME..."
+            EXISTING_IDS=$(curl -sf "$API/releases/$RELEASE_ID" \
+              -H "Authorization: token $RELEASE_TOKEN" \
+              | jq -r --arg name "$NAME" '.assets[]? | select(.name == $name) | .id')
+            if [ -n "$EXISTING_IDS" ]; then
+              printf '%s\n' "$EXISTING_IDS" | while IFS= read -r id; do
+                [ -n "$id" ] || continue
+                echo "Deleting existing asset id=$id name=$NAME before upload..."
+                curl -sf -X DELETE "$API/releases/$RELEASE_ID/assets/$id" \
+                  -H "Authorization: token $RELEASE_TOKEN"
+              done
+            fi
+            RESP_FILE=$(mktemp)
+            HTTP_CODE=$(curl -sS -o "$RESP_FILE" -w "%{http_code}" -X POST "$API/releases/$RELEASE_ID/assets" \
+              -H "Authorization: token $RELEASE_TOKEN" \
+              -F "attachment=@$f;filename=$NAME")
+            if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
+              echo "✓ Uploaded $NAME"
+            else
+              echo "✗ Upload failed for $NAME (HTTP $HTTP_CODE)"
+              python -c 'import pathlib,sys;print(pathlib.Path(sys.argv[1]).read_text(errors="replace")[:2000])' "$RESP_FILE"
+              exit 1
+            fi
+          done
+
+  build-macos-arm64:
+    needs: autotag
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - name: Build
+        env:
+          MACOSX_DEPLOYMENT_TARGET: "11.0"
+        run: |
+          npm ci --legacy-peer-deps
+          rustup target add aarch64-apple-darwin
+          CI=true npx tauri build --target aarch64-apple-darwin --bundles app
+          APP=$(find src-tauri/target/aarch64-apple-darwin/release/bundle/macos -maxdepth 1 -type d -name "*.app" | head -n 1)
+          if [ -z "$APP" ]; then
+            echo "ERROR: Could not find macOS app bundle"
+            exit 1
+          fi
+          APP_NAME=$(basename "$APP" .app)
+          codesign --deep --force --sign - "$APP"
+          mkdir -p src-tauri/target/aarch64-apple-darwin/release/bundle/dmg
+          DMG=src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/${APP_NAME}.dmg
+          hdiutil create -volname "$APP_NAME" -srcfolder "$APP" -ov -format UDZO "$DMG"
+      - name: Upload artifacts
+        env:
+          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        run: |
+          set -eu
+          API="http://172.0.0.29:3000/api/v1/repos/$GITHUB_REPOSITORY"
+          TAG=$(curl -s "$API/tags?limit=50" \
+            -H "Authorization: token $RELEASE_TOKEN" | \
+            jq -r '.[].name' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | \
+            sort -V | tail -1 || true)
+          if [ -z "$TAG" ]; then
+            echo "ERROR: Could not resolve release tag from repository tags."
+            exit 1
+          fi
+          echo "Creating release for $TAG..."
+          curl -sf -X POST "$API/releases" \
+            -H "Authorization: token $RELEASE_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "{\"tag_name\":\"$TAG\",\"name\":\"TFTSR $TAG\",\"body\":\"Release $TAG\",\"draft\":false}" || true
+          RELEASE_ID=$(curl -sf "$API/releases/tags/$TAG" \
+            -H "Authorization: token $RELEASE_TOKEN" | jq -r '.id')
+          if [ -z "$RELEASE_ID" ] || [ "$RELEASE_ID" = "null" ]; then
+            echo "ERROR: Failed to get release ID for $TAG"
+            exit 1
+          fi
+          echo "Release ID: $RELEASE_ID"
+          ARTIFACTS=$(find src-tauri/target/aarch64-apple-darwin/release/bundle -type f -name "*.dmg")
+          if [ -z "$ARTIFACTS" ]; then
+            echo "ERROR: No macOS arm64 DMG artifacts were found to upload."
+            exit 1
+          fi
+          printf '%s\n' "$ARTIFACTS" | while IFS= read -r f; do
+            NAME=$(basename "$f")
+            echo "Uploading $NAME..."
+            EXISTING_IDS=$(curl -sf "$API/releases/$RELEASE_ID" \
+              -H "Authorization: token $RELEASE_TOKEN" \
+              | jq -r --arg name "$NAME" '.assets[]? | select(.name == $name) | .id')
+            if [ -n "$EXISTING_IDS" ]; then
+              printf '%s\n' "$EXISTING_IDS" | while IFS= read -r id; do
+                [ -n "$id" ] || continue
+                echo "Deleting existing asset id=$id name=$NAME before upload..."
+                curl -sf -X DELETE "$API/releases/$RELEASE_ID/assets/$id" \
+                  -H "Authorization: token $RELEASE_TOKEN"
+              done
+            fi
+            RESP_FILE=$(mktemp)
+            HTTP_CODE=$(curl -sS -o "$RESP_FILE" -w "%{http_code}" -X POST "$API/releases/$RELEASE_ID/assets" \
+              -H "Authorization: token $RELEASE_TOKEN" \
+              -F "attachment=@$f;filename=$NAME")
+            if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
+              echo "✓ Uploaded $NAME"
+            else
+              echo "✗ Upload failed for $NAME (HTTP $HTTP_CODE)"
+              python -c 'import pathlib,sys;print(pathlib.Path(sys.argv[1]).read_text(errors="replace")[:2000])' "$RESP_FILE"
+              exit 1
+            fi
+          done
+
+  build-linux-arm64:
+    needs: autotag
+    runs-on: linux-amd64
+    container:
+      image: ubuntu:22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - name: Install dependencies
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          # Step 1: Host tools + cross-compiler (all amd64, no multiarch yet)
+          apt-get update -qq
+          apt-get install -y -qq curl git gcc g++ make patchelf pkg-config perl jq \
+            gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+
+          # Step 2: Multiarch — Ubuntu uses ports.ubuntu.com for arm64,
+          # keeping it on a separate mirror from amd64 (archive.ubuntu.com).
+          # This avoids the binary-all index duplication and -dev package
+          # conflicts that plagued the Debian single-mirror approach.
+          dpkg --add-architecture arm64
+          sed -i 's|^deb http://archive.ubuntu.com|deb [arch=amd64] http://archive.ubuntu.com|g' /etc/apt/sources.list
+          sed -i 's|^deb http://security.ubuntu.com|deb [arch=amd64] http://security.ubuntu.com|g' /etc/apt/sources.list
+          printf '%s\n' \
+            'deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports jammy main restricted universe multiverse' \
+            'deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports jammy-updates main restricted universe multiverse' \
+            'deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe multiverse' \
+            > /etc/apt/sources.list.d/arm64-ports.list
+          apt-get update -qq
+
+          # Step 3: ARM64 dev libs — libayatana omitted (no tray icon in this app)
+          apt-get install -y -qq \
+            libwebkit2gtk-4.1-dev:arm64 \
+            libssl-dev:arm64 \
+            libgtk-3-dev:arm64 \
+            librsvg2-dev:arm64
+
+          # Step 4: Node.js
+          curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+          apt-get install -y nodejs
+
+          # Step 5: Rust (not pre-installed in ubuntu:22.04)
+          # source "$HOME/.cargo/env" in the Build step handles PATH — no GITHUB_PATH needed
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y \
+            --default-toolchain 1.88.0 --profile minimal --no-modify-path
+      - name: Build
+        env:
+          CC_aarch64_unknown_linux_gnu: aarch64-linux-gnu-gcc
+          CXX_aarch64_unknown_linux_gnu: aarch64-linux-gnu-g++
+          AR_aarch64_unknown_linux_gnu: aarch64-linux-gnu-ar
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
+          PKG_CONFIG_SYSROOT_DIR: /usr/aarch64-linux-gnu
+          PKG_CONFIG_PATH: /usr/lib/aarch64-linux-gnu/pkgconfig
+          PKG_CONFIG_ALLOW_CROSS: "1"
+          OPENSSL_NO_VENDOR: "0"
+          OPENSSL_STATIC: "1"
+          APPIMAGE_EXTRACT_AND_RUN: "1"
+        run: |
+          . "$HOME/.cargo/env"
+          npm ci --legacy-peer-deps
+          rustup target add aarch64-unknown-linux-gnu
+          CI=true npx tauri build --target aarch64-unknown-linux-gnu --bundles deb,rpm
+      - name: Upload artifacts
+        env:
+          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        run: |
+          set -eu
+          API="http://172.0.0.29:3000/api/v1/repos/$GITHUB_REPOSITORY"
+          TAG=$(curl -s "$API/tags?limit=50" \
+            -H "Authorization: token $RELEASE_TOKEN" | \
+            jq -r '.[].name' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | \
+            sort -V | tail -1 || true)
+          if [ -z "$TAG" ]; then
+            echo "ERROR: Could not resolve release tag from repository tags."
+            exit 1
+          fi
+          echo "Creating release for $TAG..."
+          curl -sf -X POST "$API/releases" \
+            -H "Authorization: token $RELEASE_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "{\"tag_name\":\"$TAG\",\"name\":\"TFTSR $TAG\",\"body\":\"Release $TAG\",\"draft\":false}" || true
+          RELEASE_ID=$(curl -sf "$API/releases/tags/$TAG" \
+            -H "Authorization: token $RELEASE_TOKEN" | jq -r '.id')
+          if [ -z "$RELEASE_ID" ] || [ "$RELEASE_ID" = "null" ]; then
+            echo "ERROR: Failed to get release ID for $TAG"
+            exit 1
+          fi
+          echo "Release ID: $RELEASE_ID"
+          ARTIFACTS=$(find src-tauri/target/aarch64-unknown-linux-gnu/release/bundle -type f \
+            \( -name "*.deb" -o -name "*.rpm" -o -name "*.AppImage" \))
+          if [ -z "$ARTIFACTS" ]; then
+            echo "ERROR: No Linux arm64 artifacts were found to upload."
+            exit 1
+          fi
+          printf '%s\n' "$ARTIFACTS" | while IFS= read -r f; do
+            NAME=$(basename "$f")
+            UPLOAD_NAME="linux-arm64-$NAME"
+            echo "Uploading $UPLOAD_NAME..."
+            EXISTING_IDS=$(curl -sf "$API/releases/$RELEASE_ID" \
+              -H "Authorization: token $RELEASE_TOKEN" \
+              | jq -r --arg name "$UPLOAD_NAME" '.assets[]? | select(.name == $name) | .id')
+            if [ -n "$EXISTING_IDS" ]; then
+              printf '%s\n' "$EXISTING_IDS" | while IFS= read -r id; do
+                [ -n "$id" ] || continue
+                echo "Deleting existing asset id=$id name=$UPLOAD_NAME before upload..."
+                curl -sf -X DELETE "$API/releases/$RELEASE_ID/assets/$id" \
+                  -H "Authorization: token $RELEASE_TOKEN"
+              done
+            fi
+            RESP_FILE=$(mktemp)
+            HTTP_CODE=$(curl -sS -o "$RESP_FILE" -w "%{http_code}" -X POST "$API/releases/$RELEASE_ID/assets" \
+              -H "Authorization: token $RELEASE_TOKEN" \
+              -F "attachment=@$f;filename=$UPLOAD_NAME")
+            if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
+              echo "✓ Uploaded $UPLOAD_NAME"
+            else
+              echo "✗ Upload failed for $UPLOAD_NAME (HTTP $HTTP_CODE)"
+              python -c 'import pathlib,sys;print(pathlib.Path(sys.argv[1]).read_text(errors="replace")[:2000])' "$RESP_FILE"
+              exit 1
+            fi
+          done

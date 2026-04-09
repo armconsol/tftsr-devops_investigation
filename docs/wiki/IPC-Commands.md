@@ -99,6 +99,34 @@ Rewrites file content with approved redactions. Records SHA-256 in audit log. Re
 
 ---
 
+## Image Attachment Commands
+
+### `upload_image_attachment`
+```typescript
+uploadImageAttachmentCmd(issueId: string, filePath: string, piiWarningAcknowledged: boolean) → ImageAttachment
+```
+Uploads an image file. Computes SHA-256, stores metadata in DB. Returns `ImageAttachment` record.
+
+### `list_image_attachments`
+```typescript
+listImageAttachmentsCmd(issueId: string) → ImageAttachment[]
+```
+Lists all image attachments for an issue.
+
+### `delete_image_attachment`
+```typescript
+deleteImageAttachmentCmd(imageId: string) → void
+```
+Deletes an image attachment from disk and database.
+
+### `upload_paste_image`
+```typescript
+uploadPasteImageCmd(issueId: string, base64Data: string, fileName: string, piiWarningAcknowledged: boolean) → ImageAttachment
+```
+Uploads an image from clipboard paste (base64). Returns `ImageAttachment` record.
+
+---
+
 ## AI Commands
 
 ### `analyze_logs`

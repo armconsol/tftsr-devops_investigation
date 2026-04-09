@@ -2,7 +2,7 @@
 
 ## Overview
 
-TFTSR uses **SQLite** via `rusqlite` with the `bundled-sqlcipher` feature for AES-256 encryption in production. 11 versioned migrations are tracked in the `_migrations` table.
+TFTSR uses **SQLite** via `rusqlite` with the `bundled-sqlcipher` feature for AES-256 encryption in production. 12 versioned migrations are tracked in the `_migrations` table.
 
 **DB file location:** `{app_data_dir}/tftsr.db`
 
@@ -210,6 +210,29 @@ CREATE TABLE integration_config (
     UNIQUE(service)
 );
 ```
+
+### 012 — image_attachments (v0.2.7+)
+
+```sql
+CREATE TABLE image_attachments (
+    id TEXT PRIMARY KEY,
+    issue_id TEXT NOT NULL REFERENCES issues(id) ON DELETE CASCADE,
+    file_name TEXT NOT NULL,
+    file_path TEXT NOT NULL DEFAULT '',
+    file_size INTEGER NOT NULL DEFAULT 0,
+    mime_type TEXT NOT NULL DEFAULT 'image/png',
+    upload_hash TEXT NOT NULL DEFAULT '',
+    uploaded_at TEXT NOT NULL DEFAULT (datetime('now')),
+    pii_warning_acknowledged INTEGER NOT NULL DEFAULT 1,
+    is_paste INTEGER NOT NULL DEFAULT 0
+);
+```
+
+**Features:**
+- Image file metadata stored in database
+- `upload_hash`: SHA-256 hash of file content (for deduplication)
+- `pii_warning_acknowledged`: User confirmation that PII may be present
+- `is_paste`: Flag for screenshots copied from clipboard
 
 **Encryption:**
 - OAuth2 tokens encrypted with AES-256-GCM

@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render } from "@testing-library/react";
+import { screen } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import Resolution from "@/pages/Resolution";
 import * as tauriCommands from "@/lib/tauriCommands";
@@ -21,6 +22,7 @@ const mockIssueDetail = {
     tags: "[]",
   },
   log_files: [],
+  image_attachments: [],
   resolution_steps: [
     {
       id: "step-1",
