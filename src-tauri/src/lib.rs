@@ -82,6 +82,9 @@ pub fn run() {
             commands::ai::chat_message,
             commands::ai::test_provider_connection,
             commands::ai::list_providers,
+            commands::system::save_ai_provider,
+            commands::system::load_ai_providers,
+            commands::system::delete_ai_provider,
             // Docs
             commands::docs::generate_rca,
             commands::docs::generate_postmortem,
