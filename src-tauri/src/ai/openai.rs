@@ -82,8 +82,17 @@ impl OpenAiProvider {
         let api_url = config.api_url.trim_end_matches('/');
         let url = format!("{api_url}{endpoint_path}");
 
+        tracing::debug!(
+            url = %url,
+            model = %config.model,
+            max_tokens = ?config.max_tokens,
+            temperature = ?config.temperature,
+            "OpenAI API request"
+        );
+
+        let model = config.model.trim_end_matches('.');
         let mut body = serde_json::json!({
-            "model": config.model,
+            "model": model,
             "messages": messages,
         });
 
@@ -128,11 +137,20 @@ impl OpenAiProvider {
             .header("Content-Type", "application/json")
             .json(&body)
             .send()
-            .await?;
+            .await;
+
+        let resp = match resp {
+            Ok(response) => response,
+            Err(e) => {
+                tracing::error!(url = %url, error = %e, "OpenAI API request failed");
+                anyhow::bail!("OpenAI API request failed: {e}");
+            }
+        };
 
         if !resp.status().is_success() {
             let status = resp.status();
-            let text = resp.text().await?;
+            let text = resp.text().await.unwrap_or_else(|_| "unable to read response body".to_string());
+            tracing::error!(url = %url, status = %status, response = %text, "OpenAI API error response");
             anyhow::bail!("OpenAI API error {status}: {text}");
         }
 

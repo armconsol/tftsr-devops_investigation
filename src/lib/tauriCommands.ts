@@ -443,8 +443,8 @@ export interface IntegrationConfig {
   space_key?: string;
 }
 
-export const authenticateWithWebviewCmd = (service: string, baseUrl: string) =>
-  invoke<WebviewAuthResponse>("authenticate_with_webview", { service, baseUrl });
+export const authenticateWithWebviewCmd = (service: string, baseUrl: string, projectName?: string) =>
+  invoke<WebviewAuthResponse>("authenticate_with_webview", { service, baseUrl, projectName });
 
 export const extractCookiesFromWebviewCmd = (service: string, webviewId: string) =>
   invoke<ConnectionResult>("extract_cookies_from_webview", { service, webviewId });
@@ -462,3 +462,14 @@ export const getIntegrationConfigCmd = (service: string) =>
 
 export const getAllIntegrationConfigsCmd = () =>
   invoke<IntegrationConfig[]>("get_all_integration_configs");
+
+// ─── AI Provider Configuration ────────────────────────────────────────────────
+
+export const saveAiProviderCmd = (config: ProviderConfig) =>
+  invoke<void>("save_ai_provider", { config });
+
+export const loadAiProvidersCmd = () =>
+  invoke<ProviderConfig[]>("load_ai_providers");
+
+export const deleteAiProviderCmd = (name: string) =>
+  invoke<void>("delete_ai_provider", { name });
