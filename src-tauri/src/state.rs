@@ -39,6 +39,9 @@ pub struct ProviderConfig {
     /// Optional: User ID for custom REST API cost tracking (CORE ID email)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub user_id: Option<String>,
+    /// Optional: When true, file uploads go to GenAI datastore instead of prompt
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub use_datastore_upload: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

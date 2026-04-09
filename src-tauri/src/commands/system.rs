@@ -158,8 +158,8 @@ pub async fn save_ai_provider(
     db.execute(
         "INSERT OR REPLACE INTO ai_providers
          (id, name, provider_type, api_url, encrypted_api_key, model, max_tokens, temperature,
-          custom_endpoint_path, custom_auth_header, custom_auth_prefix, api_format, user_id, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, datetime('now'))",
+          custom_endpoint_path, custom_auth_header, custom_auth_prefix, api_format, user_id, use_datastore_upload, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, datetime('now'))",
         rusqlite::params![
             uuid::Uuid::now_v7().to_string(),
             provider.name,
@@ -174,6 +174,7 @@ pub async fn save_ai_provider(
             provider.custom_auth_prefix,
             provider.api_format,
             provider.user_id,
+            provider.use_datastore_upload,
         ],
     )
     .map_err(|e| format!("Failed to save AI provider: {e}"))?;
@@ -191,7 +192,7 @@ pub async fn load_ai_providers(
     let mut stmt = db
         .prepare(
             "SELECT name, provider_type, api_url, encrypted_api_key, model, max_tokens, temperature,
-                    custom_endpoint_path, custom_auth_header, custom_auth_prefix, api_format, user_id
+                    custom_endpoint_path, custom_auth_header, custom_auth_prefix, api_format, user_id, use_datastore_upload
              FROM ai_providers
              ORDER BY name",
         )
@@ -201,38 +202,40 @@ pub async fn load_ai_providers(
         .query_map([], |row| {
             let encrypted_key: String = row.get(3)?;
 
-            Ok((
-                row.get::<_, String>(0)?,          // name
-                row.get::<_, String>(1)?,          // provider_type
-                row.get::<_, String>(2)?,          // api_url
-                encrypted_key,                     // encrypted_api_key
-                row.get::<_, String>(4)?,          // model
-                row.get::<_, Option<u32>>(5)?,     // max_tokens
-                row.get::<_, Option<f64>>(6)?,     // temperature
-                row.get::<_, Option<String>>(7)?,  // custom_endpoint_path
-                row.get::<_, Option<String>>(8)?,  // custom_auth_header
-                row.get::<_, Option<String>>(9)?,  // custom_auth_prefix
-                row.get::<_, Option<String>>(10)?, // api_format
-                row.get::<_, Option<String>>(11)?, // user_id
-            ))
-        })
-        .map_err(|e| e.to_string())?
-        .filter_map(|r| r.ok())
-        .filter_map(
-            |(
-                name,
-                provider_type,
-                api_url,
-                encrypted_key,
-                model,
-                max_tokens,
-                temperature,
-                custom_endpoint_path,
-                custom_auth_header,
-                custom_auth_prefix,
-                api_format,
-                user_id,
-            )| {
+             Ok((
+                 row.get::<_, String>(0)?,          // name
+                 row.get::<_, String>(1)?,          // provider_type
+                 row.get::<_, String>(2)?,          // api_url
+                 encrypted_key,                     // encrypted_api_key
+                 row.get::<_, String>(4)?,          // model
+                 row.get::<_, Option<u32>>(5)?,     // max_tokens
+                 row.get::<_, Option<f64>>(6)?,     // temperature
+                 row.get::<_, Option<String>>(7)?,  // custom_endpoint_path
+                 row.get::<_, Option<String>>(8)?,  // custom_auth_header
+                 row.get::<_, Option<String>>(9)?,  // custom_auth_prefix
+                 row.get::<_, Option<String>>(10)?, // api_format
+                 row.get::<_, Option<String>>(11)?, // user_id
+                 row.get::<_, Option<bool>>(12)?,   // use_datastore_upload
+             ))
+         })
+         .map_err(|e| e.to_string())?
+         .filter_map(|r| r.ok())
+         .filter_map(
+             |(
+                 name,
+                 provider_type,
+                 api_url,
+                 encrypted_key,
+                 model,
+                 max_tokens,
+                 temperature,
+                 custom_endpoint_path,
+                 custom_auth_header,
+                 custom_auth_prefix,
+                 api_format,
+                 user_id,
+                 use_datastore_upload,
+             )| {
                 // Decrypt the API key
                 let api_key = crate::integrations::auth::decrypt_token(&encrypted_key).ok()?;
 
@@ -250,6 +253,7 @@ pub async fn load_ai_providers(
                     api_format,
                     session_id: None, // Session IDs are not persisted
                     user_id,
+                    use_datastore_upload,
                 })
             },
         )

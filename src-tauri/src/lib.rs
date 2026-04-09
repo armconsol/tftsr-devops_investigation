@@ -71,12 +71,16 @@ pub fn run() {
             commands::db::add_timeline_event,
             // Analysis / PII
             commands::analysis::upload_log_file,
+            commands::analysis::upload_log_file_by_content,
             commands::analysis::detect_pii,
             commands::analysis::apply_redactions,
             commands::image::upload_image_attachment,
+            commands::image::upload_image_attachment_by_content,
             commands::image::list_image_attachments,
             commands::image::delete_image_attachment,
             commands::image::upload_paste_image,
+            commands::image::upload_file_to_datastore,
+            commands::image::upload_file_to_datastore_any,
             // AI
             commands::ai::analyze_logs,
             commands::ai::chat_message,
