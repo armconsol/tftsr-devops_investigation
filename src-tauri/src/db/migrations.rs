@@ -156,38 +156,18 @@ pub fn run_migrations(conn: &Connection) -> anyhow::Result<()> {
              ALTER TABLE audit_log ADD COLUMN entry_hash TEXT NOT NULL DEFAULT '';",
         ),
         (
-            "013_create_persistent_webviews",
-            "CREATE TABLE IF NOT EXISTS persistent_webviews (
+            "013_image_attachments",
+            "CREATE TABLE IF NOT EXISTS image_attachments (
                 id TEXT PRIMARY KEY,
-                service TEXT NOT NULL CHECK(service IN ('confluence','servicenow','azuredevops')),
-                webview_label TEXT NOT NULL,
-                base_url TEXT NOT NULL,
-                last_active TEXT NOT NULL DEFAULT (datetime('now')),
-                window_x INTEGER,
-                window_y INTEGER,
-                window_width INTEGER,
-                window_height INTEGER,
-                UNIQUE(service)
-            );",
-        ),
-        (
-            "014_create_ai_providers",
-            "CREATE TABLE IF NOT EXISTS ai_providers (
-                id TEXT PRIMARY KEY,
-                name TEXT NOT NULL UNIQUE,
-                provider_type TEXT NOT NULL,
-                api_url TEXT NOT NULL,
-                encrypted_api_key TEXT NOT NULL,
-                model TEXT NOT NULL,
-                max_tokens INTEGER,
-                temperature REAL,
-                custom_endpoint_path TEXT,
-                custom_auth_header TEXT,
-                custom_auth_prefix TEXT,
-                api_format TEXT,
-                user_id TEXT,
-                created_at TEXT NOT NULL DEFAULT (datetime('now')),
-                updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+                issue_id TEXT NOT NULL REFERENCES issues(id) ON DELETE CASCADE,
+                file_name TEXT NOT NULL,
+                file_path TEXT NOT NULL DEFAULT '',
+                file_size INTEGER NOT NULL DEFAULT 0,
+                mime_type TEXT NOT NULL DEFAULT 'image/png',
+                upload_hash TEXT NOT NULL DEFAULT '',
+                uploaded_at TEXT NOT NULL DEFAULT (datetime('now')),
+                pii_warning_acknowledged INTEGER NOT NULL DEFAULT 1,
+                is_paste INTEGER NOT NULL DEFAULT 0
             );",
         ),
     ];
@@ -227,21 +207,21 @@ mod tests {
     }
 
     #[test]
-    fn test_create_credentials_table() {
+    fn test_create_image_attachments_table() {
         let conn = setup_test_db();
 
-        // Verify table exists
         let count: i64 = conn
             .query_row(
-                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='credentials'",
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='image_attachments'",
                 [],
                 |r| r.get(0),
             )
             .unwrap();
         assert_eq!(count, 1);
 
-        // Verify columns
-        let mut stmt = conn.prepare("PRAGMA table_info(credentials)").unwrap();
+        let mut stmt = conn
+            .prepare("PRAGMA table_info(image_attachments)")
+            .unwrap();
         let columns: Vec<String> = stmt
             .query_map([], |row| row.get::<_, String>(1))
             .unwrap()
@@ -249,11 +229,15 @@ mod tests {
             .unwrap();
 
         assert!(columns.contains(&"id".to_string()));
-        assert!(columns.contains(&"service".to_string()));
-        assert!(columns.contains(&"token_hash".to_string()));
-        assert!(columns.contains(&"encrypted_token".to_string()));
-        assert!(columns.contains(&"created_at".to_string()));
-        assert!(columns.contains(&"expires_at".to_string()));
+        assert!(columns.contains(&"issue_id".to_string()));
+        assert!(columns.contains(&"file_name".to_string()));
+        assert!(columns.contains(&"file_path".to_string()));
+        assert!(columns.contains(&"file_size".to_string()));
+        assert!(columns.contains(&"mime_type".to_string()));
+        assert!(columns.contains(&"upload_hash".to_string()));
+        assert!(columns.contains(&"uploaded_at".to_string()));
+        assert!(columns.contains(&"pii_warning_acknowledged".to_string()));
+        assert!(columns.contains(&"is_paste".to_string()));
     }
 
     #[test]
@@ -423,5 +407,65 @@ mod tests {
             .unwrap();
 
         assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn test_store_and_retrieve_image_attachment() {
+        let conn = setup_test_db();
+
+        // Create an issue first (required for foreign key)
+        let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+        conn.execute(
+            "INSERT INTO issues (id, title, description, severity, status, category, source, created_at, updated_at, resolved_at, assigned_to, tags)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+            rusqlite::params![
+                "test-issue-1",
+                "Test Issue",
+                "Test description",
+                "medium",
+                "open",
+                "test",
+                "manual",
+                now.clone(),
+                now.clone(),
+                None::<Option<String>>,
+                "",
+                "[]",
+            ],
+        )
+        .unwrap();
+
+        // Now insert the image attachment
+        conn.execute(
+            "INSERT INTO image_attachments (id, issue_id, file_name, file_path, file_size, mime_type, upload_hash, uploaded_at, pii_warning_acknowledged, is_paste)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+            rusqlite::params![
+                "test-img-1",
+                "test-issue-1",
+                "screenshot.png",
+                "/path/to/screenshot.png",
+                102400,
+                "image/png",
+                "abc123hash",
+                now,
+                1,
+                0,
+            ],
+        )
+        .unwrap();
+
+        let (id, issue_id, file_name, mime_type, is_paste): (String, String, String, String, i32) = conn
+            .query_row(
+                "SELECT id, issue_id, file_name, mime_type, is_paste FROM image_attachments WHERE id = ?1",
+                ["test-img-1"],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
+            )
+            .unwrap();
+
+        assert_eq!(id, "test-img-1");
+        assert_eq!(issue_id, "test-issue-1");
+        assert_eq!(file_name, "screenshot.png");
+        assert_eq!(mime_type, "image/png");
+        assert_eq!(is_paste, 0);
     }
 }

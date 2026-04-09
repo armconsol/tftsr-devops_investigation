@@ -100,6 +100,7 @@ export interface ResolutionStep {
 export interface IssueDetail {
   issue: Issue;
   log_files: LogFile[];
+  image_attachments: ImageAttachment[];
   resolution_steps: ResolutionStep[];
   conversations: AiConversation[];
 }
@@ -143,6 +144,19 @@ export interface LogFile {
   content_hash: string;
   uploaded_at: string;
   redacted: boolean;
+}
+
+export interface ImageAttachment {
+  id: string;
+  issue_id: string;
+  file_name: string;
+  file_path: string;
+  file_size: number;
+  mime_type: string;
+  upload_hash: string;
+  uploaded_at: string;
+  pii_warning_acknowledged: boolean;
+  is_paste: boolean;
 }
 
 export interface PiiSpan {
@@ -263,6 +277,18 @@ export const listProvidersCmd = () => invoke<ProviderInfo[]>("list_providers");
 export const uploadLogFileCmd = (issueId: string, filePath: string) =>
   invoke<LogFile>("upload_log_file", { issueId, filePath });
 
+export const uploadImageAttachmentCmd = (issueId: string, filePath: string) =>
+  invoke<ImageAttachment>("upload_image_attachment", { issueId, filePath });
+
+export const uploadPasteImageCmd = (issueId: string, base64Image: string, mimeType: string) =>
+  invoke<ImageAttachment>("upload_paste_image", { issueId, base64Image, mimeType });
+
+export const listImageAttachmentsCmd = (issueId: string) =>
+  invoke<ImageAttachment[]>("list_image_attachments", { issueId });
+
+export const deleteImageAttachmentCmd = (attachmentId: string) =>
+  invoke<void>("delete_image_attachment", { attachmentId });
+
 export const detectPiiCmd = (logFileId: string) =>
   invoke<PiiDetectionResult>("detect_pii", { logFileId });
 
@@ -367,17 +393,6 @@ export const updateSettingsCmd = (partialSettings: Partial<AppSettings>) =>
 export const getAuditLogCmd = (filter: AuditFilter) =>
   invoke<AuditEntry[]>("get_audit_log", { filter });
 
-// ─── AI Provider Persistence ──────────────────────────────────────────────────
-
-export const saveAiProviderCmd = (provider: ProviderConfig) =>
-  invoke<void>("save_ai_provider", { provider });
-
-export const loadAiProvidersCmd = () =>
-  invoke<ProviderConfig[]>("load_ai_providers");
-
-export const deleteAiProviderCmd = (name: string) =>
-  invoke<void>("delete_ai_provider", { name });
-
 // ─── OAuth & Integrations ─────────────────────────────────────────────────────
 
 export interface OAuthInitResponse {
@@ -428,16 +443,8 @@ export interface IntegrationConfig {
   space_key?: string;
 }
 
-export const authenticateWithWebviewCmd = (
-  service: string,
-  baseUrl: string,
-  projectName?: string
-) =>
-  invoke<WebviewAuthResponse>("authenticate_with_webview", {
-    service,
-    baseUrl,
-    projectName,
-  });
+export const authenticateWithWebviewCmd = (service: string, baseUrl: string, projectName?: string) =>
+  invoke<WebviewAuthResponse>("authenticate_with_webview", { service, baseUrl, projectName });
 
 export const extractCookiesFromWebviewCmd = (service: string, webviewId: string) =>
   invoke<ConnectionResult>("extract_cookies_from_webview", { service, webviewId });
@@ -456,5 +463,13 @@ export const getIntegrationConfigCmd = (service: string) =>
 export const getAllIntegrationConfigsCmd = () =>
   invoke<IntegrationConfig[]>("get_all_integration_configs");
 
-export const addAdoCommentCmd = (workItemId: number, commentText: string) =>
-  invoke<string>("add_ado_comment", { workItemId, commentText });
+// ─── AI Provider Configuration ────────────────────────────────────────────────
+
+export const saveAiProviderCmd = (config: ProviderConfig) =>
+  invoke<void>("save_ai_provider", { config });
+
+export const loadAiProvidersCmd = () =>
+  invoke<ProviderConfig[]>("load_ai_providers");
+
+export const deleteAiProviderCmd = (name: string) =>
+  invoke<void>("delete_ai_provider", { name });

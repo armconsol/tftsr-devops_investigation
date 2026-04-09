@@ -44,6 +44,7 @@ impl Issue {
 pub struct IssueDetail {
     pub issue: Issue,
     pub log_files: Vec<LogFile>,
+    pub image_attachments: Vec<ImageAttachment>,
     pub resolution_steps: Vec<ResolutionStep>,
     pub conversations: Vec<AiConversation>,
 }
@@ -389,6 +390,49 @@ impl IntegrationConfig {
             space_key: None,
             auto_create_enabled: false,
             updated_at: chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+        }
+    }
+}
+
+// ─── Image Attachment ────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ImageAttachment {
+    pub id: String,
+    pub issue_id: String,
+    pub file_name: String,
+    pub file_path: String,
+    pub file_size: i64,
+    pub mime_type: String,
+    pub upload_hash: String,
+    pub uploaded_at: String,
+    pub pii_warning_acknowledged: bool,
+    pub is_paste: bool,
+}
+
+impl ImageAttachment {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        issue_id: String,
+        file_name: String,
+        file_path: String,
+        file_size: i64,
+        mime_type: String,
+        upload_hash: String,
+        pii_warning_acknowledged: bool,
+        is_paste: bool,
+    ) -> Self {
+        ImageAttachment {
+            id: Uuid::now_v7().to_string(),
+            issue_id,
+            file_name,
+            file_path,
+            file_size,
+            mime_type,
+            upload_hash,
+            uploaded_at: chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+            pii_warning_acknowledged,
+            is_paste,
         }
     }
 }

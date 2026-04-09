@@ -32,12 +32,14 @@
 - **Ollama Management** — Hardware detection, model recommendations, in-app model management
 - **Audit Trail** — Every external data send logged with SHA-256 hash
 - **Domain-Specific Prompts** — 8 IT domains: Linux, Windows, Network, Kubernetes, Databases, Virtualization, Hardware, Observability
+- **Image Attachments** — Upload and manage image files with PII detection and mandatory user approval
 
 ## Releases
 
 | Version | Status | Highlights |
 |---------|--------|-----------|
 | v0.2.6 | 🚀 Latest | Custom REST AI gateway support, OAuth2 shell permissions, user ID tracking |
+| v0.2.5 | Released | Image attachments with PII detection and approval workflow |
 | v0.2.3 | Released | Confluence/ServiceNow/ADO REST API clients (19 TDD tests) |
 | v0.1.1 | Released | Core application with PII detection, RCA generation |
 
