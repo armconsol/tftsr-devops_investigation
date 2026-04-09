@@ -466,7 +466,7 @@ export const getAllIntegrationConfigsCmd = () =>
 // ─── AI Provider Configuration ────────────────────────────────────────────────
 
 export const saveAiProviderCmd = (config: ProviderConfig) =>
-  invoke<void>("save_ai_provider", { config });
+  invoke<void>("save_ai_provider", { provider: config });
 
 export const loadAiProvidersCmd = () =>
   invoke<ProviderConfig[]>("load_ai_providers");
