@@ -36,6 +36,7 @@
     "@testing-library/react": "^16",
     "@testing-library/user-event": "^14",
     "@types/react": "^18",
+    "@types/testing-library__react": "^10",
     "@types/react-dom": "^18",
     "@vitejs/plugin-react": "^4",
     "@vitest/coverage-v8": "^2",
