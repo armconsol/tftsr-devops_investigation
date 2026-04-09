@@ -4,8 +4,7 @@ A structured, AI-backed desktop tool for IT incident triage, 5-Whys root cause a
 
 Built with **Tauri 2** (Rust + WebView), **React 18**, **TypeScript**, and **SQLCipher AES-256** encrypted storage.
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
-![CI](http://172.0.0.29:3000/sarman/tftsr-devops_investigation/actions/workflows/test.yml/badge.svg)
+**CI status:** ![CI](http://172.0.0.29:3000/sarman/tftsr-devops_investigation/actions/workflows/test.yml/badge.svg) — all checks green (rustfmt · clippy · 64 Rust tests · tsc · vitest)
 
 ---
 
@@ -19,6 +18,7 @@ Built with **Tauri 2** (Rust + WebView), **React 18**, **TypeScript**, and **SQL
 - **Ollama Management** — Hardware detection, model recommendations, pull/delete models in-app
 - **Audit Trail** — Every external data send logged with SHA-256 hash
 - **Domain System Prompts** — Pre-built expert context for 8 IT domains (Linux, Windows, Network, Kubernetes, Databases, Virtualization, Hardware, Observability)
+- **Image Attachments** — Upload and manage image files with PII detection and mandatory user approval
 - **Integrations** *(v0.2, coming soon)* — Confluence, ServiceNow, Azure DevOps
 
 ---
@@ -131,7 +131,6 @@ Launch the app and go to **Settings → AI Providers** to add a provider:
 | Ollama (local) | `http://localhost:11434` | No key needed — fully offline |
 | Azure OpenAI | `https://<resource>.openai.azure.com/openai/deployments/<deployment>` | Requires API key |
 | **AWS Bedrock (via LiteLLM)** | `http://localhost:8000/v1` | See [LiteLLM + AWS Bedrock](#litellm--aws-bedrock-setup) below |
-| **Custom REST Gateway** | Your gateway URL | See [Custom REST format](docs/wiki/AI-Providers.md) |
 
 For offline use, install [Ollama](https://ollama.com) and pull a model:
 ```bash
@@ -289,9 +288,9 @@ All data is stored locally in a SQLCipher-encrypted database at:
 
 | OS | Path |
 |---|---|
-| Linux | `~/.local/share/trcaa/trcaa.db` |
-| macOS | `~/Library/Application Support/trcaa/trcaa.db` |
-| Windows | `%APPDATA%\trcaa\trcaa.db` |
+| Linux | `~/.local/share/tftsr/tftsr.db` |
+| macOS | `~/Library/Application Support/tftsr/tftsr.db` |
+| Windows | `%APPDATA%\tftsr\tftsr.db` |
 
 Override with the `TFTSR_DATA_DIR` environment variable.
 
@@ -302,8 +301,8 @@ Override with the `TFTSR_DATA_DIR` environment variable.
 | Variable | Default | Purpose |
 |---|---|---|
 | `TFTSR_DATA_DIR` | Platform data dir | Override database location |
-| `TFTSR_DB_KEY` | _(auto-generated)_ | Database encryption key override — auto-generated at first launch if unset |
-| `TFTSR_ENCRYPTION_KEY` | _(auto-generated)_ | Credential encryption key override — auto-generated at first launch if unset |
+| `TFTSR_DB_KEY` | _(none)_ | Database encryption key (required in release builds) |
+| `TFTSR_ENCRYPTION_KEY` | _(none)_ | Credential encryption key (required in release builds) |
 | `RUST_LOG` | `info` | Tracing log level (`debug`, `info`, `warn`, `error`) |
 
 ---
@@ -327,16 +326,6 @@ Override with the `TFTSR_DATA_DIR` environment variable.
 
 ---
 
-## Support
-
-If this tool has been useful to you, consider buying me a coffee!
-
-[![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-buymeacoffee.com%2Ftftsr-FFDD00?style=flat&logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/tftsr)
-
----
-
 ## License
 
-MIT © 2025 [Shaun Arman](https://github.com/sarman)
-
-See [LICENSE](./LICENSE) for the full text. You are free to use, modify, and distribute this software — personal, commercial, or enterprise — as long as the original copyright notice is retained.
+Private — internal tooling. All rights reserved.

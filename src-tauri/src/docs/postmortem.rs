@@ -177,6 +177,7 @@ mod tests {
                 tags: "[]".to_string(),
             },
             log_files: vec![],
+            image_attachments: vec![],
             resolution_steps: vec![ResolutionStep {
                 id: "rs-pm-1".to_string(),
                 issue_id: "pm-456".to_string(),

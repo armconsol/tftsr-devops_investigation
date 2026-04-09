@@ -1,16 +1,22 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useRef, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { Upload, File, Trash2, ShieldCheck } from "lucide-react";
+import { Upload, File, Trash2, ShieldCheck, AlertTriangle, Image as ImageIcon } from "lucide-react";
 import { Button, Card, CardHeader, CardTitle, CardContent, Badge } from "@/components/ui";
 import { PiiDiffViewer } from "@/components/PiiDiffViewer";
 import { useSessionStore } from "@/stores/sessionStore";
 import {
   uploadLogFileCmd,
   detectPiiCmd,
+  uploadImageAttachmentCmd,
+  uploadPasteImageCmd,
+  listImageAttachmentsCmd,
+  deleteImageAttachmentCmd,
   type LogFile,
   type PiiSpan,
   type PiiDetectionResult,
+  type ImageAttachment,
 } from "@/lib/tauriCommands";
+import ImageGallery from "@/components/ImageGallery";
 
 export default function LogUpload() {
   const { id } = useParams<{ id: string }>();
@@ -18,10 +24,13 @@ export default function LogUpload() {
   const { piiSpans, approvedRedactions, setPiiSpans, setApprovedRedactions } = useSessionStore();
 
   const [files, setFiles] = useState<{ file: File; uploaded?: LogFile }[]>([]);
+  const [images, setImages] = useState<ImageAttachment[]>([]);
   const [piiResult, setPiiResult] = useState<PiiDetectionResult | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [isDetecting, setIsDetecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleDrop = useCallback(
     (e: React.DragEvent) => {
@@ -96,8 +105,135 @@ export default function LogUpload() {
     }
   };
 
+  const handleImageDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      const droppedFiles = Array.from(e.dataTransfer.files);
+      const imageFiles = droppedFiles.filter((f) => f.type.startsWith("image/"));
+      
+      if (imageFiles.length > 0) {
+        handleImagesUpload(imageFiles);
+      }
+    },
+    [id]
+  );
+
+  const handleImageFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files) {
+      const selected = Array.from(e.target.files).filter((f) => f.type.startsWith("image/"));
+      if (selected.length > 0) {
+        handleImagesUpload(selected);
+      }
+    }
+  };
+
+  const handlePaste = useCallback(
+    async (e: React.ClipboardEvent) => {
+      const items = e.clipboardData?.items;
+      const imageItems = items ? Array.from(items).filter((item: DataTransferItem) => item.type.startsWith("image/")) : [];
+      
+      for (const item of imageItems) {
+        const file = item.getAsFile();
+        if (file) {
+          const reader = new FileReader();
+          reader.onload = async () => {
+            const base64Data = reader.result as string;
+            try {
+              const result = await uploadPasteImageCmd(id || "", base64Data, file.type);
+              setImages((prev) => [...prev, result]);
+            } catch (err) {
+              setError(String(err));
+            }
+          };
+          reader.readAsDataURL(file);
+        }
+      }
+    },
+    [id]
+  );
+
+  const handleImagesUpload = async (imageFiles: File[]) => {
+    if (!id || imageFiles.length === 0) return;
+    
+    setIsUploading(true);
+    setError(null);
+    try {
+      const uploaded = await Promise.all(
+        imageFiles.map(async (file) => {
+          const result = await uploadImageAttachmentCmd(id, file.name);
+          return result;
+        })
+      );
+      setImages((prev) => [...prev, ...uploaded]);
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const handleDeleteImage = async (image: ImageAttachment) => {
+    try {
+      await deleteImageAttachmentCmd(image.id);
+      setImages((prev) => prev.filter((img) => img.id !== image.id));
+    } catch (err) {
+      setError(String(err));
+    }
+  };
+
+  const fileToBase64 = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = (err) => reject(err);
+      reader.readAsDataURL(file);
+    });
+  };
+
+
   const allUploaded = files.length > 0 && files.every((f) => f.uploaded);
   const piiReviewed = piiResult != null;
+
+  useEffect(() => {
+    const handleGlobalPaste = (e: ClipboardEvent) => {
+      if (document.activeElement?.tagName === "INPUT" || 
+          document.activeElement?.tagName === "TEXTAREA" ||
+          (document.activeElement as HTMLElement)?.isContentEditable || false) {
+        return;
+      }
+      
+      const items = e.clipboardData?.items;
+      const imageItems = items ? Array.from(items).filter((item: DataTransferItem) => item.type.startsWith("image/")) : [];
+      
+      for (const item of imageItems) {
+        const file = item.getAsFile();
+        if (file) {
+          e.preventDefault();
+          const reader = new FileReader();
+          reader.onload = async () => {
+            const base64Data = reader.result as string;
+            try {
+              const result = await uploadPasteImageCmd(id || "", base64Data, file.type);
+              setImages((prev) => [...prev, result]);
+            } catch (err) {
+              setError(String(err));
+            }
+          };
+          reader.readAsDataURL(file);
+          break;
+        }
+      }
+    };
+
+    window.addEventListener("paste", handleGlobalPaste);
+    return () => window.removeEventListener("paste", handleGlobalPaste);
+  }, [id]);
+
+  useEffect(() => {
+    if (id) {
+      listImageAttachmentsCmd(id).then(setImages).catch(setError);
+    }
+  }, [id]);
 
   return (
     <div className="p-6 space-y-6">
@@ -163,6 +299,87 @@ export default function LogUpload() {
             )}
           </CardContent>
         </Card>
+      )}
+
+      {/* Image Upload */}
+      {id && (
+        <>
+          <div>
+            <h2 className="text-2xl font-semibold flex items-center gap-2">
+              <ImageIcon className="w-6 h-6" />
+              Image Attachments
+            </h2>
+            <p className="text-muted-foreground mt-1">
+              Upload or paste screenshots and images.
+            </p>
+          </div>
+
+          {/* Image drop zone */}
+          <div
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={handleImageDrop}
+            className="border-2 border-dashed border-primary/30 rounded-lg p-8 text-center hover:border-primary transition-colors cursor-pointer bg-primary/5"
+            onClick={() => document.getElementById("image-input")?.click()}
+          >
+            <Upload className="w-8 h-8 mx-auto text-primary mb-2" />
+            <p className="text-sm text-muted-foreground">
+              Drag and drop images here, or click to browse
+            </p>
+            <p className="text-xs text-muted-foreground mt-2">
+              Supported: PNG, JPEG, GIF, WebP, SVG
+            </p>
+            <input
+              id="image-input"
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={handleImageFileSelect}
+            />
+          </div>
+
+          {/* Paste button */}
+          <div className="flex items-center gap-2">
+            <Button
+              onClick={async (e) => {
+                e.preventDefault();
+                document.execCommand("paste");
+              }}
+              variant="secondary"
+            >
+              Paste from Clipboard
+            </Button>
+            <span className="text-xs text-muted-foreground">
+              Use Ctrl+V / Cmd+V or the button above to paste images
+            </span>
+          </div>
+
+          {/* PII warning for images */}
+          <div className="bg-amber-50 border border-amber-200 rounded-md p-3">
+            <AlertTriangle className="w-5 h-5 text-amber-600 inline mr-2" />
+            <span className="text-sm text-amber-800">
+              ⚠️ PII cannot be automatically redacted from images. Use at your own risk.
+            </span>
+          </div>
+
+          {/* Image Gallery */}
+          {images.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <ImageIcon className="w-5 h-5" />
+                  Attached Images ({images.length})
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ImageGallery
+                  images={images}
+                  onDelete={handleDeleteImage}
+                  showWarning={false}
+                />
+              </CardContent>
+            </Card>
+          )}
+        </>
       )}
 
       {/* PII Detection */}

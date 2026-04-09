@@ -21,6 +21,7 @@ const mockIssueDetail = {
     tags: "[]",
   },
   log_files: [],
+  image_attachments: [],
   resolution_steps: [
     {
       id: "step-1",

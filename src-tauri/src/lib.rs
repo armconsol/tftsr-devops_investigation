@@ -11,7 +11,6 @@ pub mod state;
 use sha2::{Digest, Sha256};
 use state::AppState;
 use std::sync::{Arc, Mutex};
-use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -26,7 +25,7 @@ pub fn run() {
     tracing::info!("Starting Troubleshooting and RCA Assistant application");
 
     // Determine data directory
-    let data_dir = state::get_app_data_dir().expect("Failed to determine app data directory");
+    let data_dir = dirs_data_dir();
 
     // Initialize database
     let conn = db::connection::init_db(&data_dir).expect("Failed to initialize database");
@@ -58,35 +57,6 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_http::init())
         .manage(app_state)
-        .setup(|app| {
-            // Restore persistent browser windows from previous session
-            let app_handle = app.handle().clone();
-            let state: tauri::State<AppState> = app.state();
-
-            // Clone Arc fields for 'static lifetime
-            let db = state.db.clone();
-            let settings = state.settings.clone();
-            let app_data_dir = state.app_data_dir.clone();
-            let integration_webviews = state.integration_webviews.clone();
-
-            tauri::async_runtime::spawn(async move {
-                let app_state = AppState {
-                    db,
-                    settings,
-                    app_data_dir,
-                    integration_webviews,
-                };
-
-                if let Err(e) =
-                    commands::integrations::restore_persistent_webviews(&app_handle, &app_state)
-                        .await
-                {
-                    tracing::warn!("Failed to restore persistent webviews: {}", e);
-                }
-            });
-
-            Ok(())
-        })
         .invoke_handler(tauri::generate_handler![
             // DB / Issue CRUD
             commands::db::create_issue,
@@ -103,6 +73,10 @@ pub fn run() {
             commands::analysis::upload_log_file,
             commands::analysis::detect_pii,
             commands::analysis::apply_redactions,
+            commands::image::upload_image_attachment,
+            commands::image::list_image_attachments,
+            commands::image::delete_image_attachment,
+            commands::image::upload_paste_image,
             // AI
             commands::ai::analyze_logs,
             commands::ai::chat_message,
@@ -128,7 +102,6 @@ pub fn run() {
             commands::integrations::save_integration_config,
             commands::integrations::get_integration_config,
             commands::integrations::get_all_integration_configs,
-            commands::integrations::add_ado_comment,
             // System / Settings
             commands::system::check_ollama_installed,
             commands::system::get_ollama_install_guide,
@@ -140,10 +113,48 @@ pub fn run() {
             commands::system::get_settings,
             commands::system::update_settings,
             commands::system::get_audit_log,
-            commands::system::save_ai_provider,
-            commands::system::load_ai_providers,
-            commands::system::delete_ai_provider,
         ])
         .run(tauri::generate_context!())
         .expect("Error running Troubleshooting and RCA Assistant application");
+}
+
+/// Determine the application data directory.
+fn dirs_data_dir() -> std::path::PathBuf {
+    if let Ok(dir) = std::env::var("TFTSR_DATA_DIR") {
+        return std::path::PathBuf::from(dir);
+    }
+
+    // Use platform-appropriate data directory
+    #[cfg(target_os = "linux")]
+    {
+        if let Ok(xdg) = std::env::var("XDG_DATA_HOME") {
+            return std::path::PathBuf::from(xdg).join("trcaa");
+        }
+        if let Ok(home) = std::env::var("HOME") {
+            return std::path::PathBuf::from(home)
+                .join(".local")
+                .join("share")
+                .join("trcaa");
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        if let Ok(home) = std::env::var("HOME") {
+            return std::path::PathBuf::from(home)
+                .join("Library")
+                .join("Application Support")
+                .join("trcaa");
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        if let Ok(appdata) = std::env::var("APPDATA") {
+            return std::path::PathBuf::from(appdata).join("trcaa");
+        }
+    }
+
+    // Fallback
+    std::path::PathBuf::from("./trcaa-data")
 }

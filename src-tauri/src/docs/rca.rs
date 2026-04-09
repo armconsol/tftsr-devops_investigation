@@ -172,6 +172,7 @@ mod tests {
                 uploaded_at: "2025-01-15 10:30:00".to_string(),
                 redacted: false,
             }],
+            image_attachments: vec![],
             resolution_steps: vec![
                 ResolutionStep {
                     id: "rs-1".to_string(),
