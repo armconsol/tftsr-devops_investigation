@@ -507,7 +507,7 @@ mod tests {
         // This avoids env var conflicts with parallel tests
         let test_key = "test-key-encrypt-decrypt-roundtrip-12345";
         let key_material = derive_aes_key_from_str(test_key).unwrap();
-        
+
         let original = "my-secret-token-12345";
         let encrypted = encrypt_token_with_key(original, &key_material).unwrap();
         let decrypted = decrypt_token_with_key(&encrypted, &key_material).unwrap();

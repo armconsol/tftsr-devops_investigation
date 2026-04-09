@@ -149,7 +149,10 @@ impl OpenAiProvider {
 
         if !resp.status().is_success() {
             let status = resp.status();
-            let text = resp.text().await.unwrap_or_else(|_| "unable to read response body".to_string());
+            let text = resp
+                .text()
+                .await
+                .unwrap_or_else(|_| "unable to read response body".to_string());
             tracing::error!(url = %url, status = %status, response = %text, "OpenAI API error response");
             anyhow::bail!("OpenAI API error {status}: {text}");
         }
