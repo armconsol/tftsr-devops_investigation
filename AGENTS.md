@@ -9,9 +9,9 @@
 | Frontend production build | `npm run build` |
 | Rust fmt check | `cargo fmt --manifest-path src-tauri/Cargo.toml --check` |
 | Rust clippy | `cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings` |
-| Rust tests | `cargo test --manifest-path src-tauri/Cargo.toml` |
-| Rust single test module | `cargo test --manifest-path src-tauri/Cargo.toml pii::detector` |
-| Rust single test | `cargo test --manifest-path src-tauri/Cargo.toml test_detect_ipv4` |
+| Rust tests | `cargo test --manifest-path src-tauri/Cargo.toml -- --test-threads=1` |
+| Rust single test module | `cargo test --manifest-path src-tauri/Cargo.toml -- --test-threads=1 pii::detector` |
+| Rust single test | `cargo test --manifest-path src-tauri/Cargo.toml -- --test-threads=1 test_detect_ipv4` |
 | Frontend test (single run) | `npm run test:run` |
 | Frontend test (watch) | `npm run test` |
 | Frontend coverage | `npm run test:coverage` |
