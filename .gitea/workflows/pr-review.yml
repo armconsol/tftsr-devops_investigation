@@ -53,13 +53,13 @@ jobs:
       - name: Post review comment
         if: success()
         env:
-          GITEA_TOKEN: ${{ secrets.GITEA_TOKEN }}
+          TF_TOKEN: ${{ secrets.TFT_GITEA_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           if [ -f "/tmp/pr_review.txt" ]; then
             REVIEW_BODY=$(cat /tmp/pr_review.txt | head -c 65536)
             curl -s -X POST "https://gogs.tftsr.com/api/v1/repos/sarman/tftsr-devops_investigation/pulls/$PR_NUMBER/reviews" \
-              -H "Authorization: token $GITEA_TOKEN" \
+              -H "Authorization: token $TF_TOKEN" \
               -H "Content-Type: application/json" \
               -d "{\"body\": \"🤖 Automated PR Review:\n\n$REVIEW_BODY\n\n---\n*this is an automated review from Ollama*\", \"event\": \"COMMENT\"}"
           fi
