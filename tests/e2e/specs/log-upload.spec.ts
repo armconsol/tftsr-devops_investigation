@@ -1,4 +1,4 @@
-import { waitForApp, clickByText } from "../helpers/app";
+import { waitForApp } from "../helpers/app";
 
 describe("Log Upload Flow", () => {
   before(async () => {

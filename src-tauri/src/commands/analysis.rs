@@ -107,7 +107,7 @@ pub async fn upload_log_file_by_content(
     let content_bytes = content.as_bytes();
     let content_hash = format!("{:x}", Sha256::digest(content_bytes));
     let file_size = content_bytes.len() as i64;
-    
+
     // Determine mime type based on file extension
     let mime_type = if file_name.ends_with(".json") {
         "application/json"
@@ -118,7 +118,12 @@ pub async fn upload_log_file_by_content(
     };
 
     // Use the file_name as the file_path for DB storage
-    let log_file = LogFile::new(issue_id.clone(), file_name.clone(), file_name.clone(), file_size);
+    let log_file = LogFile::new(
+        issue_id.clone(),
+        file_name.clone(),
+        file_name.clone(),
+        file_size,
+    );
     let log_file = LogFile {
         content_hash: content_hash.clone(),
         mime_type: mime_type.to_string(),

@@ -6,7 +6,6 @@ import {
   CardTitle,
   CardContent,
   Badge,
-  Separator,
 } from "@/components/ui";
 import { getAuditLogCmd, type AuditEntry } from "@/lib/tauriCommands";
 import { useSettingsStore } from "@/stores/settingsStore";

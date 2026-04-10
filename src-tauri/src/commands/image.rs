@@ -141,7 +141,7 @@ pub async fn upload_image_attachment_by_content(
 
     let content_hash = format!("{:x}", sha2::Sha256::digest(&decoded));
     let file_size = decoded.len() as i64;
-    
+
     let mime_type: String = infer::get(&decoded)
         .map(|m| m.mime_type().to_string())
         .unwrap_or_else(|| "image/png".to_string());
@@ -359,102 +359,111 @@ pub async fn upload_file_to_datastore(
     _state: State<'_, AppState>,
 ) -> Result<String, String> {
     use reqwest::multipart::Form;
-    
+
     let canonical_path = validate_image_file_path(&file_path)?;
-    let content = std::fs::read(&canonical_path)
-        .map_err(|_| "Failed to read file for datastore upload")?;
-    
+    let content =
+        std::fs::read(&canonical_path).map_err(|_| "Failed to read file for datastore upload")?;
+
     let file_name = canonical_path
         .file_name()
         .and_then(|n| n.to_str())
         .unwrap_or("unknown")
         .to_string();
-    
+
     let _file_size = content.len() as i64;
-    
+
     // Extract API URL and auth header from provider config
     let api_url = provider_config
         .get("api_url")
         .and_then(|v| v.as_str())
         .ok_or("Provider config missing api_url")?
         .to_string();
-    
+
     // Extract use_datastore_upload flag
     let use_datastore = provider_config
         .get("use_datastore_upload")
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
-    
+
     if !use_datastore {
         return Err("use_datastore_upload is not enabled for this provider".to_string());
     }
-    
+
     // Get datastore ID from custom_endpoint_path (stored as datastore ID)
     let datastore_id = provider_config
         .get("custom_endpoint_path")
         .and_then(|v| v.as_str())
         .ok_or("Provider config missing datastore ID in custom_endpoint_path")?
         .to_string();
-    
+
     // Build upload endpoint: POST /api/v2/upload/<DATASTORE-ID>
     let api_url = api_url.trim_end_matches('/');
-    let upload_url = format!("{}/upload/{}", api_url, datastore_id);
-    
+    let upload_url = format!("{api_url}/upload/{datastore_id}");
+
     // Read auth header and value
     let auth_header = provider_config
         .get("custom_auth_header")
         .and_then(|v| v.as_str())
         .unwrap_or("x-generic-api-key");
-    
+
     let auth_prefix = provider_config
         .get("custom_auth_prefix")
         .and_then(|v| v.as_str())
         .unwrap_or("");
-    
+
     let api_key = provider_config
         .get("api_key")
         .and_then(|v| v.as_str())
         .ok_or("Provider config missing api_key")?;
-    
-    let auth_value = format!("{}{}", auth_prefix, api_key);
-    
+
+    let auth_value = format!("{auth_prefix}{api_key}");
+
     let client = reqwest::Client::new();
-    
+
     // Create multipart form
     let part = reqwest::multipart::Part::bytes(content)
         .file_name(file_name)
         .mime_str("application/octet-stream")
-        .map_err(|e| format!("Failed to create multipart part: {}", e))?;
-    
-    let form = Form::new()
-        .part("file", part);
-    
+        .map_err(|e| format!("Failed to create multipart part: {e}"))?;
+
+    let form = Form::new().part("file", part);
+
     let resp = client
         .post(&upload_url)
         .header(auth_header, auth_value)
         .multipart(form)
         .send()
         .await
-        .map_err(|e| format!("Upload request failed: {}", e))?;
-    
+        .map_err(|e| format!("Upload request failed: {e}"))?;
+
     if !resp.status().is_success() {
         let status = resp.status();
-        let text = resp.text().await.unwrap_or_else(|_| "unable to read response".to_string());
-        return Err(format!("Datastore upload error {}: {}", status, text));
+        let text = resp
+            .text()
+            .await
+            .unwrap_or_else(|_| "unable to read response".to_string());
+        return Err(format!("Datastore upload error {status}: {text}"));
     }
-    
+
     // Parse response to get file ID
-    let json = resp.json::<serde_json::Value>()
+    let json = resp
+        .json::<serde_json::Value>()
         .await
-        .map_err(|e| format!("Failed to parse upload response: {}", e))?;
-    
+        .map_err(|e| format!("Failed to parse upload response: {e}"))?;
+
     // Response should have file_id or id field
-    let file_id = json.get("file_id")
+    let file_id = json
+        .get("file_id")
         .or_else(|| json.get("id"))
         .and_then(|v| v.as_str())
-        .ok_or_else(|| format!("Response missing file_id: {}", serde_json::to_string_pretty(&json).unwrap_or_default()))?
+        .ok_or_else(|| {
+            format!(
+                "Response missing file_id: {}",
+                serde_json::to_string_pretty(&json).unwrap_or_default()
+            )
+        })?
         .to_string();
-    
+
     Ok(file_id)
 }
 
@@ -466,110 +475,119 @@ pub async fn upload_file_to_datastore_any(
     _state: State<'_, AppState>,
 ) -> Result<String, String> {
     use reqwest::multipart::Form;
-    
+
     // Validate file exists and is accessible
     let path = Path::new(&file_path);
     let canonical = std::fs::canonicalize(path).map_err(|_| "Unable to access selected file")?;
     let metadata = std::fs::metadata(&canonical).map_err(|_| "Unable to read file metadata")?;
-    
+
     if !metadata.is_file() {
         return Err("Selected path is not a file".to_string());
     }
-    
-    let content = std::fs::read(&canonical)
-        .map_err(|_| "Failed to read file for datastore upload")?;
-    
+
+    let content =
+        std::fs::read(&canonical).map_err(|_| "Failed to read file for datastore upload")?;
+
     let file_name = canonical
         .file_name()
         .and_then(|n| n.to_str())
         .unwrap_or("unknown")
         .to_string();
-    
+
     let _file_size = content.len() as i64;
-    
+
     // Extract API URL and auth header from provider config
     let api_url = provider_config
         .get("api_url")
         .and_then(|v| v.as_str())
         .ok_or("Provider config missing api_url")?
         .to_string();
-    
+
     // Extract use_datastore_upload flag
     let use_datastore = provider_config
         .get("use_datastore_upload")
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
-    
+
     if !use_datastore {
         return Err("use_datastore_upload is not enabled for this provider".to_string());
     }
-    
+
     // Get datastore ID from custom_endpoint_path (stored as datastore ID)
     let datastore_id = provider_config
         .get("custom_endpoint_path")
         .and_then(|v| v.as_str())
         .ok_or("Provider config missing datastore ID in custom_endpoint_path")?
         .to_string();
-    
+
     // Build upload endpoint: POST /api/v2/upload/<DATASTORE-ID>
     let api_url = api_url.trim_end_matches('/');
-    let upload_url = format!("{}/upload/{}", api_url, datastore_id);
-    
+    let upload_url = format!("{api_url}/upload/{datastore_id}");
+
     // Read auth header and value
     let auth_header = provider_config
         .get("custom_auth_header")
         .and_then(|v| v.as_str())
         .unwrap_or("x-generic-api-key");
-    
+
     let auth_prefix = provider_config
         .get("custom_auth_prefix")
         .and_then(|v| v.as_str())
         .unwrap_or("");
-    
+
     let api_key = provider_config
         .get("api_key")
         .and_then(|v| v.as_str())
         .ok_or("Provider config missing api_key")?;
-    
-    let auth_value = format!("{}{}", auth_prefix, api_key);
-    
+
+    let auth_value = format!("{auth_prefix}{api_key}");
+
     let client = reqwest::Client::new();
-    
+
     // Create multipart form
     let part = reqwest::multipart::Part::bytes(content)
         .file_name(file_name)
         .mime_str("application/octet-stream")
-        .map_err(|e| format!("Failed to create multipart part: {}", e))?;
-    
-    let form = Form::new()
-        .part("file", part);
-    
+        .map_err(|e| format!("Failed to create multipart part: {e}"))?;
+
+    let form = Form::new().part("file", part);
+
     let resp = client
         .post(&upload_url)
         .header(auth_header, auth_value)
         .multipart(form)
         .send()
         .await
-        .map_err(|e| format!("Upload request failed: {}", e))?;
-    
+        .map_err(|e| format!("Upload request failed: {e}"))?;
+
     if !resp.status().is_success() {
         let status = resp.status();
-        let text = resp.text().await.unwrap_or_else(|_| "unable to read response".to_string());
-        return Err(format!("Datastore upload error {}: {}", status, text));
+        let text = resp
+            .text()
+            .await
+            .unwrap_or_else(|_| "unable to read response".to_string());
+        return Err(format!("Datastore upload error {status}: {text}"));
     }
-    
+
     // Parse response to get file ID
-    let json = resp.json::<serde_json::Value>()
+    let json = resp
+        .json::<serde_json::Value>()
         .await
-        .map_err(|e| format!("Failed to parse upload response: {}", e))?;
-    
+        .map_err(|e| format!("Failed to parse upload response: {e}"))?;
+
     // Response should have file_id or id field
-    let file_id = json.get("file_id")
+    let file_id = json
+        .get("file_id")
         .or_else(|| json.get("id"))
         .and_then(|v| v.as_str())
-        .ok_or_else(|| format!("Response missing file_id: {}", serde_json::to_string_pretty(&json).unwrap_or_default()))?
+        .ok_or_else(|| {
+            format!(
+                "Response missing file_id: {}",
+                serde_json::to_string_pretty(&json).unwrap_or_default()
+            )
+        })?
         .to_string();
-    
+
     Ok(file_id)
 }
 

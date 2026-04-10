@@ -14,7 +14,7 @@ import {
 export default function RCA() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const getActiveProvider = useSettingsStore((s) => s.getActiveProvider);
+  void useSettingsStore((s) => s.getActiveProvider);
 
   const [doc, setDoc] = useState<Document_ | null>(null);
   const [content, setContent] = useState("");

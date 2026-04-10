@@ -3,8 +3,6 @@ import { useNavigate } from "react-router-dom";
 import { Search, Download, ExternalLink } from "lucide-react";
 import {
   Card,
-  CardHeader,
-  CardTitle,
   CardContent,
   Button,
   Input,

@@ -47,7 +47,7 @@ export default function App() {
   const [collapsed, setCollapsed] = useState(false);
   const [appVersion, setAppVersion] = useState("");
   const { theme, setTheme, setProviders, getActiveProvider } = useSettingsStore();
-  const location = useLocation();
+  void useLocation();
 
   useEffect(() => {
     getVersion().then(setAppVersion).catch(() => {});

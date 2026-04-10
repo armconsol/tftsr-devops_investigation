@@ -13,7 +13,7 @@ import {
 
 export default function Postmortem() {
   const { id } = useParams<{ id: string }>();
-  const getActiveProvider = useSettingsStore((s) => s.getActiveProvider);
+  void useSettingsStore((s) => s.getActiveProvider);
 
   const [doc, setDoc] = useState<Document_ | null>(null);
   const [content, setContent] = useState("");

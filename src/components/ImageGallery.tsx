@@ -67,7 +67,7 @@ export function ImageGallery({ images, onDelete, showWarning = true }: ImageGall
       )}
 
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-        {images.map((image, idx) => (
+        {images.map((image) => (
           <div key={image.id} className="group relative rounded-lg overflow-hidden bg-gray-100 border border-gray-200">
             <button
               onClick={() => {
