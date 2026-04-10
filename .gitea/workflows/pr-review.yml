@@ -6,7 +6,7 @@ on:
 
 jobs:
   review:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     container:
       image: ubuntu:22.04
     steps:
@@ -18,22 +18,21 @@ jobs:
             jq \
             && rm -rf /var/lib/apt/lists/*
 
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.TFT_GITEA_TOKEN }}
+          ref: ${{ github.head_ref }}
+
       - name: Get PR diff
-        env:
-          BASE_REF: ${{ github.base_ref }}
-          HEAD_REF: ${{ github.head_ref }}
+        id: diff
         run: |
-          git config --global user.name "Automated Review"
-          git config --global user.email "review@example.com"
-          git clone https://gogs.tftsr.com/sarman/tftsr-devops_investigation.git /tmp/repo
-          cd /tmp/repo
-          git fetch origin
-          git checkout $HEAD_REF
-          git diff origin/$BASE_REF..HEAD > /tmp/pr_diff.txt
+          git fetch origin ${{ github.base_ref }}
+          git diff origin/${{ github.base_ref }}..HEAD > /tmp/pr_diff.txt
           echo "diff_size=$(wc -l < /tmp/pr_diff.txt)" >> $GITHUB_OUTPUT
 
       - name: Analyze with Ollama
-        if: success()
+        if: steps.diff.outputs.diff_size > '0'
         env:
           OLLAMA_URL: https://ollama-ui.tftsr.com/ollama/v1
           API_KEY: ${{ secrets.OLLAMA_API_KEY }}
