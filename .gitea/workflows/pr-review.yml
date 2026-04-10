@@ -8,19 +8,14 @@ jobs:
   review:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout PR branch
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.head_ref }}
-          fetch-depth: 0
-
       - name: Get base branch
         run: git fetch origin ${{ github.base_ref }}:${{ github.base_ref }}
 
       - name: Get PR diff
         id: diff
         run: |
-          git diff origin/${{ github.base_ref }}..HEAD > /tmp/pr_diff.txt
+          git config --global --add safe.directory /__w/tftsr-devops_investigation/tftsr-devops_investigation
+          git diff origin/${{ github.base_ref }}..${{ github.head_ref }} > /tmp/pr_diff.txt
           echo "diff_size=$(wc -l < /tmp/pr_diff.txt)" >> $GITHUB_OUTPUT
 
       - name: Analyze with Ollama
@@ -36,7 +31,7 @@ jobs:
           
           Diff:
           $DIFF_CONTENT
-          
+       
           Provide review with: 1) Completion check, 2) Completeness check, 3) Bugs/errors, 4) Security issues, 5) Best practices.
           Then give specific comments with suggested fixes."
           
@@ -46,7 +41,7 @@ jobs:
             -d "{\"model\":\"qwen3-coder-next:latest\",\"messages\":[{\"role\":\"user\",\"content\":\"$PROMPT\"}],\"stream\":false}")
           
           echo "$RESPONSE" > /tmp/ollama_response.json
-       
+          
           REVIEW=$(echo "$RESPONSE" | grep -o '"content":"[^"]*"' | head -1 | sed 's/"content":"//;s/"$//')
           echo "$REVIEW" > /tmp/pr_review.txt
 
