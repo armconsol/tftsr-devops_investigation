@@ -7,19 +7,33 @@ on:
 jobs:
   review:
     runs-on: ubuntu-latest
+    container:
+      image: ubuntu:22.04
     steps:
-      - name: Get base branch
-        run: git fetch origin ${{ github.base_ref }}:${{ github.base_ref }}
+      - name: Install dependencies
+        run: |
+          apt-get update && apt-get install -y \
+            git \
+            curl \
+            jq \
+            && rm -rf /var/lib/apt/lists/*
 
       - name: Get PR diff
-        id: diff
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          HEAD_REF: ${{ github.head_ref }}
         run: |
-          git config --global --add safe.directory /__w/tftsr-devops_investigation/tftsr-devops_investigation
-          git diff origin/${{ github.base_ref }}..${{ github.head_ref }} > /tmp/pr_diff.txt
+          git config --global user.name "Automated Review"
+          git config --global user.email "review@example.com"
+          git clone https://gogs.tftsr.com/sarman/tftsr-devops_investigation.git /tmp/repo
+          cd /tmp/repo
+          git fetch origin
+          git checkout $HEAD_REF
+          git diff origin/$BASE_REF..HEAD > /tmp/pr_diff.txt
           echo "diff_size=$(wc -l < /tmp/pr_diff.txt)" >> $GITHUB_OUTPUT
 
       - name: Analyze with Ollama
-        if: steps.diff.outputs.diff_size > '0'
+        if: success()
         env:
           OLLAMA_URL: https://ollama-ui.tftsr.com/ollama/v1
           API_KEY: ${{ secrets.OLLAMA_API_KEY }}
@@ -31,7 +45,7 @@ jobs:
           
           Diff:
           $DIFF_CONTENT
-       
+          
           Provide review with: 1) Completion check, 2) Completeness check, 3) Bugs/errors, 4) Security issues, 5) Best practices.
           Then give specific comments with suggested fixes."
           
@@ -41,8 +55,7 @@ jobs:
             -d "{\"model\":\"qwen3-coder-next:latest\",\"messages\":[{\"role\":\"user\",\"content\":\"$PROMPT\"}],\"stream\":false}")
           
           echo "$RESPONSE" > /tmp/ollama_response.json
-          
-          REVIEW=$(echo "$RESPONSE" | grep -o '"content":"[^"]*"' | head -1 | sed 's/"content":"//;s/"$//')
+          REVIEW=$(echo "$RESPONSE" | jq -r '.choices[0].message.content // empty')
           echo "$REVIEW" > /tmp/pr_review.txt
 
       - name: Post review comment
@@ -51,7 +64,7 @@ jobs:
           TF_TOKEN: ${{ secrets.TFT_GITEA_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
-          if [ -f "/tmp/pr_review.txt" ]; then
+          if [ -f "/tmp/pr_review.txt" ] && [ -s "/tmp/pr_review.txt" ]; then
             REVIEW_BODY=$(cat /tmp/pr_review.txt | head -c 65536)
             curl -s -X POST "https://gogs.tftsr.com/api/v1/repos/sarman/tftsr-devops_investigation/pulls/$PR_NUMBER/reviews" \
               -H "Authorization: token $TF_TOKEN" \
