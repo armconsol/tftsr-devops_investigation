@@ -1,0 +1,65 @@
+name: PR Review Automation
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout PR branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+
+      - name: Get base branch
+        run: git fetch origin ${{ github.base_ref }}:${{ github.base_ref }}
+
+      - name: Get PR diff
+        id: diff
+        run: |
+          git diff origin/${{ github.base_ref }}..HEAD > /tmp/pr_diff.txt
+          echo "diff_size=$(wc -l < /tmp/pr_diff.txt)" >> $GITHUB_OUTPUT
+
+      - name: Analyze with Ollama
+        if: steps.diff.outputs.diff_size > '0'
+        env:
+          OLLAMA_URL: https://ollama-ui.tftsr.com/ollama/v1
+          API_KEY: ${{ secrets.OLLAMA_API_KEY }}
+        run: |
+          DIFF_CONTENT=$(cat /tmp/pr_diff.txt)
+          PROMPT="Analyze the following code changes for completion, completeness, correctness, security issues, and best practices. 
+          
+          PR Title: ${{ github.event.pull_request.title }}
+          
+          Diff:
+          $DIFF_CONTENT
+          
+          Provide review with: 1) Completion check, 2) Completeness check, 3) Bugs/errors, 4) Security issues, 5) Best practices.
+          Then give specific comments with suggested fixes."
+          
+          RESPONSE=$(curl -s -X POST "$OLLAMA_URL/chat" \
+            -H "Authorization: Bearer $API_KEY" \
+            -H "Content-Type: application/json" \
+            -d "{\"model\":\"qwen3-coder-next:latest\",\"messages\":[{\"role\":\"user\",\"content\":\"$PROMPT\"}],\"stream\":false}")
+          
+          echo "$RESPONSE" > /tmp/ollama_response.json
+       
+          REVIEW=$(echo "$RESPONSE" | grep -o '"content":"[^"]*"' | head -1 | sed 's/"content":"//;s/"$//')
+          echo "$REVIEW" > /tmp/pr_review.txt
+
+      - name: Post review comment
+        if: success()
+        env:
+          GITEA_TOKEN: ${{ secrets.GITEA_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          if [ -f "/tmp/pr_review.txt" ]; then
+            REVIEW_BODY=$(cat /tmp/pr_review.txt | head -c 65536)
+            curl -s -X POST "https://gogs.tftsr.com/api/v1/repos/sarman/tftsr-devops_investigation/pulls/$PR_NUMBER/reviews" \
+              -H "Authorization: token $GITEA_TOKEN" \
+              -H "Content-Type: application/json" \
+              -d "{\"body\": \"🤖 Automated PR Review:\n\n$REVIEW_BODY\n\n---\n*this is an automated review from Ollama*\", \"event\": \"COMMENT\"}"
+          fi
