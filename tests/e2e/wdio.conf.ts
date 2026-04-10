@@ -1,5 +1,5 @@
 import { join } from "path";
-import { spawn, spawnSync } from "child_process";
+import { spawn } from "child_process";
 import type { Options } from "@wdio/types";
 
 // Path to the tauri-driver binary

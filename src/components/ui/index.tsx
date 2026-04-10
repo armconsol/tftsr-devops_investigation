@@ -1,10 +1,30 @@
-import React from "react";
+import React, { HTMLAttributes } from "react";
 import { cva, type VariantProps } from "class-variance-authority";
 import { clsx, type ClassValue } from "clsx";
 
 function cn(...inputs: ClassValue[]) {
   return clsx(inputs);
 }
+
+// ─── Separator (ForwardRef) ───────────────────────────────────────────────────
+
+export const Separator = React.forwardRef<
+  HTMLDivElement,
+  HTMLAttributes<HTMLDivElement> & { orientation?: "horizontal" | "vertical" }
+>(({ className, orientation = "horizontal", ...props }, ref) => (
+  <div
+    ref={ref}
+    role="separator"
+    aria-orientation={orientation}
+    className={cn(
+      "shrink-0 bg-border",
+      orientation === "horizontal" ? "h-[1px] w-full" : "h-full w-[1px]",
+      className
+    )}
+    {...props}
+  />
+));
+Separator.displayName = "Separator";
 
 // ─── Button ──────────────────────────────────────────────────────────────────
 
@@ -108,7 +128,7 @@ CardFooter.displayName = "CardFooter";
 
 // ─── Input ───────────────────────────────────────────────────────────────────
 
-export interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {}
+export type InputProps = React.InputHTMLAttributes<HTMLInputElement>
 
 export const Input = React.forwardRef<HTMLInputElement, InputProps>(
   ({ className, type, ...props }, ref) => (
@@ -127,7 +147,7 @@ Input.displayName = "Input";
 
 // ─── Label ───────────────────────────────────────────────────────────────────
 
-export interface LabelProps extends React.LabelHTMLAttributes<HTMLLabelElement> {}
+export type LabelProps = React.LabelHTMLAttributes<HTMLLabelElement>
 
 export const Label = React.forwardRef<HTMLLabelElement, LabelProps>(
   ({ className, ...props }, ref) => (
@@ -145,7 +165,7 @@ Label.displayName = "Label";
 
 // ─── Textarea ────────────────────────────────────────────────────────────────
 
-export interface TextareaProps extends React.TextareaHTMLAttributes<HTMLTextAreaElement> {}
+export type TextareaProps = React.TextareaHTMLAttributes<HTMLTextAreaElement>
 
 export const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
   ({ className, ...props }, ref) => (
@@ -320,28 +340,7 @@ export function Progress({ value = 0, max = 100, className, ...props }: Progress
   );
 }
 
-// ─── Separator ───────────────────────────────────────────────────────────────
 
-interface SeparatorProps extends React.HTMLAttributes<HTMLDivElement> {
-  orientation?: "horizontal" | "vertical";
-}
-
-export function Separator({
-  orientation = "horizontal",
-  className,
-  ...props
-}: SeparatorProps) {
-  return (
-    <div
-      className={cn(
-        "shrink-0 bg-border",
-        orientation === "horizontal" ? "h-[1px] w-full" : "h-full w-[1px]",
-        className
-      )}
-      {...props}
-    />
-  );
-}
 
 // ─── RadioGroup ──────────────────────────────────────────────────────────────
 

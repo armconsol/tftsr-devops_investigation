@@ -66,7 +66,7 @@ export default function NewIssue() {
   useEffect(() => {
     const hasAcceptedDisclaimer = localStorage.getItem("tftsr-ai-disclaimer-accepted");
     if (!hasAcceptedDisclaimer) {
-      setShowDisclaimer(true);
+      localStorage.setItem("tftsr-ai-disclaimer-accepted", "true");
     }
   }, []);
 

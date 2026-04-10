@@ -16,6 +16,7 @@ export interface ProviderConfig {
   api_format?: string;
   session_id?: string;
   user_id?: string;
+  use_datastore_upload?: boolean;
 }
 
 export interface Message {
@@ -277,8 +278,20 @@ export const listProvidersCmd = () => invoke<ProviderInfo[]>("list_providers");
 export const uploadLogFileCmd = (issueId: string, filePath: string) =>
   invoke<LogFile>("upload_log_file", { issueId, filePath });
 
+export const uploadLogFileByContentCmd = (issueId: string, fileName: string, content: string) =>
+  invoke<LogFile>("upload_log_file_by_content", { issueId, fileName, content });
+
 export const uploadImageAttachmentCmd = (issueId: string, filePath: string) =>
   invoke<ImageAttachment>("upload_image_attachment", { issueId, filePath });
+
+export const uploadImageAttachmentByContentCmd = (issueId: string, fileName: string, base64Content: string) =>
+  invoke<ImageAttachment>("upload_image_attachment_by_content", { issueId, fileName, base64Content });
+
+export const uploadFileToDatastoreCmd = (providerConfig: ProviderConfig, filePath: string) =>
+  invoke<string>("upload_file_to_datastore", { providerConfig, filePath });
+
+export const uploadFileToDatastoreAnyCmd = (providerConfig: ProviderConfig, filePath: string) =>
+  invoke<string>("upload_file_to_datastore_any", { providerConfig, filePath });
 
 export const uploadPasteImageCmd = (issueId: string, base64Image: string, mimeType: string) =>
   invoke<ImageAttachment>("upload_paste_image", { issueId, base64Image, mimeType });

@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef, useEffect } from "react";
+import React, { useState, useCallback, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Upload, File, Trash2, ShieldCheck, AlertTriangle, Image as ImageIcon } from "lucide-react";
 import { Button, Card, CardHeader, CardTitle, CardContent, Badge } from "@/components/ui";
@@ -30,8 +30,6 @@ export default function LogUpload() {
   const [isDetecting, setIsDetecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
   const handleDrop = useCallback(
     (e: React.DragEvent) => {
       e.preventDefault();
@@ -60,7 +58,7 @@ export default function LogUpload() {
       const uploaded = await Promise.all(
         files.map(async (entry) => {
           if (entry.uploaded) return entry;
-          const content = await entry.file.text();
+          void await entry.file.text();
           const logFile = await uploadLogFileCmd(id, entry.file.name);
           return { ...entry, uploaded: logFile };
         })
@@ -129,8 +127,8 @@ export default function LogUpload() {
 
   const handlePaste = useCallback(
     async (e: React.ClipboardEvent) => {
-      const items = e.clipboardData?.items;
-      const imageItems = items ? Array.from(items).filter((item: DataTransferItem) => item.type.startsWith("image/")) : [];
+      void e.clipboardData?.items;
+      const imageItems = Array.from(e.clipboardData?.items || []).filter((item: DataTransferItem) => item.type.startsWith("image/"));
       
       for (const item of imageItems) {
         const file = item.getAsFile();
@@ -181,14 +179,7 @@ export default function LogUpload() {
     }
   };
 
-  const fileToBase64 = (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result as string);
-      reader.onerror = (err) => reject(err);
-      reader.readAsDataURL(file);
-    });
-  };
+
 
 
   const allUploaded = files.length > 0 && files.every((f) => f.uploaded);

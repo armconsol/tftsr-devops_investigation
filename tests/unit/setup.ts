@@ -32,6 +32,7 @@ vi.mock("@tauri-apps/plugin-fs", () => ({
   exists: vi.fn(() => Promise.resolve(false)),
 }));
 
+// Mock console.error to suppress React warnings
 const originalError = console.error;
 beforeAll(() => {
   console.error = (...args: unknown[]) => {

@@ -8,12 +8,13 @@ use crate::db::models::{AuditEntry, ImageAttachment};
 use crate::state::AppState;
 
 const MAX_IMAGE_FILE_BYTES: u64 = 10 * 1024 * 1024;
-const SUPPORTED_IMAGE_MIME_TYPES: [&str; 5] = [
+const SUPPORTED_IMAGE_MIME_TYPES: [&str; 6] = [
     "image/png",
     "image/jpeg",
     "image/gif",
     "image/webp",
     "image/svg+xml",
+    "image/bmp",
 ];
 
 fn validate_image_file_path(file_path: &str) -> Result<std::path::PathBuf, String> {
@@ -72,6 +73,92 @@ pub async fn upload_image_attachment(
         issue_id.clone(),
         file_name,
         canonical_file_path,
+        file_size,
+        mime_type,
+        content_hash.clone(),
+        true,
+        false,
+    );
+
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+    db.execute(
+        "INSERT INTO image_attachments (id, issue_id, file_name, file_path, file_size, mime_type, upload_hash, uploaded_at, pii_warning_acknowledged, is_paste) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+        rusqlite::params![
+            attachment.id,
+            attachment.issue_id,
+            attachment.file_name,
+            attachment.file_path,
+            attachment.file_size,
+            attachment.mime_type,
+            attachment.upload_hash,
+            attachment.uploaded_at,
+            attachment.pii_warning_acknowledged as i32,
+            attachment.is_paste as i32,
+        ],
+    )
+    .map_err(|_| "Failed to store uploaded image metadata".to_string())?;
+
+    let entry = AuditEntry::new(
+        "upload_image_attachment".to_string(),
+        "image_attachment".to_string(),
+        attachment.id.clone(),
+        serde_json::json!({
+            "issue_id": issue_id,
+            "file_name": attachment.file_name,
+            "is_paste": false,
+        })
+        .to_string(),
+    );
+    if let Err(err) = write_audit_event(
+        &db,
+        &entry.action,
+        &entry.entity_type,
+        &entry.entity_id,
+        &entry.details,
+    ) {
+        tracing::warn!(error = %err, "failed to write upload_image_attachment audit entry");
+    }
+
+    Ok(attachment)
+}
+
+#[tauri::command]
+pub async fn upload_image_attachment_by_content(
+    issue_id: String,
+    file_name: String,
+    base64_content: String,
+    state: State<'_, AppState>,
+) -> Result<ImageAttachment, String> {
+    let data_part = base64_content
+        .split(',')
+        .nth(1)
+        .ok_or("Invalid image data format - missing base64 content")?;
+
+    let decoded = base64::engine::general_purpose::STANDARD
+        .decode(data_part)
+        .map_err(|_| "Failed to decode base64 image data")?;
+
+    let content_hash = format!("{:x}", sha2::Sha256::digest(&decoded));
+    let file_size = decoded.len() as i64;
+
+    let mime_type: String = infer::get(&decoded)
+        .map(|m| m.mime_type().to_string())
+        .unwrap_or_else(|| "image/png".to_string());
+
+    if !is_supported_image_format(mime_type.as_str()) {
+        return Err(format!(
+            "Unsupported image format: {}. Supported formats: {}",
+            mime_type,
+            SUPPORTED_IMAGE_MIME_TYPES.join(", ")
+        ));
+    }
+
+    // Use the file_name as file_path for DB storage
+    let attachment = ImageAttachment::new(
+        issue_id.clone(),
+        file_name.clone(),
+        file_name,
         file_size,
         mime_type,
         content_hash.clone(),
@@ -265,6 +352,245 @@ pub async fn delete_image_attachment(
     Ok(())
 }
 
+#[tauri::command]
+pub async fn upload_file_to_datastore(
+    provider_config: serde_json::Value,
+    file_path: String,
+    _state: State<'_, AppState>,
+) -> Result<String, String> {
+    use reqwest::multipart::Form;
+
+    let canonical_path = validate_image_file_path(&file_path)?;
+    let content =
+        std::fs::read(&canonical_path).map_err(|_| "Failed to read file for datastore upload")?;
+
+    let file_name = canonical_path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("unknown")
+        .to_string();
+
+    let _file_size = content.len() as i64;
+
+    // Extract API URL and auth header from provider config
+    let api_url = provider_config
+        .get("api_url")
+        .and_then(|v| v.as_str())
+        .ok_or("Provider config missing api_url")?
+        .to_string();
+
+    // Extract use_datastore_upload flag
+    let use_datastore = provider_config
+        .get("use_datastore_upload")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+
+    if !use_datastore {
+        return Err("use_datastore_upload is not enabled for this provider".to_string());
+    }
+
+    // Get datastore ID from custom_endpoint_path (stored as datastore ID)
+    let datastore_id = provider_config
+        .get("custom_endpoint_path")
+        .and_then(|v| v.as_str())
+        .ok_or("Provider config missing datastore ID in custom_endpoint_path")?
+        .to_string();
+
+    // Build upload endpoint: POST /api/v2/upload/<DATASTORE-ID>
+    let api_url = api_url.trim_end_matches('/');
+    let upload_url = format!("{api_url}/upload/{datastore_id}");
+
+    // Read auth header and value
+    let auth_header = provider_config
+        .get("custom_auth_header")
+        .and_then(|v| v.as_str())
+        .unwrap_or("x-generic-api-key");
+
+    let auth_prefix = provider_config
+        .get("custom_auth_prefix")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+
+    let api_key = provider_config
+        .get("api_key")
+        .and_then(|v| v.as_str())
+        .ok_or("Provider config missing api_key")?;
+
+    let auth_value = format!("{auth_prefix}{api_key}");
+
+    let client = reqwest::Client::new();
+
+    // Create multipart form
+    let part = reqwest::multipart::Part::bytes(content)
+        .file_name(file_name)
+        .mime_str("application/octet-stream")
+        .map_err(|e| format!("Failed to create multipart part: {e}"))?;
+
+    let form = Form::new().part("file", part);
+
+    let resp = client
+        .post(&upload_url)
+        .header(auth_header, auth_value)
+        .multipart(form)
+        .send()
+        .await
+        .map_err(|e| format!("Upload request failed: {e}"))?;
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let text = resp
+            .text()
+            .await
+            .unwrap_or_else(|_| "unable to read response".to_string());
+        return Err(format!("Datastore upload error {status}: {text}"));
+    }
+
+    // Parse response to get file ID
+    let json = resp
+        .json::<serde_json::Value>()
+        .await
+        .map_err(|e| format!("Failed to parse upload response: {e}"))?;
+
+    // Response should have file_id or id field
+    let file_id = json
+        .get("file_id")
+        .or_else(|| json.get("id"))
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| {
+            format!(
+                "Response missing file_id: {}",
+                serde_json::to_string_pretty(&json).unwrap_or_default()
+            )
+        })?
+        .to_string();
+
+    Ok(file_id)
+}
+
+/// Upload any file (not just images) to GenAI datastore
+#[tauri::command]
+pub async fn upload_file_to_datastore_any(
+    provider_config: serde_json::Value,
+    file_path: String,
+    _state: State<'_, AppState>,
+) -> Result<String, String> {
+    use reqwest::multipart::Form;
+
+    // Validate file exists and is accessible
+    let path = Path::new(&file_path);
+    let canonical = std::fs::canonicalize(path).map_err(|_| "Unable to access selected file")?;
+    let metadata = std::fs::metadata(&canonical).map_err(|_| "Unable to read file metadata")?;
+
+    if !metadata.is_file() {
+        return Err("Selected path is not a file".to_string());
+    }
+
+    let content =
+        std::fs::read(&canonical).map_err(|_| "Failed to read file for datastore upload")?;
+
+    let file_name = canonical
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("unknown")
+        .to_string();
+
+    let _file_size = content.len() as i64;
+
+    // Extract API URL and auth header from provider config
+    let api_url = provider_config
+        .get("api_url")
+        .and_then(|v| v.as_str())
+        .ok_or("Provider config missing api_url")?
+        .to_string();
+
+    // Extract use_datastore_upload flag
+    let use_datastore = provider_config
+        .get("use_datastore_upload")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+
+    if !use_datastore {
+        return Err("use_datastore_upload is not enabled for this provider".to_string());
+    }
+
+    // Get datastore ID from custom_endpoint_path (stored as datastore ID)
+    let datastore_id = provider_config
+        .get("custom_endpoint_path")
+        .and_then(|v| v.as_str())
+        .ok_or("Provider config missing datastore ID in custom_endpoint_path")?
+        .to_string();
+
+    // Build upload endpoint: POST /api/v2/upload/<DATASTORE-ID>
+    let api_url = api_url.trim_end_matches('/');
+    let upload_url = format!("{api_url}/upload/{datastore_id}");
+
+    // Read auth header and value
+    let auth_header = provider_config
+        .get("custom_auth_header")
+        .and_then(|v| v.as_str())
+        .unwrap_or("x-generic-api-key");
+
+    let auth_prefix = provider_config
+        .get("custom_auth_prefix")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+
+    let api_key = provider_config
+        .get("api_key")
+        .and_then(|v| v.as_str())
+        .ok_or("Provider config missing api_key")?;
+
+    let auth_value = format!("{auth_prefix}{api_key}");
+
+    let client = reqwest::Client::new();
+
+    // Create multipart form
+    let part = reqwest::multipart::Part::bytes(content)
+        .file_name(file_name)
+        .mime_str("application/octet-stream")
+        .map_err(|e| format!("Failed to create multipart part: {e}"))?;
+
+    let form = Form::new().part("file", part);
+
+    let resp = client
+        .post(&upload_url)
+        .header(auth_header, auth_value)
+        .multipart(form)
+        .send()
+        .await
+        .map_err(|e| format!("Upload request failed: {e}"))?;
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let text = resp
+            .text()
+            .await
+            .unwrap_or_else(|_| "unable to read response".to_string());
+        return Err(format!("Datastore upload error {status}: {text}"));
+    }
+
+    // Parse response to get file ID
+    let json = resp
+        .json::<serde_json::Value>()
+        .await
+        .map_err(|e| format!("Failed to parse upload response: {e}"))?;
+
+    // Response should have file_id or id field
+    let file_id = json
+        .get("file_id")
+        .or_else(|| json.get("id"))
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| {
+            format!(
+                "Response missing file_id: {}",
+                serde_json::to_string_pretty(&json).unwrap_or_default()
+            )
+        })?
+        .to_string();
+
+    Ok(file_id)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -276,7 +602,7 @@ mod tests {
         assert!(is_supported_image_format("image/gif"));
         assert!(is_supported_image_format("image/webp"));
         assert!(is_supported_image_format("image/svg+xml"));
-        assert!(!is_supported_image_format("image/bmp"));
+        assert!(is_supported_image_format("image/bmp"));
         assert!(!is_supported_image_format("text/plain"));
     }
 }

@@ -98,6 +98,77 @@ pub async fn upload_log_file(
 }
 
 #[tauri::command]
+pub async fn upload_log_file_by_content(
+    issue_id: String,
+    file_name: String,
+    content: String,
+    state: State<'_, AppState>,
+) -> Result<LogFile, String> {
+    let content_bytes = content.as_bytes();
+    let content_hash = format!("{:x}", Sha256::digest(content_bytes));
+    let file_size = content_bytes.len() as i64;
+
+    // Determine mime type based on file extension
+    let mime_type = if file_name.ends_with(".json") {
+        "application/json"
+    } else if file_name.ends_with(".xml") {
+        "application/xml"
+    } else {
+        "text/plain"
+    };
+
+    // Use the file_name as the file_path for DB storage
+    let log_file = LogFile::new(
+        issue_id.clone(),
+        file_name.clone(),
+        file_name.clone(),
+        file_size,
+    );
+    let log_file = LogFile {
+        content_hash: content_hash.clone(),
+        mime_type: mime_type.to_string(),
+        ..log_file
+    };
+
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+    db.execute(
+        "INSERT INTO log_files (id, issue_id, file_name, file_path, file_size, mime_type, content_hash, uploaded_at, redacted) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+        rusqlite::params![
+            log_file.id,
+            log_file.issue_id,
+            log_file.file_name,
+            log_file.file_path,
+            log_file.file_size,
+            log_file.mime_type,
+            log_file.content_hash,
+            log_file.uploaded_at,
+            log_file.redacted as i32,
+        ],
+    )
+    .map_err(|_| "Failed to store uploaded log metadata".to_string())?;
+
+    // Audit
+    let entry = AuditEntry::new(
+        "upload_log_file".to_string(),
+        "log_file".to_string(),
+        log_file.id.clone(),
+        serde_json::json!({ "issue_id": issue_id, "file_name": log_file.file_name }).to_string(),
+    );
+    if let Err(err) = crate::audit::log::write_audit_event(
+        &db,
+        &entry.action,
+        &entry.entity_type,
+        &entry.entity_id,
+        &entry.details,
+    ) {
+        warn!(error = %err, "failed to write upload_log_file audit entry");
+    }
+
+    Ok(log_file)
+}
+
+#[tauri::command]
 pub async fn detect_pii(
     log_file_id: String,
     state: State<'_, AppState>,

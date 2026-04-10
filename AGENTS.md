@@ -8,6 +8,7 @@
 | Frontend only (port 1420) | `npm run dev` |
 | Frontend production build | `npm run build` |
 | Rust fmt check | `cargo fmt --manifest-path src-tauri/Cargo.toml --check` |
+| Rust fmt fix | `cargo fmt --manifest-path src-tauri/Cargo.toml` |
 | Rust clippy | `cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings` |
 | Rust tests | `cargo test --manifest-path src-tauri/Cargo.toml -- --test-threads=1` |
 | Rust single test module | `cargo test --manifest-path src-tauri/Cargo.toml -- --test-threads=1 pii::detector` |
@@ -16,6 +17,9 @@
 | Frontend test (watch) | `npm run test` |
 | Frontend coverage | `npm run test:coverage` |
 | TypeScript type check | `npx tsc --noEmit` |
+| Frontend lint | `npx eslint . --quiet` |
+
+**Lint Policy**: **ALWAYS run `cargo fmt` and `cargo clippy` after any Rust code change**. Fix all issues before proceeding.
 
 **Note**: The build runs `npm run build` before Rust build (via `beforeBuildCommand` in `tauri.conf.json`). This ensures TS is type-checked before packaging.
 
