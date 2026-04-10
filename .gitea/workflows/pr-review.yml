@@ -6,23 +6,21 @@ on:
 
 jobs:
   review:
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     container:
       image: ubuntu:22.04
     steps:
       - name: Install dependencies
         run: |
-          apt-get update && apt-get install -y \
-            git \
-            curl \
-            jq \
-            && rm -rf /var/lib/apt/lists/*
+          set -eux
+          apt-get update -qq && apt-get install -y -qq git curl jq
 
       - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.TFT_GITEA_TOKEN }}
-          ref: ${{ github.head_ref }}
+        run: |
+          git init
+          git remote add origin http://172.0.0.29:3000/sarman/tftsr-devops_investigation.git
+          git fetch --depth=1 origin ${{ github.head_ref }}
+          git checkout FETCH_HEAD
 
       - name: Get PR diff
         id: diff
@@ -38,21 +36,8 @@ jobs:
           API_KEY: ${{ secrets.OLLAMA_API_KEY }}
         run: |
           DIFF_CONTENT=$(cat /tmp/pr_diff.txt)
-          PROMPT="Analyze the following code changes for completion, completeness, correctness, security issues, and best practices. 
-          
-          PR Title: ${{ github.event.pull_request.title }}
-          
-          Diff:
-          $DIFF_CONTENT
-       
-          Provide review with: 1) Completion check, 2) Completeness check, 3) Bugs/errors, 4) Security issues, 5) Best practices.
-          Then give specific comments with suggested fixes."
-          
-          RESPONSE=$(curl -s -X POST "$OLLAMA_URL/chat" \
-            -H "Authorization: Bearer $API_KEY" \
-            -H "Content-Type: application/json" \
-            -d "{\"model\":\"qwen3-coder-next:latest\",\"messages\":[{\"role\":\"user\",\"content\":\"$PROMPT\"}],\"stream\":false}")
-          
+          PROMPT="Analyze the following code changes for completion, completeness, correctness, security issues, and best practices. PR Title: ${{ github.event.pull_request.title }}. Diff: $DIFF_CONTENT. Provide review with: 1) Completion check, 2) Completeness check, 3) Bugs/errors, 4) Security issues, 5) Best practices. Then give specific comments with suggested fixes."
+          RESPONSE=$(curl -s -X POST "$OLLAMA_URL/chat" -H "Authorization: Bearer $API_KEY" -H "Content-Type: application/json" -d "{\"model\":\"qwen3-coder-next:latest\",\"messages\":[{\"role\":\"user\",\"content\":\"$PROMPT\"}],\"stream\":false}")
           echo "$RESPONSE" > /tmp/ollama_response.json
           REVIEW=$(echo "$RESPONSE" | jq -r '.choices[0].message.content // empty')
           echo "$REVIEW" > /tmp/pr_review.txt
@@ -65,8 +50,5 @@ jobs:
         run: |
           if [ -f "/tmp/pr_review.txt" ] && [ -s "/tmp/pr_review.txt" ]; then
             REVIEW_BODY=$(cat /tmp/pr_review.txt | head -c 65536)
-            curl -s -X POST "http://172.0.0.29:3000/api/v1/repos/sarman/tftsr-devops_investigation/pulls/$PR_NUMBER/reviews" \
-              -H "Authorization: token $TF_TOKEN" \
-              -H "Content-Type: application/json" \
-              -d "{\"body\": \"🤖 Automated PR Review:\n\n$REVIEW_BODY\n\n---\n*this is an automated review from Ollama*\", \"event\": \"COMMENT\"}"
+            curl -s -X POST "http://172.0.0.29:3000/api/v1/repos/sarman/tftsr-devops_investigation/pulls/$PR_NUMBER/reviews" -H "Authorization: token $TF_TOKEN" -H "Content-Type: application/json" -d "{\"body\": \"🤖 Automated PR Review:\n\n$REVIEW_BODY\n\n---\n*this is an automated review from Ollama*\", \"event\": \"COMMENT\"}"
           fi
