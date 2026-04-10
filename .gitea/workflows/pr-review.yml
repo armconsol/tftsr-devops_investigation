@@ -34,7 +34,7 @@ jobs:
       - name: Analyze with Ollama
         if: steps.diff.outputs.diff_size > '0'
         env:
-          OLLAMA_URL: https://ollama-ui.tftsr.com/ollama/v1
+          OLLAMA_URL: http://172.0.0.29:3000/ollama/v1
           API_KEY: ${{ secrets.OLLAMA_API_KEY }}
         run: |
           DIFF_CONTENT=$(cat /tmp/pr_diff.txt)
@@ -44,7 +44,7 @@ jobs:
           
           Diff:
           $DIFF_CONTENT
-          
+       
           Provide review with: 1) Completion check, 2) Completeness check, 3) Bugs/errors, 4) Security issues, 5) Best practices.
           Then give specific comments with suggested fixes."
           
@@ -65,7 +65,7 @@ jobs:
         run: |
           if [ -f "/tmp/pr_review.txt" ] && [ -s "/tmp/pr_review.txt" ]; then
             REVIEW_BODY=$(cat /tmp/pr_review.txt | head -c 65536)
-            curl -s -X POST "https://gogs.tftsr.com/api/v1/repos/sarman/tftsr-devops_investigation/pulls/$PR_NUMBER/reviews" \
+            curl -s -X POST "http://172.0.0.29:3000/api/v1/repos/sarman/tftsr-devops_investigation/pulls/$PR_NUMBER/reviews" \
               -H "Authorization: token $TF_TOKEN" \
               -H "Content-Type: application/json" \
               -d "{\"body\": \"🤖 Automated PR Review:\n\n$REVIEW_BODY\n\n---\n*this is an automated review from Ollama*\", \"event\": \"COMMENT\"}"
