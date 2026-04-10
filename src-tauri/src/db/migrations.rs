@@ -170,6 +170,27 @@ pub fn run_migrations(conn: &Connection) -> anyhow::Result<()> {
                 is_paste INTEGER NOT NULL DEFAULT 0
             );",
         ),
+        (
+            "014_create_ai_providers",
+            "CREATE TABLE IF NOT EXISTS ai_providers (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL UNIQUE,
+                provider_type TEXT NOT NULL,
+                api_url TEXT NOT NULL,
+                encrypted_api_key TEXT NOT NULL,
+                model TEXT NOT NULL,
+                max_tokens INTEGER,
+                temperature REAL,
+                custom_endpoint_path TEXT,
+                custom_auth_header TEXT,
+                custom_auth_prefix TEXT,
+                api_format TEXT,
+                user_id TEXT,
+                use_datastore_upload INTEGER,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );",
+        ),
     ];
 
     for (name, sql) in migrations {
@@ -467,5 +488,76 @@ mod tests {
         assert_eq!(file_name, "screenshot.png");
         assert_eq!(mime_type, "image/png");
         assert_eq!(is_paste, 0);
+    }
+
+    #[test]
+    fn test_create_ai_providers_table() {
+        let conn = setup_test_db();
+
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='ai_providers'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 1);
+
+        let mut stmt = conn.prepare("PRAGMA table_info(ai_providers)").unwrap();
+        let columns: Vec<String> = stmt
+            .query_map([], |row| row.get::<_, String>(1))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+
+        assert!(columns.contains(&"id".to_string()));
+        assert!(columns.contains(&"name".to_string()));
+        assert!(columns.contains(&"provider_type".to_string()));
+        assert!(columns.contains(&"api_url".to_string()));
+        assert!(columns.contains(&"encrypted_api_key".to_string()));
+        assert!(columns.contains(&"model".to_string()));
+        assert!(columns.contains(&"max_tokens".to_string()));
+        assert!(columns.contains(&"temperature".to_string()));
+        assert!(columns.contains(&"custom_endpoint_path".to_string()));
+        assert!(columns.contains(&"custom_auth_header".to_string()));
+        assert!(columns.contains(&"custom_auth_prefix".to_string()));
+        assert!(columns.contains(&"api_format".to_string()));
+        assert!(columns.contains(&"user_id".to_string()));
+        assert!(columns.contains(&"use_datastore_upload".to_string()));
+        assert!(columns.contains(&"created_at".to_string()));
+        assert!(columns.contains(&"updated_at".to_string()));
+    }
+
+    #[test]
+    fn test_store_and_retrieve_ai_provider() {
+        let conn = setup_test_db();
+
+        conn.execute(
+            "INSERT INTO ai_providers (id, name, provider_type, api_url, encrypted_api_key, model)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            rusqlite::params![
+                "test-provider-1",
+                "My OpenAI",
+                "openai",
+                "https://api.openai.com/v1",
+                "encrypted_key_123",
+                "gpt-4o"
+            ],
+        )
+        .unwrap();
+
+        let (name, provider_type, api_url, encrypted_key, model): (String, String, String, String, String) = conn
+            .query_row(
+                "SELECT name, provider_type, api_url, encrypted_api_key, model FROM ai_providers WHERE name = ?1",
+                ["My OpenAI"],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
+            )
+            .unwrap();
+
+        assert_eq!(name, "My OpenAI");
+        assert_eq!(provider_type, "openai");
+        assert_eq!(api_url, "https://api.openai.com/v1");
+        assert_eq!(encrypted_key, "encrypted_key_123");
+        assert_eq!(model, "gpt-4o");
     }
 }
