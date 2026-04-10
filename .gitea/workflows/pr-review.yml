@@ -37,10 +37,20 @@ jobs:
         run: |
           DIFF_CONTENT=$(cat /tmp/pr_diff.txt)
           PROMPT="Analyze the following code changes for completion, completeness, correctness, security issues, and best practices. PR Title: ${{ github.event.pull_request.title }}. Diff: $DIFF_CONTENT. Provide review with: 1) Completion check, 2) Completeness check, 3) Bugs/errors, 4) Security issues, 5) Best practices. Then give specific comments with suggested fixes."
+          echo "Calling Ollama API..."
           RESPONSE=$(curl -s -X POST "$OLLAMA_URL/chat" -H "Authorization: Bearer $API_KEY" -H "Content-Type: application/json" -d "{\"model\":\"qwen3-coder-next:latest\",\"messages\":[{\"role\":\"user\",\"content\":\"$PROMPT\"}],\"stream\":false}")
+          echo "Response: $RESPONSE" > /tmp/ollama_response.txt
           echo "$RESPONSE" > /tmp/ollama_response.json
-          REVIEW=$(echo "$RESPONSE" | jq -r '.choices[0].message.content // empty')
+          echo "Response saved to /tmp/ollama_response.json"
+          if [ -z "$RESPONSE" ]; then
+            echo "ERROR: Empty response from Ollama"
+            exit 1
+          fi
+          REVIEW=$(echo "$RESPONSE" | jq -r '.choices[0].message.content // empty' 2>/dev/null || echo "Failed to parse jq response")
           echo "$REVIEW" > /tmp/pr_review.txt
+          if [ -z "$REVIEW" ]; then
+            echo "WARNING: No review content extracted"
+          fi
 
       - name: Post review comment
         if: success()
@@ -50,5 +60,7 @@ jobs:
         run: |
           if [ -f "/tmp/pr_review.txt" ] && [ -s "/tmp/pr_review.txt" ]; then
             REVIEW_BODY=$(cat /tmp/pr_review.txt | head -c 65536)
-            curl -s -X POST "http://172.0.0.29:3000/api/v1/repos/sarman/tftsr-devops_investigation/pulls/$PR_NUMBER/reviews" -H "Authorization: token $TF_TOKEN" -H "Content-Type: application/json" -d "{\"body\": \"🤖 Automated PR Review:\n\n$REVIEW_BODY\n\n---\n*this is an automated review from Ollama*\", \"event\": \"COMMENT\"}"
+             curl -s -X POST "http://172.0.0.29:3000/api/v1/repos/sarman/tftsr-devops_investigation/pulls/$PR_NUMBER/reviews" -H "Authorization: token $TF_TOKEN" -H "Content-Type: application/json" -d "{\"body\": \"🤖 Automated PR Review:\n\n$REVIEW_BODY\n\n---\n*this is an automated review from Ollama*\", \"event\": \"COMMENT\"}"
+          else
+            echo "No review to post"
           fi
