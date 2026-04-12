@@ -13,6 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: ubuntu:22.04
+      options: --dns 172.0.0.29 --dns 8.8.8.8 --dns 1.1.1.1
     steps:
       - name: Install dependencies
         shell: bash
