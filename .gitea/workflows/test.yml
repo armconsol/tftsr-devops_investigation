@@ -7,12 +7,11 @@ jobs:
   rust-fmt-check:
     runs-on: ubuntu-latest
     container:
-      image: rust:1.88-slim
+      image: 172.0.0.29:3000/sarman/trcaa-linux-amd64:rust1.88-node22
     steps:
       - name: Checkout
         run: |
           set -eux
-          apt-get update -qq && apt-get install -y -qq git
           git init
           git remote add origin http://172.0.0.29:3000/sarman/tftsr-devops_investigation.git
           if [ -n "${GITHUB_SHA:-}" ] && git fetch --depth=1 origin "$GITHUB_SHA"; then
@@ -28,18 +27,26 @@ jobs:
             echo "Fetched fallback ref: master"
           fi
           git checkout FETCH_HEAD
-      - run: rustup component add rustfmt
+      - name: Cache cargo registry
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
       - run: cargo fmt --manifest-path src-tauri/Cargo.toml --check
 
   rust-clippy:
     runs-on: ubuntu-latest
     container:
-      image: rust:1.88-slim
+      image: 172.0.0.29:3000/sarman/trcaa-linux-amd64:rust1.88-node22
     steps:
       - name: Checkout
         run: |
           set -eux
-          apt-get update -qq && apt-get install -y -qq git
           git init
           git remote add origin http://172.0.0.29:3000/sarman/tftsr-devops_investigation.git
           if [ -n "${GITHUB_SHA:-}" ] && git fetch --depth=1 origin "$GITHUB_SHA"; then
@@ -55,19 +62,26 @@ jobs:
             echo "Fetched fallback ref: master"
           fi
           git checkout FETCH_HEAD
-      - run: apt-get update -qq && apt-get install -y -qq libwebkit2gtk-4.1-dev libssl-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev patchelf pkg-config perl
-      - run: rustup component add clippy
+      - name: Cache cargo registry
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
       - run: cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
 
   rust-tests:
     runs-on: ubuntu-latest
     container:
-      image: rust:1.88-slim
+      image: 172.0.0.29:3000/sarman/trcaa-linux-amd64:rust1.88-node22
     steps:
       - name: Checkout
         run: |
           set -eux
-          apt-get update -qq && apt-get install -y -qq git
           git init
           git remote add origin http://172.0.0.29:3000/sarman/tftsr-devops_investigation.git
           if [ -n "${GITHUB_SHA:-}" ] && git fetch --depth=1 origin "$GITHUB_SHA"; then
@@ -83,7 +97,16 @@ jobs:
             echo "Fetched fallback ref: master"
           fi
           git checkout FETCH_HEAD
-      - run: apt-get update -qq && apt-get install -y -qq libwebkit2gtk-4.1-dev libssl-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev patchelf pkg-config perl
+      - name: Cache cargo registry
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
       - run: cargo test --manifest-path src-tauri/Cargo.toml -- --test-threads=1
 
   frontend-typecheck:
@@ -110,6 +133,13 @@ jobs:
             echo "Fetched fallback ref: master"
           fi
           git checkout FETCH_HEAD
+      - name: Cache npm
+        uses: actions/cache@v3
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-npm-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-npm-
       - run: npm ci --legacy-peer-deps
       - run: npx tsc --noEmit
 
@@ -137,5 +167,12 @@ jobs:
             echo "Fetched fallback ref: master"
           fi
           git checkout FETCH_HEAD
+      - name: Cache npm
+        uses: actions/cache@v3
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-npm-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-npm-
       - run: npm ci --legacy-peer-deps
       - run: npm run test:run

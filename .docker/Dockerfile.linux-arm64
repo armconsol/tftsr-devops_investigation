@@ -40,6 +40,7 @@ RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
 # Step 4: Rust 1.88 with arm64 cross-compilation target
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y \
     --default-toolchain 1.88.0 --profile minimal --no-modify-path \
-    && /root/.cargo/bin/rustup target add aarch64-unknown-linux-gnu
+    && /root/.cargo/bin/rustup target add aarch64-unknown-linux-gnu \
+    && /root/.cargo/bin/rustup component add rustfmt clippy
 
 ENV PATH="/root/.cargo/bin:${PATH}"
