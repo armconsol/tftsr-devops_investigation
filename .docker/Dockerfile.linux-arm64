@@ -1,7 +1,9 @@
 # Pre-baked cross-compiler for Linux arm64 Tauri releases (runs on Linux amd64).
 # Bakes in: amd64 cross-toolchain, arm64 multiarch dev libs, Node.js, and Rust.
 # This image takes ~15 min to build but is only rebuilt when deps change.
-# Rebuild when: Rust toolchain version, webkit2gtk/gtk major version, or Node.js changes.
+# Rebuild when: Rust toolchain version, webkit2gtk/gtk major version, Node.js major version,
+# OpenSSL major version (used via OPENSSL_STATIC=1), or Tauri CLI changes that affect
+# bundler system deps.
 # Tag format: rust<VER>-node<VER>
 FROM ubuntu:22.04
 

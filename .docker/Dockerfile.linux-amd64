@@ -1,7 +1,9 @@
 # Pre-baked builder for Linux amd64 Tauri releases.
 # All system dependencies are installed once here; CI jobs skip apt-get entirely.
 # Rebuild when: Rust toolchain version changes, webkit2gtk/gtk major version changes,
-# or Node.js major version changes.  Tag format: rust<VER>-node<VER>
+# Node.js major version changes, OpenSSL major version changes (used via OPENSSL_STATIC=1),
+# or Tauri CLI version changes that affect bundler system deps.
+# Tag format: rust<VER>-node<VER>
 FROM rust:1.88-slim
 
 RUN apt-get update -qq \
