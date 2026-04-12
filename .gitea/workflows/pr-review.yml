@@ -2,7 +2,7 @@ name: PR Review Automation
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened]
+    types: [opened, synchronize, reopened, edited]
 
 concurrency:
   group: pr-review-${{ github.event.pull_request.number }}
@@ -11,6 +11,8 @@ concurrency:
 jobs:
   review:
     runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
     container:
       image: ubuntu:22.04
       options: --dns 8.8.8.8 --dns 1.1.1.1
@@ -23,10 +25,13 @@ jobs:
 
       - name: Checkout code
         shell: bash
+        env:
+          SERVER_URL: ${{ github.server_url }}
+          REPOSITORY: ${{ github.repository }}
         run: |
           set -euo pipefail
           git init
-          git remote add origin https://gogs.tftsr.com/sarman/tftsr-devops_investigation.git
+          git remote add origin "${SERVER_URL}/${REPOSITORY}.git"
           git fetch --depth=1 origin ${{ github.head_ref }}
           git checkout FETCH_HEAD
 
@@ -36,7 +41,7 @@ jobs:
         run: |
           set -euo pipefail
           git fetch origin ${{ github.base_ref }}
-          git diff origin/${{ github.base_ref }}..HEAD > /tmp/pr_diff.txt
+          git diff origin/${{ github.base_ref }}...HEAD > /tmp/pr_diff.txt
           echo "diff_size=$(wc -l < /tmp/pr_diff.txt | tr -d ' ')" >> $GITHUB_OUTPUT
 
       - name: Analyze with Ollama
@@ -54,7 +59,7 @@ jobs:
             echo "WARNING: Binary file changes detected — they will be excluded from analysis"
           fi
           DIFF_CONTENT=$(head -n 500 /tmp/pr_diff.txt \
-            | sed -E 's/(password|token|secret|api_key|private_key)[[:space:]]*[=:][[:space:]]*\S+/\1=[REDACTED]/gi')
+            | sed -E 's/(password|token|secret|api_key|private_key)[[:space:]]*[=:][[:space:]]+([^$[:space:]][^[:space:]]*)/\1=[REDACTED]/gi')
           PROMPT="Analyze the following code changes for correctness, security issues, and best practices. PR Title: ${PR_TITLE}\n\nDiff:\n${DIFF_CONTENT}\n\nProvide a review with: 1) Summary, 2) Bugs/errors, 3) Security issues, 4) Best practices. Give specific comments with suggested fixes."
           BODY=$(jq -n \
             --arg model "qwen3-coder-next:latest" \
@@ -62,7 +67,7 @@ jobs:
             '{model: $model, messages: [{role: "user", content: $content}], stream: false}')
           echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] PR #${PR_NUMBER} - Calling Ollama API (${#BODY} bytes)..."
           HTTP_CODE=$(curl -s --max-time 120 --connect-timeout 30 \
-            --retry 3 --retry-delay 5 --retry-all-errors \
+            --retry 3 --retry-delay 5 --retry-connrefused --retry-max-time 120 \
             -o /tmp/ollama_response.json -w "%{http_code}" \
             -X POST "$OLLAMA_URL/chat/completions" \
             -H "Authorization: Bearer $OLLAMA_API_KEY" \
@@ -70,21 +75,23 @@ jobs:
             -d "$BODY")
           echo "HTTP status: $HTTP_CODE"
           echo "Response file size: $(wc -c < /tmp/ollama_response.json) bytes"
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "ERROR: Ollama returned HTTP $HTTP_CODE"
+            cat /tmp/ollama_response.json
+            exit 1
+          fi
           if ! jq empty /tmp/ollama_response.json 2>/dev/null; then
             echo "ERROR: Invalid JSON response from Ollama"
             cat /tmp/ollama_response.json
             exit 1
           fi
           jq . /tmp/ollama_response.json
-          if [ "$HTTP_CODE" != "200" ]; then
-            echo "ERROR: Ollama returned HTTP $HTTP_CODE"
-            exit 1
-          fi
           REVIEW=$(jq -r '.choices[0].message.content // empty' /tmp/ollama_response.json)
           if [ -z "$REVIEW" ]; then
             echo "ERROR: No content in Ollama response"
             exit 1
           fi
+          echo "Review length: ${#REVIEW} chars"
           echo "$REVIEW" > /tmp/pr_review.txt
 
       - name: Post review comment
@@ -93,6 +100,8 @@ jobs:
         env:
           TF_TOKEN: ${{ secrets.TFT_GITEA_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
+          SERVER_URL: ${{ github.server_url }}
+          REPOSITORY: ${{ github.repository }}
         run: |
           set -euo pipefail
           if [ -z "${TF_TOKEN:-}" ]; then
@@ -110,7 +119,7 @@ jobs:
           fi
           HTTP_CODE=$(curl -s --max-time 30 --connect-timeout 10 \
             -o /tmp/review_post_response.json -w "%{http_code}" \
-            -X POST "https://gogs.tftsr.com/api/v1/repos/sarman/tftsr-devops_investigation/pulls/$PR_NUMBER/reviews" \
+            -X POST "${SERVER_URL}/api/v1/repos/${REPOSITORY}/pulls/${PR_NUMBER}/reviews" \
             -H "Authorization: token $TF_TOKEN" \
             -H "Content-Type: application/json" \
             -d "$BODY")
