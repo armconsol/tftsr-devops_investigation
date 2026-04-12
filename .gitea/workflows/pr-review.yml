@@ -41,14 +41,17 @@ jobs:
             --arg model "qwen3-coder-next:latest" \
             --arg content "$PROMPT" \
             '{model: $model, messages: [{role: "user", content: $content}], stream: false}')
+          echo "Request body length: ${#BODY} bytes"
+          echo "Request body (first 200 chars): ${BODY:0:200}"
           echo "Calling Ollama API..."
           HTTP_CODE=$(curl -s -o /tmp/ollama_response.json -w "%{http_code}" \
             -X POST "$OLLAMA_URL/api/chat" \
             -H "Content-Type: application/json" \
             -d "$BODY")
           echo "HTTP status: $HTTP_CODE"
-          echo "Response body:"
-          cat /tmp/ollama_response.json
+          echo "Response file size: $(wc -c < /tmp/ollama_response.json) bytes"
+          echo "Response body (jq pretty-print or raw):"
+          jq . /tmp/ollama_response.json 2>/dev/null || cat /tmp/ollama_response.json
           if [ "$HTTP_CODE" != "200" ]; then
             echo "ERROR: Ollama returned HTTP $HTTP_CODE"
             exit 1
