@@ -4,6 +4,10 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
 
+concurrency:
+  group: pr-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 jobs:
   review:
     runs-on: ubuntu-latest
@@ -11,12 +15,15 @@ jobs:
       image: ubuntu:22.04
     steps:
       - name: Install dependencies
+        shell: bash
         run: |
-          set -eux
+          set -euo pipefail
           apt-get update -qq && apt-get install -y -qq git curl jq
 
       - name: Checkout code
+        shell: bash
         run: |
+          set -euo pipefail
           git init
           git remote add origin http://172.0.0.29:3000/sarman/tftsr-devops_investigation.git
           git fetch --depth=1 origin ${{ github.head_ref }}
@@ -24,7 +31,9 @@ jobs:
 
       - name: Get PR diff
         id: diff
+        shell: bash
         run: |
+          set -euo pipefail
           git fetch origin ${{ github.base_ref }}
           git diff origin/${{ github.base_ref }}..HEAD > /tmp/pr_diff.txt
           echo "diff_size=$(wc -l < /tmp/pr_diff.txt)" >> $GITHUB_OUTPUT
@@ -33,30 +42,35 @@ jobs:
         if: steps.diff.outputs.diff_size > '0'
         shell: bash
         env:
-          OLLAMA_URL: http://172.0.1.42:11434
+          OLLAMA_URL: https://ollama-ui.tftsr.com/ollama/v1
+          OLLAMA_API_KEY: ${{ secrets.OLLAMA_API_KEY }}
         run: |
-          DIFF_CONTENT=$(head -c 20000 /tmp/pr_diff.txt)
+          set -euo pipefail
+          if grep -q "^Binary files" /tmp/pr_diff.txt; then
+            echo "WARNING: Binary file changes detected — they will be excluded from analysis"
+          fi
+          DIFF_CONTENT=$(head -c 20000 /tmp/pr_diff.txt \
+            | sed -E 's/(password|token|secret|api_key|private_key)[[:space:]]*[=:][[:space:]]*\S+/\1=[REDACTED]/gi')
           PR_TITLE="${{ github.event.pull_request.title }}"
           PROMPT="Analyze the following code changes for correctness, security issues, and best practices. PR Title: ${PR_TITLE}\n\nDiff:\n${DIFF_CONTENT}\n\nProvide a review with: 1) Summary, 2) Bugs/errors, 3) Security issues, 4) Best practices. Give specific comments with suggested fixes."
           BODY=$(jq -n \
             --arg model "qwen3-coder-next:latest" \
             --arg content "$PROMPT" \
             '{model: $model, messages: [{role: "user", content: $content}], stream: false}')
-          echo "Request body length: ${#BODY} bytes"
-          echo "Calling Ollama API..."
+          echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] PR #${{ github.event.pull_request.number }} - Calling Ollama API (${#BODY} bytes)..."
           HTTP_CODE=$(curl -s --max-time 120 -o /tmp/ollama_response.json -w "%{http_code}" \
-            -X POST "$OLLAMA_URL/api/chat" \
+            -X POST "$OLLAMA_URL/chat/completions" \
+            -H "Authorization: Bearer $OLLAMA_API_KEY" \
             -H "Content-Type: application/json" \
             -d "$BODY")
           echo "HTTP status: $HTTP_CODE"
           echo "Response file size: $(wc -c < /tmp/ollama_response.json) bytes"
-          echo "Response body (jq pretty-print or raw):"
           jq . /tmp/ollama_response.json 2>/dev/null || cat /tmp/ollama_response.json
           if [ "$HTTP_CODE" != "200" ]; then
             echo "ERROR: Ollama returned HTTP $HTTP_CODE"
             exit 1
           fi
-          REVIEW=$(jq -r '.message.content // empty' /tmp/ollama_response.json)
+          REVIEW=$(jq -r '.choices[0].message.content // empty' /tmp/ollama_response.json)
           if [ -z "$REVIEW" ]; then
             echo "ERROR: No content in Ollama response"
             exit 1
@@ -65,19 +79,38 @@ jobs:
 
       - name: Post review comment
         if: success()
+        shell: bash
         env:
           TF_TOKEN: ${{ secrets.TFT_GITEA_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
+          set -euo pipefail
+          if [ -z "${TF_TOKEN:-}" ]; then
+            echo "ERROR: TFT_GITEA_TOKEN secret is not set"
+            exit 1
+          fi
           if [ -f "/tmp/pr_review.txt" ] && [ -s "/tmp/pr_review.txt" ]; then
             REVIEW_BODY=$(head -c 65536 /tmp/pr_review.txt)
             BODY=$(jq -n \
               --arg body "🤖 Automated PR Review:\n\n${REVIEW_BODY}\n\n---\n*this is an automated review from Ollama*" \
               '{body: $body, event: "COMMENT"}')
-            curl -s -X POST "http://172.0.0.29:3000/api/v1/repos/sarman/tftsr-devops_investigation/pulls/$PR_NUMBER/reviews" \
+            HTTP_CODE=$(curl -s --max-time 30 \
+              -o /tmp/review_post_response.json -w "%{http_code}" \
+              -X POST "http://172.0.0.29:3000/api/v1/repos/sarman/tftsr-devops_investigation/pulls/$PR_NUMBER/reviews" \
               -H "Authorization: token $TF_TOKEN" \
               -H "Content-Type: application/json" \
-              -d "$BODY"
+              -d "$BODY")
+            echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Post review HTTP status: $HTTP_CODE"
+            if [ "$HTTP_CODE" != "200" ] && [ "$HTTP_CODE" != "201" ]; then
+              echo "ERROR: Failed to post review (HTTP $HTTP_CODE)"
+              cat /tmp/review_post_response.json
+              exit 1
+            fi
           else
             echo "No review to post"
           fi
+
+      - name: Cleanup
+        if: always()
+        shell: bash
+        run: rm -f /tmp/pr_diff.txt /tmp/ollama_response.json /tmp/pr_review.txt /tmp/review_post_response.json
