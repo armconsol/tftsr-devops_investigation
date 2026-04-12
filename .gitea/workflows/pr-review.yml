@@ -26,12 +26,11 @@ jobs:
       - name: Checkout code
         shell: bash
         env:
-          SERVER_URL: ${{ github.server_url }}
           REPOSITORY: ${{ github.repository }}
         run: |
           set -euo pipefail
           git init
-          git remote add origin "${SERVER_URL}/${REPOSITORY}.git"
+          git remote add origin "https://gogs.tftsr.com/${REPOSITORY}.git"
           git fetch --depth=1 origin ${{ github.head_ref }}
           git checkout FETCH_HEAD
 
@@ -100,7 +99,6 @@ jobs:
         env:
           TF_TOKEN: ${{ secrets.TFT_GITEA_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
-          SERVER_URL: ${{ github.server_url }}
           REPOSITORY: ${{ github.repository }}
         run: |
           set -euo pipefail
@@ -119,7 +117,7 @@ jobs:
           fi
           HTTP_CODE=$(curl -s --max-time 30 --connect-timeout 10 \
             -o /tmp/review_post_response.json -w "%{http_code}" \
-            -X POST "${SERVER_URL}/api/v1/repos/${REPOSITORY}/pulls/${PR_NUMBER}/reviews" \
+            -X POST "https://gogs.tftsr.com/api/v1/repos/${REPOSITORY}/pulls/${PR_NUMBER}/reviews" \
             -H "Authorization: token $TF_TOKEN" \
             -H "Content-Type: application/json" \
             -d "$BODY")
