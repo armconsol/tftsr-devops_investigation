@@ -40,7 +40,7 @@ jobs:
         run: |
           set -euo pipefail
           git fetch origin ${{ github.base_ref }}
-          git diff origin/${{ github.base_ref }}...HEAD > /tmp/pr_diff.txt
+          git diff origin/${{ github.base_ref }}..HEAD > /tmp/pr_diff.txt
           echo "diff_size=$(wc -l < /tmp/pr_diff.txt | tr -d ' ')" >> $GITHUB_OUTPUT
 
       - name: Analyze with Ollama
