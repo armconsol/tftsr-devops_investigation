@@ -35,7 +35,7 @@ jobs:
         env:
           OLLAMA_URL: http://172.0.1.42:11434
         run: |
-          DIFF_CONTENT=$(cat /tmp/pr_diff.txt)
+          DIFF_CONTENT=$(head -c 20000 /tmp/pr_diff.txt)
           PR_TITLE="${{ github.event.pull_request.title }}"
           PROMPT="Analyze the following code changes for correctness, security issues, and best practices. PR Title: ${PR_TITLE}\n\nDiff:\n${DIFF_CONTENT}\n\nProvide a review with: 1) Summary, 2) Bugs/errors, 3) Security issues, 4) Best practices. Give specific comments with suggested fixes."
           BODY=$(jq -n \
@@ -44,7 +44,7 @@ jobs:
             '{model: $model, messages: [{role: "user", content: $content}], stream: false}')
           echo "Request body length: ${#BODY} bytes"
           echo "Calling Ollama API..."
-          HTTP_CODE=$(curl -s -o /tmp/ollama_response.json -w "%{http_code}" \
+          HTTP_CODE=$(curl -s --max-time 120 -o /tmp/ollama_response.json -w "%{http_code}" \
             -X POST "$OLLAMA_URL/api/chat" \
             -H "Content-Type: application/json" \
             -d "$BODY")
