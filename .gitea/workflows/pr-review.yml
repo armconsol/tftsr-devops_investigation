@@ -31,6 +31,7 @@ jobs:
 
       - name: Analyze with Ollama
         if: steps.diff.outputs.diff_size > '0'
+        shell: bash
         env:
           OLLAMA_URL: http://172.0.1.42:11434
         run: |
@@ -42,7 +43,6 @@ jobs:
             --arg content "$PROMPT" \
             '{model: $model, messages: [{role: "user", content: $content}], stream: false}')
           echo "Request body length: ${#BODY} bytes"
-          echo "Request body (first 200 chars): ${BODY:0:200}"
           echo "Calling Ollama API..."
           HTTP_CODE=$(curl -s -o /tmp/ollama_response.json -w "%{http_code}" \
             -X POST "$OLLAMA_URL/api/chat" \
