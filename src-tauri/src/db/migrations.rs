@@ -192,9 +192,12 @@ pub fn run_migrations(conn: &Connection) -> anyhow::Result<()> {
             );",
         ),
         (
-            "015_add_ai_provider_missing_columns",
-            "ALTER TABLE ai_providers ADD COLUMN use_datastore_upload INTEGER DEFAULT 0;
-             ALTER TABLE ai_providers ADD COLUMN created_at TEXT NOT NULL DEFAULT (datetime('now'));",
+            "015_add_use_datastore_upload",
+            "ALTER TABLE ai_providers ADD COLUMN use_datastore_upload INTEGER DEFAULT 0",
+        ),
+        (
+            "016_add_created_at",
+            "ALTER TABLE ai_providers ADD COLUMN created_at TEXT NOT NULL DEFAULT (datetime('now'))",
         ),
     ];
 
@@ -206,21 +209,29 @@ pub fn run_migrations(conn: &Connection) -> anyhow::Result<()> {
 
         if !already_applied {
             // FTS5 virtual table creation can be skipped if FTS5 is not compiled in
-            // Also handle column-already-exists errors for migration 015
-            if let Err(e) = conn.execute_batch(sql) {
-                if name.contains("fts") {
+            // Also handle column-already-exists errors for migrations 015-016
+            if name.contains("fts") {
+                if let Err(e) = conn.execute_batch(sql) {
                     tracing::warn!("FTS5 not available, skipping: {e}");
-                } else if *name == "015_add_ai_provider_missing_columns" {
-                    // Skip error if columns already exist (e.g., from earlier migration or manual creation)
+                }
+            } else if name.ends_with("_add_use_datastore_upload")
+                || name.ends_with("_add_created_at")
+            {
+                // Use execute for ALTER TABLE (SQLite only allows one statement per command)
+                // Skip error if column already exists
+                if let Err(e) = conn.execute(sql, []) {
                     let err_str = e.to_string();
                     if err_str.contains("duplicate column name")
                         || err_str.contains("has no column named")
                     {
-                        tracing::info!("Columns may already exist, skipping migration 015: {e}");
+                        tracing::info!("Column may already exist, skipping migration {name}: {e}");
                     } else {
                         return Err(e.into());
                     }
-                } else {
+                }
+            } else {
+                // Use execute_batch for other migrations (FTS5, CREATE TABLE, etc.)
+                if let Err(e) = conn.execute_batch(sql) {
                     return Err(e.into());
                 }
             }
@@ -646,7 +657,7 @@ mod tests {
         )
         .unwrap();
 
-        let (name, use_datastore_upload, created_at): (String, i64, String) = conn
+        let (name, use_datastore_upload, created_at): (String, bool, String) = conn
             .query_row(
                 "SELECT name, use_datastore_upload, created_at FROM ai_providers WHERE name = ?1",
                 ["Test Provider"],
@@ -655,7 +666,38 @@ mod tests {
             .unwrap();
 
         assert_eq!(name, "Test Provider");
-        assert_eq!(use_datastore_upload, 0);
+        assert!(!use_datastore_upload);
         assert!(created_at.len() > 0);
+    }
+
+    #[test]
+    fn test_idempotent_add_missing_columns() {
+        let conn = Connection::open_in_memory().unwrap();
+
+        // Create table with both columns already present (simulating prior migration run)
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS ai_providers (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL UNIQUE,
+                provider_type TEXT NOT NULL,
+                api_url TEXT NOT NULL,
+                encrypted_api_key TEXT NOT NULL,
+                model TEXT NOT NULL,
+                max_tokens INTEGER,
+                temperature REAL,
+                custom_endpoint_path TEXT,
+                custom_auth_header TEXT,
+                custom_auth_prefix TEXT,
+                api_format TEXT,
+                user_id TEXT,
+                use_datastore_upload INTEGER DEFAULT 0,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );",
+        )
+        .unwrap();
+
+        // Should not fail even though columns already exist
+        run_migrations(&conn).unwrap();
     }
 }

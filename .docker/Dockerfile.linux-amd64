@@ -26,7 +26,8 @@ RUN apt-get update -qq \
     && rm -rf /var/lib/apt/lists/*
 
 # Install linuxdeploy for AppImage bundling (required for Tauri 2.x)
-RUN curl -fsSL https://github.com/tauri-apps/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage -o /usr/local/bin/linuxdeploy \
+# Download linuxdeploy from the official repository and extract AppImage
+RUN curl -fsSL -L https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage -o /usr/local/bin/linuxdeploy \
     && chmod +x /usr/local/bin/linuxdeploy
 
 RUN rustup target add x86_64-unknown-linux-gnu \
