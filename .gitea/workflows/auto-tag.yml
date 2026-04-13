@@ -135,14 +135,24 @@ jobs:
           RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
         run: |
           set -eu
-          git add CHANGELOG.md
-          if git diff --staged --quiet; then
-            echo "No changelog changes"
-          else
-            TAG=$(git describe --tags --abbrev=0)
-            git commit -m "chore: update CHANGELOG.md for ${TAG} [skip ci]"
-            git push origin HEAD:master
-          fi
+          API="http://172.0.0.29:3000/api/v1/repos/$GITHUB_REPOSITORY"
+          TAG=$(git describe --tags --abbrev=0)
+          # Get current file SHA from master (required by API if the file already exists)
+          CURRENT_SHA=$(curl -sf "$API/contents/CHANGELOG.md?ref=master" \
+            -H "Authorization: token $RELEASE_TOKEN" | jq -r '.sha // empty')
+          # Base64-encode the generated file (no line wrapping)
+          CONTENT=$(base64 -w 0 CHANGELOG.md)
+          # PUT atomically updates (or creates) the file on master — no fast-forward needed
+          curl -sf -X PUT "$API/contents/CHANGELOG.md" \
+            -H "Authorization: token $RELEASE_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"message\": \"chore: update CHANGELOG.md for ${TAG} [skip ci]\",
+              \"content\": \"$CONTENT\",
+              \"sha\": \"$CURRENT_SHA\",
+              \"branch\": \"master\"
+            }"
+          echo "✓ CHANGELOG.md committed to master"
 
       - name: Upload CHANGELOG.md as release asset
         env:
