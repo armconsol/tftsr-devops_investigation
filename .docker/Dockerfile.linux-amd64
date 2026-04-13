@@ -26,9 +26,12 @@ RUN apt-get update -qq \
     && rm -rf /var/lib/apt/lists/*
 
 # Install linuxdeploy for AppImage bundling (required for Tauri 2.x)
-# Download linuxdeploy from the official repository and extract AppImage
-RUN curl -fsSL -L https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage -o /usr/local/bin/linuxdeploy \
-    && chmod +x /usr/local/bin/linuxdeploy
+# Download linuxdeploy AppImage and extract to get the binary
+RUN curl -Ls https://github.com/tauri-apps/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage -o /tmp/linuxdeploy.AppImage \
+    && chmod +x /tmp/linuxdeploy.AppImage \
+    && /tmp/linuxdeploy.AppImage --appimage-extract \
+    && mv squashfs-root/usr/bin/linuxdeploy /usr/local/bin/ \
+    && rm -rf /tmp/linuxdeploy.AppImage squashfs-root
 
 RUN rustup target add x86_64-unknown-linux-gnu \
     && rustup component add rustfmt clippy

@@ -197,7 +197,7 @@ pub fn run_migrations(conn: &Connection) -> anyhow::Result<()> {
         ),
         (
             "016_add_created_at",
-            "ALTER TABLE ai_providers ADD COLUMN created_at TEXT NOT NULL DEFAULT (datetime('now'))",
+            "ALTER TABLE ai_providers ADD COLUMN created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now'))",
         ),
     ];
 
@@ -218,12 +218,10 @@ pub fn run_migrations(conn: &Connection) -> anyhow::Result<()> {
                 || name.ends_with("_add_created_at")
             {
                 // Use execute for ALTER TABLE (SQLite only allows one statement per command)
-                // Skip error if column already exists
+                // Skip error if column already exists (SQLITE_ERROR with "duplicate column name")
                 if let Err(e) = conn.execute(sql, []) {
                     let err_str = e.to_string();
-                    if err_str.contains("duplicate column name")
-                        || err_str.contains("has no column named")
-                    {
+                    if err_str.contains("duplicate column name") {
                         tracing::info!("Column may already exist, skipping migration {name}: {e}");
                     } else {
                         return Err(e.into());
