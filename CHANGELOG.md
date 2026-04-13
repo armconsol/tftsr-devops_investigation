@@ -4,7 +4,39 @@ All notable changes to TFTSR are documented here.
 Commit types shown: feat, fix, perf, docs, refactor.
 CI, chore, and build changes are excluded.
 
-## [Unreleased]
+## [0.2.61] — 2026-04-13
+
+### Bug Fixes
+- Remove AppImage from upload artifact patterns
+
+## [0.2.59] — 2026-04-13
+
+### Bug Fixes
+- Remove AppImage bundling to fix linux-amd64 build
+
+## [0.2.57] — 2026-04-13
+
+### Bug Fixes
+- Add fuse dependency for AppImage support
+
+### Refactoring
+- Remove custom linuxdeploy install per CI CI uses tauri-downloaded version
+- Revert to original Dockerfile without manual linuxdeploy installation
+
+## [0.2.56] — 2026-04-13
+
+### Bug Fixes
+- Add missing ai_providers columns and fix linux-amd64 build
+- Address AI review findings
+- Address critical AI review issues
+
+## [0.2.55] — 2026-04-13
+
+### Bug Fixes
+- **ci**: Use Gitea file API to push CHANGELOG.md — eliminates non-fast-forward rejection
+- **ci**: Harden CHANGELOG.md API push step per review
+
+## [0.2.54] — 2026-04-13
 
 ### Bug Fixes
 - **ci**: Correct git-cliff archive path in tar extraction
@@ -119,7 +151,7 @@ CI, chore, and build changes are excluded.
 ### Features
 - **ai**: Add tool-calling and integration search as AI data source
 
-## [0.2.40] — 2026-04-06
+## [0.2.37] — 2026-04-06
 
 ### Bug Fixes
 - **ci**: Remove explicit docker.sock mount — act_runner mounts it automatically
