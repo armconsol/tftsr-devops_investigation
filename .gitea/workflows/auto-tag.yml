@@ -322,7 +322,7 @@ jobs:
           fi
           echo "Release ID: $RELEASE_ID"
           ARTIFACTS=$(find src-tauri/target/x86_64-unknown-linux-gnu/release/bundle -type f \
-            \( -name "*.deb" -o -name "*.rpm" -o -name "*.AppImage" \))
+            \( -name "*.deb" -o -name "*.rpm" \))
           if [ -z "$ARTIFACTS" ]; then
             echo "ERROR: No Linux amd64 artifacts were found to upload."
             exit 1
