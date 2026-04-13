@@ -37,6 +37,10 @@ jobs:
           key: ${{ runner.os }}-cargo-linux-amd64-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-linux-amd64-
+      - name: Update version from Git
+        run: |
+          npm ci --legacy-peer-deps
+          node scripts/update-version.mjs
       - run: cargo fmt --manifest-path src-tauri/Cargo.toml --check
 
   rust-clippy:

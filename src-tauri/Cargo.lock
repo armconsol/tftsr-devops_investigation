@@ -6139,7 +6139,7 @@ dependencies = [
 
 [[package]]
 name = "trcaa"
-version = "0.2.50"
+version = "0.2.62"
 dependencies = [
  "aes-gcm",
  "aho-corasick",

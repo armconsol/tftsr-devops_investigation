@@ -4,6 +4,7 @@ use crate::ollama::{
     OllamaStatus,
 };
 use crate::state::{AppSettings, AppState, ProviderConfig};
+use std::env;
 
 // --- Ollama commands ---
 
@@ -274,4 +275,12 @@ pub async fn delete_ai_provider(
         .map_err(|e| format!("Failed to delete AI provider: {e}"))?;
 
     Ok(())
+}
+
+/// Get the application version from build-time environment
+#[tauri::command]
+pub async fn get_app_version() -> Result<String, String> {
+    env::var("APP_VERSION")
+        .or_else(|_| env::var("CARGO_PKG_VERSION"))
+        .map_err(|e| format!("Failed to get version: {e}"))
 }

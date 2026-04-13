@@ -120,6 +120,7 @@ pub fn run() {
             commands::system::get_settings,
             commands::system::update_settings,
             commands::system::get_audit_log,
+            commands::system::get_app_version,
         ])
         .run(tauri::generate_context!())
         .expect("Error running Troubleshooting and RCA Assistant application");

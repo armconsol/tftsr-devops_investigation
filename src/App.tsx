@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from "react";
-import { getVersion } from "@tauri-apps/api/app";
 import { Routes, Route, NavLink, useLocation } from "react-router-dom";
 import {
   Home,
@@ -15,7 +14,7 @@ import {
   Moon,
 } from "lucide-react";
 import { useSettingsStore } from "@/stores/settingsStore";
-import { loadAiProvidersCmd, testProviderConnectionCmd } from "@/lib/tauriCommands";
+import { getAppVersionCmd, loadAiProvidersCmd, testProviderConnectionCmd } from "@/lib/tauriCommands";
 
 import Dashboard from "@/pages/Dashboard";
 import NewIssue from "@/pages/NewIssue";
@@ -50,7 +49,7 @@ export default function App() {
   void useLocation();
 
   useEffect(() => {
-    getVersion().then(setAppVersion).catch(() => {});
+    getAppVersionCmd().then(setAppVersion).catch(() => {});
   }, []);
 
   // Load providers and auto-test active provider on startup
