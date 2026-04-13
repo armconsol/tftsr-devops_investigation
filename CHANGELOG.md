@@ -7,6 +7,36 @@ CI, chore, and build changes are excluded.
 ## [Unreleased]
 
 ### Bug Fixes
+- **ci**: Correct git-cliff archive path in tar extraction
+
+## [0.2.53] — 2026-04-13
+
+### Features
+- **ci**: Add automated changelog generation via git-cliff
+
+## [0.2.52] — 2026-04-13
+
+### Bug Fixes
+- **ci**: Add APPIMAGE_EXTRACT_AND_RUN to build-linux-amd64
+
+## [0.2.51] — 2026-04-13
+
+### Bug Fixes
+- **ci**: Address AI review — rustup idempotency and cargo --locked
+- **ci**: Replace docker:24-cli with alpine + docker-cli in build-images
+- **docker**: Add ca-certificates to arm64 base image step 1
+- **ci**: Resolve test.yml failures — Cargo.lock, updated test assertions
+- **ci**: Address second AI review — || true, ca-certs, cache@v4, key suffixes
+
+### Documentation
+- **docker**: Expand rebuild trigger comments to include OpenSSL and Tauri CLI
+
+### Performance
+- **ci**: Use pre-baked images and add cargo/npm caching
+
+## [0.2.50] — 2026-04-12
+
+### Bug Fixes
 - Rename GITEA_TOKEN to TF_TOKEN to comply with naming restrictions
 - Remove actions/checkout to avoid Node.js dependency
 - Use ubuntu container with git installed
@@ -25,21 +55,9 @@ CI, chore, and build changes are excluded.
 - Replace github.server_url with hardcoded gogs.tftsr.com for container access
 - Revert to two-dot diff — three-dot requires merge base unavailable in shallow clone
 - Harden pr-review workflow — secret redaction, log safety, auth header
-- **ci**: Address AI review — rustup idempotency and cargo --locked
-- **ci**: Replace docker:24-cli with alpine + docker-cli in build-images
-- **docker**: Add ca-certificates to arm64 base image step 1
-- **ci**: Resolve test.yml failures — Cargo.lock, updated test assertions
-- **ci**: Address second AI review — || true, ca-certs, cache@v4, key suffixes
-- **ci**: Add APPIMAGE_EXTRACT_AND_RUN to build-linux-amd64
-
-### Documentation
-- **docker**: Expand rebuild trigger comments to include OpenSSL and Tauri CLI
 
 ### Features
 - Add automated PR review workflow with Ollama AI
-
-### Performance
-- **ci**: Use pre-baked images and add cargo/npm caching
 
 ## [0.2.49] — 2026-04-10
 
@@ -104,62 +122,190 @@ CI, chore, and build changes are excluded.
 ## [0.2.40] — 2026-04-06
 
 ### Bug Fixes
-- Add user_id support and OAuth shell permission (v0.2.6)
-- Use Wiki secret for authenticated wiki sync (v0.2.8)
-- Persist integration settings and implement persistent browser windows
-- ARM64 build uses native target instead of cross-compile
-- Resolve clippy uninlined_format_args in integrations and related modules
-- Resolve clippy format-args failures and OpenSSL vendoring issue
-- Resolve macOS bundle path after app rename
-- **ci**: Make release artifacts reliable across platforms
-- **ci**: Harden release asset uploads for reruns
-- **ci**: Trigger release workflow from auto-tag pushes
-- **ci**: Guarantee release jobs run after auto-tag
-- **ci**: Use stable auto-tag job outputs for release fanout
-- **ci**: Run post-tag release builds without job-output gating
-- **ci**: Repair auto-tag workflow yaml so jobs trigger
-- **ci**: Force explicit linux arm64 target for release artifacts
-- **ci**: Run linux arm release natively and enforce arm artifacts
+- **ci**: Remove explicit docker.sock mount — act_runner mounts it automatically
+
+## [0.2.36] — 2026-04-06
+
+### Features
+- **ci**: Add persistent pre-baked Docker builder images
+
+## [0.2.35] — 2026-04-06
+
+### Bug Fixes
+- **ci**: Skip Ollama download on macOS build — runner has no access to GitHub binary assets
+- **ci**: Remove all Ollama bundle download steps — use UI download button instead
+
+### Refactoring
+- **ollama**: Remove download/install buttons — show plain install instructions only
+
+## [0.2.34] — 2026-04-06
+
+### Bug Fixes
+- **security**: Add path canonicalization and actionable permission error in install_ollama_from_bundle
+
+### Features
+- **ui**: Fix model dropdown, auth prefill, PII persistence, theme toggle, and Ollama bundle
+
+## [0.2.33] — 2026-04-05
+
+### Features
+- **rebrand**: Rename binary to trcaa and auto-generate DB key
+
+## [0.2.32] — 2026-04-05
+
+### Bug Fixes
+- **ci**: Restrict arm64 bundles to deb,rpm — skip AppImage
+
+## [0.2.31] — 2026-04-05
+
+### Bug Fixes
+- **ci**: Set APPIMAGE_EXTRACT_AND_RUN=1 for arm64 AppImage bundling
+
+## [0.2.30] — 2026-04-05
+
+### Bug Fixes
+- **ci**: Add make to arm64 host tools for OpenSSL vendored build
+
+## [0.2.28] — 2026-04-05
+
+### Bug Fixes
+- **ci**: Use POSIX dot instead of source in arm64 build step
+
+## [0.2.27] — 2026-04-05
+
+### Bug Fixes
+- **ci**: Remove GITHUB_PATH append that was breaking arm64 install step
+
+## [0.2.26] — 2026-04-05
+
+### Bug Fixes
+- **ci**: Switch build-linux-arm64 to Ubuntu 22.04 with ports mirror
+
+### Documentation
+- Update CI pipeline wiki and add ticket summary for arm64 fix
+
+## [0.2.25] — 2026-04-05
+
+### Bug Fixes
+- **ci**: Rebuild apt sources with per-arch entries before arm64 cross-compile install
+- **ci**: Add workflow_dispatch and concurrency guard to auto-tag
+- **ci**: Replace heredoc with printf in arm64 install step
+
+## [0.2.24] — 2026-04-05
+
+### Bug Fixes
+- **ci**: Fix arm64 cross-compile, drop cargo install tauri-cli, move wiki-sync
+
+## [0.2.23] — 2026-04-05
+
+### Bug Fixes
 - **ci**: Unblock release jobs and namespace linux artifacts by arch
 - **security**: Harden secret handling and audit integrity
 - **pii**: Remove lookahead from hostname regex, fix fmt in analysis test
 - **security**: Enforce PII redaction before AI log transmission
 - **ci**: Unblock release jobs and namespace linux artifacts by arch
-- **ci**: Fix arm64 cross-compile, drop cargo install tauri-cli, move wiki-sync
-- **ci**: Rebuild apt sources with per-arch entries before arm64 cross-compile install
-- **ci**: Add workflow_dispatch and concurrency guard to auto-tag
-- **ci**: Replace heredoc with printf in arm64 install step
-- **ci**: Switch build-linux-arm64 to Ubuntu 22.04 with ports mirror
-- **ci**: Remove GITHUB_PATH append that was breaking arm64 install step
-- **ci**: Use POSIX dot instead of source in arm64 build step
-- **ci**: Add make to arm64 host tools for OpenSSL vendored build
-- **ci**: Set APPIMAGE_EXTRACT_AND_RUN=1 for arm64 AppImage bundling
-- **ci**: Restrict arm64 bundles to deb,rpm — skip AppImage
-- **security**: Add path canonicalization and actionable permission error in install_ollama_from_bundle
-- **ci**: Skip Ollama download on macOS build — runner has no access to GitHub binary assets
-- **ci**: Remove all Ollama bundle download steps — use UI download button instead
-- **ci**: Remove explicit docker.sock mount — act_runner mounts it automatically
+
+## [0.2.22] — 2026-04-05
+
+### Bug Fixes
+- **ci**: Run linux arm release natively and enforce arm artifacts
+
+## [0.2.21] — 2026-04-05
+
+### Bug Fixes
+- **ci**: Force explicit linux arm64 target for release artifacts
+
+## [0.2.20] — 2026-04-05
+
+### Refactoring
+- **ci**: Remove standalone release workflow
+
+## [0.2.19] — 2026-04-05
+
+### Bug Fixes
+- **ci**: Guarantee release jobs run after auto-tag
+- **ci**: Use stable auto-tag job outputs for release fanout
+- **ci**: Run post-tag release builds without job-output gating
+- **ci**: Repair auto-tag workflow yaml so jobs trigger
+
+## [0.2.18] — 2026-04-05
+
+### Bug Fixes
+- **ci**: Trigger release workflow from auto-tag pushes
+
+## [0.2.17] — 2026-04-05
+
+### Bug Fixes
+- **ci**: Harden release asset uploads for reruns
+
+## [0.2.16] — 2026-04-05
+
+### Bug Fixes
+- **ci**: Make release artifacts reliable across platforms
+
+## [0.2.14] — 2026-04-04
+
+### Bug Fixes
+- Resolve macOS bundle path after app rename
+
+## [0.2.13] — 2026-04-04
+
+### Bug Fixes
+- Resolve clippy uninlined_format_args in integrations and related modules
+- Resolve clippy format-args failures and OpenSSL vendoring issue
+
+### Features
+- Add custom_rest provider mode and rebrand application name
+
+## [0.2.12] — 2026-04-04
+
+### Bug Fixes
+- ARM64 build uses native target instead of cross-compile
+
+## [0.2.11] — 2026-04-04
+
+### Bug Fixes
+- Persist integration settings and implement persistent browser windows
+
+## [0.2.10] — 2026-04-03
+
+### Features
+- Complete webview cookie extraction implementation
+
+## [0.2.9] — 2026-04-03
+
+### Features
+- Add multi-mode authentication for integrations (v0.2.10)
+
+## [0.2.8] — 2026-04-03
+
+### Features
+- Add temperature and max_tokens support for Custom REST providers (v0.2.9)
+
+## [0.2.7] — 2026-04-03
+
+### Bug Fixes
+- Use Wiki secret for authenticated wiki sync (v0.2.8)
+
+### Documentation
+- Update wiki for v0.2.6 - integrations and Custom REST provider
+
+### Features
+- Add automatic wiki sync to CI workflow (v0.2.7)
+
+## [0.2.6] — 2026-04-03
+
+### Bug Fixes
+- Add user_id support and OAuth shell permission (v0.2.6)
+
+## [0.2.5] — 2026-04-03
 
 ### Documentation
 - Add Custom REST provider documentation
-- Update wiki for v0.2.6 - integrations and Custom REST provider
-- Update CI pipeline wiki and add ticket summary for arm64 fix
 
 ### Features
 - Implement Confluence, ServiceNow, and Azure DevOps REST API clients
 - Add Custom REST provider support
-- Add automatic wiki sync to CI workflow (v0.2.7)
-- Add temperature and max_tokens support for Custom REST providers (v0.2.9)
-- Add multi-mode authentication for integrations (v0.2.10)
-- Complete webview cookie extraction implementation
-- Add custom_rest provider mode and rebrand application name
-- **rebrand**: Rename binary to trcaa and auto-generate DB key
-- **ui**: Fix model dropdown, auth prefill, PII persistence, theme toggle, and Ollama bundle
-- **ci**: Add persistent pre-baked Docker builder images
-
-### Refactoring
-- **ci**: Remove standalone release workflow
-- **ollama**: Remove download/install buttons — show plain install instructions only
 
 ## [0.2.4] — 2026-04-03
 
@@ -180,6 +326,33 @@ CI, chore, and build changes are excluded.
 ## [0.2.1] — 2026-04-03
 
 ### Bug Fixes
+- Implement native DOCX export without pandoc dependency
+
+### Features
+- Add AI disclaimer modal before creating new issues
+
+## [0.1.0] — 2026-04-03
+
+### Bug Fixes
+- Resolve all clippy lints (uninlined format args, range::contains, push_str single chars)
+- Inline format args for Rust 1.88 clippy compatibility
+- Retain GPU-VRAM-eligible models in recommender even when RAM is low
+- Use alpine/git with explicit checkout for tag-based release builds
+- Set CI=true for cargo tauri build — Woodpecker sets CI=woodpecker which Tauri CLI rejects
+- Arm64 cross-compilation — add multiarch pkg-config sysroot setup
+- Remove arm64 from release pipeline — webkit2gtk multiarch conflict on x86_64 host
+- Write artifacts to workspace (shared between steps), not /artifacts/
+- Upload step needs gogs_default network to reach Gogs API (host firewall blocks default bridge)
+- Use bundled-sqlcipher-vendored-openssl for portable Windows cross-compilation
+- Add make to windows build step (required by vendored OpenSSL)
+- Replace empty icon placeholder files with real app icons
+- Suppress MinGW auto-export to resolve Windows DLL ordinal overflow
+- Use when: platform: for arm64 step routing (Woodpecker 0.15.4 compat)
+- Remove unused tauri-plugin-cli causing startup crash
+- Use $GITHUB_REF_NAME env var instead of ${{ github.ref_name }} expression
+- Remove unused tauri-plugin-updater + SQLCipher 16KB page size
+- Prevent WebKit/GTK system theme from overriding input text colors on Linux
+- Set SQLCipher cipher_page_size BEFORE first database access
 - Button text visibility, toggle contrast, create_issue IPC, ad-hoc codesign
 - Dropdown text invisible on macOS + correct codesign order for DMG
 - Add explicit text-foreground to SelectTrigger, SelectValue, and SelectItem
@@ -199,49 +372,6 @@ CI, chore, and build changes are excluded.
 - Improve release artifact upload error handling
 - Install jq in Linux/Windows build containers
 - Improve download button visibility and add DOCX export
-- Implement native DOCX export without pandoc dependency
-
-### Documentation
-- Add LiteLLM + AWS Bedrock integration guide
-
-### Features
-- Add macOS arm64 act_runner and release build job
-- Auto-increment patch tag on every merge to master
-- Inline file/screenshot attachment in triage chat
-- Close issues, restore history, auto-save resolution steps
-- Expand domains to 13 — add Telephony, Security/Vault, Public Safety, Application, Automation/CI-CD
-- Add HPE, Dell, Identity domains + expand k8s/security/observability/VESTA NXT
-- Add AI disclaimer modal before creating new issues
-
-## [0.1.1] — 2026-03-30
-
-### Bug Fixes
-- Remove unused tauri-plugin-updater + SQLCipher 16KB page size
-- Prevent WebKit/GTK system theme from overriding input text colors on Linux
-- Set SQLCipher cipher_page_size BEFORE first database access
-
-### Documentation
-- Update README, wiki, and UI version to v0.1.1
-
-## [0.1.0] — 2026-03-29
-
-### Bug Fixes
-- Resolve all clippy lints (uninlined format args, range::contains, push_str single chars)
-- Inline format args for Rust 1.88 clippy compatibility
-- Retain GPU-VRAM-eligible models in recommender even when RAM is low
-- Use alpine/git with explicit checkout for tag-based release builds
-- Set CI=true for cargo tauri build — Woodpecker sets CI=woodpecker which Tauri CLI rejects
-- Arm64 cross-compilation — add multiarch pkg-config sysroot setup
-- Remove arm64 from release pipeline — webkit2gtk multiarch conflict on x86_64 host
-- Write artifacts to workspace (shared between steps), not /artifacts/
-- Upload step needs gogs_default network to reach Gogs API (host firewall blocks default bridge)
-- Use bundled-sqlcipher-vendored-openssl for portable Windows cross-compilation
-- Add make to windows build step (required by vendored OpenSSL)
-- Replace empty icon placeholder files with real app icons
-- Suppress MinGW auto-export to resolve Windows DLL ordinal overflow
-- Use when: platform: for arm64 step routing (Woodpecker 0.15.4 compat)
-- Remove unused tauri-plugin-cli causing startup crash
-- Use $GITHUB_REF_NAME env var instead of ${{ github.ref_name }} expression
 
 ### Documentation
 - Update PLAN.md with accurate implementation status
@@ -251,17 +381,21 @@ CI, chore, and build changes are excluded.
 - Update README and wiki for v0.1.0-alpha release
 - Remove broken arm64 CI step, document Woodpecker 0.15.4 limitation
 - Update README and wiki for Gitea Actions migration
-
-### Features
-- Add Windows amd64 cross-compile to release pipeline; add arm64 QEMU agent
-- Add native linux/arm64 release build step
-
-### Security
-- Rotate exposed token, redact from PLAN.md, add secret patterns to .gitignore
-
-## [0.1.0-test] — 2026-03-15
+- Update README, wiki, and UI version to v0.1.1
+- Add LiteLLM + AWS Bedrock integration guide
 
 ### Features
 - Initial implementation of TFTSR IT Triage & RCA application
+- Add Windows amd64 cross-compile to release pipeline; add arm64 QEMU agent
+- Add native linux/arm64 release build step
+- Add macOS arm64 act_runner and release build job
+- Auto-increment patch tag on every merge to master
+- Inline file/screenshot attachment in triage chat
+- Close issues, restore history, auto-save resolution steps
+- Expand domains to 13 — add Telephony, Security/Vault, Public Safety, Application, Automation/CI-CD
+- Add HPE, Dell, Identity domains + expand k8s/security/observability/VESTA NXT
+
+### Security
+- Rotate exposed token, redact from PLAN.md, add secret patterns to .gitignore
 
 
