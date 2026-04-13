@@ -44,11 +44,13 @@ describe("auto-tag release cross-platform artifact handling", () => {
     expect(workflow).toContain("UPLOAD_NAME=\"linux-arm64-$NAME\"");
   });
 
-  it("uses Ubuntu 22.04 with ports mirror for arm64 cross-compile", () => {
+  it("uses pre-baked Ubuntu 22.04 cross-compiler image for arm64", () => {
     const workflow = readFileSync(autoTagWorkflowPath, "utf-8");
 
-    expect(workflow).toContain("ubuntu:22.04");
-    expect(workflow).toContain("ports.ubuntu.com/ubuntu-ports");
-    expect(workflow).toContain("jammy");
+    // Multiarch ubuntu:22.04 + ports mirror setup moved to pre-baked image;
+    // verify workflow references the correct image and cross-compile env vars.
+    expect(workflow).toContain("trcaa-linux-arm64:rust1.88-node22");
+    expect(workflow).toContain("CC_aarch64_unknown_linux_gnu: aarch64-linux-gnu-gcc");
+    expect(workflow).toContain("aarch64-unknown-linux-gnu");
   });
 });

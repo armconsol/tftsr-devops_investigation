@@ -129,8 +129,12 @@ describe("build-images.yml workflow", () => {
     expect(wf).toContain("trcaa-linux-arm64:rust1.88-node22");
   });
 
-  it("uses docker:24-cli image for build jobs", () => {
-    expect(wf).toContain("docker:24-cli");
+  it("uses alpine:latest with docker-cli (not docker:24-cli which triggers duplicate socket mount in act_runner)", () => {
+    // act_runner v0.3.1 special-cases docker:* images and adds the socket bind;
+    // combined with its global socket bind this causes a 'Duplicate mount point' error.
+    expect(wf).toContain("alpine:latest");
+    expect(wf).toContain("docker-cli");
+    expect(wf).not.toContain("docker:24-cli");
   });
 
   it("runs all three build jobs on linux-amd64 runner", () => {
