@@ -65,6 +65,109 @@ jobs:
 
           echo "Tag $NEXT pushed successfully"
 
+  changelog:
+    needs: autotag
+    runs-on: linux-amd64
+    container:
+      image: alpine:latest
+    steps:
+      - name: Install dependencies
+        run: |
+          set -eu
+          apk add --no-cache git curl jq
+
+      - name: Checkout (full history + all tags)
+        env:
+          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        run: |
+          set -eu
+          git init
+          git remote add origin \
+            "http://oauth2:${RELEASE_TOKEN}@172.0.0.29:3000/${GITHUB_REPOSITORY}.git"
+          git fetch --tags --depth=2147483647 origin
+          git checkout FETCH_HEAD
+          git config user.name "gitea-actions[bot]"
+          git config user.email "gitea-actions@local"
+
+      - name: Install git-cliff
+        run: |
+          set -eu
+          CLIFF_VER="2.7.0"
+          curl -fsSL \
+            "https://github.com/orhun/git-cliff/releases/download/v${CLIFF_VER}/git-cliff-${CLIFF_VER}-x86_64-unknown-linux-musl.tar.gz" \
+            | tar -xz --strip-components=1 -C /usr/local/bin \
+              "git-cliff-${CLIFF_VER}-x86_64-unknown-linux-musl/git-cliff"
+
+      - name: Generate changelog
+        run: |
+          set -eu
+          git-cliff --config cliff.toml --output CHANGELOG.md
+          git-cliff --config cliff.toml --latest --strip all > /tmp/release_body.md
+          echo "=== Release body preview ==="
+          cat /tmp/release_body.md
+
+      - name: Update Gitea release body
+        env:
+          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        run: |
+          set -eu
+          API="http://172.0.0.29:3000/api/v1/repos/$GITHUB_REPOSITORY"
+          TAG=$(git describe --tags --abbrev=0)
+          # Create release if it doesn't exist yet (build jobs may still be running)
+          curl -sf -X POST "$API/releases" \
+            -H "Authorization: token $RELEASE_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "{\"tag_name\":\"$TAG\",\"name\":\"TFTSR $TAG\",\"body\":\"Release $TAG\",\"draft\":false}" || true
+          RELEASE_ID=$(curl -sf "$API/releases/tags/$TAG" \
+            -H "Authorization: token $RELEASE_TOKEN" | jq -r '.id')
+          if [ -z "$RELEASE_ID" ] || [ "$RELEASE_ID" = "null" ]; then
+            echo "ERROR: Failed to get release ID for $TAG"
+            exit 1
+          fi
+          curl -sf -X PATCH "$API/releases/$RELEASE_ID" \
+            -H "Authorization: token $RELEASE_TOKEN" \
+            -H "Content-Type: application/json" \
+            --data-binary "{\"body\":$(jq -Rs . < /tmp/release_body.md)}"
+          echo "✓ Release body updated"
+
+      - name: Commit CHANGELOG.md to master
+        env:
+          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        run: |
+          set -eu
+          git add CHANGELOG.md
+          if git diff --staged --quiet; then
+            echo "No changelog changes"
+          else
+            TAG=$(git describe --tags --abbrev=0)
+            git commit -m "chore: update CHANGELOG.md for ${TAG} [skip ci]"
+            git push origin HEAD:master
+          fi
+
+      - name: Upload CHANGELOG.md as release asset
+        env:
+          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        run: |
+          set -eu
+          API="http://172.0.0.29:3000/api/v1/repos/$GITHUB_REPOSITORY"
+          TAG=$(git describe --tags --abbrev=0)
+          RELEASE_ID=$(curl -sf "$API/releases/tags/$TAG" \
+            -H "Authorization: token $RELEASE_TOKEN" | jq -r '.id')
+          if [ -z "$RELEASE_ID" ] || [ "$RELEASE_ID" = "null" ]; then
+            echo "ERROR: Failed to get release ID for $TAG"
+            exit 1
+          fi
+          EXISTING=$(curl -sf "$API/releases/$RELEASE_ID" \
+            -H "Authorization: token $RELEASE_TOKEN" \
+            | jq -r '.assets[]? | select(.name=="CHANGELOG.md") | .id')
+          [ -n "$EXISTING" ] && curl -sf -X DELETE \
+            "$API/releases/$RELEASE_ID/assets/$EXISTING" \
+            -H "Authorization: token $RELEASE_TOKEN"
+          curl -sf -X POST "$API/releases/$RELEASE_ID/assets" \
+            -H "Authorization: token $RELEASE_TOKEN" \
+            -F "attachment=@CHANGELOG.md;filename=CHANGELOG.md"
+          echo "✓ CHANGELOG.md uploaded"
+
   wiki-sync:
     runs-on: linux-amd64
     container:
