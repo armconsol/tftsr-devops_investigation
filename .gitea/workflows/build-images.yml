@@ -37,11 +37,11 @@ jobs:
   linux-amd64:
     runs-on: linux-amd64
     container:
-      image: docker:24-cli
+      image: alpine:latest
     steps:
       - name: Checkout
         run: |
-          apk add --no-cache git
+          apk add --no-cache git docker-cli
           git init
           git remote add origin http://172.0.0.29:3000/sarman/tftsr-devops_investigation.git
           git fetch --depth=1 origin "$GITHUB_SHA"
@@ -60,11 +60,11 @@ jobs:
   windows-cross:
     runs-on: linux-amd64
     container:
-      image: docker:24-cli
+      image: alpine:latest
     steps:
       - name: Checkout
         run: |
-          apk add --no-cache git
+          apk add --no-cache git docker-cli
           git init
           git remote add origin http://172.0.0.29:3000/sarman/tftsr-devops_investigation.git
           git fetch --depth=1 origin "$GITHUB_SHA"
@@ -83,11 +83,11 @@ jobs:
   linux-arm64:
     runs-on: linux-amd64
     container:
-      image: docker:24-cli
+      image: alpine:latest
     steps:
       - name: Checkout
         run: |
-          apk add --no-cache git
+          apk add --no-cache git docker-cli
           git init
           git remote add origin http://172.0.0.29:3000/sarman/tftsr-devops_investigation.git
           git fetch --depth=1 origin "$GITHUB_SHA"

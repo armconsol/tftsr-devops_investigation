@@ -1,11 +1,14 @@
 # Pre-baked cross-compiler for Windows amd64 Tauri releases (runs on Linux amd64).
 # All MinGW and Node.js dependencies are installed once here; CI jobs skip apt-get entirely.
-# Rebuild when: Rust toolchain version changes or Node.js major version changes.
+# Rebuild when: Rust toolchain version changes, Node.js major version changes,
+# OpenSSL major version changes (used via OPENSSL_STATIC=1), or Tauri CLI changes
+# that affect bundler system deps.
 # Tag format: rust<VER>-node<VER>
 FROM rust:1.88-slim
 
 RUN apt-get update -qq \
     && apt-get install -y -qq --no-install-recommends \
+       ca-certificates \
        mingw-w64 \
        curl \
        nsis \

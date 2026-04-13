@@ -132,27 +132,34 @@ jobs:
     needs: autotag
     runs-on: linux-amd64
     container:
-      image: rust:1.88-slim
+      image: 172.0.0.29:3000/sarman/trcaa-linux-amd64:rust1.88-node22
     steps:
       - name: Checkout
         run: |
-          apt-get update -qq && apt-get install -y -qq git
           git init
           git remote add origin http://172.0.0.29:3000/sarman/tftsr-devops_investigation.git
           git fetch --depth=1 origin "$GITHUB_SHA"
           git checkout FETCH_HEAD
-      - name: Install dependencies
-        run: |
-          apt-get update -qq && apt-get install -y -qq \
-            libwebkit2gtk-4.1-dev libssl-dev libgtk-3-dev \
-            libayatana-appindicator3-dev librsvg2-dev patchelf \
-            pkg-config curl perl jq
-          curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
-          apt-get install -y nodejs
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+          key: ${{ runner.os }}-cargo-linux-amd64-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-linux-amd64-
+      - name: Cache npm
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-npm-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-npm-
       - name: Build
         run: |
           npm ci --legacy-peer-deps
-          rustup target add x86_64-unknown-linux-gnu
           CI=true npx tauri build --target x86_64-unknown-linux-gnu
       - name: Upload artifacts
         env:
@@ -218,20 +225,31 @@ jobs:
     needs: autotag
     runs-on: linux-amd64
     container:
-      image: rust:1.88-slim
+      image: 172.0.0.29:3000/sarman/trcaa-windows-cross:rust1.88-node22
     steps:
       - name: Checkout
         run: |
-          apt-get update -qq && apt-get install -y -qq git
           git init
           git remote add origin http://172.0.0.29:3000/sarman/tftsr-devops_investigation.git
           git fetch --depth=1 origin "$GITHUB_SHA"
           git checkout FETCH_HEAD
-      - name: Install dependencies
-        run: |
-          apt-get update -qq && apt-get install -y -qq mingw-w64 curl nsis perl make jq
-          curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
-          apt-get install -y nodejs
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+          key: ${{ runner.os }}-cargo-windows-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-windows-
+      - name: Cache npm
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-npm-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-npm-
       - name: Build
         env:
           CC_x86_64_pc_windows_gnu: x86_64-w64-mingw32-gcc
@@ -242,7 +260,6 @@ jobs:
           OPENSSL_STATIC: "1"
         run: |
           npm ci --legacy-peer-deps
-          rustup target add x86_64-pc-windows-gnu
           CI=true npx tauri build --target x86_64-pc-windows-gnu
       - name: Upload artifacts
         env:
@@ -392,53 +409,31 @@ jobs:
     needs: autotag
     runs-on: linux-amd64
     container:
-      image: ubuntu:22.04
+      image: 172.0.0.29:3000/sarman/trcaa-linux-arm64:rust1.88-node22
     steps:
       - name: Checkout
         run: |
-          apt-get update -qq && apt-get install -y -qq git
           git init
           git remote add origin http://172.0.0.29:3000/sarman/tftsr-devops_investigation.git
           git fetch --depth=1 origin "$GITHUB_SHA"
           git checkout FETCH_HEAD
-      - name: Install dependencies
-        env:
-          DEBIAN_FRONTEND: noninteractive
-        run: |
-          # Step 1: Host tools + cross-compiler (all amd64, no multiarch yet)
-          apt-get update -qq
-          apt-get install -y -qq curl git gcc g++ make patchelf pkg-config perl jq \
-            gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
-
-          # Step 2: Multiarch — Ubuntu uses ports.ubuntu.com for arm64,
-          # keeping it on a separate mirror from amd64 (archive.ubuntu.com).
-          # This avoids the binary-all index duplication and -dev package
-          # conflicts that plagued the Debian single-mirror approach.
-          dpkg --add-architecture arm64
-          sed -i 's|^deb http://archive.ubuntu.com|deb [arch=amd64] http://archive.ubuntu.com|g' /etc/apt/sources.list
-          sed -i 's|^deb http://security.ubuntu.com|deb [arch=amd64] http://security.ubuntu.com|g' /etc/apt/sources.list
-          printf '%s\n' \
-            'deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports jammy main restricted universe multiverse' \
-            'deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports jammy-updates main restricted universe multiverse' \
-            'deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe multiverse' \
-            > /etc/apt/sources.list.d/arm64-ports.list
-          apt-get update -qq
-
-          # Step 3: ARM64 dev libs — libayatana omitted (no tray icon in this app)
-          apt-get install -y -qq \
-            libwebkit2gtk-4.1-dev:arm64 \
-            libssl-dev:arm64 \
-            libgtk-3-dev:arm64 \
-            librsvg2-dev:arm64
-
-          # Step 4: Node.js
-          curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
-          apt-get install -y nodejs
-
-          # Step 5: Rust (not pre-installed in ubuntu:22.04)
-          # source "$HOME/.cargo/env" in the Build step handles PATH — no GITHUB_PATH needed
-          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y \
-            --default-toolchain 1.88.0 --profile minimal --no-modify-path
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+          key: ${{ runner.os }}-cargo-arm64-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-arm64-
+      - name: Cache npm
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-npm-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-npm-
       - name: Build
         env:
           CC_aarch64_unknown_linux_gnu: aarch64-linux-gnu-gcc
@@ -452,9 +447,7 @@ jobs:
           OPENSSL_STATIC: "1"
           APPIMAGE_EXTRACT_AND_RUN: "1"
         run: |
-          . "$HOME/.cargo/env"
           npm ci --legacy-peer-deps
-          rustup target add aarch64-unknown-linux-gnu
           CI=true npx tauri build --target aarch64-unknown-linux-gnu --bundles deb,rpm
       - name: Upload artifacts
         env:

@@ -1,7 +1,9 @@
 # Pre-baked cross-compiler for Linux arm64 Tauri releases (runs on Linux amd64).
 # Bakes in: amd64 cross-toolchain, arm64 multiarch dev libs, Node.js, and Rust.
 # This image takes ~15 min to build but is only rebuilt when deps change.
-# Rebuild when: Rust toolchain version, webkit2gtk/gtk major version, or Node.js changes.
+# Rebuild when: Rust toolchain version, webkit2gtk/gtk major version, Node.js major version,
+# OpenSSL major version (used via OPENSSL_STATIC=1), or Tauri CLI changes that affect
+# bundler system deps.
 # Tag format: rust<VER>-node<VER>
 FROM ubuntu:22.04
 
@@ -10,7 +12,7 @@ ARG DEBIAN_FRONTEND=noninteractive
 # Step 1: amd64 host tools and cross-compiler
 RUN apt-get update -qq \
     && apt-get install -y -qq --no-install-recommends \
-       curl git gcc g++ make patchelf pkg-config perl jq \
+       ca-certificates curl git gcc g++ make patchelf pkg-config perl jq \
        gcc-aarch64-linux-gnu g++-aarch64-linux-gnu \
     && rm -rf /var/lib/apt/lists/*
 
@@ -40,6 +42,7 @@ RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
 # Step 4: Rust 1.88 with arm64 cross-compilation target
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y \
     --default-toolchain 1.88.0 --profile minimal --no-modify-path \
-    && /root/.cargo/bin/rustup target add aarch64-unknown-linux-gnu
+    && /root/.cargo/bin/rustup target add aarch64-unknown-linux-gnu \
+    && /root/.cargo/bin/rustup component add rustfmt clippy
 
 ENV PATH="/root/.cargo/bin:${PATH}"

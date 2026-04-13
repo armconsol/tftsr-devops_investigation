@@ -27,12 +27,77 @@ macOS runner runs jobs **directly on the host** (no Docker container) — macOS 
 
 ---
 
-## Test Pipeline (`.woodpecker/test.yml`)
+## Pre-baked Builder Images
+
+CI build and test jobs use pre-baked Docker images pushed to the local Gitea registry
+at `172.0.0.29:3000`. These images bake in all system dependencies (Tauri libs, Node.js,
+Rust toolchain, cross-compilers) so that CI jobs skip package installation entirely.
+
+| Image | Used by jobs | Contents |
+|-------|-------------|----------|
+| `172.0.0.29:3000/sarman/trcaa-linux-amd64:rust1.88-node22` | `rust-fmt-check`, `rust-clippy`, `rust-tests`, `build-linux-amd64` | Rust 1.88 + rustfmt + clippy + Tauri amd64 libs + Node.js 22 |
+| `172.0.0.29:3000/sarman/trcaa-windows-cross:rust1.88-node22` | `build-windows-amd64` | Rust 1.88 + mingw-w64 + NSIS + Node.js 22 |
+| `172.0.0.29:3000/sarman/trcaa-linux-arm64:rust1.88-node22` | `build-linux-arm64` | Rust 1.88 + aarch64 cross-toolchain + arm64 multiarch libs + Node.js 22 |
+
+**Rebuild triggers:** Rust toolchain version bump, webkit2gtk/gtk major version change, Node.js major version change.
+
+**How to rebuild images:**
+1. Trigger `build-images.yml` via `workflow_dispatch` in the Gitea Actions UI
+2. Confirm all 3 images appear in the Gitea package/container registry at `172.0.0.29:3000`
+3. Only then merge workflow changes that depend on the new image contents
+
+**Server prerequisite — insecure registry** (one-time, on 172.0.0.29):
+```sh
+echo '{"insecure-registries":["172.0.0.29:3000"]}' | sudo tee /etc/docker/daemon.json
+sudo systemctl restart docker
+```
+This must be configured on every machine running an act_runner for the runner's Docker
+daemon to pull from the local HTTP registry.
+
+---
+
+## Cargo and npm Caching
+
+All Rust and build jobs use `actions/cache@v3` to cache downloaded package artifacts.
+Gitea 1.22 implements the GitHub Actions cache API natively.
+
+**Cargo cache** (Rust jobs):
+```yaml
+- name: Cache cargo registry
+  uses: actions/cache@v3
+  with:
+    path: |
+      ~/.cargo/registry/index
+      ~/.cargo/registry/cache
+      ~/.cargo/git/db
+    key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+    restore-keys: |
+      ${{ runner.os }}-cargo-
+```
+
+**npm cache** (frontend and build jobs):
+```yaml
+- name: Cache npm
+  uses: actions/cache@v3
+  with:
+    path: ~/.npm
+    key: ${{ runner.os }}-npm-${{ hashFiles('**/package-lock.json') }}
+    restore-keys: |
+      ${{ runner.os }}-npm-
+```
+
+Cache keys for cross-compile jobs use a suffix to avoid collisions:
+- Windows build: `${{ runner.os }}-cargo-windows-${{ hashFiles('**/Cargo.lock') }}`
+- arm64 build: `${{ runner.os }}-cargo-arm64-${{ hashFiles('**/Cargo.lock') }}`
+
+---
+
+## Test Pipeline (`.gitea/workflows/test.yml`)
 
 **Triggers:** Pull requests only.
 
 ```
-Pipeline steps:
+Pipeline jobs (run in parallel):
   1. rust-fmt-check     → cargo fmt --check
   2. rust-clippy        → cargo clippy -- -D warnings
   3. rust-tests         → cargo test  (64 tests)
@@ -41,27 +106,8 @@ Pipeline steps:
 ```
 
 **Docker images used:**
-- `rust:1.88-slim` — Rust steps (minimum for cookie_store + time + darling)
+- `172.0.0.29:3000/sarman/trcaa-linux-amd64:rust1.88-node22` — Rust steps (replaces `rust:1.88-slim`)
 - `node:22-alpine` — Frontend steps
-
-**Pipeline YAML format (Woodpecker 2.x — steps list format):**
-```yaml
-clone:
-  git:
-    image: woodpeckerci/plugin-git
-    network_mode: gogs_default     # requires repo_trusted=1
-    environment:
-      - CI_REPO_CLONE_URL=http://gitea_app:3000/sarman/tftsr-devops_investigation.git
-
-steps:
-  - name: step-name                 # LIST format (- name:)
-    image: rust:1.88-slim
-    commands:
-      - cargo test
-```
-
-> ⚠️ Woodpecker 2.x uses the `steps:` list format. The legacy `pipeline:` map format from
-> Woodpecker 0.15.4 is no longer supported.
 
 ---
 
@@ -73,14 +119,16 @@ Auto tags are created by `.gitea/workflows/auto-tag.yml` using `git tag` + `git 
 Release jobs are executed in the same workflow and depend on `autotag` completion.
 
 ```
-Jobs (run in parallel):
-  build-linux-amd64   → cargo tauri build (x86_64-unknown-linux-gnu)
+Jobs (run in parallel after autotag):
+  build-linux-amd64   → image: trcaa-linux-amd64:rust1.88-node22
+                         → cargo tauri build (x86_64-unknown-linux-gnu)
                          → {.deb, .rpm, .AppImage} uploaded to Gitea release
                          → fails fast if no Linux artifacts are produced
-  build-windows-amd64 → cargo tauri build (x86_64-pc-windows-gnu) via mingw-w64
+  build-windows-amd64 → image: trcaa-windows-cross:rust1.88-node22
+                         → cargo tauri build (x86_64-pc-windows-gnu) via mingw-w64
                          → {.exe, .msi} uploaded to Gitea release
                          → fails fast if no Windows artifacts are produced
-  build-linux-arm64   → Ubuntu 22.04 base (ports.ubuntu.com for arm64 packages)
+  build-linux-arm64   → image: trcaa-linux-arm64:rust1.88-node22 (ubuntu:22.04-based)
                          → cargo tauri build (aarch64-unknown-linux-gnu)
                          → {.deb, .rpm, .AppImage} uploaded to Gitea release
                          → fails fast if no Linux artifacts are produced
