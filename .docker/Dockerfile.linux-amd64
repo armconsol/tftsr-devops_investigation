@@ -2,7 +2,7 @@
 # All system dependencies are installed once here; CI jobs skip apt-get entirely.
 # Rebuild when: Rust toolchain version changes, webkit2gtk/gtk major version changes,
 # Node.js major version changes, OpenSSL major version changes (used via OPENSSL_STATIC=1),
-# Tauri CLI version changes that affect bundler system deps, or linuxdeploy is needed.
+# Tauri CLI version changes that affect bundler system deps.
 # Tag format: rust<VER>-node<VER>
 FROM rust:1.88-slim
 
@@ -24,14 +24,6 @@ RUN apt-get update -qq \
     && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/*
-
-# Install linuxdeploy for AppImage bundling (required for Tauri 2.x)
-# Download linuxdeploy AppImage and extract to get the binary
-RUN curl -Ls https://github.com/tauri-apps/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage -o /tmp/linuxdeploy.AppImage \
-    && chmod +x /tmp/linuxdeploy.AppImage \
-    && /tmp/linuxdeploy.AppImage --appimage-extract \
-    && mv squashfs-root/usr/bin/linuxdeploy /usr/local/bin/ \
-    && rm -rf /tmp/linuxdeploy.AppImage squashfs-root
 
 RUN rustup target add x86_64-unknown-linux-gnu \
     && rustup component add rustfmt clippy
