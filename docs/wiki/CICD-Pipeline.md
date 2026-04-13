@@ -257,6 +257,52 @@ UPDATE protect_branch SET protected=true, require_pull_request=true WHERE repo_i
 
 ---
 
+## Changelog Generation
+
+Changelogs are generated automatically by **git-cliff** on every release.
+Configuration lives in `cliff.toml` at the repo root.
+
+### How it works
+
+A `changelog` job in `auto-tag.yml` runs in parallel with the build jobs, immediately
+after `autotag` completes:
+
+1. Clones the full repo history with all tags (`--depth=2147483647` — git-cliff needs
+   every tag to compute version boundaries).
+2. Downloads the git-cliff v2.7.0 static musl binary (~5 MB, no image change needed).
+3. Runs `git-cliff --output CHANGELOG.md` to regenerate the full cumulative changelog.
+4. Runs `git-cliff --latest --strip all` to produce release notes for the new tag only.
+5. PATCHes the Gitea release body with those notes (replaces the static `"Release vX.Y.Z"`).
+6. Commits `CHANGELOG.md` to master with `[skip ci]` appended to the message.
+   The `[skip ci]` token prevents `auto-tag.yml` from re-triggering on the CHANGELOG commit.
+7. Uploads `CHANGELOG.md` as a release asset (replaces any previous version).
+
+### cliff.toml reference
+
+| Setting | Value |
+|---------|-------|
+| `tag_pattern` | `v[0-9].*` |
+| `ignore_tags` | `rc\|alpha\|beta` |
+| `filter_unconventional` | `true` — non-conventional commits are dropped |
+| Included types | `feat`, `fix`, `perf`, `docs`, `refactor` |
+| Excluded types | `ci`, `chore`, `build`, `test`, `style` |
+
+### Loop prevention
+
+The `[skip ci]` suffix on the CHANGELOG commit message is recognised by Gitea Actions
+and causes the workflow to be skipped for that push. Without it, the CHANGELOG commit
+would trigger `auto-tag.yml` again, incrementing the patch version forever.
+
+### Bootstrap
+
+The initial `CHANGELOG.md` was generated locally before the first PR:
+```sh
+git-cliff --config cliff.toml --output CHANGELOG.md
+```
+Subsequent runs are fully automated by CI.
+
+---
+
 ## Known Issues & Fixes
 
 ### Debian Multiarch Breaks arm64 Cross-Compile (`held broken packages`)
