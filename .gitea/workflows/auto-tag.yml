@@ -141,17 +141,17 @@ jobs:
           git fetch --depth=1 origin "$GITHUB_SHA"
           git checkout FETCH_HEAD
       - name: Cache cargo registry
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry/index
             ~/.cargo/registry/cache
             ~/.cargo/git/db
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-linux-amd64-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-
+            ${{ runner.os }}-cargo-linux-amd64-
       - name: Cache npm
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: ~/.npm
           key: ${{ runner.os }}-npm-${{ hashFiles('**/package-lock.json') }}
@@ -234,7 +234,7 @@ jobs:
           git fetch --depth=1 origin "$GITHUB_SHA"
           git checkout FETCH_HEAD
       - name: Cache cargo registry
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry/index
@@ -244,7 +244,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-windows-
       - name: Cache npm
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: ~/.npm
           key: ${{ runner.os }}-npm-${{ hashFiles('**/package-lock.json') }}
@@ -418,7 +418,7 @@ jobs:
           git fetch --depth=1 origin "$GITHUB_SHA"
           git checkout FETCH_HEAD
       - name: Cache cargo registry
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry/index
@@ -428,7 +428,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-arm64-
       - name: Cache npm
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: ~/.npm
           key: ${{ runner.os }}-npm-${{ hashFiles('**/package-lock.json') }}

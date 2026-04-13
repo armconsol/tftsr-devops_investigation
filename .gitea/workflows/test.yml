@@ -28,15 +28,15 @@ jobs:
           fi
           git checkout FETCH_HEAD
       - name: Cache cargo registry
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry/index
             ~/.cargo/registry/cache
             ~/.cargo/git/db
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-linux-amd64-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-
+            ${{ runner.os }}-cargo-linux-amd64-
       - run: cargo fmt --manifest-path src-tauri/Cargo.toml --check
 
   rust-clippy:
@@ -63,15 +63,15 @@ jobs:
           fi
           git checkout FETCH_HEAD
       - name: Cache cargo registry
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry/index
             ~/.cargo/registry/cache
             ~/.cargo/git/db
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-linux-amd64-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-
+            ${{ runner.os }}-cargo-linux-amd64-
       - run: cargo clippy --locked --manifest-path src-tauri/Cargo.toml -- -D warnings
 
   rust-tests:
@@ -98,15 +98,15 @@ jobs:
           fi
           git checkout FETCH_HEAD
       - name: Cache cargo registry
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry/index
             ~/.cargo/registry/cache
             ~/.cargo/git/db
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-linux-amd64-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-
+            ${{ runner.os }}-cargo-linux-amd64-
       - run: cargo test --locked --manifest-path src-tauri/Cargo.toml -- --test-threads=1
 
   frontend-typecheck:
@@ -134,7 +134,7 @@ jobs:
           fi
           git checkout FETCH_HEAD
       - name: Cache npm
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: ~/.npm
           key: ${{ runner.os }}-npm-${{ hashFiles('**/package-lock.json') }}
@@ -168,7 +168,7 @@ jobs:
           fi
           git checkout FETCH_HEAD
       - name: Cache npm
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: ~/.npm
           key: ${{ runner.os }}-npm-${{ hashFiles('**/package-lock.json') }}
