@@ -191,6 +191,14 @@ pub fn run_migrations(conn: &Connection) -> anyhow::Result<()> {
                 updated_at TEXT NOT NULL DEFAULT (datetime('now'))
             );",
         ),
+        (
+            "015_add_use_datastore_upload",
+            "ALTER TABLE ai_providers ADD COLUMN use_datastore_upload INTEGER DEFAULT 0",
+        ),
+        (
+            "016_add_created_at",
+            "ALTER TABLE ai_providers ADD COLUMN created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now'))",
+        ),
     ];
 
     for (name, sql) in migrations {
@@ -201,10 +209,27 @@ pub fn run_migrations(conn: &Connection) -> anyhow::Result<()> {
 
         if !already_applied {
             // FTS5 virtual table creation can be skipped if FTS5 is not compiled in
-            if let Err(e) = conn.execute_batch(sql) {
-                if name.contains("fts") {
+            // Also handle column-already-exists errors for migrations 015-016
+            if name.contains("fts") {
+                if let Err(e) = conn.execute_batch(sql) {
                     tracing::warn!("FTS5 not available, skipping: {e}");
-                } else {
+                }
+            } else if name.ends_with("_add_use_datastore_upload")
+                || name.ends_with("_add_created_at")
+            {
+                // Use execute for ALTER TABLE (SQLite only allows one statement per command)
+                // Skip error if column already exists (SQLITE_ERROR with "duplicate column name")
+                if let Err(e) = conn.execute(sql, []) {
+                    let err_str = e.to_string();
+                    if err_str.contains("duplicate column name") {
+                        tracing::info!("Column may already exist, skipping migration {name}: {e}");
+                    } else {
+                        return Err(e.into());
+                    }
+                }
+            } else {
+                // Use execute_batch for other migrations (FTS5, CREATE TABLE, etc.)
+                if let Err(e) = conn.execute_batch(sql) {
                     return Err(e.into());
                 }
             }
@@ -559,5 +584,118 @@ mod tests {
         assert_eq!(api_url, "https://api.openai.com/v1");
         assert_eq!(encrypted_key, "encrypted_key_123");
         assert_eq!(model, "gpt-4o");
+    }
+
+    #[test]
+    fn test_add_missing_columns_to_existing_table() {
+        let conn = Connection::open_in_memory().unwrap();
+
+        // Simulate existing table without use_datastore_upload and created_at
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS ai_providers (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL UNIQUE,
+                provider_type TEXT NOT NULL,
+                api_url TEXT NOT NULL,
+                encrypted_api_key TEXT NOT NULL,
+                model TEXT NOT NULL,
+                max_tokens INTEGER,
+                temperature REAL,
+                custom_endpoint_path TEXT,
+                custom_auth_header TEXT,
+                custom_auth_prefix TEXT,
+                api_format TEXT,
+                user_id TEXT,
+                updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );",
+        )
+        .unwrap();
+
+        // Verify columns BEFORE migration
+        let mut stmt = conn.prepare("PRAGMA table_info(ai_providers)").unwrap();
+        let columns: Vec<String> = stmt
+            .query_map([], |row| row.get::<_, String>(1))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+
+        assert!(columns.contains(&"name".to_string()));
+        assert!(columns.contains(&"model".to_string()));
+        assert!(!columns.contains(&"use_datastore_upload".to_string()));
+        assert!(!columns.contains(&"created_at".to_string()));
+
+        // Run migrations (should apply 015 to add missing columns)
+        run_migrations(&conn).unwrap();
+
+        // Verify columns AFTER migration
+        let mut stmt = conn.prepare("PRAGMA table_info(ai_providers)").unwrap();
+        let columns: Vec<String> = stmt
+            .query_map([], |row| row.get::<_, String>(1))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+
+        assert!(columns.contains(&"name".to_string()));
+        assert!(columns.contains(&"model".to_string()));
+        assert!(columns.contains(&"use_datastore_upload".to_string()));
+        assert!(columns.contains(&"created_at".to_string()));
+
+        // Verify data integrity - existing rows should have default values
+        conn.execute(
+            "INSERT INTO ai_providers (id, name, provider_type, api_url, encrypted_api_key, model)
+             VALUES (?, ?, ?, ?, ?, ?)",
+            rusqlite::params![
+                "test-provider-2",
+                "Test Provider",
+                "openai",
+                "https://api.example.com",
+                "encrypted_key_456",
+                "gpt-3.5-turbo"
+            ],
+        )
+        .unwrap();
+
+        let (name, use_datastore_upload, created_at): (String, bool, String) = conn
+            .query_row(
+                "SELECT name, use_datastore_upload, created_at FROM ai_providers WHERE name = ?1",
+                ["Test Provider"],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .unwrap();
+
+        assert_eq!(name, "Test Provider");
+        assert!(!use_datastore_upload);
+        assert!(created_at.len() > 0);
+    }
+
+    #[test]
+    fn test_idempotent_add_missing_columns() {
+        let conn = Connection::open_in_memory().unwrap();
+
+        // Create table with both columns already present (simulating prior migration run)
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS ai_providers (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL UNIQUE,
+                provider_type TEXT NOT NULL,
+                api_url TEXT NOT NULL,
+                encrypted_api_key TEXT NOT NULL,
+                model TEXT NOT NULL,
+                max_tokens INTEGER,
+                temperature REAL,
+                custom_endpoint_path TEXT,
+                custom_auth_header TEXT,
+                custom_auth_prefix TEXT,
+                api_format TEXT,
+                user_id TEXT,
+                use_datastore_upload INTEGER DEFAULT 0,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );",
+        )
+        .unwrap();
+
+        // Should not fail even though columns already exist
+        run_migrations(&conn).unwrap();
     }
 }
