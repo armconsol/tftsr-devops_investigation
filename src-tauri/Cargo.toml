@@ -1,6 +1,6 @@
 [package]
 name = "trcaa"
-version = "0.2.50"
+version = "0.2.62"
 edition = "2021"
 
 [lib]
@@ -52,3 +52,5 @@ mockito = "1.2"
 [profile.release]
 opt-level = "s"
 strip = true
+
+
