@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { execSync } from 'child_process';
-import { readFileSync, writeFileSync, existsSync } from 'fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -16,11 +16,19 @@ function isValidSemver(version) {
   return /^[0-9]+\.[0-9]+\.[0-9]+$/.test(version);
 }
 
+function validateGitRepo(root) {
+  if (!existsSync(resolve(root, '.git'))) {
+    throw new Error(`Not a Git repository: ${root}`);
+  }
+}
+
 function getVersionFromGit() {
+  validateGitRepo(projectRoot);
   try {
     const output = execSync('git describe --tags --abbrev=0', { 
       encoding: 'utf-8',
-      cwd: projectRoot
+      cwd: projectRoot,
+      shell: false
     });
     let version = output.trim();
     
@@ -29,13 +37,29 @@ function getVersionFromGit() {
     
     // Validate it's a valid semver
     if (!isValidSemver(version)) {
-      console.warn(`Invalid version format "${version}" from git describe, falling back to 0.2.50`);
-      return '0.2.50';
+      const pkgJsonVersion = getFallbackVersion();
+      console.warn(`Invalid version format "${version}" from git describe, using package.json fallback: ${pkgJsonVersion}`);
+      return pkgJsonVersion;
     }
     
     return version;
   } catch (e) {
-    console.warn('Failed to get version from Git tags, using fallback: 0.2.50');
+    const pkgJsonVersion = getFallbackVersion();
+    console.warn(`Failed to get version from Git tags, using package.json fallback: ${pkgJsonVersion}`);
+    return pkgJsonVersion;
+  }
+}
+
+function getFallbackVersion() {
+  const pkgPath = resolve(projectRoot, 'package.json');
+  if (!existsSync(pkgPath)) {
+    return '0.2.50';
+  }
+  try {
+    const content = readFileSync(pkgPath, 'utf-8');
+    const json = JSON.parse(content);
+    return json.version || '0.2.50';
+  } catch {
     return '0.2.50';
   }
 }
@@ -77,50 +101,11 @@ function updateTOML(path, version) {
   console.log(`✓ Updated ${path} to ${version}`);
 }
 
-function updateCargoLock(version) {
-  const lockPath = resolve(projectRoot, 'src-tauri/Cargo.lock');
-  if (!existsSync(lockPath)) {
-    throw new Error(`Cargo.lock not found: ${lockPath}`);
-  }
-  
-  const content = readFileSync(lockPath, 'utf-8');
-  const lines = content.split('\n');
-  const output = [];
-  
-  let inTrcaaPackage = false;
-  
-  for (const line of lines) {
-    if (line.match(/^\[\[package\]\]/)) {
-      inTrcaaPackage = false;
-    }
-    
-    if (inTrcaaPackage && line.match(/^name\s*=\s*"trcaa"/)) {
-      output.push(line);
-      continue;
-    }
-    
-    if (inTrcaaPackage && line.match(/^version\s*=\s*"/)) {
-      output.push(`version = "${version}"`);
-      inTrcaaPackage = false;
-    } else {
-      output.push(line);
-    }
-    
-    if (line.match(/^name\s*=\s*"trcaa"/)) {
-      inTrcaaPackage = true;
-    }
-  }
-  
-  writeFileSync(lockPath, output.join('\n') + '\n', 'utf-8');
-  console.log(`✓ Updated Cargo.lock to ${version}`);
-}
-
 const version = getVersionFromGit();
 console.log(`Setting version to: ${version}`);
 
 updatePackageJson(version);
 updateTOML('src-tauri/Cargo.toml', version);
 updateTOML('src-tauri/tauri.conf.json', version);
-updateCargoLock(version);
 
 console.log(`✓ All version fields updated to ${version}`);
