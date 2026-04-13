@@ -7,6 +7,24 @@ CI, chore, and build changes are excluded.
 ## [Unreleased]
 
 ### Bug Fixes
+- Add missing ai_providers columns and fix linux-amd64 build
+- Address AI review findings
+- Address critical AI review issues
+- Add fuse dependency for AppImage support
+
+### Refactoring
+- Remove custom linuxdeploy install per CI CI uses tauri-downloaded version
+- Revert to original Dockerfile without manual linuxdeploy installation
+
+## [0.2.55] — 2026-04-13
+
+### Bug Fixes
+- **ci**: Use Gitea file API to push CHANGELOG.md — eliminates non-fast-forward rejection
+- **ci**: Harden CHANGELOG.md API push step per review
+
+## [0.2.54] — 2026-04-13
+
+### Bug Fixes
 - **ci**: Correct git-cliff archive path in tar extraction
 
 ## [0.2.53] — 2026-04-13
