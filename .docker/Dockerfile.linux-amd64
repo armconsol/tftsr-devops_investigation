@@ -2,7 +2,7 @@
 # All system dependencies are installed once here; CI jobs skip apt-get entirely.
 # Rebuild when: Rust toolchain version changes, webkit2gtk/gtk major version changes,
 # Node.js major version changes, OpenSSL major version changes (used via OPENSSL_STATIC=1),
-# Tauri CLI version changes that affect bundler system deps.
+# or Tauri CLI version changes that affect bundler system deps.
 # Tag format: rust<VER>-node<VER>
 FROM rust:1.88-slim
 
@@ -20,7 +20,6 @@ RUN apt-get update -qq \
        perl \
        jq \
        git \
-       fuse \
     && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/*
