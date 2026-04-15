@@ -57,7 +57,10 @@ pub async fn search_confluence(
             urlencoding::encode(&safe_query)
         );
 
-        tracing::info!("Searching Confluence with expanded query: {}", search_url);
+        tracing::info!(
+            "Searching Confluence with expanded query: {}",
+            expanded_query
+        );
 
         let resp = client
             .get(&search_url)
@@ -80,7 +83,7 @@ pub async fn search_confluence(
             .map_err(|e| format!("Failed to parse Confluence search response: {e}"))?;
 
         if let Some(results_array) = json["results"].as_array() {
-            for item in results_array.iter().take(3) {
+            for item in results_array.iter().take(MAX_EXPANDED_QUERIES) {
                 let title = item["title"].as_str().unwrap_or("Untitled").to_string();
 
                 let id = item["content"]["id"].as_str();

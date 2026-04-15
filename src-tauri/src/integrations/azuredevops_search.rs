@@ -5,6 +5,15 @@ const MAX_EXPANDED_QUERIES: usize = 3;
 
 fn escape_wiql(s: &str) -> String {
     s.replace('\'', "''")
+        .replace('"', "\\\"")
+        .replace('\\', "\\\\")
+        .replace('(', "\\(")
+        .replace(')', "\\)")
+        .replace('~', "\\~")
+        .replace('*', "\\*")
+        .replace('?', "\\?")
+        .replace(';', "\\;")
+        .replace('=', "\\=")
 }
 
 /// Search Azure DevOps Wiki for content matching the query
