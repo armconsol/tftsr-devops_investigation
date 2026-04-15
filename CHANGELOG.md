@@ -7,14 +7,41 @@ CI, chore, and build changes are excluded.
 ## [Unreleased]
 
 ### Bug Fixes
-- Add missing ai_providers columns and fix linux-amd64 build
-- Address AI review findings
-- Address critical AI review issues
+- Add --locked to cargo commands and improve version update script
+
+### Features
+- Implement dynamic versioning from Git tags
+
+## [0.2.63] — 2026-04-13
+
+### Bug Fixes
+- Add Windows nsis target and update CHANGELOG to v0.2.61
+
+## [0.2.61] — 2026-04-13
+
+### Bug Fixes
+- Remove AppImage from upload artifact patterns
+
+## [0.2.59] — 2026-04-13
+
+### Bug Fixes
+- Remove AppImage bundling to fix linux-amd64 build
+
+## [0.2.57] — 2026-04-13
+
+### Bug Fixes
 - Add fuse dependency for AppImage support
 
 ### Refactoring
 - Remove custom linuxdeploy install per CI CI uses tauri-downloaded version
 - Revert to original Dockerfile without manual linuxdeploy installation
+
+## [0.2.56] — 2026-04-13
+
+### Bug Fixes
+- Add missing ai_providers columns and fix linux-amd64 build
+- Address AI review findings
+- Address critical AI review issues
 
 ## [0.2.55] — 2026-04-13
 
