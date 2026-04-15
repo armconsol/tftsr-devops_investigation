@@ -6,7 +6,7 @@
     "frontendDist": "../dist",
     "devUrl": "http://localhost:1420",
     "beforeDevCommand": "npm run dev",
-    "beforeBuildCommand": "npm run build"
+    "beforeBuildCommand": "npm run version:update && npm run build"
   },
   "app": {
     "security": {
@@ -42,3 +42,6 @@
     "longDescription": "Structured AI-backed assistant for IT troubleshooting, 5-whys root cause analysis, and post-mortem documentation with offline Ollama support."
   }
 }
+
+
+

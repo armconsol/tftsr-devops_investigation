@@ -486,3 +486,8 @@ export const loadAiProvidersCmd = () =>
 
 export const deleteAiProviderCmd = (name: string) =>
   invoke<void>("delete_ai_provider", { name });
+
+// ─── System / Version ─────────────────────────────────────────────────────────
+
+export const getAppVersionCmd = () =>
+  invoke<string>("get_app_version");

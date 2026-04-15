@@ -37,6 +37,11 @@ jobs:
           key: ${{ runner.os }}-cargo-linux-amd64-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-linux-amd64-
+      - name: Install dependencies
+        run: npm install --legacy-peer-deps
+      - name: Update version from Git
+        run: node scripts/update-version.mjs
+      - run: cargo generate-lockfile --manifest-path src-tauri/Cargo.toml
       - run: cargo fmt --manifest-path src-tauri/Cargo.toml --check
 
   rust-clippy:
@@ -72,7 +77,7 @@ jobs:
           key: ${{ runner.os }}-cargo-linux-amd64-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-linux-amd64-
-      - run: cargo clippy --locked --manifest-path src-tauri/Cargo.toml -- -D warnings
+      - run: cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
 
   rust-tests:
     runs-on: ubuntu-latest
@@ -107,7 +112,7 @@ jobs:
           key: ${{ runner.os }}-cargo-linux-amd64-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-linux-amd64-
-      - run: cargo test --locked --manifest-path src-tauri/Cargo.toml -- --test-threads=1
+      - run: cargo test --manifest-path src-tauri/Cargo.toml -- --test-threads=1
 
   frontend-typecheck:
     runs-on: ubuntu-latest

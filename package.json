@@ -1,11 +1,12 @@
 {
   "name": "tftsr",
   "private": true,
-  "version": "0.2.50",
+  "version": "0.2.62",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "version:update": "node scripts/update-version.mjs",
     "preview": "vite preview",
     "tauri": "tauri",
     "test": "vitest",
