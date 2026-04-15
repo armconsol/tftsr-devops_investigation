@@ -1,4 +1,40 @@
 use super::confluence_search::SearchResult;
+use crate::integrations::query_expansion::expand_query;
+
+const MAX_EXPANDED_QUERIES: usize = 3;
+
+fn escape_wiql(s: &str) -> String {
+    s.replace('\'', "''")
+        .replace('"', "\\\"")
+        .replace('\\', "\\\\")
+        .replace('(', "\\(")
+        .replace(')', "\\)")
+        .replace(';', "\\;")
+        .replace('=', "\\=")
+}
+
+/// Basic HTML tag stripping to prevent XSS in excerpts
+fn strip_html_tags(html: &str) -> String {
+    let mut result = String::new();
+    let mut in_tag = false;
+
+    for ch in html.chars() {
+        match ch {
+            '<' => in_tag = true,
+            '>' => in_tag = false,
+            _ if !in_tag => result.push(ch),
+            _ => {}
+        }
+    }
+
+    // Clean up whitespace
+    result
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .trim()
+        .to_string()
+}
 
 /// Search Azure DevOps Wiki for content matching the query
 pub async fn search_wiki(
@@ -10,90 +46,94 @@ pub async fn search_wiki(
     let cookie_header = crate::integrations::webview_auth::cookies_to_header(cookies);
     let client = reqwest::Client::new();
 
-    // Use Azure DevOps Search API
-    let search_url = format!(
-        "{}/_apis/search/wikisearchresults?api-version=7.0",
-        org_url.trim_end_matches('/')
-    );
+    let expanded_queries = expand_query(query);
 
-    let search_body = serde_json::json!({
-        "searchText": query,
-        "$top": 5,
-        "filters": {
-            "ProjectFilters": [project]
+    let mut all_results = Vec::new();
+
+    for expanded_query in expanded_queries.iter().take(MAX_EXPANDED_QUERIES) {
+        // Use Azure DevOps Search API
+        let search_url = format!(
+            "{}/_apis/search/wikisearchresults?api-version=7.0",
+            org_url.trim_end_matches('/')
+        );
+
+        let search_body = serde_json::json!({
+            "searchText": expanded_query,
+            "$top": 5,
+            "filters": {
+                "ProjectFilters": [project]
+            }
+        });
+
+        tracing::info!("Searching Azure DevOps Wiki with query: {}", expanded_query);
+
+        let resp = client
+            .post(&search_url)
+            .header("Cookie", &cookie_header)
+            .header("Accept", "application/json")
+            .header("Content-Type", "application/json")
+            .json(&search_body)
+            .send()
+            .await
+            .map_err(|e| format!("Azure DevOps wiki search failed: {e}"))?;
+
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let text = resp.text().await.unwrap_or_default();
+            tracing::warn!("Azure DevOps wiki search failed with status {status}: {text}");
+            continue;
         }
-    });
 
-    tracing::info!("Searching Azure DevOps Wiki: {}", search_url);
+        let json: serde_json::Value = resp
+            .json()
+            .await
+            .map_err(|e| format!("Failed to parse ADO wiki search response: {e}"))?;
 
-    let resp = client
-        .post(&search_url)
-        .header("Cookie", &cookie_header)
-        .header("Accept", "application/json")
-        .header("Content-Type", "application/json")
-        .json(&search_body)
-        .send()
-        .await
-        .map_err(|e| format!("Azure DevOps wiki search failed: {e}"))?;
+        if let Some(results_array) = json["results"].as_array() {
+            for item in results_array.iter().take(MAX_EXPANDED_QUERIES) {
+                let title = item["fileName"].as_str().unwrap_or("Untitled").to_string();
 
-    if !resp.status().is_success() {
-        let status = resp.status();
-        let text = resp.text().await.unwrap_or_default();
-        return Err(format!(
-            "Azure DevOps wiki search failed with status {status}: {text}"
-        ));
-    }
+                let path = item["path"].as_str().unwrap_or("");
+                let url = format!(
+                    "{}/_wiki/wikis/{}/{}",
+                    org_url.trim_end_matches('/'),
+                    project,
+                    path
+                );
 
-    let json: serde_json::Value = resp
-        .json()
-        .await
-        .map_err(|e| format!("Failed to parse ADO wiki search response: {e}"))?;
+                let excerpt = strip_html_tags(item["content"].as_str().unwrap_or(""))
+                    .chars()
+                    .take(300)
+                    .collect::<String>();
 
-    let mut results = Vec::new();
-
-    if let Some(results_array) = json["results"].as_array() {
-        for item in results_array.iter().take(3) {
-            let title = item["fileName"].as_str().unwrap_or("Untitled").to_string();
-
-            let path = item["path"].as_str().unwrap_or("");
-            let url = format!(
-                "{}/_wiki/wikis/{}/{}",
-                org_url.trim_end_matches('/'),
-                project,
-                path
-            );
-
-            let excerpt = item["content"]
-                .as_str()
-                .unwrap_or("")
-                .chars()
-                .take(300)
-                .collect::<String>();
-
-            // Fetch full wiki page content
-            let content = if let Some(wiki_id) = item["wiki"]["id"].as_str() {
-                if let Some(page_path) = item["path"].as_str() {
-                    fetch_wiki_page(org_url, wiki_id, page_path, &cookie_header)
-                        .await
-                        .ok()
+                // Fetch full wiki page content
+                let content = if let Some(wiki_id) = item["wiki"]["id"].as_str() {
+                    if let Some(page_path) = item["path"].as_str() {
+                        fetch_wiki_page(org_url, wiki_id, page_path, &cookie_header)
+                            .await
+                            .ok()
+                    } else {
+                        None
+                    }
                 } else {
                     None
-                }
-            } else {
-                None
-            };
+                };
 
-            results.push(SearchResult {
-                title,
-                url,
-                excerpt,
-                content,
-                source: "Azure DevOps".to_string(),
-            });
+                all_results.push(SearchResult {
+                    title,
+                    url,
+                    excerpt,
+                    content,
+                    source: "Azure DevOps".to_string(),
+                });
+            }
         }
     }
 
-    Ok(results)
+    all_results.sort_by(|a, b| a.url.cmp(&b.url));
+    all_results.dedup_by(|a, b| a.url == b.url);
+
+    Ok(all_results)
 }
 
 /// Fetch full wiki page content
@@ -151,55 +191,68 @@ pub async fn search_work_items(
     let cookie_header = crate::integrations::webview_auth::cookies_to_header(cookies);
     let client = reqwest::Client::new();
 
-    // Use WIQL (Work Item Query Language)
-    let wiql_url = format!(
-        "{}/_apis/wit/wiql?api-version=7.0",
-        org_url.trim_end_matches('/')
-    );
+    let expanded_queries = expand_query(query);
 
-    let wiql_query = format!(
-        "SELECT [System.Id], [System.Title], [System.Description], [System.State] FROM WorkItems WHERE [System.TeamProject] = '{project}' AND ([System.Title] CONTAINS '{query}' OR [System.Description] CONTAINS '{query}') ORDER BY [System.ChangedDate] DESC"
-    );
+    let mut all_results = Vec::new();
 
-    let wiql_body = serde_json::json!({
-        "query": wiql_query
-    });
+    for expanded_query in expanded_queries.iter().take(MAX_EXPANDED_QUERIES) {
+        // Use WIQL (Work Item Query Language)
+        let wiql_url = format!(
+            "{}/_apis/wit/wiql?api-version=7.0",
+            org_url.trim_end_matches('/')
+        );
 
-    tracing::info!("Searching Azure DevOps work items");
+        let safe_query = escape_wiql(expanded_query);
+        let wiql_query = format!(
+            "SELECT [System.Id], [System.Title], [System.Description], [System.State] FROM WorkItems WHERE [System.TeamProject] = '{project}' AND ([System.Title] ~ '{safe_query}' OR [System.Description] ~ '{safe_query}') ORDER BY [System.ChangedDate] DESC"
+        );
 
-    let resp = client
-        .post(&wiql_url)
-        .header("Cookie", &cookie_header)
-        .header("Accept", "application/json")
-        .header("Content-Type", "application/json")
-        .json(&wiql_body)
-        .send()
-        .await
-        .map_err(|e| format!("ADO work item search failed: {e}"))?;
+        let wiql_body = serde_json::json!({
+            "query": wiql_query
+        });
 
-    if !resp.status().is_success() {
-        return Ok(Vec::new()); // Don't fail if work item search fails
-    }
+        tracing::info!(
+            "Searching Azure DevOps work items with query: {}",
+            expanded_query
+        );
 
-    let json: serde_json::Value = resp
-        .json()
-        .await
-        .map_err(|_| "Failed to parse work item response".to_string())?;
+        let resp = client
+            .post(&wiql_url)
+            .header("Cookie", &cookie_header)
+            .header("Accept", "application/json")
+            .header("Content-Type", "application/json")
+            .json(&wiql_body)
+            .send()
+            .await
+            .map_err(|e| format!("ADO work item search failed: {e}"))?;
 
-    let mut results = Vec::new();
+        if !resp.status().is_success() {
+            continue; // Don't fail if work item search fails
+        }
 
-    if let Some(work_items) = json["workItems"].as_array() {
-        // Fetch details for top 3 work items
-        for item in work_items.iter().take(3) {
-            if let Some(id) = item["id"].as_i64() {
-                if let Ok(work_item) = fetch_work_item_details(org_url, id, &cookie_header).await {
-                    results.push(work_item);
+        let json: serde_json::Value = resp
+            .json()
+            .await
+            .map_err(|_| "Failed to parse work item response".to_string())?;
+
+        if let Some(work_items) = json["workItems"].as_array() {
+            // Fetch details for top 3 work items
+            for item in work_items.iter().take(MAX_EXPANDED_QUERIES) {
+                if let Some(id) = item["id"].as_i64() {
+                    if let Ok(work_item) =
+                        fetch_work_item_details(org_url, id, &cookie_header).await
+                    {
+                        all_results.push(work_item);
+                    }
                 }
             }
         }
     }
 
-    Ok(results)
+    all_results.sort_by(|a, b| a.url.cmp(&b.url));
+    all_results.dedup_by(|a, b| a.url == b.url);
+
+    Ok(all_results)
 }
 
 /// Fetch work item details
@@ -262,4 +315,54 @@ async fn fetch_work_item_details(
         content: Some(content),
         source: "Azure DevOps".to_string(),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_escape_wiql_escapes_single_quotes() {
+        assert_eq!(escape_wiql("test'single"), "test''single");
+    }
+
+    #[test]
+    fn test_escape_wiql_escapes_double_quotes() {
+        assert_eq!(escape_wiql("test\"double"), "test\\\\\"double");
+    }
+
+    #[test]
+    fn test_escape_wiql_escapes_backslash() {
+        assert_eq!(escape_wiql("test\\backslash"), r#"test\\backslash"#);
+    }
+
+    #[test]
+    fn test_escape_wiql_escapes_parens() {
+        assert_eq!(escape_wiql("test(paren"), r#"test\(paren"#);
+        assert_eq!(escape_wiql("test)paren"), r#"test\)paren"#);
+    }
+
+    #[test]
+    fn test_escape_wiql_escapes_semicolon() {
+        assert_eq!(escape_wiql("test;semi"), r#"test\;semi"#);
+    }
+
+    #[test]
+    fn test_escape_wiql_escapes_equals() {
+        assert_eq!(escape_wiql("test=equal"), r#"test\=equal"#);
+    }
+
+    #[test]
+    fn test_escape_wiql_no_special_chars() {
+        assert_eq!(escape_wiql("simple query"), "simple query");
+    }
+
+    #[test]
+    fn test_strip_html_tags() {
+        let html = "<p>Hello <strong>world</strong>!</p>";
+        assert_eq!(strip_html_tags(html), "Hello world!");
+
+        let html2 = "<div><h1>Title</h1><p>Content</p></div>";
+        assert_eq!(strip_html_tags(html2), "TitleContent");
+    }
 }

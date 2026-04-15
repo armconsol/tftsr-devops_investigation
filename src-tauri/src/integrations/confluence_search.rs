@@ -1,4 +1,9 @@
 use serde::{Deserialize, Serialize};
+use url::Url;
+
+use super::query_expansion::expand_query;
+
+const MAX_EXPANDED_QUERIES: usize = 3;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SearchResult {
@@ -6,10 +11,36 @@ pub struct SearchResult {
     pub url: String,
     pub excerpt: String,
     pub content: Option<String>,
-    pub source: String, // "confluence", "servicenow", "azuredevops"
+    pub source: String,
+}
+
+fn canonicalize_url(url: &str) -> String {
+    Url::parse(url)
+        .ok()
+        .map(|u| {
+            let mut u = u.clone();
+            u.set_fragment(None);
+            u.set_query(None);
+            u.to_string()
+        })
+        .unwrap_or_else(|| url.to_string())
+}
+
+fn escape_cql(s: &str) -> String {
+    s.replace('"', "\\\"")
+        .replace(')', "\\)")
+        .replace('(', "\\(")
+        .replace('~', "\\~")
+        .replace('&', "\\&")
+        .replace('|', "\\|")
+        .replace('+', "\\+")
+        .replace('-', "\\-")
 }
 
 /// Search Confluence for content matching the query
+///
+/// This function expands the user query with related terms, synonyms, and variations
+/// to improve search coverage across Confluence spaces.
 pub async fn search_confluence(
     base_url: &str,
     query: &str,
@@ -18,86 +49,89 @@ pub async fn search_confluence(
     let cookie_header = crate::integrations::webview_auth::cookies_to_header(cookies);
     let client = reqwest::Client::new();
 
-    // Use Confluence CQL search
-    let search_url = format!(
-        "{}/rest/api/search?cql=text~\"{}\"&limit=5",
-        base_url.trim_end_matches('/'),
-        urlencoding::encode(query)
-    );
+    let expanded_queries = expand_query(query);
 
-    tracing::info!("Searching Confluence: {}", search_url);
+    let mut all_results = Vec::new();
 
-    let resp = client
-        .get(&search_url)
-        .header("Cookie", &cookie_header)
-        .header("Accept", "application/json")
-        .send()
-        .await
-        .map_err(|e| format!("Confluence search request failed: {e}"))?;
+    for expanded_query in expanded_queries.iter().take(MAX_EXPANDED_QUERIES) {
+        let safe_query = escape_cql(expanded_query);
+        let search_url = format!(
+            "{}/rest/api/search?cql=text~\"{}\"&limit=5",
+            base_url.trim_end_matches('/'),
+            urlencoding::encode(&safe_query)
+        );
 
-    if !resp.status().is_success() {
-        let status = resp.status();
-        let text = resp.text().await.unwrap_or_default();
-        return Err(format!(
-            "Confluence search failed with status {status}: {text}"
-        ));
-    }
+        tracing::info!(
+            "Searching Confluence with expanded query: {}",
+            expanded_query
+        );
 
-    let json: serde_json::Value = resp
-        .json()
-        .await
-        .map_err(|e| format!("Failed to parse Confluence search response: {e}"))?;
+        let resp = client
+            .get(&search_url)
+            .header("Cookie", &cookie_header)
+            .header("Accept", "application/json")
+            .send()
+            .await
+            .map_err(|e| format!("Confluence search request failed: {e}"))?;
 
-    let mut results = Vec::new();
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let text = resp.text().await.unwrap_or_default();
+            tracing::warn!("Confluence search failed with status {status}: {text}");
+            continue;
+        }
 
-    if let Some(results_array) = json["results"].as_array() {
-        for item in results_array.iter().take(3) {
-            // Take top 3 results
-            let title = item["title"].as_str().unwrap_or("Untitled").to_string();
+        let json: serde_json::Value = resp
+            .json()
+            .await
+            .map_err(|e| format!("Failed to parse Confluence search response: {e}"))?;
 
-            let id = item["content"]["id"].as_str();
-            let space_key = item["content"]["space"]["key"].as_str();
+        if let Some(results_array) = json["results"].as_array() {
+            for item in results_array.iter().take(MAX_EXPANDED_QUERIES) {
+                let title = item["title"].as_str().unwrap_or("Untitled").to_string();
 
-            // Build URL
-            let url = if let (Some(id_str), Some(space)) = (id, space_key) {
-                format!(
-                    "{}/display/{}/{}",
-                    base_url.trim_end_matches('/'),
-                    space,
-                    id_str
-                )
-            } else {
-                base_url.to_string()
-            };
+                let id = item["content"]["id"].as_str();
+                let space_key = item["content"]["space"]["key"].as_str();
 
-            // Get excerpt from search result
-            let excerpt = item["excerpt"]
-                .as_str()
-                .unwrap_or("")
-                .to_string()
-                .replace("<span class=\"highlight\">", "")
-                .replace("</span>", "");
+                let url = if let (Some(id_str), Some(space)) = (id, space_key) {
+                    format!(
+                        "{}/display/{}/{}",
+                        base_url.trim_end_matches('/'),
+                        space,
+                        id_str
+                    )
+                } else {
+                    base_url.to_string()
+                };
 
-            // Fetch full page content
-            let content = if let Some(content_id) = id {
-                fetch_page_content(base_url, content_id, &cookie_header)
-                    .await
-                    .ok()
-            } else {
-                None
-            };
+                let excerpt = strip_html_tags(item["excerpt"].as_str().unwrap_or(""))
+                    .chars()
+                    .take(300)
+                    .collect::<String>();
 
-            results.push(SearchResult {
-                title,
-                url,
-                excerpt,
-                content,
-                source: "Confluence".to_string(),
-            });
+                let content = if let Some(content_id) = id {
+                    fetch_page_content(base_url, content_id, &cookie_header)
+                        .await
+                        .ok()
+                } else {
+                    None
+                };
+
+                all_results.push(SearchResult {
+                    title,
+                    url,
+                    excerpt,
+                    content,
+                    source: "Confluence".to_string(),
+                });
+            }
         }
     }
 
-    Ok(results)
+    all_results.sort_by(|a, b| canonicalize_url(&a.url).cmp(&canonicalize_url(&b.url)));
+    all_results.dedup_by(|a, b| canonicalize_url(&a.url) == canonicalize_url(&b.url));
+
+    Ok(all_results)
 }
 
 /// Fetch full content of a Confluence page
@@ -184,5 +218,44 @@ mod tests {
 
         let html2 = "<div><h1>Title</h1><p>Content</p></div>";
         assert_eq!(strip_html_tags(html2), "TitleContent");
+    }
+
+    #[test]
+    fn test_escape_cql_escapes_special_chars() {
+        assert_eq!(escape_cql("test\"quote"), r#"test\"quote"#);
+        assert_eq!(escape_cql("test(paren"), r#"test\(paren"#);
+        assert_eq!(escape_cql("test)paren"), r#"test\)paren"#);
+        assert_eq!(escape_cql("test~tilde"), r#"test\~tilde"#);
+        assert_eq!(escape_cql("test&and"), r#"test\&and"#);
+        assert_eq!(escape_cql("test|or"), r#"test\|or"#);
+        assert_eq!(escape_cql("test+plus"), r#"test\+plus"#);
+        assert_eq!(escape_cql("test-minus"), r#"test\-minus"#);
+    }
+
+    #[test]
+    fn test_escape_cql_no_special_chars() {
+        assert_eq!(escape_cql("simple query"), "simple query");
+    }
+
+    #[test]
+    fn test_canonicalize_url_removes_fragment() {
+        assert_eq!(
+            canonicalize_url("https://example.com/page#section"),
+            "https://example.com/page"
+        );
+    }
+
+    #[test]
+    fn test_canonicalize_url_removes_query() {
+        assert_eq!(
+            canonicalize_url("https://example.com/page?param=value"),
+            "https://example.com/page"
+        );
+    }
+
+    #[test]
+    fn test_canonicalize_url_handles_malformed() {
+        // Malformed URLs fall back to original
+        assert_eq!(canonicalize_url("not a url"), "not a url");
     }
 }
