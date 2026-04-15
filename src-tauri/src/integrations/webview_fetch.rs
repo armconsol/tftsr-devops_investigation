@@ -6,6 +6,7 @@ use serde_json::Value;
 use tauri::WebviewWindow;
 
 use super::confluence_search::SearchResult;
+use crate::integrations::query_expansion::expand_query;
 
 /// Execute an HTTP request from within the webview context
 /// This automatically includes all cookies (including HttpOnly) from the authenticated session
@@ -123,106 +124,113 @@ pub async fn search_confluence_webview<R: tauri::Runtime>(
     base_url: &str,
     query: &str,
 ) -> Result<Vec<SearchResult>, String> {
-    // Extract keywords from the query for better search
-    // Remove common words and extract important terms
-    let keywords = extract_keywords(query);
+    let expanded_queries = expand_query(query);
 
-    // Build CQL query with OR logic for keywords
-    let cql = if keywords.len() > 1 {
-        // Multiple keywords - search for any of them
-        let keyword_conditions: Vec<String> =
-            keywords.iter().map(|k| format!("text ~ \"{k}\"")).collect();
-        keyword_conditions.join(" OR ")
-    } else if !keywords.is_empty() {
-        // Single keyword
-        let keyword = &keywords[0];
-        format!("text ~ \"{keyword}\"")
-    } else {
-        // Fallback to original query
-        format!("text ~ \"{query}\"")
-    };
+    let mut all_results = Vec::new();
 
-    let search_url = format!(
-        "{}/rest/api/search?cql={}&limit=10",
-        base_url.trim_end_matches('/'),
-        urlencoding::encode(&cql)
-    );
+    for expanded_query in expanded_queries.iter().take(3) {
+        // Extract keywords from the query for better search
+        // Remove common words and extract important terms
+        let keywords = extract_keywords(expanded_query);
 
-    tracing::info!("Executing Confluence search via webview with CQL: {}", cql);
+        // Build CQL query with OR logic for keywords
+        let cql = if keywords.len() > 1 {
+            // Multiple keywords - search for any of them
+            let keyword_conditions: Vec<String> =
+                keywords.iter().map(|k| format!("text ~ \"{k}\"")).collect();
+            keyword_conditions.join(" OR ")
+        } else if !keywords.is_empty() {
+            // Single keyword
+            let keyword = &keywords[0];
+            format!("text ~ \"{keyword}\"")
+        } else {
+            // Fallback to expanded query
+            format!("text ~ \"{expanded_query}\"")
+        };
 
-    let response = fetch_from_webview(webview_window, &search_url, "GET", None).await?;
+        let search_url = format!(
+            "{}/rest/api/search?cql={}&limit=10",
+            base_url.trim_end_matches('/'),
+            urlencoding::encode(&cql)
+        );
 
-    let mut results = Vec::new();
+        tracing::info!("Executing Confluence search via webview with CQL: {}", cql);
 
-    if let Some(results_array) = response.get("results").and_then(|v| v.as_array()) {
-        for item in results_array.iter().take(5) {
-            let title = item["title"].as_str().unwrap_or("Untitled").to_string();
-            let content_id = item["content"]["id"].as_str();
-            let space_key = item["content"]["space"]["key"].as_str();
+        let response = fetch_from_webview(webview_window, &search_url, "GET", None).await?;
 
-            let url = if let (Some(id), Some(space)) = (content_id, space_key) {
-                format!(
-                    "{}/display/{}/{}",
-                    base_url.trim_end_matches('/'),
-                    space,
-                    id
-                )
-            } else {
-                base_url.to_string()
-            };
+        if let Some(results_array) = response.get("results").and_then(|v| v.as_array()) {
+            for item in results_array.iter().take(5) {
+                let title = item["title"].as_str().unwrap_or("Untitled").to_string();
+                let content_id = item["content"]["id"].as_str();
+                let space_key = item["content"]["space"]["key"].as_str();
 
-            let excerpt = item["excerpt"]
-                .as_str()
-                .unwrap_or("")
-                .replace("<span class=\"highlight\">", "")
-                .replace("</span>", "");
+                let url = if let (Some(id), Some(space)) = (content_id, space_key) {
+                    format!(
+                        "{}/display/{}/{}",
+                        base_url.trim_end_matches('/'),
+                        space,
+                        id
+                    )
+                } else {
+                    base_url.to_string()
+                };
 
-            // Fetch full page content
-            let content = if let Some(id) = content_id {
-                let content_url = format!(
-                    "{}/rest/api/content/{id}?expand=body.storage",
-                    base_url.trim_end_matches('/')
-                );
-                if let Ok(content_resp) =
-                    fetch_from_webview(webview_window, &content_url, "GET", None).await
-                {
-                    if let Some(body) = content_resp
-                        .get("body")
-                        .and_then(|b| b.get("storage"))
-                        .and_then(|s| s.get("value"))
-                        .and_then(|v| v.as_str())
+                let excerpt = item["excerpt"]
+                    .as_str()
+                    .unwrap_or("")
+                    .replace("<span class=\"highlight\">", "")
+                    .replace("</span>", "");
+
+                // Fetch full page content
+                let content = if let Some(id) = content_id {
+                    let content_url = format!(
+                        "{}/rest/api/content/{id}?expand=body.storage",
+                        base_url.trim_end_matches('/')
+                    );
+                    if let Ok(content_resp) =
+                        fetch_from_webview(webview_window, &content_url, "GET", None).await
                     {
-                        let text = strip_html_simple(body);
-                        Some(if text.len() > 3000 {
-                            format!("{}...", &text[..3000])
+                        if let Some(body) = content_resp
+                            .get("body")
+                            .and_then(|b| b.get("storage"))
+                            .and_then(|s| s.get("value"))
+                            .and_then(|v| v.as_str())
+                        {
+                            let text = strip_html_simple(body);
+                            Some(if text.len() > 3000 {
+                                format!("{}...", &text[..3000])
+                            } else {
+                                text
+                            })
                         } else {
-                            text
-                        })
+                            None
+                        }
                     } else {
                         None
                     }
                 } else {
                     None
-                }
-            } else {
-                None
-            };
+                };
 
-            results.push(SearchResult {
-                title,
-                url,
-                excerpt: excerpt.chars().take(300).collect(),
-                content,
-                source: "Confluence".to_string(),
-            });
+                all_results.push(SearchResult {
+                    title,
+                    url,
+                    excerpt: excerpt.chars().take(300).collect(),
+                    content,
+                    source: "Confluence".to_string(),
+                });
+            }
         }
     }
 
+    all_results.sort_by(|a, b| a.url.cmp(&b.url));
+    all_results.dedup_by(|a, b| a.url == b.url);
+
     tracing::info!(
         "Confluence webview search returned {} results",
-        results.len()
+        all_results.len()
     );
-    Ok(results)
+    Ok(all_results)
 }
 
 /// Extract keywords from a search query
@@ -296,92 +304,99 @@ pub async fn search_servicenow_webview<R: tauri::Runtime>(
     instance_url: &str,
     query: &str,
 ) -> Result<Vec<SearchResult>, String> {
-    let mut results = Vec::new();
+    let expanded_queries = expand_query(query);
 
-    // Search knowledge base
-    let kb_url = format!(
-        "{}/api/now/table/kb_knowledge?sysparm_query=textLIKE{}^ORshort_descriptionLIKE{}&sysparm_limit=3",
-        instance_url.trim_end_matches('/'),
-        urlencoding::encode(query),
-        urlencoding::encode(query)
-    );
+    let mut all_results = Vec::new();
 
-    tracing::info!("Executing ServiceNow KB search via webview");
+    for expanded_query in expanded_queries.iter().take(3) {
+        // Search knowledge base
+        let kb_url = format!(
+            "{}/api/now/table/kb_knowledge?sysparm_query=textLIKE{}^ORshort_descriptionLIKE{}&sysparm_limit=3",
+            instance_url.trim_end_matches('/'),
+            urlencoding::encode(expanded_query),
+            urlencoding::encode(expanded_query)
+        );
 
-    if let Ok(kb_response) = fetch_from_webview(webview_window, &kb_url, "GET", None).await {
-        if let Some(kb_array) = kb_response.get("result").and_then(|v| v.as_array()) {
-            for item in kb_array {
-                let title = item["short_description"]
-                    .as_str()
-                    .unwrap_or("Untitled")
-                    .to_string();
-                let sys_id = item["sys_id"].as_str().unwrap_or("");
-                let url = format!(
-                    "{}/kb_view.do?sysparm_article={sys_id}",
-                    instance_url.trim_end_matches('/')
-                );
-                let text = item["text"].as_str().unwrap_or("");
-                let excerpt = text.chars().take(300).collect();
-                let content = Some(if text.len() > 3000 {
-                    format!("{}...", &text[..3000])
-                } else {
-                    text.to_string()
-                });
+        tracing::info!("Executing ServiceNow KB search via webview with expanded query");
 
-                results.push(SearchResult {
-                    title,
-                    url,
-                    excerpt,
-                    content,
-                    source: "ServiceNow".to_string(),
-                });
+        if let Ok(kb_response) = fetch_from_webview(webview_window, &kb_url, "GET", None).await {
+            if let Some(kb_array) = kb_response.get("result").and_then(|v| v.as_array()) {
+                for item in kb_array {
+                    let title = item["short_description"]
+                        .as_str()
+                        .unwrap_or("Untitled")
+                        .to_string();
+                    let sys_id = item["sys_id"].as_str().unwrap_or("");
+                    let url = format!(
+                        "{}/kb_view.do?sysparm_article={sys_id}",
+                        instance_url.trim_end_matches('/')
+                    );
+                    let text = item["text"].as_str().unwrap_or("");
+                    let excerpt = text.chars().take(300).collect();
+                    let content = Some(if text.len() > 3000 {
+                        format!("{}...", &text[..3000])
+                    } else {
+                        text.to_string()
+                    });
+
+                    all_results.push(SearchResult {
+                        title,
+                        url,
+                        excerpt,
+                        content,
+                        source: "ServiceNow".to_string(),
+                    });
+                }
+            }
+        }
+
+        // Search incidents
+        let inc_url = format!(
+            "{}/api/now/table/incident?sysparm_query=short_descriptionLIKE{}^ORdescriptionLIKE{}&sysparm_limit=3&sysparm_display_value=true",
+            instance_url.trim_end_matches('/'),
+            urlencoding::encode(expanded_query),
+            urlencoding::encode(expanded_query)
+        );
+
+        if let Ok(inc_response) = fetch_from_webview(webview_window, &inc_url, "GET", None).await {
+            if let Some(inc_array) = inc_response.get("result").and_then(|v| v.as_array()) {
+                for item in inc_array {
+                    let number = item["number"].as_str().unwrap_or("Unknown");
+                    let title = format!(
+                        "Incident {}: {}",
+                        number,
+                        item["short_description"].as_str().unwrap_or("No title")
+                    );
+                    let sys_id = item["sys_id"].as_str().unwrap_or("");
+                    let url = format!(
+                        "{}/incident.do?sys_id={sys_id}",
+                        instance_url.trim_end_matches('/')
+                    );
+                    let description = item["description"].as_str().unwrap_or("");
+                    let resolution = item["close_notes"].as_str().unwrap_or("");
+                    let content = format!("Description: {description}\nResolution: {resolution}");
+                    let excerpt = content.chars().take(200).collect();
+
+                    all_results.push(SearchResult {
+                        title,
+                        url,
+                        excerpt,
+                        content: Some(content),
+                        source: "ServiceNow".to_string(),
+                    });
+                }
             }
         }
     }
 
-    // Search incidents
-    let inc_url = format!(
-        "{}/api/now/table/incident?sysparm_query=short_descriptionLIKE{}^ORdescriptionLIKE{}&sysparm_limit=3&sysparm_display_value=true",
-        instance_url.trim_end_matches('/'),
-        urlencoding::encode(query),
-        urlencoding::encode(query)
-    );
-
-    if let Ok(inc_response) = fetch_from_webview(webview_window, &inc_url, "GET", None).await {
-        if let Some(inc_array) = inc_response.get("result").and_then(|v| v.as_array()) {
-            for item in inc_array {
-                let number = item["number"].as_str().unwrap_or("Unknown");
-                let title = format!(
-                    "Incident {}: {}",
-                    number,
-                    item["short_description"].as_str().unwrap_or("No title")
-                );
-                let sys_id = item["sys_id"].as_str().unwrap_or("");
-                let url = format!(
-                    "{}/incident.do?sys_id={sys_id}",
-                    instance_url.trim_end_matches('/')
-                );
-                let description = item["description"].as_str().unwrap_or("");
-                let resolution = item["close_notes"].as_str().unwrap_or("");
-                let content = format!("Description: {description}\nResolution: {resolution}");
-                let excerpt = content.chars().take(200).collect();
-
-                results.push(SearchResult {
-                    title,
-                    url,
-                    excerpt,
-                    content: Some(content),
-                    source: "ServiceNow".to_string(),
-                });
-            }
-        }
-    }
+    all_results.sort_by(|a, b| a.url.cmp(&b.url));
+    all_results.dedup_by(|a, b| a.url == b.url);
 
     tracing::info!(
         "ServiceNow webview search returned {} results",
-        results.len()
+        all_results.len()
     );
-    Ok(results)
+    Ok(all_results)
 }
 
 /// Search Azure DevOps wiki using webview fetch
@@ -391,82 +406,89 @@ pub async fn search_azuredevops_wiki_webview<R: tauri::Runtime>(
     project: &str,
     query: &str,
 ) -> Result<Vec<SearchResult>, String> {
-    // Extract keywords for better search
-    let keywords = extract_keywords(query);
+    let expanded_queries = expand_query(query);
 
-    let search_text = if !keywords.is_empty() {
-        keywords.join(" ")
-    } else {
-        query.to_string()
-    };
+    let mut all_results = Vec::new();
 
-    // Azure DevOps wiki search API
-    let search_url = format!(
-        "{}/{}/_apis/wiki/wikis?api-version=7.0",
-        org_url.trim_end_matches('/'),
-        urlencoding::encode(project)
-    );
+    for expanded_query in expanded_queries.iter().take(3) {
+        // Extract keywords for better search
+        let keywords = extract_keywords(expanded_query);
 
-    tracing::info!(
-        "Executing Azure DevOps wiki search via webview for: {}",
-        search_text
-    );
+        let search_text = if !keywords.is_empty() {
+            keywords.join(" ")
+        } else {
+            expanded_query.clone()
+        };
 
-    // First, get list of wikis
-    let wikis_response = fetch_from_webview(webview_window, &search_url, "GET", None).await?;
+        // Azure DevOps wiki search API
+        let search_url = format!(
+            "{}/{}/_apis/wiki/wikis?api-version=7.0",
+            org_url.trim_end_matches('/'),
+            urlencoding::encode(project)
+        );
 
-    let mut results = Vec::new();
+        tracing::info!(
+            "Executing Azure DevOps wiki search via webview for: {}",
+            search_text
+        );
 
-    if let Some(wikis_array) = wikis_response.get("value").and_then(|v| v.as_array()) {
-        // Search each wiki
-        for wiki in wikis_array.iter().take(3) {
-            let wiki_id = wiki["id"].as_str().unwrap_or("");
+        // First, get list of wikis
+        let wikis_response = fetch_from_webview(webview_window, &search_url, "GET", None).await?;
 
-            if wiki_id.is_empty() {
-                continue;
-            }
+        if let Some(wikis_array) = wikis_response.get("value").and_then(|v| v.as_array()) {
+            // Search each wiki
+            for wiki in wikis_array.iter().take(3) {
+                let wiki_id = wiki["id"].as_str().unwrap_or("");
 
-            // Search wiki pages
-            let pages_url = format!(
-                "{}/{}/_apis/wiki/wikis/{}/pages?recursionLevel=Full&includeContent=true&api-version=7.0",
-                org_url.trim_end_matches('/'),
-                urlencoding::encode(project),
-                urlencoding::encode(wiki_id)
-            );
+                if wiki_id.is_empty() {
+                    continue;
+                }
 
-            if let Ok(pages_response) =
-                fetch_from_webview(webview_window, &pages_url, "GET", None).await
-            {
-                // Try to get "page" field, or use the response itself if it's the page object
-                if let Some(page) = pages_response.get("page") {
-                    search_page_recursive(
-                        page,
-                        &search_text,
-                        org_url,
-                        project,
-                        wiki_id,
-                        &mut results,
-                    );
-                } else {
-                    // Response might be the page object itself
-                    search_page_recursive(
-                        &pages_response,
-                        &search_text,
-                        org_url,
-                        project,
-                        wiki_id,
-                        &mut results,
-                    );
+                // Search wiki pages
+                let pages_url = format!(
+                    "{}/{}/_apis/wiki/wikis/{}/pages?recursionLevel=Full&includeContent=true&api-version=7.0",
+                    org_url.trim_end_matches('/'),
+                    urlencoding::encode(project),
+                    urlencoding::encode(wiki_id)
+                );
+
+                if let Ok(pages_response) =
+                    fetch_from_webview(webview_window, &pages_url, "GET", None).await
+                {
+                    // Try to get "page" field, or use the response itself if it's the page object
+                    if let Some(page) = pages_response.get("page") {
+                        search_page_recursive(
+                            page,
+                            &search_text,
+                            org_url,
+                            project,
+                            wiki_id,
+                            &mut all_results,
+                        );
+                    } else {
+                        // Response might be the page object itself
+                        search_page_recursive(
+                            &pages_response,
+                            &search_text,
+                            org_url,
+                            project,
+                            wiki_id,
+                            &mut all_results,
+                        );
+                    }
                 }
             }
         }
     }
 
+    all_results.sort_by(|a, b| a.url.cmp(&b.url));
+    all_results.dedup_by(|a, b| a.url == b.url);
+
     tracing::info!(
         "Azure DevOps wiki webview search returned {} results",
-        results.len()
+        all_results.len()
     );
-    Ok(results)
+    Ok(all_results)
 }
 
 /// Recursively search through wiki pages for matching content
@@ -544,115 +566,124 @@ pub async fn search_azuredevops_workitems_webview<R: tauri::Runtime>(
     project: &str,
     query: &str,
 ) -> Result<Vec<SearchResult>, String> {
-    // Extract keywords
-    let keywords = extract_keywords(query);
+    let expanded_queries = expand_query(query);
 
-    // Check if query contains a work item ID (pure number)
-    let work_item_id: Option<i64> = keywords
-        .iter()
-        .filter(|k| k.chars().all(|c| c.is_numeric()))
-        .filter_map(|k| k.parse::<i64>().ok())
-        .next();
+    let mut all_results = Vec::new();
 
-    // Build WIQL query
-    let wiql_query = if let Some(id) = work_item_id {
-        // Search by specific ID
-        format!(
-            "SELECT [System.Id], [System.Title], [System.Description], [System.WorkItemType] \
-             FROM WorkItems WHERE [System.Id] = {id}"
-        )
-    } else {
-        // Search by text in title/description
-        let search_terms = if !keywords.is_empty() {
-            keywords.join(" ")
+    for expanded_query in expanded_queries.iter().take(3) {
+        // Extract keywords
+        let keywords = extract_keywords(expanded_query);
+
+        // Check if query contains a work item ID (pure number)
+        let work_item_id: Option<i64> = keywords
+            .iter()
+            .filter(|k| k.chars().all(|c| c.is_numeric()))
+            .filter_map(|k| k.parse::<i64>().ok())
+            .next();
+
+        // Build WIQL query
+        let wiql_query = if let Some(id) = work_item_id {
+            // Search by specific ID
+            format!(
+                "SELECT [System.Id], [System.Title], [System.Description], [System.WorkItemType] \
+                 FROM WorkItems WHERE [System.Id] = {id}"
+            )
         } else {
-            query.to_string()
+            // Search by text in title/description
+            let search_terms = if !keywords.is_empty() {
+                keywords.join(" ")
+            } else {
+                expanded_query.clone()
+            };
+
+            // Use CONTAINS for text search (case-insensitive)
+            format!(
+                "SELECT [System.Id], [System.Title], [System.Description], [System.WorkItemType] \
+                 FROM WorkItems WHERE [System.TeamProject] = '{project}' \
+                 AND ([System.Title] CONTAINS '{search_terms}' OR [System.Description] CONTAINS '{search_terms}') \
+                 ORDER BY [System.ChangedDate] DESC"
+            )
         };
 
-        // Use CONTAINS for text search (case-insensitive)
-        format!(
-            "SELECT [System.Id], [System.Title], [System.Description], [System.WorkItemType] \
-             FROM WorkItems WHERE [System.TeamProject] = '{project}' \
-             AND ([System.Title] CONTAINS '{search_terms}' OR [System.Description] CONTAINS '{search_terms}') \
-             ORDER BY [System.ChangedDate] DESC"
-        )
-    };
+        let wiql_url = format!(
+            "{}/{}/_apis/wit/wiql?api-version=7.0",
+            org_url.trim_end_matches('/'),
+            urlencoding::encode(project)
+        );
 
-    let wiql_url = format!(
-        "{}/{}/_apis/wit/wiql?api-version=7.0",
-        org_url.trim_end_matches('/'),
-        urlencoding::encode(project)
-    );
+        let body = serde_json::json!({
+            "query": wiql_query
+        })
+        .to_string();
 
-    let body = serde_json::json!({
-        "query": wiql_query
-    })
-    .to_string();
+        tracing::info!("Executing Azure DevOps work item search via webview");
+        tracing::debug!("WIQL query: {}", wiql_query);
+        tracing::debug!("Request URL: {}", wiql_url);
 
-    tracing::info!("Executing Azure DevOps work item search via webview");
-    tracing::debug!("WIQL query: {}", wiql_query);
-    tracing::debug!("Request URL: {}", wiql_url);
+        let wiql_response =
+            fetch_from_webview(webview_window, &wiql_url, "POST", Some(&body)).await?;
 
-    let wiql_response = fetch_from_webview(webview_window, &wiql_url, "POST", Some(&body)).await?;
+        if let Some(work_items) = wiql_response.get("workItems").and_then(|v| v.as_array()) {
+            // Fetch details for first 5 work items
+            for item in work_items.iter().take(5) {
+                if let Some(id) = item.get("id").and_then(|i| i.as_i64()) {
+                    let details_url = format!(
+                        "{}/_apis/wit/workitems/{}?api-version=7.0",
+                        org_url.trim_end_matches('/'),
+                        id
+                    );
 
-    let mut results = Vec::new();
+                    if let Ok(details) =
+                        fetch_from_webview(webview_window, &details_url, "GET", None).await
+                    {
+                        if let Some(fields) = details.get("fields") {
+                            let title = fields
+                                .get("System.Title")
+                                .and_then(|t| t.as_str())
+                                .unwrap_or("Untitled");
+                            let work_item_type = fields
+                                .get("System.WorkItemType")
+                                .and_then(|t| t.as_str())
+                                .unwrap_or("Item");
+                            let description = fields
+                                .get("System.Description")
+                                .and_then(|d| d.as_str())
+                                .unwrap_or("");
 
-    if let Some(work_items) = wiql_response.get("workItems").and_then(|v| v.as_array()) {
-        // Fetch details for first 5 work items
-        for item in work_items.iter().take(5) {
-            if let Some(id) = item.get("id").and_then(|i| i.as_i64()) {
-                let details_url = format!(
-                    "{}/_apis/wit/workitems/{}?api-version=7.0",
-                    org_url.trim_end_matches('/'),
-                    id
-                );
+                            let clean_description = strip_html_simple(description);
+                            let excerpt = clean_description.chars().take(200).collect();
 
-                if let Ok(details) =
-                    fetch_from_webview(webview_window, &details_url, "GET", None).await
-                {
-                    if let Some(fields) = details.get("fields") {
-                        let title = fields
-                            .get("System.Title")
-                            .and_then(|t| t.as_str())
-                            .unwrap_or("Untitled");
-                        let work_item_type = fields
-                            .get("System.WorkItemType")
-                            .and_then(|t| t.as_str())
-                            .unwrap_or("Item");
-                        let description = fields
-                            .get("System.Description")
-                            .and_then(|d| d.as_str())
-                            .unwrap_or("");
+                            let url =
+                                format!("{}/_workitems/edit/{id}", org_url.trim_end_matches('/'));
 
-                        let clean_description = strip_html_simple(description);
-                        let excerpt = clean_description.chars().take(200).collect();
+                            let full_content = if clean_description.len() > 3000 {
+                                format!("{}...", &clean_description[..3000])
+                            } else {
+                                clean_description.clone()
+                            };
 
-                        let url = format!("{}/_workitems/edit/{id}", org_url.trim_end_matches('/'));
-
-                        let full_content = if clean_description.len() > 3000 {
-                            format!("{}...", &clean_description[..3000])
-                        } else {
-                            clean_description.clone()
-                        };
-
-                        results.push(SearchResult {
-                            title: format!("{work_item_type} #{id}: {title}"),
-                            url,
-                            excerpt,
-                            content: Some(full_content),
-                            source: "Azure DevOps".to_string(),
-                        });
+                            all_results.push(SearchResult {
+                                title: format!("{work_item_type} #{id}: {title}"),
+                                url,
+                                excerpt,
+                                content: Some(full_content),
+                                source: "Azure DevOps".to_string(),
+                            });
+                        }
                     }
                 }
             }
         }
     }
 
+    all_results.sort_by(|a, b| a.url.cmp(&b.url));
+    all_results.dedup_by(|a, b| a.url == b.url);
+
     tracing::info!(
         "Azure DevOps work items webview search returned {} results",
-        results.len()
+        all_results.len()
     );
-    Ok(results)
+    Ok(all_results)
 }
 
 /// Add a comment to an Azure DevOps work item
