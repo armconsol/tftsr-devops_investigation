@@ -9,9 +9,6 @@ fn escape_wiql(s: &str) -> String {
         .replace('\\', "\\\\")
         .replace('(', "\\(")
         .replace(')', "\\)")
-        .replace('~', "\\~")
-        .replace('*', "\\*")
-        .replace('?', "\\?")
         .replace(';', "\\;")
         .replace('=', "\\=")
 }
@@ -207,7 +204,7 @@ pub async fn search_work_items(
 
         let safe_query = escape_wiql(expanded_query);
         let wiql_query = format!(
-            "SELECT [System.Id], [System.Title], [System.Description], [System.State] FROM WorkItems WHERE [System.TeamProject] = '{project}' AND ([System.Title] CONTAINS '{safe_query}' OR [System.Description] CONTAINS '{safe_query}') ORDER BY [System.ChangedDate] DESC"
+            "SELECT [System.Id], [System.Title], [System.Description], [System.State] FROM WorkItems WHERE [System.TeamProject] = '{project}' AND ([System.Title] ~ '{safe_query}' OR [System.Description] ~ '{safe_query}') ORDER BY [System.ChangedDate] DESC"
         );
 
         let wiql_body = serde_json::json!({
@@ -343,21 +340,6 @@ mod tests {
     fn test_escape_wiql_escapes_parens() {
         assert_eq!(escape_wiql("test(paren"), r#"test\(paren"#);
         assert_eq!(escape_wiql("test)paren"), r#"test\)paren"#);
-    }
-
-    #[test]
-    fn test_escape_wiql_escapes_tilde() {
-        assert_eq!(escape_wiql("test~tilde"), r#"test\~tilde"#);
-    }
-
-    #[test]
-    fn test_escape_wiql_escapes_asterisk() {
-        assert_eq!(escape_wiql("test*star"), r#"test\*star"#);
-    }
-
-    #[test]
-    fn test_escape_wiql_escapes_question() {
-        assert_eq!(escape_wiql("test?quest"), r#"test\?quest"#);
     }
 
     #[test]
