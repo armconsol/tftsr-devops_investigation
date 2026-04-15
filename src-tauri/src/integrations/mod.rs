@@ -4,6 +4,7 @@ pub mod azuredevops_search;
 pub mod callback_server;
 pub mod confluence;
 pub mod confluence_search;
+pub mod query_expansion;
 pub mod servicenow;
 pub mod servicenow_search;
 pub mod webview_auth;

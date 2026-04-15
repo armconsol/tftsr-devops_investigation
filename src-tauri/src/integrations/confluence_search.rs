@@ -1,15 +1,20 @@
 use serde::{Deserialize, Serialize};
 
+use super::query_expansion::expand_query;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SearchResult {
     pub title: String,
     pub url: String,
     pub excerpt: String,
     pub content: Option<String>,
-    pub source: String, // "confluence", "servicenow", "azuredevops"
+    pub source: String,
 }
 
 /// Search Confluence for content matching the query
+///
+/// This function expands the user query with related terms, synonyms, and variations
+/// to improve search coverage across Confluence spaces.
 pub async fn search_confluence(
     base_url: &str,
     query: &str,
@@ -18,86 +23,87 @@ pub async fn search_confluence(
     let cookie_header = crate::integrations::webview_auth::cookies_to_header(cookies);
     let client = reqwest::Client::new();
 
-    // Use Confluence CQL search
-    let search_url = format!(
-        "{}/rest/api/search?cql=text~\"{}\"&limit=5",
-        base_url.trim_end_matches('/'),
-        urlencoding::encode(query)
-    );
+    let expanded_queries = expand_query(query);
 
-    tracing::info!("Searching Confluence: {}", search_url);
+    let mut all_results = Vec::new();
 
-    let resp = client
-        .get(&search_url)
-        .header("Cookie", &cookie_header)
-        .header("Accept", "application/json")
-        .send()
-        .await
-        .map_err(|e| format!("Confluence search request failed: {e}"))?;
+    for expanded_query in expanded_queries.iter().take(3) {
+        let search_url = format!(
+            "{}/rest/api/search?cql=text~\"{}\"&limit=5",
+            base_url.trim_end_matches('/'),
+            urlencoding::encode(expanded_query)
+        );
 
-    if !resp.status().is_success() {
-        let status = resp.status();
-        let text = resp.text().await.unwrap_or_default();
-        return Err(format!(
-            "Confluence search failed with status {status}: {text}"
-        ));
-    }
+        tracing::info!("Searching Confluence with expanded query: {}", search_url);
 
-    let json: serde_json::Value = resp
-        .json()
-        .await
-        .map_err(|e| format!("Failed to parse Confluence search response: {e}"))?;
+        let resp = client
+            .get(&search_url)
+            .header("Cookie", &cookie_header)
+            .header("Accept", "application/json")
+            .send()
+            .await
+            .map_err(|e| format!("Confluence search request failed: {e}"))?;
 
-    let mut results = Vec::new();
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let text = resp.text().await.unwrap_or_default();
+            tracing::warn!("Confluence search failed with status {status}: {text}");
+            continue;
+        }
 
-    if let Some(results_array) = json["results"].as_array() {
-        for item in results_array.iter().take(3) {
-            // Take top 3 results
-            let title = item["title"].as_str().unwrap_or("Untitled").to_string();
+        let json: serde_json::Value = resp
+            .json()
+            .await
+            .map_err(|e| format!("Failed to parse Confluence search response: {e}"))?;
 
-            let id = item["content"]["id"].as_str();
-            let space_key = item["content"]["space"]["key"].as_str();
+        if let Some(results_array) = json["results"].as_array() {
+            for item in results_array.iter().take(3) {
+                let title = item["title"].as_str().unwrap_or("Untitled").to_string();
 
-            // Build URL
-            let url = if let (Some(id_str), Some(space)) = (id, space_key) {
-                format!(
-                    "{}/display/{}/{}",
-                    base_url.trim_end_matches('/'),
-                    space,
-                    id_str
-                )
-            } else {
-                base_url.to_string()
-            };
+                let id = item["content"]["id"].as_str();
+                let space_key = item["content"]["space"]["key"].as_str();
 
-            // Get excerpt from search result
-            let excerpt = item["excerpt"]
-                .as_str()
-                .unwrap_or("")
-                .to_string()
-                .replace("<span class=\"highlight\">", "")
-                .replace("</span>", "");
+                let url = if let (Some(id_str), Some(space)) = (id, space_key) {
+                    format!(
+                        "{}/display/{}/{}",
+                        base_url.trim_end_matches('/'),
+                        space,
+                        id_str
+                    )
+                } else {
+                    base_url.to_string()
+                };
 
-            // Fetch full page content
-            let content = if let Some(content_id) = id {
-                fetch_page_content(base_url, content_id, &cookie_header)
-                    .await
-                    .ok()
-            } else {
-                None
-            };
+                let excerpt = item["excerpt"]
+                    .as_str()
+                    .unwrap_or("")
+                    .to_string()
+                    .replace("<span class=\"highlight\">", "")
+                    .replace("</span>", "");
 
-            results.push(SearchResult {
-                title,
-                url,
-                excerpt,
-                content,
-                source: "Confluence".to_string(),
-            });
+                let content = if let Some(content_id) = id {
+                    fetch_page_content(base_url, content_id, &cookie_header)
+                        .await
+                        .ok()
+                } else {
+                    None
+                };
+
+                all_results.push(SearchResult {
+                    title,
+                    url,
+                    excerpt,
+                    content,
+                    source: "Confluence".to_string(),
+                });
+            }
         }
     }
 
-    Ok(results)
+    all_results.sort_by(|a, b| a.url.cmp(&b.url));
+    all_results.dedup_by(|a, b| a.url == b.url);
+
+    Ok(all_results)
 }
 
 /// Fetch full content of a Confluence page
