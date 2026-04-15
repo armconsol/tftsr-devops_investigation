@@ -1,6 +1,9 @@
 use serde::{Deserialize, Serialize};
+use url::Url;
 
 use super::query_expansion::expand_query;
+
+const MAX_EXPANDED_QUERIES: usize = 3;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SearchResult {
@@ -9,6 +12,25 @@ pub struct SearchResult {
     pub excerpt: String,
     pub content: Option<String>,
     pub source: String,
+}
+
+fn canonicalize_url(url: &str) -> String {
+    Url::parse(url)
+        .ok()
+        .map(|u| {
+            let mut u = u.clone();
+            u.set_fragment(None);
+            u.set_query(None);
+            u.to_string()
+        })
+        .unwrap_or_else(|| url.to_string())
+}
+
+fn escape_cql(s: &str) -> String {
+    s.replace('"', "\\\"")
+        .replace(')', "\\)")
+        .replace('(', "\\(")
+        .replace('~', "\\~")
 }
 
 /// Search Confluence for content matching the query
@@ -27,11 +49,12 @@ pub async fn search_confluence(
 
     let mut all_results = Vec::new();
 
-    for expanded_query in expanded_queries.iter().take(3) {
+    for expanded_query in expanded_queries.iter().take(MAX_EXPANDED_QUERIES) {
+        let safe_query = escape_cql(expanded_query);
         let search_url = format!(
             "{}/rest/api/search?cql=text~\"{}\"&limit=5",
             base_url.trim_end_matches('/'),
-            urlencoding::encode(expanded_query)
+            urlencoding::encode(&safe_query)
         );
 
         tracing::info!("Searching Confluence with expanded query: {}", search_url);
@@ -100,8 +123,8 @@ pub async fn search_confluence(
         }
     }
 
-    all_results.sort_by(|a, b| a.url.cmp(&b.url));
-    all_results.dedup_by(|a, b| a.url == b.url);
+    all_results.sort_by(|a, b| canonicalize_url(&a.url).cmp(&canonicalize_url(&b.url)));
+    all_results.dedup_by(|a, b| canonicalize_url(&a.url) == canonicalize_url(&b.url));
 
     Ok(all_results)
 }

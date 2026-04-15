@@ -78,6 +78,10 @@ fn get_product_synonyms(query: &str) -> Vec<String> {
 /// A vector of query strings to search, with the original query first
 /// followed by expanded variations
 pub fn expand_query(query: &str) -> Vec<String> {
+    if query.trim().is_empty() {
+        return Vec::new();
+    }
+
     let mut expanded = vec![query.to_string()];
 
     // Get product synonyms

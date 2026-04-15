@@ -1,6 +1,8 @@
 use super::confluence_search::SearchResult;
 use crate::integrations::query_expansion::expand_query;
 
+const MAX_EXPANDED_QUERIES: usize = 3;
+
 /// Search ServiceNow Knowledge Base for content matching the query
 pub async fn search_servicenow(
     instance_url: &str,
@@ -14,7 +16,7 @@ pub async fn search_servicenow(
 
     let mut all_results = Vec::new();
 
-    for expanded_query in expanded_queries.iter().take(3) {
+    for expanded_query in expanded_queries.iter().take(MAX_EXPANDED_QUERIES) {
         // Search Knowledge Base articles
         let search_url = format!(
             "{}/api/now/table/kb_knowledge?sysparm_query=textLIKE{}^ORshort_descriptionLIKE{}&sysparm_limit=5",
@@ -23,7 +25,7 @@ pub async fn search_servicenow(
             urlencoding::encode(expanded_query)
         );
 
-        tracing::info!("Searching ServiceNow with expanded query: {}", search_url);
+        tracing::info!("Searching ServiceNow with query: {}", expanded_query);
 
         let resp = client
             .get(&search_url)
@@ -46,7 +48,7 @@ pub async fn search_servicenow(
             .map_err(|e| format!("Failed to parse ServiceNow search response: {e}"))?;
 
         if let Some(result_array) = json["result"].as_array() {
-            for item in result_array.iter().take(3) {
+            for item in result_array.iter().take(MAX_EXPANDED_QUERIES) {
                 // Take top 3 results
                 let title = item["short_description"]
                     .as_str()
@@ -107,7 +109,7 @@ pub async fn search_incidents(
 
     let mut all_results = Vec::new();
 
-    for expanded_query in expanded_queries.iter().take(3) {
+    for expanded_query in expanded_queries.iter().take(MAX_EXPANDED_QUERIES) {
         // Search incidents
         let search_url = format!(
             "{}/api/now/table/incident?sysparm_query=short_descriptionLIKE{}^ORdescriptionLIKE{}&sysparm_limit=3&sysparm_display_value=true",
@@ -117,8 +119,8 @@ pub async fn search_incidents(
         );
 
         tracing::info!(
-            "Searching ServiceNow incidents with expanded query: {}",
-            search_url
+            "Searching ServiceNow incidents with query: {}",
+            expanded_query
         );
 
         let resp = client
