@@ -4,13 +4,21 @@ All notable changes to TFTSR are documented here.
 Commit types shown: feat, fix, perf, docs, refactor.
 CI, chore, and build changes are excluded.
 
-## [Unreleased]
+## [0.2.65] — 2026-04-15
 
 ### Bug Fixes
 - Add --locked to cargo commands and improve version update script
+- Remove invalid --locked flag from cargo commands and fix format string
+- **integrations**: Security and correctness improvements
+- Correct WIQL syntax and escape_wiql implementation
 
 ### Features
 - Implement dynamic versioning from Git tags
+- **integrations**: Implement query expansion for semantic search
+
+### Security
+- Fix query expansion issues from PR review
+- Address all issues from automated PR review
 
 ## [0.2.63] — 2026-04-13
 
