@@ -31,6 +31,10 @@ fn escape_cql(s: &str) -> String {
         .replace(')', "\\)")
         .replace('(', "\\(")
         .replace('~', "\\~")
+        .replace('&', "\\&")
+        .replace('|', "\\|")
+        .replace('+', "\\+")
+        .replace('-', "\\-")
 }
 
 /// Search Confluence for content matching the query
@@ -100,12 +104,10 @@ pub async fn search_confluence(
                     base_url.to_string()
                 };
 
-                let excerpt = item["excerpt"]
-                    .as_str()
-                    .unwrap_or("")
-                    .to_string()
-                    .replace("<span class=\"highlight\">", "")
-                    .replace("</span>", "");
+                let excerpt = strip_html_tags(item["excerpt"].as_str().unwrap_or(""))
+                    .chars()
+                    .take(300)
+                    .collect::<String>();
 
                 let content = if let Some(content_id) = id {
                     fetch_page_content(base_url, content_id, &cookie_header)
@@ -216,5 +218,44 @@ mod tests {
 
         let html2 = "<div><h1>Title</h1><p>Content</p></div>";
         assert_eq!(strip_html_tags(html2), "TitleContent");
+    }
+
+    #[test]
+    fn test_escape_cql_escapes_special_chars() {
+        assert_eq!(escape_cql("test\"quote"), r#"test\"quote"#);
+        assert_eq!(escape_cql("test(paren"), r#"test\(paren"#);
+        assert_eq!(escape_cql("test)paren"), r#"test\)paren"#);
+        assert_eq!(escape_cql("test~tilde"), r#"test\~tilde"#);
+        assert_eq!(escape_cql("test&and"), r#"test\&and"#);
+        assert_eq!(escape_cql("test|or"), r#"test\|or"#);
+        assert_eq!(escape_cql("test+plus"), r#"test\+plus"#);
+        assert_eq!(escape_cql("test-minus"), r#"test\-minus"#);
+    }
+
+    #[test]
+    fn test_escape_cql_no_special_chars() {
+        assert_eq!(escape_cql("simple query"), "simple query");
+    }
+
+    #[test]
+    fn test_canonicalize_url_removes_fragment() {
+        assert_eq!(
+            canonicalize_url("https://example.com/page#section"),
+            "https://example.com/page"
+        );
+    }
+
+    #[test]
+    fn test_canonicalize_url_removes_query() {
+        assert_eq!(
+            canonicalize_url("https://example.com/page?param=value"),
+            "https://example.com/page"
+        );
+    }
+
+    #[test]
+    fn test_canonicalize_url_handles_malformed() {
+        // Malformed URLs fall back to original
+        assert_eq!(canonicalize_url("not a url"), "not a url");
     }
 }

@@ -16,6 +16,29 @@ fn escape_wiql(s: &str) -> String {
         .replace('=', "\\=")
 }
 
+/// Basic HTML tag stripping to prevent XSS in excerpts
+fn strip_html_tags(html: &str) -> String {
+    let mut result = String::new();
+    let mut in_tag = false;
+
+    for ch in html.chars() {
+        match ch {
+            '<' => in_tag = true,
+            '>' => in_tag = false,
+            _ if !in_tag => result.push(ch),
+            _ => {}
+        }
+    }
+
+    // Clean up whitespace
+    result
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .trim()
+        .to_string()
+}
+
 /// Search Azure DevOps Wiki for content matching the query
 pub async fn search_wiki(
     org_url: &str,
@@ -81,9 +104,7 @@ pub async fn search_wiki(
                     path
                 );
 
-                let excerpt = item["content"]
-                    .as_str()
-                    .unwrap_or("")
+                let excerpt = strip_html_tags(item["content"].as_str().unwrap_or(""))
                     .chars()
                     .take(300)
                     .collect::<String>();
@@ -297,4 +318,69 @@ async fn fetch_work_item_details(
         content: Some(content),
         source: "Azure DevOps".to_string(),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_escape_wiql_escapes_single_quotes() {
+        assert_eq!(escape_wiql("test'single"), "test''single");
+    }
+
+    #[test]
+    fn test_escape_wiql_escapes_double_quotes() {
+        assert_eq!(escape_wiql("test\"double"), "test\\\\\"double");
+    }
+
+    #[test]
+    fn test_escape_wiql_escapes_backslash() {
+        assert_eq!(escape_wiql("test\\backslash"), r#"test\\backslash"#);
+    }
+
+    #[test]
+    fn test_escape_wiql_escapes_parens() {
+        assert_eq!(escape_wiql("test(paren"), r#"test\(paren"#);
+        assert_eq!(escape_wiql("test)paren"), r#"test\)paren"#);
+    }
+
+    #[test]
+    fn test_escape_wiql_escapes_tilde() {
+        assert_eq!(escape_wiql("test~tilde"), r#"test\~tilde"#);
+    }
+
+    #[test]
+    fn test_escape_wiql_escapes_asterisk() {
+        assert_eq!(escape_wiql("test*star"), r#"test\*star"#);
+    }
+
+    #[test]
+    fn test_escape_wiql_escapes_question() {
+        assert_eq!(escape_wiql("test?quest"), r#"test\?quest"#);
+    }
+
+    #[test]
+    fn test_escape_wiql_escapes_semicolon() {
+        assert_eq!(escape_wiql("test;semi"), r#"test\;semi"#);
+    }
+
+    #[test]
+    fn test_escape_wiql_escapes_equals() {
+        assert_eq!(escape_wiql("test=equal"), r#"test\=equal"#);
+    }
+
+    #[test]
+    fn test_escape_wiql_no_special_chars() {
+        assert_eq!(escape_wiql("simple query"), "simple query");
+    }
+
+    #[test]
+    fn test_strip_html_tags() {
+        let html = "<p>Hello <strong>world</strong>!</p>";
+        assert_eq!(strip_html_tags(html), "Hello world!");
+
+        let html2 = "<div><h1>Title</h1><p>Content</p></div>";
+        assert_eq!(strip_html_tags(html2), "TitleContent");
+    }
 }

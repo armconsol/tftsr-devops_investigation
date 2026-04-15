@@ -76,7 +76,8 @@ fn get_product_synonyms(query: &str) -> Vec<String> {
 ///
 /// # Returns
 /// A vector of query strings to search, with the original query first
-/// followed by expanded variations
+/// followed by expanded variations. Returns empty only if input is empty or
+/// whitespace-only. Otherwise, always returns at least the original query.
 pub fn expand_query(query: &str) -> Vec<String> {
     if query.trim().is_empty() {
         return Vec::new();
