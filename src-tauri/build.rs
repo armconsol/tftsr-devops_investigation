@@ -1,7 +1,7 @@
 fn main() {
     let version = get_version_from_git();
 
-    println!("cargo:rustc-env=APP_VERSION={}", version);
+    println!("cargo:rustc-env=APP_VERSION={version}");
     println!("cargo:rerun-if-changed=.git/refs/heads/master");
     println!("cargo:rerun-if-changed=.git/refs/tags");
 
