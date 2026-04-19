@@ -778,7 +778,9 @@ mod tests {
     fn test_timeline_events_indexes() {
         let conn = setup_test_db();
         let mut stmt = conn
-            .prepare("SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='timeline_events'")
+            .prepare(
+                "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='timeline_events'",
+            )
             .unwrap();
         let indexes: Vec<String> = stmt
             .query_map([], |row| row.get(0))

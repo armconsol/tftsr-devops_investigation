@@ -130,14 +130,21 @@ pub struct TimelineEvent {
 }
 
 impl TimelineEvent {
-    pub fn new(issue_id: String, event_type: String, description: String, metadata: String) -> Self {
+    pub fn new(
+        issue_id: String,
+        event_type: String,
+        description: String,
+        metadata: String,
+    ) -> Self {
         TimelineEvent {
             id: Uuid::now_v7().to_string(),
             issue_id,
             event_type,
             description,
             metadata,
-            created_at: chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC").to_string(),
+            created_at: chrono::Utc::now()
+                .format("%Y-%m-%d %H:%M:%S UTC")
+                .to_string(),
         }
     }
 }

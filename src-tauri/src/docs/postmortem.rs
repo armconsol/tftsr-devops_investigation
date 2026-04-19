@@ -1,4 +1,5 @@
 use crate::db::models::IssueDetail;
+use crate::docs::rca::{calculate_duration, format_event_type};
 
 pub fn generate_postmortem_markdown(detail: &IssueDetail) -> String {
     let issue = &detail.issue;
@@ -51,7 +52,16 @@ pub fn generate_postmortem_markdown(detail: &IssueDetail) -> String {
 
     // Impact
     md.push_str("## Impact\n\n");
-    md.push_str("- **Duration:** _[How long did the incident last?]_\n");
+    if detail.timeline_events.len() >= 2 {
+        let first = &detail.timeline_events[0].created_at;
+        let last = &detail.timeline_events[detail.timeline_events.len() - 1].created_at;
+        md.push_str(&format!(
+            "- **Duration:** {}\n",
+            calculate_duration(first, last)
+        ));
+    } else {
+        md.push_str("- **Duration:** _[How long did the incident last?]_\n");
+    }
     md.push_str("- **Users Affected:** _[Number/percentage of affected users]_\n");
     md.push_str("- **Revenue Impact:** _[Financial impact, if applicable]_\n");
     md.push_str("- **SLA Impact:** _[Were any SLAs breached?]_\n\n");
@@ -67,7 +77,19 @@ pub fn generate_postmortem_markdown(detail: &IssueDetail) -> String {
     if let Some(ref resolved) = issue.resolved_at {
         md.push_str(&format!("| {resolved} | Issue resolved |\n"));
     }
-    md.push_str("| _HH:MM_ | _[Add additional timeline events]_ |\n\n");
+    if detail.timeline_events.is_empty() {
+        md.push_str("| _HH:MM_ | _[Add additional timeline events]_ |\n");
+    } else {
+        for event in &detail.timeline_events {
+            md.push_str(&format!(
+                "| {} | {} - {} |\n",
+                event.created_at,
+                format_event_type(&event.event_type),
+                event.description
+            ));
+        }
+    }
+    md.push('\n');
 
     // Root Cause Analysis
     md.push_str("## Root Cause Analysis\n\n");
@@ -114,6 +136,19 @@ pub fn generate_postmortem_markdown(detail: &IssueDetail) -> String {
 
     // What Went Well
     md.push_str("## What Went Well\n\n");
+    if !detail.resolution_steps.is_empty() {
+        md.push_str(&format!(
+            "- Systematic 5-whys analysis conducted ({} steps completed)\n",
+            detail.resolution_steps.len()
+        ));
+    }
+    if detail
+        .timeline_events
+        .iter()
+        .any(|e| e.event_type == "root_cause_identified")
+    {
+        md.push_str("- Root cause was identified during triage\n");
+    }
     md.push_str("- _[e.g., Quick detection through existing alerts]_\n");
     md.push_str("- _[e.g., Effective cross-team collaboration]_\n");
     md.push_str("- _[e.g., Smooth communication with stakeholders]_\n\n");
@@ -158,7 +193,7 @@ pub fn generate_postmortem_markdown(detail: &IssueDetail) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::models::{Issue, IssueDetail, ResolutionStep};
+    use crate::db::models::{Issue, IssueDetail, ResolutionStep, TimelineEvent};
 
     fn make_test_detail() -> IssueDetail {
         IssueDetail {
@@ -246,5 +281,77 @@ mod tests {
         let md = generate_postmortem_markdown(&make_test_detail());
         assert!(md.contains("| Priority | Action | Owner | Due Date | Status |"));
         assert!(md.contains("| P0 |"));
+    }
+
+    #[test]
+    fn test_postmortem_timeline_with_real_events() {
+        let mut detail = make_test_detail();
+        detail.timeline_events = vec![
+            TimelineEvent {
+                id: "te-1".to_string(),
+                issue_id: "pm-456".to_string(),
+                event_type: "triage_started".to_string(),
+                description: "Triage initiated".to_string(),
+                metadata: "{}".to_string(),
+                created_at: "2025-02-10 08:05:00 UTC".to_string(),
+            },
+            TimelineEvent {
+                id: "te-2".to_string(),
+                issue_id: "pm-456".to_string(),
+                event_type: "root_cause_identified".to_string(),
+                description: "Certificate expiry confirmed".to_string(),
+                metadata: "{}".to_string(),
+                created_at: "2025-02-10 10:30:00 UTC".to_string(),
+            },
+        ];
+        let md = generate_postmortem_markdown(&detail);
+        assert!(md.contains("## Timeline"));
+        assert!(md.contains("| 2025-02-10 08:05:00 UTC | Triage Started - Triage initiated |"));
+        assert!(md.contains(
+            "| 2025-02-10 10:30:00 UTC | Root Cause Identified - Certificate expiry confirmed |"
+        ));
+        assert!(!md.contains("_[Add additional timeline events]_"));
+    }
+
+    #[test]
+    fn test_postmortem_impact_with_duration() {
+        let mut detail = make_test_detail();
+        detail.timeline_events = vec![
+            TimelineEvent {
+                id: "te-1".to_string(),
+                issue_id: "pm-456".to_string(),
+                event_type: "triage_started".to_string(),
+                description: "Triage initiated".to_string(),
+                metadata: "{}".to_string(),
+                created_at: "2025-02-10 08:00:00 UTC".to_string(),
+            },
+            TimelineEvent {
+                id: "te-2".to_string(),
+                issue_id: "pm-456".to_string(),
+                event_type: "root_cause_identified".to_string(),
+                description: "Found it".to_string(),
+                metadata: "{}".to_string(),
+                created_at: "2025-02-10 10:30:00 UTC".to_string(),
+            },
+        ];
+        let md = generate_postmortem_markdown(&detail);
+        assert!(md.contains("**Duration:** 2h 30m"));
+        assert!(!md.contains("_[How long did the incident last?]_"));
+    }
+
+    #[test]
+    fn test_postmortem_what_went_well_with_steps() {
+        let mut detail = make_test_detail();
+        detail.timeline_events = vec![TimelineEvent {
+            id: "te-1".to_string(),
+            issue_id: "pm-456".to_string(),
+            event_type: "root_cause_identified".to_string(),
+            description: "Root cause found".to_string(),
+            metadata: "{}".to_string(),
+            created_at: "2025-02-10 10:00:00 UTC".to_string(),
+        }];
+        let md = generate_postmortem_markdown(&detail);
+        assert!(md.contains("Systematic 5-whys analysis conducted (1 steps completed)"));
+        assert!(md.contains("Root cause was identified during triage"));
     }
 }
