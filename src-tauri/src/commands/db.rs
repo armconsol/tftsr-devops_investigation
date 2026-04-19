@@ -533,6 +533,16 @@ pub async fn update_five_why(
     Ok(())
 }
 
+const VALID_EVENT_TYPES: &[&str] = &[
+    "triage_started",
+    "log_uploaded",
+    "why_level_advanced",
+    "root_cause_identified",
+    "rca_generated",
+    "postmortem_generated",
+    "document_exported",
+];
+
 #[tauri::command]
 pub async fn add_timeline_event(
     issue_id: String,
@@ -541,17 +551,28 @@ pub async fn add_timeline_event(
     metadata: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<TimelineEvent, String> {
+    if !VALID_EVENT_TYPES.contains(&event_type.as_str()) {
+        return Err(format!("Invalid event_type: {event_type}"));
+    }
+
+    let meta = metadata.unwrap_or_else(|| "{}".to_string());
+    if meta.len() > 10240 {
+        return Err("metadata exceeds maximum size of 10KB".to_string());
+    }
+    serde_json::from_str::<serde_json::Value>(&meta)
+        .map_err(|_| "metadata must be valid JSON".to_string())?;
+
     let event = TimelineEvent::new(
         issue_id.clone(),
         event_type.clone(),
         description.clone(),
-        metadata.unwrap_or_else(|| "{}".to_string()),
+        meta,
     );
 
-    let db = state.db.lock().map_err(|e| e.to_string())?;
+    let mut db = state.db.lock().map_err(|e| e.to_string())?;
+    let tx = db.transaction().map_err(|e| e.to_string())?;
 
-    // Write to timeline_events table
-    db.execute(
+    tx.execute(
         "INSERT INTO timeline_events (id, issue_id, event_type, description, metadata, created_at) \
          VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
         rusqlite::params![
@@ -565,23 +586,23 @@ pub async fn add_timeline_event(
     )
     .map_err(|e| e.to_string())?;
 
-    // Dual-write to audit_log for security hash chain
     crate::audit::log::write_audit_event(
-        &db,
+        &tx,
         &event_type,
         "issue",
         &issue_id,
-        &serde_json::json!({ "description": description }).to_string(),
+        &serde_json::json!({ "description": description, "metadata": event.metadata }).to_string(),
     )
     .map_err(|_| "Failed to write security audit entry".to_string())?;
 
-    // Update issue timestamp
     let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
-    db.execute(
+    tx.execute(
         "UPDATE issues SET updated_at = ?1 WHERE id = ?2",
         rusqlite::params![now, issue_id],
     )
     .map_err(|e| e.to_string())?;
+
+    tx.commit().map_err(|e| e.to_string())?;
 
     Ok(event)
 }

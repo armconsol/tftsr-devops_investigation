@@ -74,9 +74,11 @@ export interface FiveWhyEntry {
 
 export interface TimelineEvent {
   id: string;
+  issue_id: string;
   event_type: string;
   description: string;
-  created_at: number;
+  metadata: string;
+  created_at: string;
 }
 
 export interface AiConversation {
@@ -104,6 +106,7 @@ export interface IssueDetail {
   image_attachments: ImageAttachment[];
   resolution_steps: ResolutionStep[];
   conversations: AiConversation[];
+  timeline_events: TimelineEvent[];
 }
 
 export interface IssueSummary {
