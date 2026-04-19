@@ -43,13 +43,13 @@ jobs:
           git diff origin/${{ github.base_ref }}..HEAD > /tmp/pr_diff.txt
           echo "diff_size=$(wc -l < /tmp/pr_diff.txt | tr -d ' ')" >> $GITHUB_OUTPUT
 
-      - name: Analyze with Ollama
+      - name: Analyze with LLM
         id: analyze
         if: steps.diff.outputs.diff_size != '0'
         shell: bash
         env:
-          OLLAMA_URL: https://ollama-ui.tftsr.com/ollama/v1
-          OLLAMA_API_KEY: ${{ secrets.OLLAMA_API_KEY }}
+          LITELLM_URL: http://172.0.0.29:11434/v1
+          LITELLM_API_KEY: ${{ secrets.OLLAMA_API_KEY }}
           PR_TITLE: ${{ github.event.pull_request.title }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
@@ -62,32 +62,32 @@ jobs:
             | grep -v -E '^[+-].*[A-Za-z0-9+/]{40,}={0,2}([^A-Za-z0-9+/=]|$)')
           PROMPT="Analyze the following code changes for correctness, security issues, and best practices. PR Title: ${PR_TITLE}\n\nDiff:\n${DIFF_CONTENT}\n\nProvide a review with: 1) Summary, 2) Bugs/errors, 3) Security issues, 4) Best practices. Give specific comments with suggested fixes."
           BODY=$(jq -cn \
-            --arg model "qwen3-coder-next:latest" \
+            --arg model "qwen2.5-72b" \
             --arg content "$PROMPT" \
             '{model: $model, messages: [{role: "user", content: $content}], stream: false}')
-          echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] PR #${PR_NUMBER} - Calling Ollama API (${#BODY} bytes)..."
-          HTTP_CODE=$(curl -s --max-time 120 --connect-timeout 30 \
-            --retry 3 --retry-delay 5 --retry-connrefused --retry-max-time 120 \
-            -o /tmp/ollama_response.json -w "%{http_code}" \
-            -X POST "$OLLAMA_URL/chat/completions" \
-            -H "Authorization: Bearer $OLLAMA_API_KEY" \
+          echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] PR #${PR_NUMBER} - Calling liteLLM API (${#BODY} bytes)..."
+          HTTP_CODE=$(curl -s --max-time 300 --connect-timeout 30 \
+            --retry 3 --retry-delay 10 --retry-connrefused --retry-max-time 300 \
+            -o /tmp/llm_response.json -w "%{http_code}" \
+            -X POST "$LITELLM_URL/chat/completions" \
+            -H "Authorization: Bearer $LITELLM_API_KEY" \
             -H "Content-Type: application/json" \
             -d "$BODY")
           echo "HTTP status: $HTTP_CODE"
-          echo "Response file size: $(wc -c < /tmp/ollama_response.json) bytes"
+          echo "Response file size: $(wc -c < /tmp/llm_response.json) bytes"
           if [ "$HTTP_CODE" != "200" ]; then
-            echo "ERROR: Ollama returned HTTP $HTTP_CODE"
-            cat /tmp/ollama_response.json
+            echo "ERROR: liteLLM returned HTTP $HTTP_CODE"
+            cat /tmp/llm_response.json
             exit 1
           fi
-          if ! jq empty /tmp/ollama_response.json 2>/dev/null; then
-            echo "ERROR: Invalid JSON response from Ollama"
-            cat /tmp/ollama_response.json
+          if ! jq empty /tmp/llm_response.json 2>/dev/null; then
+            echo "ERROR: Invalid JSON response from liteLLM"
+            cat /tmp/llm_response.json
             exit 1
           fi
-          REVIEW=$(jq -r '.choices[0].message.content // empty' /tmp/ollama_response.json)
+          REVIEW=$(jq -r '.choices[0].message.content // empty' /tmp/llm_response.json)
           if [ -z "$REVIEW" ]; then
-            echo "ERROR: No content in Ollama response"
+            echo "ERROR: No content in liteLLM response"
             exit 1
           fi
           echo "Review length: ${#REVIEW} chars"
@@ -109,11 +109,11 @@ jobs:
           if [ -f "/tmp/pr_review.txt" ] && [ -s "/tmp/pr_review.txt" ]; then
             REVIEW_BODY=$(head -c 65536 /tmp/pr_review.txt)
             BODY=$(jq -n \
-              --arg body "🤖 Automated PR Review:\n\n${REVIEW_BODY}\n\n---\n*this is an automated review from Ollama*" \
+              --arg body "Automated PR Review (qwen2.5-72b via liteLLM):\n\n${REVIEW_BODY}\n\n---\n*automated code review*" \
               '{body: $body, event: "COMMENT"}')
           else
             BODY=$(jq -n \
-              '{body: "⚠️ Automated PR Review could not be completed — Ollama analysis failed or produced no output.", event: "COMMENT"}')
+              '{body: "Automated PR Review could not be completed - LLM analysis failed or produced no output.", event: "COMMENT"}')
           fi
           HTTP_CODE=$(curl -s --max-time 30 --connect-timeout 10 \
             -o /tmp/review_post_response.json -w "%{http_code}" \
@@ -131,4 +131,4 @@ jobs:
       - name: Cleanup
         if: always()
         shell: bash
-        run: rm -f /tmp/pr_diff.txt /tmp/ollama_response.json /tmp/pr_review.txt /tmp/review_post_response.json
+        run: rm -f /tmp/pr_diff.txt /tmp/llm_response.json /tmp/pr_review.txt /tmp/review_post_response.json
