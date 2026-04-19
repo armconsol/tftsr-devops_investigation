@@ -194,6 +194,7 @@ mod tests {
                 },
             ],
             conversations: vec![],
+            timeline_events: vec![],
         }
     }
 

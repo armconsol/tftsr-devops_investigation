@@ -47,6 +47,7 @@ pub struct IssueDetail {
     pub image_attachments: Vec<ImageAttachment>,
     pub resolution_steps: Vec<ResolutionStep>,
     pub conversations: Vec<AiConversation>,
+    pub timeline_events: Vec<TimelineEvent>,
 }
 
 /// Lightweight row returned by list/search commands.
@@ -121,9 +122,24 @@ pub struct FiveWhyEntry {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TimelineEvent {
     pub id: String,
+    pub issue_id: String,
     pub event_type: String,
     pub description: String,
-    pub created_at: i64,
+    pub metadata: String,
+    pub created_at: String,
+}
+
+impl TimelineEvent {
+    pub fn new(issue_id: String, event_type: String, description: String, metadata: String) -> Self {
+        TimelineEvent {
+            id: Uuid::now_v7().to_string(),
+            issue_id,
+            event_type,
+            description,
+            metadata,
+            created_at: chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC").to_string(),
+        }
+    }
 }
 
 // ─── Log File ───────────────────────────────────────────────────────────────

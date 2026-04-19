@@ -188,6 +188,7 @@ mod tests {
                 created_at: "2025-02-10 09:00:00".to_string(),
             }],
             conversations: vec![],
+            timeline_events: vec![],
         }
     }
 
