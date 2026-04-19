@@ -35,6 +35,7 @@ const mockIssueDetail = {
     },
   ],
   conversations: [],
+  timeline_events: [],
 };
 
 describe("Resolution Page", () => {

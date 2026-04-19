@@ -1,5 +1,48 @@
 use crate::db::models::IssueDetail;
 
+pub fn format_event_type(event_type: &str) -> &str {
+    match event_type {
+        "triage_started" => "Triage Started",
+        "log_uploaded" => "Log File Uploaded",
+        "why_level_advanced" => "Why Level Advanced",
+        "root_cause_identified" => "Root Cause Identified",
+        "rca_generated" => "RCA Document Generated",
+        "postmortem_generated" => "Post-Mortem Generated",
+        "document_exported" => "Document Exported",
+        other => other,
+    }
+}
+
+pub fn calculate_duration(start: &str, end: &str) -> String {
+    let fmt = "%Y-%m-%d %H:%M:%S UTC";
+    let start_dt = match chrono::NaiveDateTime::parse_from_str(start, fmt) {
+        Ok(dt) => dt,
+        Err(_) => return "N/A".to_string(),
+    };
+    let end_dt = match chrono::NaiveDateTime::parse_from_str(end, fmt) {
+        Ok(dt) => dt,
+        Err(_) => return "N/A".to_string(),
+    };
+
+    let duration = end_dt.signed_duration_since(start_dt);
+    let total_minutes = duration.num_minutes();
+    if total_minutes < 0 {
+        return "N/A".to_string();
+    }
+
+    let days = total_minutes / (24 * 60);
+    let hours = (total_minutes % (24 * 60)) / 60;
+    let minutes = total_minutes % 60;
+
+    if days > 0 {
+        format!("{days}d {hours}h")
+    } else if hours > 0 {
+        format!("{hours}h {minutes}m")
+    } else {
+        format!("{minutes}m")
+    }
+}
+
 pub fn generate_rca_markdown(detail: &IssueDetail) -> String {
     let issue = &detail.issue;
 
@@ -56,6 +99,52 @@ pub fn generate_rca_markdown(detail: &IssueDetail) -> String {
         md.push_str(&issue.description);
         md.push_str("\n\n");
     }
+
+    // Incident Timeline
+    md.push_str("## Incident Timeline\n\n");
+    if detail.timeline_events.is_empty() {
+        md.push_str("_No timeline events recorded._\n\n");
+    } else {
+        md.push_str("| Time (UTC) | Event | Description |\n");
+        md.push_str("|------------|-------|-------------|\n");
+        for event in &detail.timeline_events {
+            md.push_str(&format!(
+                "| {} | {} | {} |\n",
+                event.created_at,
+                format_event_type(&event.event_type),
+                event.description
+            ));
+        }
+        md.push('\n');
+    }
+
+    // Incident Metrics
+    md.push_str("## Incident Metrics\n\n");
+    md.push_str(&format!(
+        "- **Total Events:** {}\n",
+        detail.timeline_events.len()
+    ));
+    if detail.timeline_events.len() >= 2 {
+        let first = &detail.timeline_events[0].created_at;
+        let last = &detail.timeline_events[detail.timeline_events.len() - 1].created_at;
+        md.push_str(&format!(
+            "- **Incident Duration:** {}\n",
+            calculate_duration(first, last)
+        ));
+    } else {
+        md.push_str("- **Incident Duration:** N/A\n");
+    }
+    let root_cause_event = detail
+        .timeline_events
+        .iter()
+        .find(|e| e.event_type == "root_cause_identified");
+    if let (Some(first), Some(rc)) = (detail.timeline_events.first(), root_cause_event) {
+        md.push_str(&format!(
+            "- **Time to Root Cause:** {}\n",
+            calculate_duration(&first.created_at, &rc.created_at)
+        ));
+    }
+    md.push('\n');
 
     // 5 Whys Analysis
     md.push_str("## 5 Whys Analysis\n\n");
@@ -143,7 +232,7 @@ pub fn generate_rca_markdown(detail: &IssueDetail) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::models::{Issue, IssueDetail, LogFile, ResolutionStep};
+    use crate::db::models::{Issue, IssueDetail, LogFile, ResolutionStep, TimelineEvent};
 
     fn make_test_detail() -> IssueDetail {
         IssueDetail {
@@ -194,6 +283,7 @@ mod tests {
                 },
             ],
             conversations: vec![],
+            timeline_events: vec![],
         }
     }
 
@@ -246,5 +336,136 @@ mod tests {
         detail.issue.assigned_to = String::new();
         let md = generate_rca_markdown(&detail);
         assert!(md.contains("Unassigned"));
+    }
+
+    #[test]
+    fn test_rca_timeline_section_with_events() {
+        let mut detail = make_test_detail();
+        detail.timeline_events = vec![
+            TimelineEvent {
+                id: "te-1".to_string(),
+                issue_id: "test-123".to_string(),
+                event_type: "triage_started".to_string(),
+                description: "Triage initiated by oncall".to_string(),
+                metadata: "{}".to_string(),
+                created_at: "2025-01-15 10:00:00 UTC".to_string(),
+            },
+            TimelineEvent {
+                id: "te-2".to_string(),
+                issue_id: "test-123".to_string(),
+                event_type: "log_uploaded".to_string(),
+                description: "app.log uploaded".to_string(),
+                metadata: "{}".to_string(),
+                created_at: "2025-01-15 10:30:00 UTC".to_string(),
+            },
+            TimelineEvent {
+                id: "te-3".to_string(),
+                issue_id: "test-123".to_string(),
+                event_type: "root_cause_identified".to_string(),
+                description: "Connection pool leak found".to_string(),
+                metadata: "{}".to_string(),
+                created_at: "2025-01-15 12:15:00 UTC".to_string(),
+            },
+        ];
+        let md = generate_rca_markdown(&detail);
+        assert!(md.contains("## Incident Timeline"));
+        assert!(md.contains("| Time (UTC) | Event | Description |"));
+        assert!(md
+            .contains("| 2025-01-15 10:00:00 UTC | Triage Started | Triage initiated by oncall |"));
+        assert!(md.contains("| 2025-01-15 10:30:00 UTC | Log File Uploaded | app.log uploaded |"));
+        assert!(md.contains(
+            "| 2025-01-15 12:15:00 UTC | Root Cause Identified | Connection pool leak found |"
+        ));
+    }
+
+    #[test]
+    fn test_rca_timeline_section_empty() {
+        let detail = make_test_detail();
+        let md = generate_rca_markdown(&detail);
+        assert!(md.contains("## Incident Timeline"));
+        assert!(md.contains("_No timeline events recorded._"));
+    }
+
+    #[test]
+    fn test_rca_metrics_section() {
+        let mut detail = make_test_detail();
+        detail.timeline_events = vec![
+            TimelineEvent {
+                id: "te-1".to_string(),
+                issue_id: "test-123".to_string(),
+                event_type: "triage_started".to_string(),
+                description: "Triage started".to_string(),
+                metadata: "{}".to_string(),
+                created_at: "2025-01-15 10:00:00 UTC".to_string(),
+            },
+            TimelineEvent {
+                id: "te-2".to_string(),
+                issue_id: "test-123".to_string(),
+                event_type: "root_cause_identified".to_string(),
+                description: "Root cause found".to_string(),
+                metadata: "{}".to_string(),
+                created_at: "2025-01-15 12:15:00 UTC".to_string(),
+            },
+        ];
+        let md = generate_rca_markdown(&detail);
+        assert!(md.contains("## Incident Metrics"));
+        assert!(md.contains("**Total Events:** 2"));
+        assert!(md.contains("**Incident Duration:** 2h 15m"));
+        assert!(md.contains("**Time to Root Cause:** 2h 15m"));
+    }
+
+    #[test]
+    fn test_calculate_duration_hours_minutes() {
+        assert_eq!(
+            calculate_duration("2025-01-15 10:00:00 UTC", "2025-01-15 12:15:00 UTC"),
+            "2h 15m"
+        );
+    }
+
+    #[test]
+    fn test_calculate_duration_days() {
+        assert_eq!(
+            calculate_duration("2025-01-15 10:00:00 UTC", "2025-01-18 11:00:00 UTC"),
+            "3d 1h"
+        );
+    }
+
+    #[test]
+    fn test_calculate_duration_minutes_only() {
+        assert_eq!(
+            calculate_duration("2025-01-15 10:00:00 UTC", "2025-01-15 10:45:00 UTC"),
+            "45m"
+        );
+    }
+
+    #[test]
+    fn test_calculate_duration_invalid() {
+        assert_eq!(calculate_duration("bad-date", "also-bad"), "N/A");
+    }
+
+    #[test]
+    fn test_format_event_type_known() {
+        assert_eq!(format_event_type("triage_started"), "Triage Started");
+        assert_eq!(format_event_type("log_uploaded"), "Log File Uploaded");
+        assert_eq!(
+            format_event_type("why_level_advanced"),
+            "Why Level Advanced"
+        );
+        assert_eq!(
+            format_event_type("root_cause_identified"),
+            "Root Cause Identified"
+        );
+        assert_eq!(format_event_type("rca_generated"), "RCA Document Generated");
+        assert_eq!(
+            format_event_type("postmortem_generated"),
+            "Post-Mortem Generated"
+        );
+        assert_eq!(format_event_type("document_exported"), "Document Exported");
+    }
+
+    #[test]
+    fn test_format_event_type_unknown() {
+        assert_eq!(format_event_type("custom_event"), "custom_event");
+        assert_eq!(format_event_type(""), "");
     }
 }

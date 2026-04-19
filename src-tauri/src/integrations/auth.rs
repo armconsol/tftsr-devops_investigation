@@ -629,11 +629,10 @@ mod tests {
 
     #[test]
     fn test_derive_aes_key_is_stable_for_same_input() {
-        std::env::set_var("TFTSR_ENCRYPTION_KEY", "stable-test-key");
-        let k1 = derive_aes_key().unwrap();
-        let k2 = derive_aes_key().unwrap();
+        // Use deterministic helper to avoid env var race conditions in parallel tests
+        let k1 = derive_aes_key_from_str("stable-test-key").unwrap();
+        let k2 = derive_aes_key_from_str("stable-test-key").unwrap();
         assert_eq!(k1, k2);
-        std::env::remove_var("TFTSR_ENCRYPTION_KEY");
     }
 
     // Test helper functions that accept key directly (bypass env var)

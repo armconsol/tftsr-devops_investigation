@@ -62,11 +62,27 @@ updateFiveWhyCmd(entryId: string, answer: string) → void
 ```
 Sets or updates the answer for an existing 5-Whys entry.
 
+### `get_timeline_events`
+```typescript
+getTimelineEventsCmd(issueId: string) → TimelineEvent[]
+```
+Retrieves all timeline events for an issue, ordered by created_at ascending.
+```typescript
+interface TimelineEvent {
+    id: string;
+    issue_id: string;
+    event_type: string;          // One of: triage_started, log_uploaded, why_level_advanced, etc.
+    description: string;
+    metadata?: Record<string, any>;  // Event-specific JSON data
+    created_at: string;               // UTC timestamp
+}
+```
+
 ### `add_timeline_event`
 ```typescript
-addTimelineEventCmd(issueId: string, eventType: string, description: string) → TimelineEvent
+addTimelineEventCmd(issueId: string, eventType: string, description: string, metadata?: Record<string, any>) → TimelineEvent
 ```
-Records a timestamped event in the issue timeline.
+Records a timestamped event in the issue timeline. Dual-writes to both `timeline_events` (for document generation) and `audit_log` (for security audit trail).
 
 ---
 
@@ -137,9 +153,9 @@ Sends selected (redacted) log files to the AI provider with an analysis prompt.
 
 ### `chat_message`
 ```typescript
-chatMessageCmd(issueId: string, message: string, providerConfig: ProviderConfig) → ChatResponse
+chatMessageCmd(issueId: string, message: string, providerConfig: ProviderConfig, systemPrompt?: string) → ChatResponse
 ```
-Sends a message in the ongoing triage conversation. Domain system prompt is injected automatically on first message. AI response is parsed for why-level indicators (1–5).
+Sends a message in the ongoing triage conversation. Optional `systemPrompt` parameter allows prepending domain expertise before conversation history. If not provided, the domain-specific system prompt for the issue category is injected automatically on first message. AI response is parsed for why-level indicators (1–5).
 
 ### `list_providers`
 ```typescript
@@ -155,13 +171,13 @@ Returns the list of supported providers with their available models and configur
 ```typescript
 generateRcaCmd(issueId: string) → Document
 ```
-Builds an RCA Markdown document from the issue data, 5-Whys answers, and timeline.
+Builds an RCA Markdown document from the issue data, 5-Whys answers, and timeline events. Uses real incident response timeline (log uploads, why-level progression, root cause identification) instead of placeholders.
 
 ### `generate_postmortem`
 ```typescript
 generatePostmortemCmd(issueId: string) → Document
 ```
-Builds a blameless post-mortem Markdown document.
+Builds a blameless post-mortem Markdown document. Incorporates timeline events to show the full incident lifecycle: detection, diagnosis, resolution, and post-incident review phases.
 
 ### `update_document`
 ```typescript

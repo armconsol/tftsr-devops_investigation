@@ -2,7 +2,7 @@
 
 ## Overview
 
-TFTSR uses **SQLite** via `rusqlite` with the `bundled-sqlcipher` feature for AES-256 encryption in production. 12 versioned migrations are tracked in the `_migrations` table.
+TFTSR uses **SQLite** via `rusqlite` with the `bundled-sqlcipher` feature for AES-256 encryption in production. 17 versioned migrations are tracked in the `_migrations` table.
 
 **DB file location:** `{app_data_dir}/tftsr.db`
 
@@ -38,7 +38,7 @@ pub fn init_db(data_dir: &Path) -> anyhow::Result<Connection> {
 
 ---
 
-## Schema (11 Migrations)
+## Schema (17 Migrations)
 
 ### 001 — issues
 
@@ -245,6 +245,51 @@ CREATE TABLE image_attachments (
 - Basic auth (ServiceNow): Store encrypted password
 - One credential per service (enforced by UNIQUE constraint)
 
+### 017 — timeline_events (Incident Response Timeline)
+
+```sql
+CREATE TABLE timeline_events (
+    id TEXT PRIMARY KEY,
+    issue_id TEXT NOT NULL REFERENCES issues(id) ON DELETE CASCADE,
+    event_type TEXT NOT NULL,
+    description TEXT NOT NULL,
+    metadata TEXT,          -- JSON object with event-specific data
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX idx_timeline_events_issue ON timeline_events(issue_id);
+CREATE INDEX idx_timeline_events_time ON timeline_events(created_at);
+```
+
+**Event Types:**
+- `triage_started` — Incident response begins, initial issue properties recorded
+- `log_uploaded` — Log file uploaded and analyzed
+- `why_level_advanced` — 5-Whys entry completed, progression to next level
+- `root_cause_identified` — Root cause determined from analysis
+- `rca_generated` — Root Cause Analysis document created
+- `postmortem_generated` — Post-mortem document created
+- `document_exported` — Document exported to file (MD or PDF)
+
+**Metadata Structure (JSON):**
+```json
+{
+  "triage_started": {"severity": "high", "category": "network"},
+  "log_uploaded": {"file_name": "app.log", "file_size": 2048576},
+  "why_level_advanced": {"from_level": 2, "to_level": 3, "question": "Why did the service timeout?"},
+  "root_cause_identified": {"root_cause": "DNS resolution failure", "confidence": 0.95},
+  "rca_generated": {"doc_id": "doc_abc123", "section_count": 7},
+  "postmortem_generated": {"doc_id": "doc_def456", "timeline_events_count": 12},
+  "document_exported": {"format": "pdf", "file_path": "/home/user/docs/rca.pdf"}
+}
+```
+
+**Design Notes:**
+- Timeline events are **queryable** (indexed by issue_id and created_at) for document generation
+- Dual-write: Events recorded to both `timeline_events` and `audit_log` — timeline for chronological reporting, audit_log for security/compliance
+- `created_at`: TEXT UTC timestamp (`YYYY-MM-DD HH:MM:SS`)
+- Non-blocking writes: Timeline events recorded asynchronously at key triage moments
+- Cascade delete from issues ensures cleanup
+
 ---
 
 ## Key Design Notes
@@ -288,5 +333,14 @@ pub struct AuditEntry {
     pub entity_id: String,       // NOT status
     pub user_id: String,
     pub details: Option<String>,
+}
+
+pub struct TimelineEvent {
+    pub id: String,
+    pub issue_id: String,
+    pub event_type: String,
+    pub description: String,
+    pub metadata: Option<String>, // JSON
+    pub created_at: String,
 }
 ```

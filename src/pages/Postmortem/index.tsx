@@ -5,7 +5,7 @@ import { DocEditor } from "@/components/DocEditor";
 import { useSettingsStore } from "@/stores/settingsStore";
 import {
   generatePostmortemCmd,
-  
+  addTimelineEventCmd,
   updateDocumentCmd,
   exportDocumentCmd,
   type Document_,
@@ -28,6 +28,7 @@ export default function Postmortem() {
         const generated = await generatePostmortemCmd(id);
         setDoc(generated);
         setContent(generated.content_md);
+        addTimelineEventCmd(id, "postmortem_generated", "Post-mortem document generated").catch(() => {});
       } catch (err) {
         setError(String(err));
       } finally {
@@ -54,6 +55,7 @@ export default function Postmortem() {
     try {
       const path = await exportDocumentCmd(doc.id, doc.title, content, format, "");
       setError(`Document exported to: ${path}`);
+      addTimelineEventCmd(id!, "document_exported", `Post-mortem exported as ${format}`).catch(() => {});
       setTimeout(() => setError(null), 5000);
     } catch (err) {
       setError(`Export failed: ${String(err)}`);

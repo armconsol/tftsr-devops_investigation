@@ -74,9 +74,11 @@ export interface FiveWhyEntry {
 
 export interface TimelineEvent {
   id: string;
+  issue_id: string;
   event_type: string;
   description: string;
-  created_at: number;
+  metadata: string;
+  created_at: string;
 }
 
 export interface AiConversation {
@@ -104,6 +106,7 @@ export interface IssueDetail {
   image_attachments: ImageAttachment[];
   resolution_steps: ResolutionStep[];
   conversations: AiConversation[];
+  timeline_events: TimelineEvent[];
 }
 
 export interface IssueSummary {
@@ -268,8 +271,8 @@ export interface TriageMessage {
 export const analyzeLogsCmd = (issueId: string, logFileIds: string[], providerConfig: ProviderConfig) =>
   invoke<AnalysisResult>("analyze_logs", { issueId, logFileIds, providerConfig });
 
-export const chatMessageCmd = (issueId: string, message: string, providerConfig: ProviderConfig) =>
-  invoke<ChatResponse>("chat_message", { issueId, message, providerConfig });
+export const chatMessageCmd = (issueId: string, message: string, providerConfig: ProviderConfig, systemPrompt?: string) =>
+  invoke<ChatResponse>("chat_message", { issueId, message, providerConfig, systemPrompt: systemPrompt ?? null });
 
 export const listProvidersCmd = () => invoke<ProviderInfo[]>("list_providers");
 
@@ -361,8 +364,11 @@ export const addFiveWhyCmd = (
 export const updateFiveWhyCmd = (entryId: string, answer: string) =>
   invoke<void>("update_five_why", { entryId, answer });
 
-export const addTimelineEventCmd = (issueId: string, eventType: string, description: string) =>
-  invoke<TimelineEvent>("add_timeline_event", { issueId, eventType, description });
+export const addTimelineEventCmd = (issueId: string, eventType: string, description: string, metadata?: string) =>
+  invoke<TimelineEvent>("add_timeline_event", { issueId, eventType, description, metadata: metadata ?? null });
+
+export const getTimelineEventsCmd = (issueId: string) =>
+  invoke<TimelineEvent[]>("get_timeline_events", { issueId });
 
 // ─── Document commands ────────────────────────────────────────────────────────
 

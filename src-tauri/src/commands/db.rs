@@ -2,7 +2,7 @@ use tauri::State;
 
 use crate::db::models::{
     AiConversation, AiMessage, ImageAttachment, Issue, IssueDetail, IssueFilter, IssueSummary,
-    IssueUpdate, LogFile, ResolutionStep,
+    IssueUpdate, LogFile, ResolutionStep, TimelineEvent,
 };
 use crate::state::AppState;
 
@@ -171,12 +171,35 @@ pub async fn get_issue(
         .filter_map(|r| r.ok())
         .collect();
 
+    // Load timeline events
+    let mut te_stmt = db
+        .prepare(
+            "SELECT id, issue_id, event_type, description, metadata, created_at \
+             FROM timeline_events WHERE issue_id = ?1 ORDER BY created_at ASC",
+        )
+        .map_err(|e| e.to_string())?;
+    let timeline_events: Vec<TimelineEvent> = te_stmt
+        .query_map([&issue_id], |row| {
+            Ok(TimelineEvent {
+                id: row.get(0)?,
+                issue_id: row.get(1)?,
+                event_type: row.get(2)?,
+                description: row.get(3)?,
+                metadata: row.get(4)?,
+                created_at: row.get(5)?,
+            })
+        })
+        .map_err(|e| e.to_string())?
+        .filter_map(|r| r.ok())
+        .collect();
+
     Ok(IssueDetail {
         issue,
         log_files,
         image_attachments,
         resolution_steps,
         conversations,
+        timeline_events,
     })
 }
 
@@ -299,6 +322,11 @@ pub async fn delete_issue(issue_id: String, state: State<'_, AppState>) -> Resul
     .map_err(|e| e.to_string())?;
     db.execute(
         "DELETE FROM resolution_steps WHERE issue_id = ?1",
+        [&issue_id],
+    )
+    .map_err(|e| e.to_string())?;
+    db.execute(
+        "DELETE FROM timeline_events WHERE issue_id = ?1",
         [&issue_id],
     )
     .map_err(|e| e.to_string())?;
@@ -505,37 +533,105 @@ pub async fn update_five_why(
     Ok(())
 }
 
+const VALID_EVENT_TYPES: &[&str] = &[
+    "triage_started",
+    "log_uploaded",
+    "why_level_advanced",
+    "root_cause_identified",
+    "rca_generated",
+    "postmortem_generated",
+    "document_exported",
+];
+
 #[tauri::command]
 pub async fn add_timeline_event(
     issue_id: String,
     event_type: String,
     description: String,
+    metadata: Option<String>,
     state: State<'_, AppState>,
-) -> Result<(), String> {
-    // Use audit_log for timeline tracking
-    let db = state.db.lock().map_err(|e| e.to_string())?;
-    let entry = crate::db::models::AuditEntry::new(
-        event_type,
-        "issue".to_string(),
+) -> Result<TimelineEvent, String> {
+    if !VALID_EVENT_TYPES.contains(&event_type.as_str()) {
+        return Err(format!("Invalid event_type: {event_type}"));
+    }
+
+    let meta = metadata.unwrap_or_else(|| "{}".to_string());
+    if meta.len() > 10240 {
+        return Err("metadata exceeds maximum size of 10KB".to_string());
+    }
+    serde_json::from_str::<serde_json::Value>(&meta)
+        .map_err(|_| "metadata must be valid JSON".to_string())?;
+
+    let event = TimelineEvent::new(
         issue_id.clone(),
-        serde_json::json!({ "description": description }).to_string(),
+        event_type.clone(),
+        description.clone(),
+        meta,
     );
+
+    let mut db = state.db.lock().map_err(|e| e.to_string())?;
+    let tx = db.transaction().map_err(|e| e.to_string())?;
+
+    tx.execute(
+        "INSERT INTO timeline_events (id, issue_id, event_type, description, metadata, created_at) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        rusqlite::params![
+            event.id,
+            event.issue_id,
+            event.event_type,
+            event.description,
+            event.metadata,
+            event.created_at,
+        ],
+    )
+    .map_err(|e| e.to_string())?;
+
     crate::audit::log::write_audit_event(
-        &db,
-        &entry.action,
-        &entry.entity_type,
-        &entry.entity_id,
-        &entry.details,
+        &tx,
+        &event_type,
+        "issue",
+        &issue_id,
+        &serde_json::json!({ "description": description, "metadata": event.metadata }).to_string(),
     )
     .map_err(|_| "Failed to write security audit entry".to_string())?;
 
-    // Update issue timestamp
     let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
-    db.execute(
+    tx.execute(
         "UPDATE issues SET updated_at = ?1 WHERE id = ?2",
         rusqlite::params![now, issue_id],
     )
     .map_err(|e| e.to_string())?;
 
-    Ok(())
+    tx.commit().map_err(|e| e.to_string())?;
+
+    Ok(event)
+}
+
+#[tauri::command]
+pub async fn get_timeline_events(
+    issue_id: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<TimelineEvent>, String> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+    let mut stmt = db
+        .prepare(
+            "SELECT id, issue_id, event_type, description, metadata, created_at \
+             FROM timeline_events WHERE issue_id = ?1 ORDER BY created_at ASC",
+        )
+        .map_err(|e| e.to_string())?;
+    let events = stmt
+        .query_map([&issue_id], |row| {
+            Ok(TimelineEvent {
+                id: row.get(0)?,
+                issue_id: row.get(1)?,
+                event_type: row.get(2)?,
+                description: row.get(3)?,
+                metadata: row.get(4)?,
+                created_at: row.get(5)?,
+            })
+        })
+        .map_err(|e| e.to_string())?
+        .filter_map(|r| r.ok())
+        .collect();
+    Ok(events)
 }

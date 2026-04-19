@@ -199,6 +199,20 @@ pub fn run_migrations(conn: &Connection) -> anyhow::Result<()> {
             "016_add_created_at",
             "ALTER TABLE ai_providers ADD COLUMN created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now'))",
         ),
+        (
+            "017_create_timeline_events",
+            "CREATE TABLE IF NOT EXISTS timeline_events (
+                id TEXT PRIMARY KEY,
+                issue_id TEXT NOT NULL,
+                event_type TEXT NOT NULL,
+                description TEXT NOT NULL DEFAULT '',
+                metadata TEXT NOT NULL DEFAULT '{}',
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (issue_id) REFERENCES issues(id) ON DELETE CASCADE
+            );
+            CREATE INDEX idx_timeline_events_issue ON timeline_events(issue_id);
+            CREATE INDEX idx_timeline_events_time ON timeline_events(created_at);",
+        ),
     ];
 
     for (name, sql) in migrations {
@@ -697,5 +711,83 @@ mod tests {
 
         // Should not fail even though columns already exist
         run_migrations(&conn).unwrap();
+    }
+
+    #[test]
+    fn test_timeline_events_table_exists() {
+        let conn = setup_test_db();
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='timeline_events'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 1);
+
+        let mut stmt = conn.prepare("PRAGMA table_info(timeline_events)").unwrap();
+        let columns: Vec<String> = stmt
+            .query_map([], |row| row.get::<_, String>(1))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+
+        assert!(columns.contains(&"id".to_string()));
+        assert!(columns.contains(&"issue_id".to_string()));
+        assert!(columns.contains(&"event_type".to_string()));
+        assert!(columns.contains(&"description".to_string()));
+        assert!(columns.contains(&"metadata".to_string()));
+        assert!(columns.contains(&"created_at".to_string()));
+    }
+
+    #[test]
+    fn test_timeline_events_cascade_delete() {
+        let conn = setup_test_db();
+        conn.execute("PRAGMA foreign_keys = ON", []).unwrap();
+
+        let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+        conn.execute(
+            "INSERT INTO issues (id, title, created_at, updated_at) VALUES (?1, ?2, ?3, ?4)",
+            rusqlite::params!["issue-1", "Test Issue", now, now],
+        )
+        .unwrap();
+
+        conn.execute(
+            "INSERT INTO timeline_events (id, issue_id, event_type, description, metadata, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            rusqlite::params!["te-1", "issue-1", "triage_started", "Started triage", "{}", "2025-01-15 10:00:00 UTC"],
+        )
+        .unwrap();
+
+        // Verify event exists
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM timeline_events", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 1);
+
+        // Delete issue — cascade should remove timeline event
+        conn.execute("DELETE FROM issues WHERE id = 'issue-1'", [])
+            .unwrap();
+
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM timeline_events", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn test_timeline_events_indexes() {
+        let conn = setup_test_db();
+        let mut stmt = conn
+            .prepare(
+                "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='timeline_events'",
+            )
+            .unwrap();
+        let indexes: Vec<String> = stmt
+            .query_map([], |row| row.get(0))
+            .unwrap()
+            .filter_map(|r| r.ok())
+            .collect();
+        assert!(indexes.contains(&"idx_timeline_events_issue".to_string()));
+        assert!(indexes.contains(&"idx_timeline_events_time".to_string()));
     }
 }
