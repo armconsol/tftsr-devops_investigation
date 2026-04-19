@@ -50,7 +50,7 @@ All command handlers receive `State<'_, AppState>` as a Tauri-injected parameter
 | `commands/integrations.rs` | Confluence / ServiceNow / ADO — v0.2 stubs |
 | `ai/provider.rs` | `Provider` trait + `create_provider()` factory |
 | `pii/detector.rs` | Multi-pattern PII scanner with overlap resolution |
-| `db/migrations.rs` | Versioned schema (12 migrations in `_migrations` table) |
+| `db/migrations.rs` | Versioned schema (17 migrations in `_migrations` table) |
 | `db/models.rs` | All DB types — see `IssueDetail` note below |
 | `docs/rca.rs` + `docs/postmortem.rs` | Markdown template builders |
 | `audit/log.rs` | `write_audit_event()` — called before every external send |
@@ -175,6 +175,55 @@ pub struct IssueDetail {
 ```
 
 Use `detail.issue.title`, **not** `detail.title`.
+
+## Incident Response Methodology
+
+The application integrates a comprehensive incident response framework via system prompt injection. The `INCIDENT_RESPONSE_FRAMEWORK` constant in `src/lib/domainPrompts.ts` is appended to all 17 domain-specific system prompts (Linux, Windows, Network, Kubernetes, Databases, Virtualization, Hardware, Observability, and others).
+
+**5-Phase Framework:**
+
+1. **Detection & Evidence Gathering** — Initial issue assessment, log collection, PII redaction
+2. **Diagnosis & Hypothesis Testing** — AI-assisted analysis, pattern matching against known incidents
+3. **Root Cause Analysis with 5-Whys** — Iterative questioning to identify underlying cause (steps 1–5)
+4. **Resolution & Prevention** — Remediation planning and implementation
+5. **Post-Incident Review** — Timeline-based blameless post-mortem and lessons learned
+
+**System Prompt Injection:**
+
+The `chat_message` command accepts an optional `system_prompt` parameter. If provided, it prepends domain expertise before the conversation history. If omitted, the framework selects the appropriate domain prompt based on the issue category. This allows:
+
+- **Specialized expertise**: Different frameworks for Linux vs. Kubernetes vs. Network incidents
+- **Flexible override**: Users can inject custom system prompts for cross-domain problems
+- **Consistent methodology**: All 17 domain prompts follow the same 5-phase incident response structure
+
+**Timeline Event Recording:**
+
+Timeline events are recorded non-blockingly at key triage moments:
+
+```
+Issue Creation → triage_started
+   ↓
+Log Upload → log_uploaded (metadata: file_name, file_size)
+   ↓
+Why-Level Progression → why_level_advanced (metadata: from_level → to_level)
+   ↓
+Root Cause Identified → root_cause_identified (metadata: root_cause, confidence)
+   ↓
+RCA Generated → rca_generated (metadata: doc_id, section_count)
+   ↓
+Postmortem Generated → postmortem_generated (metadata: doc_id, timeline_events_count)
+   ↓
+Document Exported → document_exported (metadata: format, file_path)
+```
+
+**Document Generation:**
+
+RCA and Postmortem generators now use real timeline event data instead of placeholders:
+
+- **RCA**: Incorporates timeline to show detection-to-root-cause progression
+- **Postmortem**: Uses full timeline to demonstrate the complete incident lifecycle and response effectiveness
+
+Timeline events are stored in the `timeline_events` table (indexed by issue_id and created_at for fast retrieval) and dual-written to `audit_log` for security/compliance purposes.
 
 ## Application Startup Sequence
 
