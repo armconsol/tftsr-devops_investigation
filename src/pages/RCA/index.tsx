@@ -8,6 +8,7 @@ import {
   generateRcaCmd,
   updateDocumentCmd,
   exportDocumentCmd,
+  addTimelineEventCmd,
   type Document_,
 } from "@/lib/tauriCommands";
 
@@ -29,6 +30,7 @@ export default function RCA() {
         const generated = await generateRcaCmd(id);
         setDoc(generated);
         setContent(generated.content_md);
+        addTimelineEventCmd(id, "rca_generated", "RCA document generated").catch(() => {});
       } catch (err) {
         setError(String(err));
       } finally {
@@ -55,6 +57,7 @@ export default function RCA() {
     try {
       const path = await exportDocumentCmd(doc.id, doc.title, content, format, "");
       setError(`Document exported to: ${path}`);
+      addTimelineEventCmd(id!, "document_exported", `RCA exported as ${format}`).catch(() => {});
       setTimeout(() => setError(null), 5000);
     } catch (err) {
       setError(`Export failed: ${String(err)}`);

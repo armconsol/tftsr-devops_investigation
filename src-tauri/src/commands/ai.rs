@@ -165,6 +165,7 @@ pub async fn chat_message(
     issue_id: String,
     message: String,
     provider_config: ProviderConfig,
+    system_prompt: Option<String>,
     app_handle: tauri::AppHandle,
     state: State<'_, AppState>,
 ) -> Result<ChatResponse, String> {
@@ -232,7 +233,21 @@ pub async fn chat_message(
     // Search integration sources for relevant context
     let integration_context = search_integration_sources(&message, &app_handle, &state).await;
 
-    let mut messages = history;
+    let mut messages = Vec::new();
+
+    // Inject domain system prompt if provided
+    if let Some(ref prompt) = system_prompt {
+        if !prompt.is_empty() {
+            messages.push(Message {
+                role: "system".into(),
+                content: prompt.clone(),
+                tool_call_id: None,
+                tool_calls: None,
+            });
+        }
+    }
+
+    messages.extend(history);
 
     // If we found integration content, add it to the conversation context
     if !integration_context.is_empty() {

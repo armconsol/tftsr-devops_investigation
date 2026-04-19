@@ -15,6 +15,7 @@ import {
   updateIssueCmd,
   addFiveWhyCmd,
 } from "@/lib/tauriCommands";
+import { getDomainPrompt } from "@/lib/domainPrompts";
 import type { TriageMessage } from "@/lib/tauriCommands";
 
 const CLOSE_PATTERNS = [
@@ -167,7 +168,8 @@ export default function Triage() {
     setPendingFiles([]);
 
     try {
-      const response = await chatMessageCmd(id, aiMessage, provider);
+      const systemPrompt = currentIssue ? getDomainPrompt(currentIssue.category) : undefined;
+      const response = await chatMessageCmd(id, aiMessage, provider, systemPrompt);
       const assistantMsg: TriageMessage = {
         id: `asst-${Date.now()}`,
         issue_id: id,
