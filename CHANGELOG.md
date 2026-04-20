@@ -8,11 +8,9 @@ CI, chore, and build changes are excluded.
 
 ### Bug Fixes
 - Harden timeline event input validation and atomic writes
-- **ci**: Switch PR review from Ollama to liteLLM (qwen2.5-72b)
 
 ### Documentation
 - Update wiki for timeline events and incident response methodology
-- Clarify changelog exclusion criteria
 
 ### Features
 - Add timeline_events table, model, and CRUD commands
