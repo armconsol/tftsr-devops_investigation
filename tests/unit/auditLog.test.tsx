@@ -42,11 +42,8 @@ describe("Audit Log", () => {
   it("displays audit entries", async () => {
     render(<Security />);
 
-    // Wait for audit log to load
-    await screen.findByText("Audit Log");
-
-    // Check that the table has rows (header + data rows)
-    const table = screen.getByRole("table");
+    // Wait for table to appear after async audit data loads
+    const table = await screen.findByRole("table");
     expect(table).toBeInTheDocument();
 
     const rows = screen.getAllByRole("row");
@@ -56,9 +53,7 @@ describe("Audit Log", () => {
   it("provides way to view transmitted data details", async () => {
     render(<Security />);
 
-    await screen.findByText("Audit Log");
-
-    // Should have View/Hide buttons for expanding details
+    // Wait for async data to load and render the table
     const viewButtons = await screen.findAllByRole("button", { name: /View/i });
     expect(viewButtons.length).toBeGreaterThan(0);
   });
@@ -66,14 +61,13 @@ describe("Audit Log", () => {
   it("details column or button exists for viewing data", async () => {
     render(<Security />);
 
-    await screen.findByText("Audit Log");
+    // Wait for async data to load and render the table
+    await screen.findByRole("table");
 
-    // The audit log should have a Details column header
     const detailsHeader = screen.getByText("Details");
     expect(detailsHeader).toBeInTheDocument();
 
-    // Should have view buttons
-    const viewButtons = await screen.findAllByRole("button", { name: /View/i });
+    const viewButtons = screen.getAllByRole("button", { name: /View/i });
     expect(viewButtons.length).toBe(2); // One for each mock entry
   });
 });
