@@ -2,7 +2,7 @@
 
 All notable changes to TFTSR are documented here.
 Commit types shown: feat, fix, perf, docs, refactor.
-CI, chore, and build changes are excluded.
+CI, chore, and build changes are excluded unless they affect developer workflow.
 
 ## [0.2.65] — 2026-04-15
 
