@@ -2,20 +2,22 @@
 
 All notable changes to TFTSR are documented here.
 Commit types shown: feat, fix, perf, docs, refactor.
-CI, chore, and build changes are excluded unless they affect developer workflow.
+CI, chore, and build changes are excluded.
 
-## [0.2.66] — 2026-04-20
-
-### Features
-- Integrate incident response methodology into all 17 domain prompts
-- Add timeline_events table for UTC timestamp tracking during triage
-- Populate RCA and postmortem documents with real timeline data
+## [Unreleased]
 
 ### Bug Fixes
+- Harden timeline event input validation and atomic writes
 - **ci**: Switch PR review from Ollama to liteLLM (qwen2.5-72b)
 
-### Security
-- Harden timeline event input validation and atomic writes
+### Documentation
+- Update wiki for timeline events and incident response methodology
+- Clarify changelog exclusion criteria
+
+### Features
+- Add timeline_events table, model, and CRUD commands
+- Populate RCA and postmortem docs with real timeline data
+- Wire incident response methodology into AI and record triage events
 
 ## [0.2.65] — 2026-04-15
 
