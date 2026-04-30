@@ -101,11 +101,25 @@ function updateTOML(path, version) {
   console.log(`✓ Updated ${path} to ${version}`);
 }
 
+function updateJSON(path, version) {
+  const fullPath = resolve(projectRoot, path);
+  if (!existsSync(fullPath)) {
+    throw new Error(`File not found: ${fullPath}`);
+  }
+  
+  const content = readFileSync(fullPath, 'utf-8');
+  const json = JSON.parse(content);
+  json.version = version;
+  
+  writeFileSync(fullPath, JSON.stringify(json, null, 2) + '\n', 'utf-8');
+  console.log(`✓ Updated ${path} to ${version}`);
+}
+
 const version = getVersionFromGit();
 console.log(`Setting version to: ${version}`);
 
 updatePackageJson(version);
 updateTOML('src-tauri/Cargo.toml', version);
-updateTOML('src-tauri/tauri.conf.json', version);
+updateJSON('src-tauri/tauri.conf.json', version);
 
 console.log(`✓ All version fields updated to ${version}`);

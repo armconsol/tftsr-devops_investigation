@@ -386,3 +386,48 @@ export function getDomainPrompt(domainId: string): string {
   if (!domainSpecific) return "";
   return domainSpecific + INCIDENT_RESPONSE_FRAMEWORK;
 }
+
+export function detectDomain(messages: string[]): string {
+  const combinedText = messages.join(" ");
+  const combinedLower = combinedText.toLowerCase();
+
+  const domainKeywords: [string, string[]][] = [
+    ["linux", ["linux", "ubuntu", "debian", "rhel", "centos", "systemd", "kernel", "selinux"]],
+    ["windows", ["windows", "windows server", "ad", "active directory", "iis", "gpo"]],
+    ["network", ["network", "firewall", "router", "switch", "fortigate", "cisco", "aruba"]],
+    ["kubernetes", ["kubernetes", "k8s", "k3s", "helm", "pod", "deployment", "namespace"]],
+    ["databases", ["database", "postgresql", "mysql", "redis", "rabbitmq", "sql"]],
+    ["virtualization", ["vm", "virtual machine", "vmware", "proxmox", "hyper-v", "kvm"]],
+    ["hardware", ["hardware", "disk", "raid", "memory", "cpu", "motherboard"]],
+    ["observability", ["monitoring", "grafana", "prometheus", "kibana", "logging", "metrics"]],
+    ["telephony", ["voip", "sip", "asterisk", "pbx", "telephony", "sbc"]],
+    ["security", ["security", "vault", "encryption", "certificate", "tls", "ssl", "firewall"]],
+    ["public_safety", ["911", "ng911", "nena", "psap", "cad", "dispatch"]],
+    ["application", ["java", "spring", "tomcat", "jvm", "application", "app"]],
+    ["automation", ["ansible", "jenkins", "ci/cd", "automation", "pipeline", "terraform"]],
+    ["hpe_infra", ["hpe", "oneview", "ilo", "synergy", "dl360", "dl320"]],
+    ["dell_hardware", ["dell", "idrac", "poweredge", "perc", "lifecycle controller"]],
+    ["identity", ["identity", "keycloak", "boundary", "sso", "ldap", "ad", "auth"]],
+  ];
+
+  const scores: Record<string, number> = {};
+
+  for (const [domain, keywords] of domainKeywords) {
+    let score = 0;
+    for (const keyword of keywords) {
+      if (combinedLower.includes(keyword)) {
+        score += 1;
+      }
+    }
+    if (score > 0) {
+      scores[domain] = score;
+    }
+  }
+
+  if (Object.keys(scores).length === 0) {
+    return "general";
+  }
+
+  const bestDomain = Object.entries(scores).sort((a, b) => b[1] - a[1])[0];
+  return bestDomain ? bestDomain[0] : "general";
+}

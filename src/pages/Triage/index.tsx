@@ -15,7 +15,7 @@ import {
   updateIssueCmd,
   addFiveWhyCmd,
 } from "@/lib/tauriCommands";
-import { getDomainPrompt } from "@/lib/domainPrompts";
+import { getDomainPrompt, detectDomain } from "@/lib/domainPrompts";
 import type { TriageMessage } from "@/lib/tauriCommands";
 
 const CLOSE_PATTERNS = [
@@ -46,7 +46,7 @@ export default function Triage() {
   const lastUserMsgRef = useRef<string>("");
   const initialized = useRef(false);
 
-  const { currentIssue, messages, currentWhyLevel, startSession, addMessage, setWhyLevel } =
+  const { currentIssue, messages, currentWhyLevel, activeDomain, startSession, addMessage, setWhyLevel, setActiveDomain } =
     useSessionStore();
   const { getActiveProvider } = useSettingsStore();
 
@@ -57,6 +57,7 @@ export default function Triage() {
     Promise.all([getIssueCmd(id), getIssueMessagesCmd(id)])
       .then(([detail, pastMessages]) => {
         startSession(detail.issue);
+      setActiveDomain(detail.issue.category);
 
         if (pastMessages.length > 0) {
           // Restore conversation history from DB
@@ -168,7 +169,17 @@ export default function Triage() {
     setPendingFiles([]);
 
     try {
-      const systemPrompt = currentIssue ? getDomainPrompt(currentIssue.category) : undefined;
+      // Detect domain from conversation messages
+      const messageContents = messages.map((m) => m.content);
+      const detectedDomain = detectDomain(messageContents);
+      
+      // Update active domain if it has changed
+      if (detectedDomain !== activeDomain && detectedDomain !== "general") {
+        setActiveDomain(detectedDomain);
+      }
+      
+      // Use the active domain for the system prompt
+      const systemPrompt = activeDomain ? getDomainPrompt(activeDomain) : undefined;
       const response = await chatMessageCmd(id, aiMessage, provider, systemPrompt);
       const assistantMsg: TriageMessage = {
         id: `asst-${Date.now()}`,

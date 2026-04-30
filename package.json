@@ -1,7 +1,7 @@
 {
   "name": "tftsr",
   "private": true,
-  "version": "0.2.62",
+  "version": "0.2.68",
   "type": "module",
   "scripts": {
     "dev": "vite",

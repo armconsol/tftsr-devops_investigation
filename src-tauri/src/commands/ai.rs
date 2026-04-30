@@ -2,6 +2,7 @@ use rusqlite::OptionalExtension;
 use tauri::{Manager, State};
 use tracing::warn;
 
+use crate::ai::agents::create_agent_registry;
 use crate::ai::provider::create_provider;
 use crate::ai::{AnalysisResult, ChatResponse, Message, ProviderInfo};
 use crate::db::models::{AiConversation, AiMessage, AuditEntry};
@@ -233,7 +234,21 @@ pub async fn chat_message(
     // Search integration sources for relevant context
     let integration_context = search_integration_sources(&message, &app_handle, &state).await;
 
+    // Load agent system
+    let agent_registry = create_agent_registry();
+    let devops_agent = agent_registry.get("devops-incident-responder");
+
     let mut messages = Vec::new();
+
+    // Inject devops-incident-responder as primary system prompt (always)
+    if let Some(agent) = devops_agent {
+        messages.push(Message {
+            role: "system".into(),
+            content: agent.system_prompt.clone(),
+            tool_call_id: None,
+            tool_calls: None,
+        });
+    }
 
     // Inject domain system prompt if provided
     if let Some(ref prompt) = system_prompt {
