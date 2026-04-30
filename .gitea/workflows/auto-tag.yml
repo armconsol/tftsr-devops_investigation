@@ -114,94 +114,31 @@ jobs:
           cat /tmp/release_body.md
 
       - name: Update Gitea release body
-        env:
-          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
         run: |
           set -eu
-          API="http://172.0.0.29:3000/api/v1/repos/$GITHUB_REPOSITORY"
           TAG=$(git describe --tags --abbrev=0)
-          # Create release if it doesn't exist yet (build jobs may still be running)
-          curl -sf -X POST "$API/releases" \
-            -H "Authorization: token $RELEASE_TOKEN" \
-            -H "Content-Type: application/json" \
-            -d "{\"tag_name\":\"$TAG\",\"name\":\"TFTSR $TAG\",\"body\":\"Release $TAG\",\"draft\":false}" || true
-          RELEASE_ID=$(curl -sf "$API/releases/tags/$TAG" \
-            -H "Authorization: token $RELEASE_TOKEN" | jq -r '.id')
-          if [ -z "$RELEASE_ID" ] || [ "$RELEASE_ID" = "null" ]; then
-            echo "ERROR: Failed to get release ID for $TAG"
-            exit 1
-          fi
-          curl -sf -X PATCH "$API/releases/$RELEASE_ID" \
-            -H "Authorization: token $RELEASE_TOKEN" \
-            -H "Content-Type: application/json" \
-            --data-binary "{\"body\":$(jq -Rs . < /tmp/release_body.md)}"
+          tea releases edit "$TAG" --note "@/tmp/release_body.md" --repo "$GITHUB_REPOSITORY" --login gogs.tftsr.com
           echo "✓ Release body updated"
 
       - name: Commit CHANGELOG.md to master
-        env:
-          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
         run: |
           set -euo pipefail
-          API="http://172.0.0.29:3000/api/v1/repos/$GITHUB_REPOSITORY"
           TAG=$(git describe --tags --abbrev=0)
           # Validate tag format to prevent shell injection in commit message / JSON
           if ! echo "$TAG" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
             echo "ERROR: Unexpected tag format: $TAG"
             exit 1
           fi
-          # Fetch current blob SHA from master; empty if file doesn't exist yet
-          CURRENT_SHA=$(curl -sf \
-            -H "Accept: application/json" \
-            -H "Authorization: token $RELEASE_TOKEN" \
-            "$API/contents/CHANGELOG.md?ref=master" 2>/dev/null \
-            | jq -r '.sha // empty' 2>/dev/null || true)
-          # Base64-encode content (no line wrapping)
-          CONTENT=$(base64 -w 0 CHANGELOG.md)
-          # Build JSON payload — omit "sha" when file doesn't exist yet (new repo)
-          PAYLOAD=$(jq -n \
-            --arg msg  "chore: update CHANGELOG.md for ${TAG} [skip ci]" \
-            --arg body "$CONTENT" \
-            --arg sha  "$CURRENT_SHA" \
-            'if $sha == ""
-             then {message: $msg, content: $body, branch: "master"}
-             else {message: $msg, content: $body, sha: $sha, branch: "master"}
-             end')
-          # PUT atomically updates (or creates) the file on master — no fast-forward needed
-          RESP_FILE=$(mktemp)
-          HTTP_CODE=$(curl -s -o "$RESP_FILE" -w "%{http_code}" -X PUT \
-            -H "Authorization: token $RELEASE_TOKEN" \
-            -H "Content-Type: application/json" \
-            -d "$PAYLOAD" \
-            "$API/contents/CHANGELOG.md")
-          if [ "$HTTP_CODE" -lt 200 ] || [ "$HTTP_CODE" -ge 300 ]; then
-            echo "ERROR: Failed to update CHANGELOG.md (HTTP $HTTP_CODE)"
-            cat "$RESP_FILE" >&2
-            exit 1
-          fi
+          git add CHANGELOG.md
+          git commit -m "chore: update CHANGELOG.md for ${TAG} [skip ci]" || echo "No changes to commit"
+          git push origin master
           echo "✓ CHANGELOG.md committed to master"
 
       - name: Upload CHANGELOG.md as release asset
-        env:
-          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
         run: |
           set -eu
-          API="http://172.0.0.29:3000/api/v1/repos/$GITHUB_REPOSITORY"
           TAG=$(git describe --tags --abbrev=0)
-          RELEASE_ID=$(curl -sf "$API/releases/tags/$TAG" \
-            -H "Authorization: token $RELEASE_TOKEN" | jq -r '.id')
-          if [ -z "$RELEASE_ID" ] || [ "$RELEASE_ID" = "null" ]; then
-            echo "ERROR: Failed to get release ID for $TAG"
-            exit 1
-          fi
-          EXISTING=$(curl -sf "$API/releases/$RELEASE_ID" \
-            -H "Authorization: token $RELEASE_TOKEN" \
-            | jq -r '.assets[]? | select(.name=="CHANGELOG.md") | .id')
-          [ -n "$EXISTING" ] && curl -sf -X DELETE \
-            "$API/releases/$RELEASE_ID/assets/$EXISTING" \
-            -H "Authorization: token $RELEASE_TOKEN"
-          curl -sf -X POST "$API/releases/$RELEASE_ID/assets" \
-            -H "Authorization: token $RELEASE_TOKEN" \
-            -F "attachment=@CHANGELOG.md;filename=CHANGELOG.md"
+          tea releases edit "$TAG" --asset CHANGELOG.md --repo "$GITHUB_REPOSITORY" --login gogs.tftsr.com
           echo "✓ CHANGELOG.md uploaded"
 
   wiki-sync:
