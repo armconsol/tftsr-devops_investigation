@@ -7,48 +7,15 @@ CI, chore, and build changes are excluded.
 ## [Unreleased]
 
 ### Bug Fixes
-- **auto-tag**: Use correct tag range for release notes
-
-### Chores
-- Update CHANGELOG.md for v0.2.66 [skip ci]
-
-### Features
-- Add devops-incident-responder agent with domain auto-detection
-
-## [0.2.68] — 2026-04-28
-
-### Bug Fixes
-- **ci**: Switch PR review from Ollama to liteLLM (qwen2.5-72b)
-- **test**: Await async data in auditLog test to prevent race condition
 - Harden timeline event input validation and atomic writes
 
 ### Documentation
 - Update wiki for timeline events and incident response methodology
-- Clarify changelog exclusion criteria
 
 ### Features
 - Add timeline_events table, model, and CRUD commands
 - Populate RCA and postmortem docs with real timeline data
 - Wire incident response methodology into AI and record triage events
-
-## [0.2.67] — 2026-04-28
-
-### Bug Fixes
-- **ci**: Update CHANGELOG.md for v0.2.66 [skip ci]
-
-## [0.2.66] — 2026-04-20
-
-### Bug Fixes
-- **ci**: Switch PR review from Ollama to liteLLM (qwen2.5-72b)
-- Harden timeline event input validation and atomic writes
-
-### Documentation
-- Update wiki for timeline events and incident response methodology
-- Clarify changelog exclusion criteria
-
-### Features
-- Wire incident response methodology into AI and record triage events
-- Populate RCA and postmortem docs with real timeline data
 
 ## [0.2.65] — 2026-04-15
 
