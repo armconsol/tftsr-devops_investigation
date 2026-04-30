@@ -15,6 +15,15 @@ CI, chore, and build changes are excluded.
 ### Features
 - Add devops-incident-responder agent with domain auto-detection
 
+## [0.2.71] — 2026-04-29
+
+### Chores
+- Update CHANGELOG.md for v0.2.68 [skip ci]
+
+## [0.2.70] — 2026-04-29
+
+## [0.2.69] — 2026-04-29
+
 ## [0.2.68] — 2026-04-28
 
 ### Bug Fixes
