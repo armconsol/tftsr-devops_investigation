@@ -1,3 +1,4 @@
+pub mod agents;
 pub mod anthropic;
 pub mod gemini;
 pub mod mistral;
@@ -8,6 +9,8 @@ pub mod tools;
 
 pub use provider::*;
 pub use tools::*;
+
+pub use agents::{create_agent_registry, detect_domain, load_agent, Agent, AgentRegistry};
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;

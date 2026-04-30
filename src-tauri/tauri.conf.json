@@ -1,6 +1,6 @@
 {
   "productName": "Troubleshooting and RCA Assistant",
-  "version": "0.2.50",
+  "version": "0.2.68",
   "identifier": "com.trcaa.app",
   "build": {
     "frontendDist": "../dist",
@@ -26,7 +26,11 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["deb", "rpm", "nsis"],
+    "targets": [
+      "deb",
+      "rpm",
+      "nsis"
+    ],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -42,6 +46,3 @@
     "longDescription": "Structured AI-backed assistant for IT troubleshooting, 5-whys root cause analysis, and post-mortem documentation with offline Ollama support."
   }
 }
-
-
-

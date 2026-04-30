@@ -145,11 +145,9 @@ export default function App() {
 
           {/* Version + Theme toggle */}
           <div className="px-4 py-3 border-t flex items-center justify-between">
-            {!collapsed && (
-              <span className="text-xs text-muted-foreground">
-                {appVersion ? `v${appVersion}` : ""}
-              </span>
-            )}
+            <span className="text-xs text-muted-foreground">
+              {appVersion ? `v${appVersion}` : ""}
+            </span>
             <button
               onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
               className="p-1 rounded hover:bg-accent text-muted-foreground"
