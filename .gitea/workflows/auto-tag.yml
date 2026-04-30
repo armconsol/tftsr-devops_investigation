@@ -102,17 +102,16 @@ jobs:
         run: |
           set -eu
           git-cliff --config cliff.toml --output CHANGELOG.md
-          git-cliff --config cliff.toml --latest --strip all > /tmp/release_body.md
-          echo "=== Release body preview (from CHANGELOG) ==="
-          cat /tmp/release_body.md
-          # If release body is empty, generate from git commits
-          if [ ! -s /tmp/release_body.md ]; then
-            echo "=== Release body is empty, generating from git commits ==="
-            LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
-            git log "${LAST_TAG}..HEAD" --pretty=format:"- %s" > /tmp/release_body.md || true
-            echo "=== Release body preview (from commits) ==="
-            cat /tmp/release_body.md
+          CURRENT_TAG=$(git describe --tags --abbrev=0)
+          PREV_TAG=$(git describe --tags --abbrev=0 --match 'v*' --exclude "${CURRENT_TAG}" 2>/dev/null || echo "")
+          if [ -n "$PREV_TAG" ]; then
+            git-cliff --config cliff.toml --tag "$CURRENT_TAG" --strip all > /tmp/release_body.md || true
+          else
+            echo "=== No previous tag found, generating from git commits ==="
+            git log --pretty=format:"- %s" > /tmp/release_body.md || true
           fi
+          echo "=== Release body preview ==="
+          cat /tmp/release_body.md
 
       - name: Update Gitea release body
         env:
