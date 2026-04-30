@@ -17,6 +17,12 @@ CI, chore, and build changes are excluded.
 - Populate RCA and postmortem docs with real timeline data
 - Wire incident response methodology into AI and record triage events
 
+## [0.2.71] — 2026-04-29
+
+### Features
+- Add devops-incident-responder agent with domain auto-detection
+- Fix auto-tag workflow to use correct tag range for release notes
+
 ## [0.2.65] — 2026-04-15
 
 ### Bug Fixes
