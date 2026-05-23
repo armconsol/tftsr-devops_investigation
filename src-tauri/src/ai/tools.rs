@@ -1,9 +1,16 @@
 use crate::ai::{ParameterProperty, Tool, ToolParameters};
 use std::collections::HashMap;
 
-/// Get all available tools for AI function calling
+/// Get all statically-registered tools for AI function calling.
 pub fn get_available_tools() -> Vec<Tool> {
     vec![get_add_ado_comment_tool()]
+}
+
+/// Fetch tools from all connected, enabled MCP servers.
+pub async fn get_enabled_mcp_tools(state: &crate::state::AppState) -> Vec<Tool> {
+    crate::mcp::adapter::get_enabled_mcp_tools(state)
+        .await
+        .unwrap_or_default()
 }
 
 /// Tool definition for adding comments to Azure DevOps work items

@@ -324,6 +324,7 @@ pub async fn initiate_oauth(
         let settings = app_state.settings.clone();
         let app_data_dir = app_state.app_data_dir.clone();
         let integration_webviews = app_state.integration_webviews.clone();
+        let mcp_connections = app_state.mcp_connections.clone();
 
         tokio::spawn(async move {
             let app_state_for_callback = AppState {
@@ -331,6 +332,7 @@ pub async fn initiate_oauth(
                 settings,
                 app_data_dir,
                 integration_webviews,
+                mcp_connections,
             };
             while let Some(callback) = callback_rx.recv().await {
                 tracing::info!("Received OAuth callback for state: {}", callback.state);

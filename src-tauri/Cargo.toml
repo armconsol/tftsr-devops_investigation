@@ -1,6 +1,6 @@
 [package]
 name = "trcaa"
-version = "0.2.68"
+version = "0.3.0"
 edition = "2021"
 
 [lib]
@@ -45,6 +45,11 @@ warp = "0.3"
 urlencoding = "2"
 infer = "0.15"
 url = "2.5.8"
+rmcp = { version = "1.7.0", features = [
+    "client",
+    "transport-child-process",
+    "transport-streamable-http-client-reqwest",
+] }
 
 [dev-dependencies]
 tokio-test = "0.4"

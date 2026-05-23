@@ -129,6 +129,60 @@ CI/CD currently uses internal `http://` endpoints for self-hosted Gitea release 
 
 ---
 
+## MCP Server Security
+
+MCP server support introduces external tool execution capabilities. The following controls mitigate the associated risks.
+
+### Auth Value Storage
+
+- Auth tokens (API keys, bearer tokens, OAuth2 access tokens) are encrypted with **AES-256-GCM** before persistence in `mcp_servers.auth_value`.
+- Encryption uses the same key derivation as integration credentials (`TFTSR_ENCRYPTION_KEY` → SHA-256 → 32-byte AES key).
+- Random 96-bit nonce per encryption operation.
+- Format: `base64(nonce || ciphertext || tag)`.
+
+### Server-Side Response Scrubbing
+
+- `list_mcp_servers` and all CRUD commands set `auth_value = None` before returning to the frontend.
+- The encrypted ciphertext never reaches the WebView layer.
+- Decryption only occurs internally when establishing a connection (discovery) or executing a tool call.
+
+### Audit Trail
+
+- `write_audit_event` is called **before** every MCP tool execution with:
+  - `action`: `"mcp_tool_call"`
+  - `entity_type`: `"mcp_tool"`
+  - `entity_id`: the tool key being invoked
+  - `details`: JSON containing server ID, tool name, and argument hash
+- This provides a complete, tamper-evident record of all external tool invocations.
+
+### PII Scan on Arguments
+
+- Before dispatching a tool call, the arguments JSON is scanned through the PII detection pipeline.
+- If PII is detected, a **non-blocking warning** is surfaced to the user.
+- This prevents inadvertent leakage of credentials, email addresses, or IP addresses to external MCP servers.
+
+### Stdio Transport Path Validation
+
+- `build_stdio_transport()` rejects any `command` that is not an absolute path.
+- This prevents:
+  - Path traversal attacks (e.g., `../../malicious`)
+  - Reliance on `$PATH` resolution which could be manipulated
+  - Unintended execution of relative-path binaries
+
+### Network Boundaries
+
+- HTTP transport uses `reqwest` with TLS certificate verification for HTTPS endpoints.
+- stdio transport communicates only with locally spawned processes (no network exposure).
+- MCP server URLs should be added to the Content Security Policy `connect-src` if fetched from the WebView layer.
+
+### Cascade Deletes
+
+- Removing an MCP server cascades to delete all associated `mcp_tools` and `mcp_resources` records.
+- The live connection is also removed from the in-memory connection pool.
+- No orphaned tool definitions can persist after server removal.
+
+---
+
 ## Security Checklist for New Features
 
 - [ ] Does it send data externally? → Add audit log entry

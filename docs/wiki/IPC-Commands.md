@@ -412,6 +412,109 @@ Updates work item fields. Uses JSON-PATCH format.
 
 ---
 
+## MCP Server Commands
+
+> **Status:** Fully Implemented (v0.3.0+)
+
+### `list_mcp_servers`
+```typescript
+listMcpServersCmd() → McpServer[]
+```
+Returns all registered MCP servers. `auth_value` is always `null` in responses (scrubbed server-side).
+```typescript
+interface McpServer {
+    id: string;
+    name: string;
+    url: string;
+    transport_type: "stdio" | "http";
+    transport_config: string;          // JSON
+    auth_type: "none" | "api_key" | "bearer" | "oauth2";
+    auth_value?: string;               // Always null in responses
+    enabled: boolean;
+    last_discovered_at?: string;
+    discovery_status: "pending" | "connected" | "unreachable" | "error";
+    discovery_error?: string;
+    created_at: string;
+    updated_at: string;
+}
+```
+
+### `create_mcp_server`
+```typescript
+createMcpServerCmd(request: CreateMcpServerRequest) → McpServer
+```
+Creates a new MCP server record. Auth value is encrypted with AES-256-GCM before persistence.
+```typescript
+interface CreateMcpServerRequest {
+    name: string;
+    url: string;
+    transport_type: "stdio" | "http";
+    transport_config: string;
+    auth_type: "none" | "api_key" | "bearer" | "oauth2";
+    auth_value?: string;
+    enabled: boolean;
+}
+```
+
+### `update_mcp_server`
+```typescript
+updateMcpServerCmd(id: string, request: UpdateMcpServerRequest) → McpServer
+```
+Partial update. Only provided fields are changed. If `auth_value` is provided, it replaces the encrypted value.
+```typescript
+interface UpdateMcpServerRequest {
+    name?: string;
+    url?: string;
+    transport_type?: "stdio" | "http";
+    transport_config?: string;
+    auth_type?: "none" | "api_key" | "bearer" | "oauth2";
+    auth_value?: string;
+    enabled?: boolean;
+}
+```
+
+### `delete_mcp_server`
+```typescript
+deleteMcpServerCmd(id: string) → void
+```
+Deletes the server record and all associated tools/resources (cascade). Also removes the live connection from memory.
+
+### `toggle_mcp_server`
+```typescript
+toggleMcpServerCmd(id: string, enabled: boolean) → void
+```
+Enables or disables a server. Disabled servers are excluded from AI tool injection and startup discovery.
+
+### `discover_mcp_server`
+```typescript
+discoverMcpServerCmd(id: string) → McpServerStatus
+```
+Connects to the server, enumerates its tools and resources, and persists them. Returns the updated status.
+```typescript
+interface McpServerStatus {
+    server_id: string;
+    status: "pending" | "connected" | "unreachable" | "error";
+    error?: string;
+    tool_count: number;
+    resource_count: number;
+    last_discovered_at?: string;
+}
+```
+
+### `get_mcp_server_status`
+```typescript
+getMcpServerStatusCmd(id: string) → McpServerStatus
+```
+Returns current discovery status, tool count, and resource count without triggering a new connection.
+
+### `initiate_mcp_oauth`
+```typescript
+initiateMcpOauthCmd(id: string) → void
+```
+Opens a WebView window for OAuth2 authentication. Requires `auth_type = "oauth2"` and `transport_config` containing `auth_endpoint`, `token_endpoint`, and `client_id`. After successful authentication, the access token is encrypted and stored.
+
+---
+
 ## Common Types
 
 ### `ConnectionResult`

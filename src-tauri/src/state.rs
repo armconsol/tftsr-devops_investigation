@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
+use tokio::sync::Mutex as TokioMutex;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProviderConfig {
@@ -72,8 +73,9 @@ pub struct AppState {
     pub settings: Arc<Mutex<AppSettings>>,
     pub app_data_dir: PathBuf,
     /// Track open integration webview windows by service name -> window label
-    /// These windows stay open for the user to browse and for fresh cookie extraction
     pub integration_webviews: Arc<Mutex<HashMap<String, String>>>,
+    /// Live MCP server connections: server_id -> connection
+    pub mcp_connections: Arc<TokioMutex<HashMap<String, Arc<TokioMutex<crate::mcp::client::McpConnection>>>>>,
 }
 
 /// Determine the application data directory.

@@ -2,7 +2,7 @@
 
 ## Overview
 
-TFTSR uses **SQLite** via `rusqlite` with the `bundled-sqlcipher` feature for AES-256 encryption in production. 17 versioned migrations are tracked in the `_migrations` table.
+TFTSR uses **SQLite** via `rusqlite` with the `bundled-sqlcipher` feature for AES-256 encryption in production. 18 versioned migrations are tracked in the `_migrations` table.
 
 **DB file location:** `{app_data_dir}/tftsr.db`
 
@@ -38,7 +38,7 @@ pub fn init_db(data_dir: &Path) -> anyhow::Result<Connection> {
 
 ---
 
-## Schema (17 Migrations)
+## Schema (18 Migrations)
 
 ### 001 — issues
 
@@ -289,6 +289,60 @@ CREATE INDEX idx_timeline_events_time ON timeline_events(created_at);
 - `created_at`: TEXT UTC timestamp (`YYYY-MM-DD HH:MM:SS`)
 - Non-blocking writes: Timeline events recorded asynchronously at key triage moments
 - Cascade delete from issues ensures cleanup
+
+### 018 — mcp_servers, mcp_tools, mcp_resources (MCP Server Support)
+
+**MCP server registry:**
+```sql
+CREATE TABLE mcp_servers (
+    id                TEXT PRIMARY KEY,
+    name              TEXT NOT NULL,
+    url               TEXT NOT NULL,
+    transport_type    TEXT NOT NULL CHECK(transport_type IN ('stdio', 'http')),
+    transport_config  TEXT NOT NULL DEFAULT '{}',
+    auth_type         TEXT NOT NULL CHECK(auth_type IN ('none', 'api_key', 'bearer', 'oauth2')),
+    auth_value        TEXT,              -- AES-256-GCM encrypted
+    enabled           INTEGER NOT NULL DEFAULT 1,
+    last_discovered_at TEXT,
+    discovery_status  TEXT NOT NULL DEFAULT 'pending'
+                      CHECK(discovery_status IN ('pending','connected','unreachable','error')),
+    discovery_error   TEXT,
+    created_at        TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at        TEXT NOT NULL DEFAULT (datetime('now'))
+);
+```
+
+**Discovered tools (populated by discovery):**
+```sql
+CREATE TABLE mcp_tools (
+    id          TEXT PRIMARY KEY,
+    server_id   TEXT NOT NULL,
+    name        TEXT NOT NULL,           -- Original tool name from server
+    tool_key    TEXT NOT NULL,           -- Sanitised key: mcp_{server}_{tool}
+    description TEXT,
+    parameters  TEXT NOT NULL DEFAULT '{}',  -- JSON Schema
+    FOREIGN KEY(server_id) REFERENCES mcp_servers(id) ON DELETE CASCADE
+);
+```
+
+**Discovered resources:**
+```sql
+CREATE TABLE mcp_resources (
+    id          TEXT PRIMARY KEY,
+    server_id   TEXT NOT NULL,
+    uri         TEXT NOT NULL,
+    name        TEXT,
+    description TEXT,
+    FOREIGN KEY(server_id) REFERENCES mcp_servers(id) ON DELETE CASCADE
+);
+```
+
+**Design notes:**
+- `auth_value` stored as AES-256-GCM ciphertext (same encryption as integration credentials)
+- `transport_type` and `auth_type` enforce valid values via CHECK constraints
+- `discovery_status` tracks connection state: `pending` → `connected` | `unreachable` | `error`
+- Cascade deletes ensure removing a server cleans up all associated tools and resources
+- Tools and resources are replaced atomically on each discovery run (delete-all + re-insert)
 
 ---
 
