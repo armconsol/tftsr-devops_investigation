@@ -30,14 +30,34 @@ jobs:
 
           API="http://172.0.0.29:3000/api/v1/repos/$GITHUB_REPOSITORY"
 
+          # Checkout the source so we can read Cargo.toml
+          git init
+          git remote add origin "http://oauth2:${RELEASE_TOKEN}@172.0.0.29:3000/${GITHUB_REPOSITORY}.git"
+          git fetch --depth=1 origin "$GITHUB_SHA"
+          git checkout FETCH_HEAD
+          git config user.name "gitea-actions[bot]"
+          git config user.email "gitea-actions@local"
+
+          # Read the version declared in Cargo.toml
+          CARGO_VERSION=$(grep '^version' src-tauri/Cargo.toml | head -1 | sed 's/version = "//;s/"//')
+          CARGO_TAG="v${CARGO_VERSION}"
+          echo "Cargo.toml declares: $CARGO_TAG"
+
           # Get the latest clean semver tag (vX.Y.Z only, ignore rc/test suffixes)
           LATEST=$(curl -s "$API/tags?limit=50" \
             -H "Authorization: token $RELEASE_TOKEN" | \
             jq -r '.[].name' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | \
             sort -V | tail -1)
+          echo "Latest git tag: ${LATEST:-none}"
 
+          # If Cargo.toml declares a higher version, honour it (major/minor bump).
+          # Otherwise fall back to auto-incrementing the patch on the latest tag.
           if [ -z "$LATEST" ]; then
-            NEXT="v0.1.0"
+            NEXT="$CARGO_TAG"
+          elif [ "$(printf '%s\n' "$LATEST" "$CARGO_TAG" | sort -V | tail -1)" = "$CARGO_TAG" ] \
+               && [ "$CARGO_TAG" != "$LATEST" ]; then
+            echo "Cargo.toml version $CARGO_TAG is ahead of latest tag $LATEST — using Cargo.toml"
+            NEXT="$CARGO_TAG"
           else
             MAJOR=$(echo "$LATEST" | cut -d. -f1 | tr -d 'v')
             MINOR=$(echo "$LATEST" | cut -d. -f2)
@@ -46,14 +66,6 @@ jobs:
           fi
 
           echo "Latest tag: ${LATEST:-none}  →  Next: $NEXT"
-
-          # Create and push the tag via git.
-          git init
-          git remote add origin "http://oauth2:${RELEASE_TOKEN}@172.0.0.29:3000/${GITHUB_REPOSITORY}.git"
-          git fetch --depth=1 origin "$GITHUB_SHA"
-          git checkout FETCH_HEAD
-          git config user.name "gitea-actions[bot]"
-          git config user.email "gitea-actions@local"
 
           if git ls-remote --exit-code --tags origin "refs/tags/$NEXT" >/dev/null 2>&1; then
             echo "Tag $NEXT already exists; skipping."
@@ -114,10 +126,23 @@ jobs:
           cat /tmp/release_body.md
 
       - name: Update Gitea release body
+        env:
+          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
         run: |
           set -eu
           TAG=$(git describe --tags --abbrev=0)
-          tea releases edit "$TAG" --note "@/tmp/release_body.md" --repo "$GITHUB_REPOSITORY" --login gogs.tftsr.com
+          API="http://172.0.0.29:3000/api/v1/repos/$GITHUB_REPOSITORY"
+          RELEASE_ID=$(curl -sf "$API/releases/tags/$TAG" \
+            -H "Authorization: token $RELEASE_TOKEN" | jq -r '.id')
+          if [ -z "$RELEASE_ID" ] || [ "$RELEASE_ID" = "null" ]; then
+            echo "ERROR: Could not find release for tag $TAG"
+            exit 1
+          fi
+          BODY=$(jq -n --rawfile note /tmp/release_body.md '{body: $note}')
+          curl -sf -X PATCH "$API/releases/$RELEASE_ID" \
+            -H "Authorization: token $RELEASE_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "$BODY"
           echo "✓ Release body updated"
 
       - name: Commit CHANGELOG.md to master
@@ -135,10 +160,29 @@ jobs:
           echo "✓ CHANGELOG.md committed to master"
 
       - name: Upload CHANGELOG.md as release asset
+        env:
+          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
         run: |
           set -eu
           TAG=$(git describe --tags --abbrev=0)
-          tea releases edit "$TAG" --asset CHANGELOG.md --repo "$GITHUB_REPOSITORY" --login gogs.tftsr.com
+          API="http://172.0.0.29:3000/api/v1/repos/$GITHUB_REPOSITORY"
+          RELEASE_ID=$(curl -sf "$API/releases/tags/$TAG" \
+            -H "Authorization: token $RELEASE_TOKEN" | jq -r '.id')
+          if [ -z "$RELEASE_ID" ] || [ "$RELEASE_ID" = "null" ]; then
+            echo "ERROR: Could not find release for tag $TAG"
+            exit 1
+          fi
+          # Delete existing asset if present to allow re-upload
+          EXISTING_ID=$(curl -sf "$API/releases/$RELEASE_ID" \
+            -H "Authorization: token $RELEASE_TOKEN" \
+            | jq -r '.assets[]? | select(.name == "CHANGELOG.md") | .id')
+          if [ -n "$EXISTING_ID" ]; then
+            curl -sf -X DELETE "$API/releases/$RELEASE_ID/assets/$EXISTING_ID" \
+              -H "Authorization: token $RELEASE_TOKEN"
+          fi
+          curl -sf -X POST "$API/releases/$RELEASE_ID/assets" \
+            -H "Authorization: token $RELEASE_TOKEN" \
+            -F "attachment=@CHANGELOG.md;filename=CHANGELOG.md"
           echo "✓ CHANGELOG.md uploaded"
 
   wiki-sync:
