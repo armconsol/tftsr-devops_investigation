@@ -62,7 +62,7 @@ jobs:
             | grep -v -E '^[+-].*[A-Za-z0-9+/]{40,}={0,2}([^A-Za-z0-9+/=]|$)')
           PROMPT="Analyze the following code changes for correctness, security issues, and best practices. PR Title: ${PR_TITLE}\n\nDiff:\n${DIFF_CONTENT}\n\nProvide a review with: 1) Summary, 2) Bugs/errors, 3) Security issues, 4) Best practices. Give specific comments with suggested fixes."
           BODY=$(jq -cn \
-            --arg model "qwen2.5-72b" \
+            --arg model "qwen3-coder-next" \
             --arg content "$PROMPT" \
             '{model: $model, messages: [{role: "user", content: $content}], stream: false}')
           echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] PR #${PR_NUMBER} - Calling liteLLM API (${#BODY} bytes)..."
@@ -109,7 +109,7 @@ jobs:
           if [ -f "/tmp/pr_review.txt" ] && [ -s "/tmp/pr_review.txt" ]; then
             REVIEW_BODY=$(head -c 65536 /tmp/pr_review.txt)
             BODY=$(jq -n \
-              --arg body "Automated PR Review (qwen2.5-72b via liteLLM):\n\n${REVIEW_BODY}\n\n---\n*automated code review*" \
+              --arg body "Automated PR Review (qwen3-coder-next via liteLLM):\n\n${REVIEW_BODY}\n\n---\n*automated code review*" \
               '{body: $body, event: "COMMENT"}')
           else
             BODY=$(jq -n \
