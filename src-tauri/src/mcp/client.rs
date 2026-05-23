@@ -79,6 +79,8 @@ pub async fn list_resources(
 }
 
 /// Call an MCP tool and return its text result.
+/// Enforces a 30-second hard timeout to prevent a misbehaving server from
+/// stalling the AI chat loop indefinitely.
 pub async fn call_tool(
     conn: &McpConnection,
     tool_name: &str,
@@ -91,9 +93,9 @@ pub async fn call_tool(
         None => CallToolRequestParams::new(tool_name.to_string()),
     };
 
-    let result = conn
-        .call_tool(params)
+    let result = tokio::time::timeout(std::time::Duration::from_secs(30), conn.call_tool(params))
         .await
+        .map_err(|_| format!("MCP tool '{tool_name}' timed out after 30s"))?
         .map_err(|e| format!("MCP tool call failed: {e}"))?;
 
     if result.is_error == Some(true) {

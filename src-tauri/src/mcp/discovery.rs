@@ -10,7 +10,20 @@ use crate::mcp::store::{
 
 /// Discover a single MCP server: connect, list tools/resources, persist.
 /// Returns the updated connection on success or a descriptive error string.
+/// Enforces a 60-second hard timeout over the entire connect + discover sequence.
 pub async fn discover_server(
+    server: &McpServer,
+    app_handle: &tauri::AppHandle,
+) -> Result<McpConnection, String> {
+    tokio::time::timeout(
+        std::time::Duration::from_secs(60),
+        discover_server_inner(server, app_handle),
+    )
+    .await
+    .map_err(|_| format!("Discovery of '{}' timed out after 60s", server.name))?
+}
+
+async fn discover_server_inner(
     server: &McpServer,
     app_handle: &tauri::AppHandle,
 ) -> Result<McpConnection, String> {

@@ -58,6 +58,28 @@ pub async fn delete_mcp_server(
 ) -> Result<(), String> {
     {
         let db = state.db.lock().map_err(|e| e.to_string())?;
+
+        // Capture server name and tool count for the audit entry before cascade delete
+        let server_name = get_server(&db, &id)?
+            .map(|s| s.name)
+            .unwrap_or_else(|| id.clone());
+        let tool_count = crate::mcp::store::get_tool_count(&db, &id).unwrap_or(0);
+        let resource_count = crate::mcp::store::get_resource_count(&db, &id).unwrap_or(0);
+
+        let details = serde_json::json!({
+            "server_name": server_name,
+            "tools_deleted": tool_count,
+            "resources_deleted": resource_count,
+        });
+        crate::audit::log::write_audit_event(
+            &db,
+            "mcp_server_deleted",
+            "mcp_server",
+            &id,
+            &details.to_string(),
+        )
+        .map_err(|e| format!("Audit log failed: {e}"))?;
+
         delete_server(&db, &id)?;
     }
     // Remove live connection if present
@@ -66,7 +88,7 @@ pub async fn delete_mcp_server(
     drop(connections);
 
     info!(server_id = %id, "MCP server deleted");
-    let _ = app_handle; // suppress unused warning
+    let _ = app_handle;
     Ok(())
 }
 
@@ -202,12 +224,25 @@ pub async fn initiate_mcp_oauth(
         .to_string();
 
     let pkce = crate::integrations::auth::generate_pkce();
-    let auth_url = crate::integrations::auth::build_auth_url(
+    let base_auth_url = crate::integrations::auth::build_auth_url(
         &auth_endpoint,
         &client_id,
         &redirect_uri,
         &scope,
         &pkce,
+    );
+
+    // Append a cryptographically random state nonce for CSRF protection
+    let state_nonce = {
+        use rand::RngCore;
+        let mut bytes = [0u8; 16];
+        rand::rngs::OsRng.fill_bytes(&mut bytes);
+        hex::encode(bytes)
+    };
+    let auth_url = format!(
+        "{}&state={}",
+        base_auth_url,
+        urlencoding::encode(&state_nonce)
     );
 
     // Open WebView window for OAuth
