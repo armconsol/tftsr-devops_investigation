@@ -19,6 +19,8 @@ jobs:
     runs-on: linux-amd64
     container:
       image: alpine:latest
+    outputs:
+      release_tag: ${{ steps.bump.outputs.release_tag }}
     steps:
       - name: Bump patch version and create tag
         id: bump
@@ -50,14 +52,20 @@ jobs:
             sort -V | tail -1)
           echo "Latest git tag: ${LATEST:-none}"
 
-          # If Cargo.toml declares a higher version, honour it (major/minor bump).
-          # Otherwise fall back to auto-incrementing the patch on the latest tag.
+          # Version resolution:
+          #   1. Cargo.toml > latest tag → use Cargo.toml (major/minor bump)
+          #   2. Cargo.toml == latest tag → tag already exists, use it for builds
+          #   3. Cargo.toml < latest tag  → auto-increment patch on latest tag
           if [ -z "$LATEST" ]; then
             NEXT="$CARGO_TAG"
-          elif [ "$(printf '%s\n' "$LATEST" "$CARGO_TAG" | sort -V | tail -1)" = "$CARGO_TAG" ] \
-               && [ "$CARGO_TAG" != "$LATEST" ]; then
-            echo "Cargo.toml version $CARGO_TAG is ahead of latest tag $LATEST — using Cargo.toml"
+          elif [ "$(printf '%s\n' "$LATEST" "$CARGO_TAG" | sort -V | tail -1)" = "$CARGO_TAG" ]; then
+            # Cargo.toml >= latest tag (covers both "ahead" and "equal" cases)
             NEXT="$CARGO_TAG"
+            if [ "$CARGO_TAG" = "$LATEST" ]; then
+              echo "Cargo.toml matches latest tag — reusing $NEXT for builds"
+            else
+              echo "Cargo.toml version $CARGO_TAG is ahead of $LATEST — using Cargo.toml"
+            fi
           else
             MAJOR=$(echo "$LATEST" | cut -d. -f1 | tr -d 'v')
             MINOR=$(echo "$LATEST" | cut -d. -f2)
@@ -68,14 +76,15 @@ jobs:
           echo "Latest tag: ${LATEST:-none}  →  Next: $NEXT"
 
           if git ls-remote --exit-code --tags origin "refs/tags/$NEXT" >/dev/null 2>&1; then
-            echo "Tag $NEXT already exists; skipping."
-            exit 0
+            echo "Tag $NEXT already exists; builds will target this tag."
+          else
+            git tag -a "$NEXT" -m "Release $NEXT"
+            git push origin "refs/tags/$NEXT"
+            echo "Tag $NEXT pushed successfully"
           fi
 
-          git tag -a "$NEXT" -m "Release $NEXT"
-          git push origin "refs/tags/$NEXT"
-
-          echo "Tag $NEXT pushed successfully"
+          # Export for downstream jobs — avoids git-describe guessing wrong tag
+          echo "release_tag=$NEXT" >> "$GITHUB_OUTPUT"
 
   changelog:
     needs: autotag
@@ -96,8 +105,9 @@ jobs:
           git init
           git remote add origin \
             "http://oauth2:${RELEASE_TOKEN}@172.0.0.29:3000/${GITHUB_REPOSITORY}.git"
-          git fetch --tags --depth=2147483647 origin
-          git checkout FETCH_HEAD
+          git fetch --unshallow origin || git fetch --depth=2147483647 origin || true
+          git fetch --tags origin
+          git checkout "$GITHUB_SHA" 2>/dev/null || git checkout FETCH_HEAD
           git config user.name "gitea-actions[bot]"
           git config user.email "gitea-actions@local"
 
@@ -111,11 +121,16 @@ jobs:
               "git-cliff-${CLIFF_VER}/git-cliff"
 
       - name: Generate changelog
+        env:
+          RELEASE_TAG: ${{ needs.autotag.outputs.release_tag }}
         run: |
           set -eu
+          # Use the tag output from autotag — never rely on git describe
+          CURRENT_TAG="${RELEASE_TAG}"
+          echo "Building changelog for $CURRENT_TAG"
           git-cliff --config cliff.toml --output CHANGELOG.md
-          CURRENT_TAG=$(git describe --tags --abbrev=0)
-          PREV_TAG=$(git describe --tags --abbrev=0 --match 'v*' --exclude "${CURRENT_TAG}" 2>/dev/null || echo "")
+          PREV_TAG=$(git tag --sort=-version:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' \
+            | grep -v "^${CURRENT_TAG}$" | head -1 || echo "")
           if [ -n "$PREV_TAG" ]; then
             git-cliff --config cliff.toml --tag "$CURRENT_TAG" --strip all > /tmp/release_body.md || true
           else
@@ -128,9 +143,10 @@ jobs:
       - name: Update Gitea release body
         env:
           RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          RELEASE_TAG: ${{ needs.autotag.outputs.release_tag }}
         run: |
           set -eu
-          TAG=$(git describe --tags --abbrev=0)
+          TAG="${RELEASE_TAG}"
           API="http://172.0.0.29:3000/api/v1/repos/$GITHUB_REPOSITORY"
           RELEASE_ID=$(curl -sf "$API/releases/tags/$TAG" \
             -H "Authorization: token $RELEASE_TOKEN" | jq -r '.id')
@@ -146,9 +162,11 @@ jobs:
           echo "✓ Release body updated"
 
       - name: Commit CHANGELOG.md to master
+        env:
+          RELEASE_TAG: ${{ needs.autotag.outputs.release_tag }}
         run: |
           set -euo pipefail
-          TAG=$(git describe --tags --abbrev=0)
+          TAG="${RELEASE_TAG}"
           # Validate tag format to prevent shell injection in commit message / JSON
           if ! echo "$TAG" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
             echo "ERROR: Unexpected tag format: $TAG"
@@ -162,9 +180,10 @@ jobs:
       - name: Upload CHANGELOG.md as release asset
         env:
           RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          RELEASE_TAG: ${{ needs.autotag.outputs.release_tag }}
         run: |
           set -eu
-          TAG=$(git describe --tags --abbrev=0)
+          TAG="${RELEASE_TAG}"
           API="http://172.0.0.29:3000/api/v1/repos/$GITHUB_REPOSITORY"
           RELEASE_ID=$(curl -sf "$API/releases/tags/$TAG" \
             -H "Authorization: token $RELEASE_TOKEN" | jq -r '.id')
