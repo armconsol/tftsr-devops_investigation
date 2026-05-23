@@ -851,11 +851,24 @@ mod tests {
             .collect::<Result<Vec<_>, _>>()
             .unwrap();
         for col in &[
-            "id", "name", "url", "transport_type", "transport_config",
-            "auth_type", "auth_value", "enabled", "last_discovered_at",
-            "discovery_status", "discovery_error", "created_at", "updated_at",
+            "id",
+            "name",
+            "url",
+            "transport_type",
+            "transport_config",
+            "auth_type",
+            "auth_value",
+            "enabled",
+            "last_discovered_at",
+            "discovery_status",
+            "discovery_error",
+            "created_at",
+            "updated_at",
         ] {
-            assert!(cols.contains(&col.to_string()), "mcp_servers missing column {col}");
+            assert!(
+                cols.contains(&col.to_string()),
+                "mcp_servers missing column {col}"
+            );
         }
 
         let mut stmt = conn.prepare("PRAGMA table_info(mcp_tools)").unwrap();
@@ -864,8 +877,18 @@ mod tests {
             .unwrap()
             .collect::<Result<Vec<_>, _>>()
             .unwrap();
-        for col in &["id", "server_id", "name", "tool_key", "description", "parameters"] {
-            assert!(cols.contains(&col.to_string()), "mcp_tools missing column {col}");
+        for col in &[
+            "id",
+            "server_id",
+            "name",
+            "tool_key",
+            "description",
+            "parameters",
+        ] {
+            assert!(
+                cols.contains(&col.to_string()),
+                "mcp_tools missing column {col}"
+            );
         }
 
         let mut stmt = conn.prepare("PRAGMA table_info(mcp_resources)").unwrap();
@@ -875,7 +898,10 @@ mod tests {
             .collect::<Result<Vec<_>, _>>()
             .unwrap();
         for col in &["id", "server_id", "uri", "name", "description"] {
-            assert!(cols.contains(&col.to_string()), "mcp_resources missing column {col}");
+            assert!(
+                cols.contains(&col.to_string()),
+                "mcp_resources missing column {col}"
+            );
         }
     }
 

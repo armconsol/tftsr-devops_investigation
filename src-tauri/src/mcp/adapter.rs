@@ -33,7 +33,11 @@ pub fn sanitize_name(s: &str) -> String {
 
 /// Build a unique, AI-safe tool key: `mcp_{server_name}_{tool_name}`.
 pub fn build_tool_key(server_name: &str, tool_name: &str) -> String {
-    format!("mcp_{}_{}", sanitize_name(server_name), sanitize_name(tool_name))
+    format!(
+        "mcp_{}_{}",
+        sanitize_name(server_name),
+        sanitize_name(tool_name)
+    )
 }
 
 /// Convert stored McpTool records into AI Tool definitions.
@@ -106,9 +110,7 @@ fn parse_parameters(schema_json: &str) -> ToolParameters {
 }
 
 /// Async wrapper — fetch enabled MCP tools from state and convert to AI tools.
-pub async fn get_enabled_mcp_tools(
-    state: &crate::state::AppState,
-) -> Result<Vec<Tool>, String> {
+pub async fn get_enabled_mcp_tools(state: &crate::state::AppState) -> Result<Vec<Tool>, String> {
     let tool_records = {
         let db = state.db.lock().map_err(|e| e.to_string())?;
         crate::mcp::store::get_enabled_tools(&db)?
@@ -155,10 +157,7 @@ mod tests {
             build_tool_key("My Weather API", "get_forecast"),
             "mcp_my_weather_api_get_forecast"
         );
-        assert_eq!(
-            build_tool_key("simple", "ping"),
-            "mcp_simple_ping"
-        );
+        assert_eq!(build_tool_key("simple", "ping"), "mcp_simple_ping");
         assert_eq!(
             build_tool_key("My Server", "search files"),
             "mcp_my_server_search_files"

@@ -75,7 +75,8 @@ pub struct AppState {
     /// Track open integration webview windows by service name -> window label
     pub integration_webviews: Arc<Mutex<HashMap<String, String>>>,
     /// Live MCP server connections: server_id -> connection
-    pub mcp_connections: Arc<TokioMutex<HashMap<String, Arc<TokioMutex<crate::mcp::client::McpConnection>>>>>,
+    pub mcp_connections:
+        Arc<TokioMutex<HashMap<String, Arc<TokioMutex<crate::mcp::client::McpConnection>>>>>,
 }
 
 /// Determine the application data directory.

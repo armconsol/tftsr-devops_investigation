@@ -2,7 +2,7 @@ use std::sync::Arc;
 use tokio::sync::Mutex as TokioMutex;
 use tracing::{info, warn};
 
-use crate::mcp::client::{McpConnection, connect_http, connect_stdio, list_resources, list_tools};
+use crate::mcp::client::{connect_http, connect_stdio, list_resources, list_tools, McpConnection};
 use crate::mcp::models::McpServer;
 use crate::mcp::store::{
     get_server_auth_value, list_servers, replace_resources, replace_tools, update_discovery_status,
@@ -82,7 +82,10 @@ pub async fn init_all_servers(app_handle: &tauri::AppHandle) -> Result<(), Strin
 
     let servers: Vec<McpServer> = {
         let db = state.db.lock().map_err(|e| e.to_string())?;
-        list_servers(&db)?.into_iter().filter(|s| s.enabled).collect()
+        list_servers(&db)?
+            .into_iter()
+            .filter(|s| s.enabled)
+            .collect()
     };
 
     for server in servers {

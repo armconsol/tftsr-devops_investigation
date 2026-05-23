@@ -1,5 +1,5 @@
-use rmcp::transport::StreamableHttpClientTransport;
 use rmcp::transport::streamable_http_client::StreamableHttpClientTransportConfig;
+use rmcp::transport::StreamableHttpClientTransport;
 use std::sync::Arc;
 
 /// Build an HTTP (Streamable HTTP) transport from a URL.

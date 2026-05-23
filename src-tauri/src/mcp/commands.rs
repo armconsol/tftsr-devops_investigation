@@ -13,9 +13,7 @@ use crate::mcp::store::{
 use crate::state::AppState;
 
 #[tauri::command]
-pub async fn list_mcp_servers(
-    state: State<'_, AppState>,
-) -> Result<Vec<McpServer>, String> {
+pub async fn list_mcp_servers(state: State<'_, AppState>) -> Result<Vec<McpServer>, String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
     let mut servers = list_servers(&db)?;
     // Never expose encrypted auth values to the frontend
@@ -218,8 +216,7 @@ pub async fn initiate_mcp_oauth(
         &app_handle,
         &window_label,
         tauri::WebviewUrl::External(
-            url::Url::parse(&auth_url)
-                .map_err(|e| format!("Invalid OAuth URL: {e}"))?,
+            url::Url::parse(&auth_url).map_err(|e| format!("Invalid OAuth URL: {e}"))?,
         ),
     )
     .title(format!("Authenticate: {}", server.name))

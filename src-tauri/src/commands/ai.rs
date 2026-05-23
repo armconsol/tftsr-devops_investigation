@@ -880,9 +880,7 @@ async fn execute_tool_call(
             )
             .await
         }
-        name if name.starts_with("mcp_") => {
-            execute_mcp_tool_call(tool_call, app_state).await
-        }
+        name if name.starts_with("mcp_") => execute_mcp_tool_call(tool_call, app_state).await,
         _ => {
             let error = format!("Unknown tool: {}", tool_call.name);
             tracing::warn!("{}", error);

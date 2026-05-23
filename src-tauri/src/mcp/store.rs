@@ -6,10 +6,7 @@ use crate::mcp::models::{
     CreateMcpServerRequest, McpResource, McpServer, McpTool, UpdateMcpServerRequest,
 };
 
-pub fn create_server(
-    conn: &Connection,
-    req: &CreateMcpServerRequest,
-) -> Result<McpServer, String> {
+pub fn create_server(conn: &Connection, req: &CreateMcpServerRequest) -> Result<McpServer, String> {
     let id = Uuid::now_v7().to_string();
     let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
 
@@ -110,8 +107,7 @@ pub fn update_server(
     id: &str,
     req: &UpdateMcpServerRequest,
 ) -> Result<McpServer, String> {
-    let existing = get_server(conn, id)?
-        .ok_or_else(|| format!("Server {id} not found"))?;
+    let existing = get_server(conn, id)?.ok_or_else(|| format!("Server {id} not found"))?;
     let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
 
     let new_encrypted_auth = match &req.auth_value {
@@ -128,11 +124,17 @@ pub fn update_server(
         rusqlite::params![
             req.name.as_deref().unwrap_or(&existing.name),
             req.url.as_deref().unwrap_or(&existing.url),
-            req.transport_type.as_deref().unwrap_or(&existing.transport_type),
-            req.transport_config.as_deref().unwrap_or(&existing.transport_config),
+            req.transport_type
+                .as_deref()
+                .unwrap_or(&existing.transport_type),
+            req.transport_config
+                .as_deref()
+                .unwrap_or(&existing.transport_config),
             req.auth_type.as_deref().unwrap_or(&existing.auth_type),
             new_encrypted_auth,
-            req.enabled.map(|b| b as i32).unwrap_or(existing.enabled as i32),
+            req.enabled
+                .map(|b| b as i32)
+                .unwrap_or(existing.enabled as i32),
             now,
             id,
         ],
@@ -201,8 +203,11 @@ pub fn replace_resources(
     server_id: &str,
     resources: &[McpResource],
 ) -> Result<(), String> {
-    conn.execute("DELETE FROM mcp_resources WHERE server_id = ?1", [server_id])
-        .map_err(|e| e.to_string())?;
+    conn.execute(
+        "DELETE FROM mcp_resources WHERE server_id = ?1",
+        [server_id],
+    )
+    .map_err(|e| e.to_string())?;
 
     for res in resources {
         conn.execute(
@@ -266,10 +271,7 @@ pub fn get_tool_by_key(conn: &Connection, tool_key: &str) -> Result<Option<McpTo
     .map_err(|e| e.to_string())
 }
 
-pub fn get_server_auth_value(
-    conn: &Connection,
-    server_id: &str,
-) -> Result<Option<String>, String> {
+pub fn get_server_auth_value(conn: &Connection, server_id: &str) -> Result<Option<String>, String> {
     let encrypted: Option<String> = conn
         .query_row(
             "SELECT auth_value FROM mcp_servers WHERE id = ?1",
@@ -395,7 +397,10 @@ mod tests {
             )
             .unwrap();
         let raw = raw.unwrap();
-        assert_ne!(raw, "super-secret-token", "auth_value must be encrypted in DB");
+        assert_ne!(
+            raw, "super-secret-token",
+            "auth_value must be encrypted in DB"
+        );
 
         // Decrypted value must match original
         let decrypted = get_server_auth_value(&conn, &server.id).unwrap().unwrap();
@@ -441,7 +446,10 @@ mod tests {
         update_discovery_status(&conn, &server.id, "error", Some("connection refused")).unwrap();
         let errored = get_server(&conn, &server.id).unwrap().unwrap();
         assert_eq!(errored.discovery_status, "error");
-        assert_eq!(errored.discovery_error.as_deref(), Some("connection refused"));
+        assert_eq!(
+            errored.discovery_error.as_deref(),
+            Some("connection refused")
+        );
     }
 
     #[test]

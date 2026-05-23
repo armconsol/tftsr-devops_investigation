@@ -1,5 +1,5 @@
-use rmcp::{RoleClient, ServiceExt, service::RunningService};
 use rmcp::model::{CallToolRequestParams, Content, RawContent};
+use rmcp::{service::RunningService, RoleClient, ServiceExt};
 use serde_json::Map;
 
 use crate::mcp::models::{McpResource, McpTool};
@@ -8,10 +8,7 @@ use crate::mcp::models::{McpResource, McpTool};
 pub type McpConnection = RunningService<RoleClient, ()>;
 
 /// Connect to a stdio MCP server.
-pub async fn connect_stdio(
-    command: &str,
-    args: &[String],
-) -> Result<McpConnection, String> {
+pub async fn connect_stdio(command: &str, args: &[String]) -> Result<McpConnection, String> {
     let transport = crate::mcp::transport::stdio::build_stdio_transport(command, args)?;
     ().serve(transport)
         .await
@@ -19,10 +16,7 @@ pub async fn connect_stdio(
 }
 
 /// Connect to an HTTP MCP server.
-pub async fn connect_http(
-    url: &str,
-    auth_header: Option<&str>,
-) -> Result<McpConnection, String> {
+pub async fn connect_http(url: &str, auth_header: Option<&str>) -> Result<McpConnection, String> {
     let transport = crate::mcp::transport::http::build_http_transport(url, auth_header);
     ().serve(transport)
         .await
@@ -44,8 +38,8 @@ pub async fn list_tools(
         .into_iter()
         .map(|t| {
             let tool_key = crate::mcp::adapter::build_tool_key(server_name, &t.name);
-            let parameters = serde_json::to_string(&*t.input_schema)
-                .unwrap_or_else(|_| "{}".to_string());
+            let parameters =
+                serde_json::to_string(&*t.input_schema).unwrap_or_else(|_| "{}".to_string());
             McpTool {
                 id: uuid::Uuid::now_v7().to_string(),
                 server_id: server_id.to_string(),
@@ -90,13 +84,10 @@ pub async fn call_tool(
     tool_name: &str,
     arguments: &serde_json::Value,
 ) -> Result<String, String> {
-    let args: Option<Map<String, serde_json::Value>> = arguments
-        .as_object()
-        .cloned();
+    let args: Option<Map<String, serde_json::Value>> = arguments.as_object().cloned();
 
     let params = match args {
-        Some(map) => CallToolRequestParams::new(tool_name.to_string())
-            .with_arguments(map),
+        Some(map) => CallToolRequestParams::new(tool_name.to_string()).with_arguments(map),
         None => CallToolRequestParams::new(tool_name.to_string()),
     };
 
