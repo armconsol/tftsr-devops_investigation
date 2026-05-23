@@ -8,6 +8,7 @@ import {
   Bot,
   Shield,
   Link,
+  Plug,
   ChevronLeft,
   ChevronRight,
   Sun,
@@ -27,6 +28,7 @@ import History from "@/pages/History";
 import AIProviders from "@/pages/Settings/AIProviders";
 import Ollama from "@/pages/Settings/Ollama";
 import Integrations from "@/pages/Settings/Integrations";
+import MCPServers from "@/pages/Settings/MCPServers";
 import Security from "@/pages/Settings/Security";
 
 const navItems = [
@@ -39,6 +41,7 @@ const settingsItems = [
   { to: "/settings/providers", icon: Cpu, label: "AI Providers" },
   { to: "/settings/ollama", icon: Bot, label: "Ollama" },
   { to: "/settings/integrations", icon: Link, label: "Integrations" },
+  { to: "/settings/mcp", icon: Plug, label: "MCP Servers" },
   { to: "/settings/security", icon: Shield, label: "Security" },
 ];
 
@@ -172,6 +175,7 @@ export default function App() {
             <Route path="/settings/providers" element={<AIProviders />} />
             <Route path="/settings/ollama" element={<Ollama />} />
             <Route path="/settings/integrations" element={<Integrations />} />
+            <Route path="/settings/mcp" element={<MCPServers />} />
             <Route path="/settings/security" element={<Security />} />
           </Routes>
         </main>

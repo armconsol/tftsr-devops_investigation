@@ -291,8 +291,15 @@ pub async fn chat_message(
         tool_calls: None,
     });
 
-    // Get available tools
-    let tools = Some(crate::ai::tools::get_available_tools());
+    // Get available tools — static + MCP
+    let mut all_tools = crate::ai::tools::get_available_tools();
+    let mcp_tools = crate::ai::tools::get_enabled_mcp_tools(&state).await;
+    all_tools.extend(mcp_tools);
+    let tools = if all_tools.is_empty() {
+        None
+    } else {
+        Some(all_tools)
+    };
 
     // Tool-calling loop: keep calling until AI gives final answer
     let final_response;
@@ -873,12 +880,75 @@ async fn execute_tool_call(
             )
             .await
         }
+        name if name.starts_with("mcp_") => execute_mcp_tool_call(tool_call, app_state).await,
         _ => {
             let error = format!("Unknown tool: {}", tool_call.name);
             tracing::warn!("{}", error);
             Err(error)
         }
     }
+}
+
+async fn execute_mcp_tool_call(
+    tool_call: &crate::ai::ToolCall,
+    app_state: &State<'_, AppState>,
+) -> Result<String, String> {
+    // PII scan — log warning if sensitive data detected (non-blocking)
+    {
+        let detector = crate::pii::detector::PiiDetector::new();
+        let spans = detector.detect(&tool_call.arguments);
+        if !spans.is_empty() {
+            tracing::warn!(
+                tool = %tool_call.name,
+                pii_spans = spans.len(),
+                "PII detected in MCP tool call arguments"
+            );
+        }
+    }
+
+    // Audit log — mandatory before any external call
+    {
+        let db = app_state.db.lock().map_err(|e| e.to_string())?;
+        let details = serde_json::json!({
+            "tool": tool_call.name,
+            "args_preview": if tool_call.arguments.len() > 200 {
+                format!("{}...", &tool_call.arguments[..200])
+            } else {
+                tool_call.arguments.clone()
+            },
+        });
+        crate::audit::log::write_audit_event(
+            &db,
+            "mcp_tool_call",
+            "mcp_tool",
+            &tool_call.name,
+            &details.to_string(),
+        )
+        .map_err(|e| format!("Audit log failed: {e}"))?;
+    }
+
+    // Look up the tool → server_id + raw tool name
+    let (server_id, raw_tool_name) = {
+        let db = app_state.db.lock().map_err(|e| e.to_string())?;
+        let tool = crate::mcp::store::get_tool_by_key(&db, &tool_call.name)?
+            .ok_or_else(|| format!("MCP tool not found: {}", tool_call.name))?;
+        (tool.server_id, tool.name)
+    };
+
+    // Get connection from state — use tokio Mutex, never hold std::Mutex simultaneously
+    let conn_arc = {
+        let connections = app_state.mcp_connections.lock().await;
+        connections
+            .get(&server_id)
+            .cloned()
+            .ok_or_else(|| format!("No active connection for MCP server {server_id}"))?
+    };
+
+    let args: serde_json::Value = serde_json::from_str(&tool_call.arguments)
+        .unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
+
+    let conn = conn_arc.lock().await;
+    crate::mcp::client::call_tool(&conn, &raw_tool_name, &args).await
 }
 
 #[cfg(test)]

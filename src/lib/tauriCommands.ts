@@ -493,6 +493,104 @@ export const loadAiProvidersCmd = () =>
 export const deleteAiProviderCmd = (name: string) =>
   invoke<void>("delete_ai_provider", { name });
 
+// ─── MCP Server types ────────────────────────────────────────────────────────
+
+export interface McpServer {
+  id: string;
+  name: string;
+  url: string;
+  transport_type: "stdio" | "http";
+  transport_config: string;
+  auth_type: "none" | "api_key" | "bearer" | "oauth2";
+  auth_value?: string;
+  enabled: boolean;
+  last_discovered_at?: string;
+  discovery_status: "pending" | "connected" | "unreachable" | "error";
+  discovery_error?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface McpTool {
+  id: string;
+  server_id: string;
+  name: string;
+  tool_key: string;
+  description?: string;
+  parameters: string;
+}
+
+export interface McpResource {
+  id: string;
+  server_id: string;
+  uri: string;
+  name?: string;
+  description?: string;
+}
+
+export interface McpServerStatus {
+  server_id: string;
+  status: "pending" | "connected" | "unreachable" | "error";
+  error?: string;
+  tool_count: number;
+  resource_count: number;
+  last_discovered_at?: string;
+}
+
+export interface CreateMcpServerRequest {
+  name: string;
+  url: string;
+  transport_type: "stdio" | "http";
+  transport_config: string;
+  auth_type: "none" | "api_key" | "bearer" | "oauth2";
+  auth_value?: string;
+  enabled: boolean;
+}
+
+export interface UpdateMcpServerRequest {
+  name?: string;
+  url?: string;
+  transport_type?: "stdio" | "http";
+  transport_config?: string;
+  auth_type?: "none" | "api_key" | "bearer" | "oauth2";
+  auth_value?: string;
+  enabled?: boolean;
+}
+
+// ─── MCP Commands ─────────────────────────────────────────────────────────────
+
+export function listMcpServersCmd(): Promise<McpServer[]> {
+  return invoke<McpServer[]>("list_mcp_servers");
+}
+
+export function createMcpServerCmd(request: CreateMcpServerRequest): Promise<McpServer> {
+  return invoke<McpServer>("create_mcp_server", { request });
+}
+
+export function updateMcpServerCmd(id: string, request: UpdateMcpServerRequest): Promise<McpServer> {
+  return invoke<McpServer>("update_mcp_server", { id, request });
+}
+
+export function deleteMcpServerCmd(id: string): Promise<void> {
+  return invoke<void>("delete_mcp_server", { id });
+}
+
+export function toggleMcpServerCmd(id: string, enabled: boolean): Promise<void> {
+  return invoke<void>("toggle_mcp_server", { id, enabled });
+}
+
+export function discoverMcpServerCmd(id: string): Promise<McpServerStatus> {
+  return invoke<McpServerStatus>("discover_mcp_server", { id });
+}
+
+export function getMcpServerStatusCmd(id: string): Promise<McpServerStatus> {
+  return invoke<McpServerStatus>("get_mcp_server_status", { id });
+}
+
+export function initiateMcpOauthCmd(id: string): Promise<void> {
+  return invoke<void>("initiate_mcp_oauth", { id });
+}
+
 // ─── System / Version ─────────────────────────────────────────────────────────
 
 export const getAppVersionCmd = () =>

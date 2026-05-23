@@ -4,6 +4,7 @@ pub mod commands;
 pub mod db;
 pub mod docs;
 pub mod integrations;
+pub mod mcp;
 pub mod ollama;
 pub mod pii;
 pub mod state;
@@ -36,6 +37,7 @@ pub fn run() {
         settings: Arc::new(Mutex::new(state::AppSettings::default())),
         app_data_dir: data_dir.clone(),
         integration_webviews: Arc::new(Mutex::new(std::collections::HashMap::new())),
+        mcp_connections: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
     };
     let stronghold_salt = format!(
         "tftsr-stronghold-salt-v1-{:x}",
@@ -57,6 +59,15 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_http::init())
         .manage(app_state)
+        .setup(|app| {
+            let handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                if let Err(e) = crate::mcp::discovery::init_all_servers(&handle).await {
+                    tracing::warn!("MCP startup discovery error: {e}");
+                }
+            });
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             // DB / Issue CRUD
             commands::db::create_issue,
@@ -122,6 +133,15 @@ pub fn run() {
             commands::system::update_settings,
             commands::system::get_audit_log,
             commands::system::get_app_version,
+            // MCP Servers
+            mcp::commands::list_mcp_servers,
+            mcp::commands::create_mcp_server,
+            mcp::commands::update_mcp_server,
+            mcp::commands::delete_mcp_server,
+            mcp::commands::toggle_mcp_server,
+            mcp::commands::discover_mcp_server,
+            mcp::commands::get_mcp_server_status,
+            mcp::commands::initiate_mcp_oauth,
         ])
         .run(tauri::generate_context!())
         .expect("Error running Troubleshooting and RCA Assistant application");

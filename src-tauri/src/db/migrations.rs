@@ -213,6 +213,42 @@ pub fn run_migrations(conn: &Connection) -> anyhow::Result<()> {
             CREATE INDEX idx_timeline_events_issue ON timeline_events(issue_id);
             CREATE INDEX idx_timeline_events_time ON timeline_events(created_at);",
         ),
+        (
+            "018_mcp_servers",
+            "CREATE TABLE IF NOT EXISTS mcp_servers (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                url TEXT NOT NULL,
+                transport_type TEXT NOT NULL CHECK(transport_type IN ('stdio', 'http')),
+                transport_config TEXT NOT NULL DEFAULT '{}',
+                auth_type TEXT NOT NULL CHECK(auth_type IN ('none', 'api_key', 'bearer', 'oauth2')),
+                auth_value TEXT,
+                enabled INTEGER NOT NULL DEFAULT 1,
+                last_discovered_at TEXT,
+                discovery_status TEXT NOT NULL DEFAULT 'pending'
+                    CHECK(discovery_status IN ('pending','connected','unreachable','error')),
+                discovery_error TEXT,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+            CREATE TABLE IF NOT EXISTS mcp_tools (
+                id TEXT PRIMARY KEY,
+                server_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                tool_key TEXT NOT NULL,
+                description TEXT,
+                parameters TEXT NOT NULL DEFAULT '{}',
+                FOREIGN KEY(server_id) REFERENCES mcp_servers(id) ON DELETE CASCADE
+            );
+            CREATE TABLE IF NOT EXISTS mcp_resources (
+                id TEXT PRIMARY KEY,
+                server_id TEXT NOT NULL,
+                uri TEXT NOT NULL,
+                name TEXT,
+                description TEXT,
+                FOREIGN KEY(server_id) REFERENCES mcp_servers(id) ON DELETE CASCADE
+            );",
+        ),
     ];
 
     for (name, sql) in migrations {
@@ -789,5 +825,213 @@ mod tests {
             .collect();
         assert!(indexes.contains(&"idx_timeline_events_issue".to_string()));
         assert!(indexes.contains(&"idx_timeline_events_time".to_string()));
+    }
+
+    // ─── Migration 018: mcp_servers / mcp_tools / mcp_resources ─────────────
+
+    #[test]
+    fn test_018_migration_mcp_tables() {
+        let conn = setup_test_db();
+
+        for table in &["mcp_servers", "mcp_tools", "mcp_resources"] {
+            let count: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?1",
+                    [table],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            assert_eq!(count, 1, "table {table} should exist");
+        }
+
+        let mut stmt = conn.prepare("PRAGMA table_info(mcp_servers)").unwrap();
+        let cols: Vec<String> = stmt
+            .query_map([], |row| row.get::<_, String>(1))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        for col in &[
+            "id",
+            "name",
+            "url",
+            "transport_type",
+            "transport_config",
+            "auth_type",
+            "auth_value",
+            "enabled",
+            "last_discovered_at",
+            "discovery_status",
+            "discovery_error",
+            "created_at",
+            "updated_at",
+        ] {
+            assert!(
+                cols.contains(&col.to_string()),
+                "mcp_servers missing column {col}"
+            );
+        }
+
+        let mut stmt = conn.prepare("PRAGMA table_info(mcp_tools)").unwrap();
+        let cols: Vec<String> = stmt
+            .query_map([], |row| row.get::<_, String>(1))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        for col in &[
+            "id",
+            "server_id",
+            "name",
+            "tool_key",
+            "description",
+            "parameters",
+        ] {
+            assert!(
+                cols.contains(&col.to_string()),
+                "mcp_tools missing column {col}"
+            );
+        }
+
+        let mut stmt = conn.prepare("PRAGMA table_info(mcp_resources)").unwrap();
+        let cols: Vec<String> = stmt
+            .query_map([], |row| row.get::<_, String>(1))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        for col in &["id", "server_id", "uri", "name", "description"] {
+            assert!(
+                cols.contains(&col.to_string()),
+                "mcp_resources missing column {col}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_018_mcp_servers_check_constraints() {
+        let conn = setup_test_db();
+
+        // Valid insert should succeed
+        conn.execute(
+            "INSERT INTO mcp_servers (id, name, url, transport_type, auth_type)
+             VALUES ('s1', 'My Server', 'http://localhost:8080/mcp', 'http', 'none')",
+            [],
+        )
+        .unwrap();
+
+        // Invalid transport_type must fail
+        let err = conn.execute(
+            "INSERT INTO mcp_servers (id, name, url, transport_type, auth_type)
+             VALUES ('s2', 'Bad Transport', '', 'websocket', 'none')",
+            [],
+        );
+        assert!(err.is_err(), "invalid transport_type should be rejected");
+
+        // Invalid auth_type must fail
+        let err = conn.execute(
+            "INSERT INTO mcp_servers (id, name, url, transport_type, auth_type)
+             VALUES ('s3', 'Bad Auth', '', 'stdio', 'password')",
+            [],
+        );
+        assert!(err.is_err(), "invalid auth_type should be rejected");
+
+        // Invalid discovery_status must fail
+        let err = conn.execute(
+            "INSERT INTO mcp_servers (id, name, url, transport_type, auth_type, discovery_status)
+             VALUES ('s4', 'Bad Status', '', 'stdio', 'none', 'unknown')",
+            [],
+        );
+        assert!(err.is_err(), "invalid discovery_status should be rejected");
+    }
+
+    #[test]
+    fn test_018_mcp_tools_cascade_delete() {
+        let conn = setup_test_db();
+        conn.execute("PRAGMA foreign_keys = ON", []).unwrap();
+
+        conn.execute(
+            "INSERT INTO mcp_servers (id, name, url, transport_type, auth_type)
+             VALUES ('srv-1', 'Test', 'http://localhost/mcp', 'http', 'none')",
+            [],
+        )
+        .unwrap();
+
+        conn.execute(
+            "INSERT INTO mcp_tools (id, server_id, name, tool_key)
+             VALUES ('tool-1', 'srv-1', 'echo', 'mcp_test_echo')",
+            [],
+        )
+        .unwrap();
+
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM mcp_tools", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 1);
+
+        conn.execute("DELETE FROM mcp_servers WHERE id = 'srv-1'", [])
+            .unwrap();
+
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM mcp_tools", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 0, "cascade delete should remove mcp_tools");
+    }
+
+    #[test]
+    fn test_018_mcp_resources_cascade_delete() {
+        let conn = setup_test_db();
+        conn.execute("PRAGMA foreign_keys = ON", []).unwrap();
+
+        conn.execute(
+            "INSERT INTO mcp_servers (id, name, url, transport_type, auth_type)
+             VALUES ('srv-2', 'Test', 'http://localhost/mcp', 'http', 'none')",
+            [],
+        )
+        .unwrap();
+
+        conn.execute(
+            "INSERT INTO mcp_resources (id, server_id, uri)
+             VALUES ('res-1', 'srv-2', 'file:///tmp/data.txt')",
+            [],
+        )
+        .unwrap();
+
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM mcp_resources", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 1);
+
+        conn.execute("DELETE FROM mcp_servers WHERE id = 'srv-2'", [])
+            .unwrap();
+
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM mcp_resources", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 0, "cascade delete should remove mcp_resources");
+    }
+
+    #[test]
+    fn test_018_idempotent() {
+        let conn = Connection::open_in_memory().unwrap();
+        run_migrations(&conn).unwrap();
+        run_migrations(&conn).unwrap();
+
+        for table in &["mcp_servers", "mcp_tools", "mcp_resources"] {
+            let count: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?1",
+                    [table],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            assert_eq!(count, 1, "table {table} should exist after double-run");
+        }
+
+        let applied: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM _migrations WHERE name = '018_mcp_servers'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(applied, 1, "018 should only be recorded once");
     }
 }
