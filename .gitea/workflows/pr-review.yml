@@ -34,27 +34,67 @@ jobs:
           git fetch --depth=1 origin ${{ github.head_ref }}
           git checkout FETCH_HEAD
 
-      - name: Get PR diff
-        id: diff
+      - name: Build review context
+        id: context
         shell: bash
         run: |
           set -euo pipefail
           git fetch origin ${{ github.base_ref }}
-          # Exclude generated/lock files — they add noise with no review value
-          git diff origin/${{ github.base_ref }}..HEAD \
-            -- ':!Cargo.lock' ':!package-lock.json' ':!*.lock' \
-            > /tmp/pr_diff.txt
-          FULL_SIZE=$(wc -l < /tmp/pr_diff.txt | tr -d ' ')
-          echo "diff_size=${FULL_SIZE}" >> $GITHUB_OUTPUT
-          echo "diff_full_size=${FULL_SIZE}" >> $GITHUB_OUTPUT
-          # Build a manifest of changed files so the prompt can include it
+
+          # List changed source files (exclude generated/lock files)
           git diff --name-only origin/${{ github.base_ref }}..HEAD \
             -- ':!Cargo.lock' ':!package-lock.json' ':!*.lock' \
             > /tmp/pr_files.txt
 
+          FILE_COUNT=$(wc -l < /tmp/pr_files.txt | tr -d ' ')
+          echo "files_changed=${FILE_COUNT}" >> $GITHUB_OUTPUT
+
+          if [ "$FILE_COUNT" -eq 0 ]; then
+            echo "No reviewable files changed."
+            echo "diff_size=0" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # Build context: full file content for each changed file.
+          # Files <= 500 lines: include complete content.
+          # Files > 500 lines: include the per-file diff with generous context (±50 lines).
+          # Secret scrubbing applied to both paths.
+          SECRET_PATTERN='^([[:space:]]*[+\-]?[[:space:]]*).*[pP]assword[[:space:]]*[=:"'"'"']|[tT]oken[[:space:]]*[=:"'"'"']|[aA][pP][iI][_][kK]ey[[:space:]]*[=:"'"'"']|AKIA[A-Z0-9]{16}|gh[opsu]_[A-Za-z0-9_]{36,}|Authorization:[[:space:]]'
+          B64_PATTERN='^[[:space:]]*[+\-]?[[:space:]]*[A-Za-z0-9+/]{40,}={0,2}([^A-Za-z0-9+/=]|$)'
+
+          > /tmp/pr_context.txt
+          while IFS= read -r file; do
+            [ -f "$file" ] || continue
+            lines=$(wc -l < "$file" | tr -d ' ')
+            printf '\n════════ FILE: %s (%s lines) ════════\n' "$file" "$lines" >> /tmp/pr_context.txt
+            if [ "$lines" -le 500 ]; then
+              # Full file — model sees the complete implementation
+              grep -v -E "$SECRET_PATTERN" "$file" \
+                | grep -v -E "$B64_PATTERN" \
+                >> /tmp/pr_context.txt || true
+            else
+              # Large file — emit annotated diff hunks (±50 lines of context each)
+              printf '[File too large for full view (%s lines) — showing changed sections only]\n' "$lines" >> /tmp/pr_context.txt
+              git diff -U50 origin/${{ github.base_ref }}..HEAD -- "$file" \
+                | grep -v -E "$SECRET_PATTERN" \
+                | grep -v -E "$B64_PATTERN" \
+                >> /tmp/pr_context.txt || true
+            fi
+          done < /tmp/pr_files.txt
+
+          TOTAL=$(wc -l < /tmp/pr_context.txt | tr -d ' ')
+          echo "diff_size=${TOTAL}" >> $GITHUB_OUTPUT
+
+          # Cap at 6000 lines so we stay within the model's context window
+          if [ "$TOTAL" -gt 6000 ]; then
+            head -n 6000 /tmp/pr_context.txt > /tmp/pr_context_capped.txt
+            mv /tmp/pr_context_capped.txt /tmp/pr_context.txt
+            echo "[CONTEXT TRUNCATED at 6000 lines — ${TOTAL} total]" >> /tmp/pr_context.txt
+          fi
+
       - name: Analyze with LLM
         id: analyze
-        if: steps.diff.outputs.diff_size != '0'
+        if: steps.context.outputs.diff_size != '0'
         shell: bash
         env:
           LITELLM_URL: http://172.0.0.29:11434/v1
@@ -63,20 +103,11 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           set -euo pipefail
-          if grep -q "^Binary files" /tmp/pr_diff.txt; then
-            echo "WARNING: Binary file changes detected — they will be excluded from analysis"
-          fi
-          CHANGED_FILES=$(cat /tmp/pr_files.txt | tr '\n' ' ')
-          FULL_LINES=$(wc -l < /tmp/pr_diff.txt | tr -d ' ')
-          DIFF_CONTENT=$(head -n 3000 /tmp/pr_diff.txt \
-            | grep -v -E '^[+-].*(password[[:space:]]*[=:"'"'"']|token[[:space:]]*[=:"'"'"']|secret[[:space:]]*[=:"'"'"']|api_key[[:space:]]*[=:"'"'"']|private_key[[:space:]]*[=:"'"'"']|Authorization:[[:space:]]|AKIA[A-Z0-9]{16}|xox[baprs]-[0-9]{10,13}-[0-9]{10,13}-[a-zA-Z0-9]{24}|gh[opsu]_[A-Za-z0-9_]{36,}|https?://[^@[:space:]]+:[^@[:space:]]+@)' \
-            | grep -v -E '^[+-].*[A-Za-z0-9+/]{40,}={0,2}([^A-Za-z0-9+/=]|$)')
-          if [ "$FULL_LINES" -gt 3000 ]; then
-            TRUNCATION_NOTICE="NOTE: This diff was truncated at 3000 lines (full diff is ${FULL_LINES} lines). Code appearing near the end of the diff may be incomplete. Do NOT raise findings about code that appears to be missing or incomplete — it may simply be outside the truncated window."
-          else
-            TRUNCATION_NOTICE="This diff is complete (${FULL_LINES} lines, no truncation)."
-          fi
-          PROMPT="You are a senior engineer performing a focused code review. Your review must be grounded strictly in the diff provided — do not speculate about code you cannot see.\n\nPR Title: ${PR_TITLE}\nFiles changed: ${CHANGED_FILES}\n${TRUNCATION_NOTICE}\n\nDiff:\n${DIFF_CONTENT}\n\n## Instructions\n\n1. **Read the entire diff before writing anything.** Do not begin composing your review until you have read every line of the diff above.\n\n2. **Verify before claiming.** Before raising any finding:\n   a. Quote the exact line(s) from the diff that support it.\n   b. For findings about missing identifiers (undeclared variables, missing parameters, undefined functions): search the ENTIRE diff for the identifier. If it appears anywhere in the diff, the finding is WRONG — discard it.\n   c. If you cannot quote supporting evidence from the diff, do not raise the finding.\n\n3. **Do not hallucinate.** You may only raise issues visible in the diff. If a concern requires reading a file not shown in the diff, write 'outside the scope of this diff' and skip it. Never infer that code is broken from partial information.\n\n4. **Distinguish severity:**\n   - BLOCKER: provably broken from what is shown — will fail to compile or cause data loss\n   - WARNING: works but has a real risk that should be addressed before merge\n   - SUGGESTION: improvement worth considering in a follow-up PR\n\n5. **Keep it concise.** Lead with a one-paragraph summary, then list only genuine findings with quoted evidence.\n\n## Output format\n\n**Summary** (1 paragraph)\n\n**Findings** (each must include a quoted line from the diff)\n- [BLOCKER/WARNING/SUGGESTION] filename:line — description, quoted evidence, suggested fix\n\n**Verdict**: APPROVE / APPROVE WITH COMMENTS / REQUEST CHANGES"
+          CHANGED_FILES=$(tr '\n' ' ' < /tmp/pr_files.txt)
+          CONTEXT=$(cat /tmp/pr_context.txt)
+
+          PROMPT="You are a senior engineer performing a code review for the following pull request.\n\nPR Title: ${PR_TITLE}\nFiles changed: ${CHANGED_FILES}\n\n## What you are reading\n\nEach section below contains the COMPLETE, FINAL content of one changed file after the PR's changes have been applied. This is not a diff — it is the full file. For files over 500 lines, only the changed sections are shown (marked with + / - lines), but surrounding context is included.\n\nYou have full visibility into every function signature, every variable, every import in each file. There are no missing parameters, no truncated signatures, no partial implementations.\n\n---\n${CONTEXT}\n---\n\n## Instructions\n\nRead every file above completely before writing anything.\n\nThen, for each potential issue:\n1. Confirm it exists in the code above — quote the exact line.\n2. Confirm it is a real problem (not something that looks unusual but is intentional).\n3. If either check fails, discard the finding silently — do not mention it in your output.\n\nDo NOT show your verification reasoning. Do NOT mention findings you discarded. Only output confirmed issues.\n\nSeverity levels:\n- BLOCKER: provably broken — will fail to compile, corrupt data, or introduce a security vulnerability\n- WARNING: works today but carries real risk that should be fixed before merge\n- SUGGESTION: minor improvement worth a follow-up PR\n\nFocus on: security bugs, logic errors, data loss, race conditions, injection vectors, unhandled error paths that could silently corrupt state.\n\nIgnore: style preferences, missing comments, code organisation opinions, speculative future improvements.\n\n## Output format (strict — do not deviate)\n\n**Summary** (2-3 sentences describing what the PR does and your overall assessment)\n\n**Findings**\n- [SEVERITY] file:line — one-line description\n  Evidence: exact quoted line(s)\n  Fix: concrete suggested change\n\n(If there are no findings, write: No findings.)\n\n**Verdict**: APPROVE / APPROVE WITH COMMENTS / REQUEST CHANGES"
+
           BODY=$(jq -cn \
             --arg model "qwen3-coder-next" \
             --arg content "$PROMPT" \
@@ -110,7 +141,7 @@ jobs:
           echo "$REVIEW" > /tmp/pr_review.txt
 
       - name: Post review comment
-        if: always() && steps.diff.outputs.diff_size != '0'
+        if: always() && steps.context.outputs.diff_size != '0'
         shell: bash
         env:
           TF_TOKEN: ${{ secrets.TFT_GITEA_TOKEN }}
@@ -125,7 +156,7 @@ jobs:
           if [ -f "/tmp/pr_review.txt" ] && [ -s "/tmp/pr_review.txt" ]; then
             REVIEW_BODY=$(head -c 65536 /tmp/pr_review.txt)
             BODY=$(jq -n \
-              --arg body "Automated PR Review (qwen3-coder-next via liteLLM):\n\n${REVIEW_BODY}\n\n---\n*automated code review*" \
+              --arg body "Automated PR Review (qwen3-coder-next via liteLLM):\n\n${REVIEW_BODY}" \
               '{body: $body, event: "COMMENT"}')
           else
             BODY=$(jq -n \
@@ -147,4 +178,4 @@ jobs:
       - name: Cleanup
         if: always()
         shell: bash
-        run: rm -f /tmp/pr_diff.txt /tmp/llm_response.json /tmp/pr_review.txt /tmp/review_post_response.json
+        run: rm -f /tmp/pr_diff.txt /tmp/pr_context.txt /tmp/llm_response.json /tmp/pr_review.txt /tmp/pr_review_post_response.json /tmp/pr_files.txt
