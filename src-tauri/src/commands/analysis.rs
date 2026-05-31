@@ -60,10 +60,12 @@ const SAFE_TEXT_EXTENSIONS: &[&str] = &[
 
 const SAFE_BINARY_EXTENSIONS: &[&str] = &["pdf", "docx", "doc", "xlsx", "xls"];
 
-fn compress_text(text: &str) -> Vec<u8> {
+fn compress_text(text: &str) -> Result<Vec<u8>, String> {
     let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
-    encoder.write_all(text.as_bytes()).unwrap_or_default();
-    encoder.finish().unwrap_or_default()
+    encoder
+        .write_all(text.as_bytes())
+        .map_err(|e| format!("Compression write error: {e}"))?;
+    encoder.finish().map_err(|e| format!("Compression finish error: {e}"))
 }
 
 /// 100 MB cap — prevents decompression-bomb attacks on crafted DB entries.
@@ -256,7 +258,8 @@ pub async fn upload_log_file(
         ..log_file
     };
 
-    let compressed = compress_text(&extracted_text);
+    let compressed = compress_text(&extracted_text)
+        .map_err(|e| format!("Failed to compress log content: {e}"))?;
 
     let db = state.db.lock().map_err(|e| e.to_string())?;
     db.execute(
@@ -349,7 +352,8 @@ pub async fn upload_log_file_by_content(
         ..log_file
     };
 
-    let compressed = compress_text(&content);
+    let compressed = compress_text(&content)
+        .map_err(|e| format!("Failed to compress log content: {e}"))?;
 
     let db = state.db.lock().map_err(|e| e.to_string())?;
     db.execute(
@@ -682,7 +686,7 @@ mod tests {
     #[test]
     fn test_compress_decompress_roundtrip() {
         let original = "Hello, World! This is a log line with some content.";
-        let compressed = compress_text(original);
+        let compressed = compress_text(original).unwrap();
         assert!(!compressed.is_empty());
         assert!(compressed.len() < original.len() * 3);
         let decompressed = decompress_text(&compressed).unwrap();
@@ -690,9 +694,19 @@ mod tests {
     }
 
     #[test]
+    fn test_compress_returns_error_not_empty_on_failure() {
+        // compress_text returns Result — callers must propagate, not silently discard.
+        // For in-memory gzip this essentially never fails, but the API now allows
+        // callers to surface the error rather than storing empty bytes.
+        let result = compress_text("normal log line");
+        assert!(result.is_ok(), "compress_text should succeed for normal input");
+        assert!(!result.unwrap().is_empty());
+    }
+
+    #[test]
     fn test_compress_large_text_is_smaller() {
         let original = "INFO server started\n".repeat(1000);
-        let compressed = compress_text(&original);
+        let compressed = compress_text(&original).unwrap();
         assert!(
             compressed.len() < original.len(),
             "gzip should compress repetitive text"
@@ -707,9 +721,6 @@ mod tests {
 
     #[test]
     fn test_decompress_size_limit_enforced() {
-        // Create a compressible payload that when decompressed exceeds the limit.
-        // We mock the limit by creating a large repetitive string and checking the
-        // round-trip succeeds, then verify the limit constant is set correctly.
         assert_eq!(
             MAX_DECOMPRESSED_BYTES,
             100 * 1024 * 1024,
@@ -718,7 +729,7 @@ mod tests {
 
         // A valid small payload must still decompress fine after the guard is in place.
         let text = "hello world decompression guard test\n".repeat(100);
-        let compressed = compress_text(&text);
+        let compressed = compress_text(&text).unwrap();
         let result = decompress_text(&compressed);
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), text);

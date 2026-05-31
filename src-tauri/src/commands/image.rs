@@ -140,6 +140,13 @@ pub async fn upload_image_attachment_by_content(
         .decode(data_part)
         .map_err(|_| "Failed to decode base64 image data")?;
 
+    if decoded.len() as u64 > MAX_IMAGE_FILE_BYTES {
+        return Err(format!(
+            "Image content exceeds maximum supported size ({} MB)",
+            MAX_IMAGE_FILE_BYTES / 1024 / 1024
+        ));
+    }
+
     let content_hash = format!("{:x}", sha2::Sha256::digest(&decoded));
     let file_size = decoded.len() as i64;
 
@@ -230,6 +237,13 @@ pub async fn upload_paste_image(
     let decoded = base64::engine::general_purpose::STANDARD
         .decode(data_part)
         .map_err(|_| "Failed to decode base64 image data")?;
+
+    if decoded.len() as u64 > MAX_IMAGE_FILE_BYTES {
+        return Err(format!(
+            "Pasted image exceeds maximum supported size ({} MB)",
+            MAX_IMAGE_FILE_BYTES / 1024 / 1024
+        ));
+    }
 
     let content_hash = format!("{:x}", sha2::Sha256::digest(&decoded));
     let file_size = decoded.len() as i64;

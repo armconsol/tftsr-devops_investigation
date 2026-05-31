@@ -259,6 +259,7 @@ function AttachmentsTab({ navigate }: { navigate: ReturnType<typeof useNavigate>
 
   const [viewModal, setViewModal] = useState<{ type: "log" | "image"; id: string; title: string } | null>(null);
   const [modalContent, setModalContent] = useState<string | null>(null);
+  const [modalError, setModalError] = useState<string | null>(null);
   const [modalLoading, setModalLoading] = useState(false);
 
   useEffect(() => {
@@ -290,12 +291,13 @@ function AttachmentsTab({ navigate }: { navigate: ReturnType<typeof useNavigate>
   const openImageModal = async (id: string, fileName: string) => {
     setViewModal({ type: "image", id, title: fileName });
     setModalContent(null);
+    setModalError(null);
     setModalLoading(true);
     try {
       const dataUrl = await getImageAttachmentDataCmd(id);
       setModalContent(dataUrl);
     } catch (e) {
-      setModalContent(null);
+      setModalError(String(e));
     } finally {
       setModalLoading(false);
     }
@@ -304,6 +306,7 @@ function AttachmentsTab({ navigate }: { navigate: ReturnType<typeof useNavigate>
   const closeModal = () => {
     setViewModal(null);
     setModalContent(null);
+    setModalError(null);
   };
 
   const formatBytes = (bytes: number) => {
@@ -510,7 +513,12 @@ function AttachmentsTab({ navigate }: { navigate: ReturnType<typeof useNavigate>
                 />
               )}
               {!modalLoading && viewModal.type === "image" && !modalContent && (
-                <div className="text-center text-muted-foreground py-8">Image could not be loaded.</div>
+                <div className="text-center py-8 space-y-2">
+                  <div className="text-muted-foreground">Image could not be loaded.</div>
+                  {modalError && (
+                    <div className="text-xs text-destructive font-mono">{modalError}</div>
+                  )}
+                </div>
               )}
             </div>
           </div>
