@@ -128,6 +128,13 @@ jobs:
           # Use the tag output from autotag — never rely on git describe
           CURRENT_TAG="${RELEASE_TAG}"
           echo "Building changelog for $CURRENT_TAG"
+
+          # Verify the tag is present locally after fetch before running git-cliff
+          if ! git rev-parse "refs/tags/${CURRENT_TAG}" >/dev/null 2>&1; then
+            echo "ERROR: tag ${CURRENT_TAG} not found locally after fetch"
+            exit 1
+          fi
+
           git-cliff --config cliff.toml --output CHANGELOG.md
           PREV_TAG=$(git tag --sort=-version:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' \
             | grep -v "^${CURRENT_TAG}$" | head -1 || echo "")
@@ -140,7 +147,7 @@ jobs:
           echo "=== Release body preview ==="
           cat /tmp/release_body.md
 
-      - name: Update Gitea release body
+      - name: Create or update Gitea release
         env:
           RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
           RELEASE_TAG: ${{ needs.autotag.outputs.release_tag }}
@@ -148,18 +155,43 @@ jobs:
           set -eu
           TAG="${RELEASE_TAG}"
           API="http://172.0.0.29:3000/api/v1/repos/$GITHUB_REPOSITORY"
-          RELEASE_ID=$(curl -sf "$API/releases/tags/$TAG" \
-            -H "Authorization: token $RELEASE_TOKEN" | jq -r '.id')
+          RELEASE_BODY=$(cat /tmp/release_body.md)
+
+          # Try to find an existing release for this tag
+          RELEASE_ID=$(curl -s "$API/releases/tags/$TAG" \
+            -H "Authorization: token $RELEASE_TOKEN" | jq -r '.id // empty')
+
+          if [ -z "$RELEASE_ID" ]; then
+            # Release doesn't exist yet — create it with the changelog body.
+            # Build jobs run in parallel and rely on the release existing;
+            # creating it here ensures no race condition.
+            echo "Creating release $TAG..."
+            RELEASE_ID=$(jq -n \
+              --arg tag "$TAG" \
+              --arg name "TFTSR $TAG" \
+              --rawfile body /tmp/release_body.md \
+              '{tag_name: $tag, name: $name, body: $body, draft: false}' \
+              | curl -sf -X POST "$API/releases" \
+                  -H "Authorization: token $RELEASE_TOKEN" \
+                  -H "Content-Type: application/json" \
+                  --data @- \
+              | jq -r '.id')
+            echo "✓ Release created (id=$RELEASE_ID)"
+          else
+            # Release already exists (e.g. re-run) — patch the body only
+            echo "Updating existing release $TAG (id=$RELEASE_ID)..."
+            jq -n --rawfile body /tmp/release_body.md '{body: $body}' \
+              | curl -sf -X PATCH "$API/releases/$RELEASE_ID" \
+                  -H "Authorization: token $RELEASE_TOKEN" \
+                  -H "Content-Type: application/json" \
+                  --data @-
+            echo "✓ Release body updated"
+          fi
+
           if [ -z "$RELEASE_ID" ] || [ "$RELEASE_ID" = "null" ]; then
-            echo "ERROR: Could not find release for tag $TAG"
+            echo "ERROR: Failed to create or locate release for $TAG"
             exit 1
           fi
-          BODY=$(jq -n --rawfile note /tmp/release_body.md '{body: $note}')
-          curl -sf -X PATCH "$API/releases/$RELEASE_ID" \
-            -H "Authorization: token $RELEASE_TOKEN" \
-            -H "Content-Type: application/json" \
-            -d "$BODY"
-          echo "✓ Release body updated"
 
       - name: Commit CHANGELOG.md to master
         env:
