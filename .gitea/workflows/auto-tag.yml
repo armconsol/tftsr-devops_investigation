@@ -125,11 +125,10 @@ jobs:
           RELEASE_TAG: ${{ needs.autotag.outputs.release_tag }}
         run: |
           set -eu
-          # Use the tag output from autotag — never rely on git describe
           CURRENT_TAG="${RELEASE_TAG}"
           echo "Building changelog for $CURRENT_TAG"
 
-          # Verify the tag is present locally after fetch before running git-cliff
+          # Verify the tag is present locally after fetch
           if ! git rev-parse "refs/tags/${CURRENT_TAG}" >/dev/null 2>&1; then
             echo "ERROR: tag ${CURRENT_TAG} not found locally after fetch"
             exit 1
@@ -141,7 +140,7 @@ jobs:
           if [ -n "$PREV_TAG" ]; then
             git-cliff --config cliff.toml --tag "$CURRENT_TAG" --strip all > /tmp/release_body.md || true
           else
-            echo "=== No previous tag found, generating from git commits ==="
+            echo "No previous tag found, generating from git commits"
             git log --pretty=format:"- %s" > /tmp/release_body.md || true
           fi
           echo "=== Release body preview ==="
@@ -155,16 +154,14 @@ jobs:
           set -eu
           TAG="${RELEASE_TAG}"
           API="http://172.0.0.29:3000/api/v1/repos/$GITHUB_REPOSITORY"
-          RELEASE_BODY=$(cat /tmp/release_body.md)
 
           # Try to find an existing release for this tag
           RELEASE_ID=$(curl -s "$API/releases/tags/$TAG" \
             -H "Authorization: token $RELEASE_TOKEN" | jq -r '.id // empty')
 
           if [ -z "$RELEASE_ID" ]; then
-            # Release doesn't exist yet — create it with the changelog body.
-            # Build jobs run in parallel and rely on the release existing;
-            # creating it here ensures no race condition.
+            # First run: changelog job owns release creation so build jobs
+            # never race against a missing release object
             echo "Creating release $TAG..."
             RELEASE_ID=$(jq -n \
               --arg tag "$TAG" \
@@ -178,7 +175,7 @@ jobs:
               | jq -r '.id')
             echo "✓ Release created (id=$RELEASE_ID)"
           else
-            # Release already exists (e.g. re-run) — patch the body only
+            # Re-run: patch the body only
             echo "Updating existing release $TAG (id=$RELEASE_ID)..."
             jq -n --rawfile body /tmp/release_body.md '{body: $body}' \
               | curl -sf -X PATCH "$API/releases/$RELEASE_ID" \
@@ -199,14 +196,21 @@ jobs:
         run: |
           set -euo pipefail
           TAG="${RELEASE_TAG}"
-          # Validate tag format to prevent shell injection in commit message / JSON
           if ! echo "$TAG" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
             echo "ERROR: Unexpected tag format: $TAG"
             exit 1
           fi
           git add CHANGELOG.md
-          git commit -m "chore: update CHANGELOG.md for ${TAG} [skip ci]" || echo "No changes to commit"
-          git push origin master
+          # Only commit if CHANGELOG.md actually changed — avoids ambiguous
+          # exit-code handling from 'git commit || echo' with set -e
+          if git diff --staged --quiet; then
+            echo "No CHANGELOG.md changes to commit"
+          else
+            git commit -m "chore: update CHANGELOG.md for ${TAG} [skip ci]"
+          fi
+          # HEAD:master works in detached HEAD state; 'git push origin master'
+          # would fail because there is no local branch named master
+          git push origin HEAD:master
           echo "✓ CHANGELOG.md committed to master"
 
       - name: Upload CHANGELOG.md as release asset
