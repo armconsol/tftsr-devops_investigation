@@ -58,9 +58,13 @@ jobs:
           # Build context: full file content for each changed file.
           # Files <= 500 lines: include complete content.
           # Files > 500 lines: include the per-file diff with generous context (±50 lines).
-          # Secret scrubbing applied to both paths.
-          SECRET_PATTERN='^([[:space:]]*[+\-]?[[:space:]]*).*[pP]assword[[:space:]]*[=:"'"'"']|[tT]oken[[:space:]]*[=:"'"'"']|[aA][pP][iI][_][kK]ey[[:space:]]*[=:"'"'"']|AKIA[A-Z0-9]{16}|gh[opsu]_[A-Za-z0-9_]{36,}|Authorization:[[:space:]]'
-          B64_PATTERN='^[[:space:]]*[+\-]?[[:space:]]*[A-Za-z0-9+/]{40,}={0,2}([^A-Za-z0-9+/=]|$)'
+          #
+          # Secret scrubbing: match actual credential VALUES only — known API key formats,
+          # or keyword="long_quoted_literal" (25+ chars). Never scrub on keyword alone,
+          # which would silently delete function signatures, variable declarations, and tests.
+          SECRET_PATTERN='AKIA[A-Z0-9]{16}|gh[opsu]_[A-Za-z0-9_]{36,}|xox[baprs]-[0-9]{10,13}-[0-9]{10,13}-[a-zA-Z0-9]{24}|(password|token|api_key|secret)[[:space:]]*=[[:space:]]*["'"'"'][A-Za-z0-9+/_\-!@#]{25,}["'"'"']'
+          # Only strip lines that are ENTIRELY a long base64 blob (e.g. PEM cert bodies)
+          B64_PATTERN='^[[:space:]]*[A-Za-z0-9+/]{60,}={0,2}[[:space:]]*$'
 
           > /tmp/pr_context.txt
           while IFS= read -r file; do
