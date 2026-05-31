@@ -189,18 +189,20 @@ jobs:
             printf '%s\n' '**Verdict**: APPROVE / APPROVE WITH COMMENTS / REQUEST CHANGES'
           } > /tmp/prompt.txt
 
-          BODY=$(jq -cn \
+          # Write body to file — passing 100KB+ JSON as a shell arg hits ARG_MAX.
+          jq -cn \
             --arg model "qwen3-coder-next" \
             --rawfile content /tmp/prompt.txt \
-            '{model: $model, messages: [{role: "user", content: $content}], stream: false}')
-          echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] PR #${PR_NUMBER} - Calling liteLLM API (${#BODY} bytes)..."
+            '{model: $model, messages: [{role: "user", content: $content}], stream: false}' \
+            > /tmp/body.json
+          echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] PR #${PR_NUMBER} - Calling liteLLM API ($(wc -c < /tmp/body.json) bytes)..."
           HTTP_CODE=$(curl -s --max-time 300 --connect-timeout 30 \
             --retry 3 --retry-delay 10 --retry-connrefused --retry-max-time 300 \
             -o /tmp/llm_response.json -w "%{http_code}" \
             -X POST "$LITELLM_URL/chat/completions" \
             -H "Authorization: Bearer $LITELLM_API_KEY" \
             -H "Content-Type: application/json" \
-            -d "$BODY")
+            --data @/tmp/body.json)
           echo "HTTP status: $HTTP_CODE"
           echo "Response file size: $(wc -c < /tmp/llm_response.json) bytes"
           if [ "$HTTP_CODE" != "200" ]; then
@@ -328,4 +330,4 @@ jobs:
       - name: Cleanup
         if: always()
         shell: bash
-        run: rm -f /tmp/pr_diff.txt /tmp/pr_context.txt /tmp/codebase_index.txt /tmp/prompt.txt /tmp/llm_response.json /tmp/pr_review.txt /tmp/review_post_response.json /tmp/pr_files.txt
+        run: rm -f /tmp/pr_diff.txt /tmp/pr_context.txt /tmp/codebase_index.txt /tmp/prompt.txt /tmp/body.json /tmp/llm_response.json /tmp/pr_review.txt /tmp/review_post_response.json /tmp/pr_files.txt
