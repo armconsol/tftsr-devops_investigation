@@ -158,13 +158,13 @@ jobs:
             printf 'Files changed: %s\n\n' "$CHANGED_FILES"
             printf '---\n'
             cat /tmp/codebase_index.txt
-            printf -- '---\n\n'
+            printf '---\n\n'
             printf '## Changed file contents\n\n'
             printf 'Each section is the COMPLETE, FINAL file after PR changes (not a diff).\n'
             printf 'Files over 500 lines show only changed sections with surrounding context.\n\n'
             printf '---\n'
             cat /tmp/pr_context.txt
-            printf -- '---\n\n'
+            printf '---\n\n'
             printf '## Instructions\n\n'
             printf 'Before raising any finding:\n'
             printf '1. Confirm every symbol you cite exists in the CODEBASE INDEX or file\n'
