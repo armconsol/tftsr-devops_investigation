@@ -4,7 +4,7 @@ use std::path::Path;
 use tauri::State;
 
 use crate::audit::log::write_audit_event;
-use crate::db::models::{AuditEntry, ImageAttachment};
+use crate::db::models::{AuditEntry, ImageAttachment, ImageAttachmentSummary};
 use crate::state::AppState;
 
 const MAX_IMAGE_FILE_BYTES: u64 = 10 * 1024 * 1024;
@@ -82,8 +82,8 @@ pub async fn upload_image_attachment(
 
     let db = state.db.lock().map_err(|e| e.to_string())?;
     db.execute(
-        "INSERT INTO image_attachments (id, issue_id, file_name, file_path, file_size, mime_type, upload_hash, uploaded_at, pii_warning_acknowledged, is_paste) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+        "INSERT INTO image_attachments (id, issue_id, file_name, file_path, file_size, mime_type, upload_hash, uploaded_at, pii_warning_acknowledged, is_paste, image_data) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
         rusqlite::params![
             attachment.id,
             attachment.issue_id,
@@ -95,6 +95,7 @@ pub async fn upload_image_attachment(
             attachment.uploaded_at,
             attachment.pii_warning_acknowledged as i32,
             attachment.is_paste as i32,
+            content,
         ],
     )
     .map_err(|_| "Failed to store uploaded image metadata".to_string())?;
@@ -139,6 +140,13 @@ pub async fn upload_image_attachment_by_content(
         .decode(data_part)
         .map_err(|_| "Failed to decode base64 image data")?;
 
+    if decoded.len() as u64 > MAX_IMAGE_FILE_BYTES {
+        return Err(format!(
+            "Image content exceeds maximum supported size ({} MB)",
+            MAX_IMAGE_FILE_BYTES / 1024 / 1024
+        ));
+    }
+
     let content_hash = format!("{:x}", sha2::Sha256::digest(&decoded));
     let file_size = decoded.len() as i64;
 
@@ -168,8 +176,8 @@ pub async fn upload_image_attachment_by_content(
 
     let db = state.db.lock().map_err(|e| e.to_string())?;
     db.execute(
-        "INSERT INTO image_attachments (id, issue_id, file_name, file_path, file_size, mime_type, upload_hash, uploaded_at, pii_warning_acknowledged, is_paste) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+        "INSERT INTO image_attachments (id, issue_id, file_name, file_path, file_size, mime_type, upload_hash, uploaded_at, pii_warning_acknowledged, is_paste, image_data) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
         rusqlite::params![
             attachment.id,
             attachment.issue_id,
@@ -181,6 +189,7 @@ pub async fn upload_image_attachment_by_content(
             attachment.uploaded_at,
             attachment.pii_warning_acknowledged as i32,
             attachment.is_paste as i32,
+            decoded,
         ],
     )
     .map_err(|_| "Failed to store uploaded image metadata".to_string())?;
@@ -229,6 +238,13 @@ pub async fn upload_paste_image(
         .decode(data_part)
         .map_err(|_| "Failed to decode base64 image data")?;
 
+    if decoded.len() as u64 > MAX_IMAGE_FILE_BYTES {
+        return Err(format!(
+            "Pasted image exceeds maximum supported size ({} MB)",
+            MAX_IMAGE_FILE_BYTES / 1024 / 1024
+        ));
+    }
+
     let content_hash = format!("{:x}", sha2::Sha256::digest(&decoded));
     let file_size = decoded.len() as i64;
     let file_name = format!("pasted-image-{}.png", uuid::Uuid::now_v7());
@@ -254,8 +270,8 @@ pub async fn upload_paste_image(
 
     let db = state.db.lock().map_err(|e| e.to_string())?;
     db.execute(
-        "INSERT INTO image_attachments (id, issue_id, file_name, file_path, file_size, mime_type, upload_hash, uploaded_at, pii_warning_acknowledged, is_paste) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+        "INSERT INTO image_attachments (id, issue_id, file_name, file_path, file_size, mime_type, upload_hash, uploaded_at, pii_warning_acknowledged, is_paste, image_data) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
         rusqlite::params![
             attachment.id,
             attachment.issue_id,
@@ -267,6 +283,7 @@ pub async fn upload_paste_image(
             attachment.uploaded_at,
             attachment.pii_warning_acknowledged as i32,
             attachment.is_paste as i32,
+            decoded,
         ],
     )
     .map_err(|_| "Failed to store pasted image metadata".to_string())?;
@@ -591,6 +608,77 @@ pub async fn upload_file_to_datastore_any(
     Ok(file_id)
 }
 
+#[tauri::command]
+pub async fn get_image_attachment_data(
+    attachment_id: String,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    let row: (Option<Vec<u8>>, String, String) = {
+        let db = state.db.lock().map_err(|e| e.to_string())?;
+        db.prepare("SELECT image_data, file_path, mime_type FROM image_attachments WHERE id = ?1")
+            .and_then(|mut stmt| {
+                stmt.query_row([&attachment_id], |row| {
+                    Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+                })
+            })
+            .map_err(|_| "Image attachment not found".to_string())?
+    };
+    let (image_data, file_path, mime_type) = row;
+    let bytes = if let Some(data) = image_data {
+        data
+    } else {
+        std::fs::read(&file_path).map_err(|e| format!("Image file not found on disk: {e}"))?
+    };
+    let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+    Ok(format!("data:{mime_type};base64,{b64}"))
+}
+
+#[tauri::command]
+pub async fn list_all_image_attachments(
+    search: Option<String>,
+    issue_id: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<Vec<ImageAttachmentSummary>, String> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+    let mut query = "SELECT id, issue_id, file_name, file_path, file_size, mime_type, \
+                            upload_hash, uploaded_at, pii_warning_acknowledged, is_paste, issue_title \
+                     FROM v_image_attachments_with_issue WHERE 1=1"
+        .to_string();
+    let mut params: Vec<String> = Vec::new();
+
+    if let Some(ref q) = search {
+        query.push_str(" AND file_name LIKE ?");
+        params.push(format!("%{q}%"));
+    }
+    if let Some(ref id) = issue_id {
+        query.push_str(" AND issue_id = ?");
+        params.push(id.clone());
+    }
+    query.push_str(" ORDER BY uploaded_at DESC");
+
+    let mut stmt = db.prepare(&query).map_err(|e| e.to_string())?;
+    let results = stmt
+        .query_map(rusqlite::params_from_iter(params.iter()), |row| {
+            Ok(ImageAttachmentSummary {
+                id: row.get(0)?,
+                issue_id: row.get(1)?,
+                file_name: row.get(2)?,
+                file_path: row.get(3)?,
+                file_size: row.get(4)?,
+                mime_type: row.get(5)?,
+                upload_hash: row.get(6)?,
+                uploaded_at: row.get(7)?,
+                pii_warning_acknowledged: row.get::<_, i32>(8)? != 0,
+                is_paste: row.get::<_, i32>(9)? != 0,
+                issue_title: row.get(10)?,
+            })
+        })
+        .map_err(|e| e.to_string())?
+        .filter_map(|r| r.ok())
+        .collect();
+    Ok(results)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -604,5 +692,14 @@ mod tests {
         assert!(is_supported_image_format("image/svg+xml"));
         assert!(is_supported_image_format("image/bmp"));
         assert!(!is_supported_image_format("text/plain"));
+    }
+
+    #[test]
+    fn test_get_image_attachment_data_base64_format() {
+        let bytes = b"\x89PNG\r\n\x1a\n";
+        let b64 = base64::engine::general_purpose::STANDARD.encode(bytes);
+        let result = format!("data:{};base64,{}", "image/png", b64);
+        assert!(result.starts_with("data:image/png;base64,"));
+        assert!(!result.is_empty());
     }
 }

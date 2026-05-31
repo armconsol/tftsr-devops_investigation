@@ -615,3 +615,52 @@ export const clearSudoPasswordCmd = () =>
 
 export const getAppVersionCmd = () =>
   invoke<string>("get_app_version");
+
+// ─── Attachment cross-incident types ─────────────────────────────────────────
+
+export interface LogFileSummary {
+  id: string;
+  issue_id: string;
+  issue_title: string;
+  file_name: string;
+  file_path: string;
+  file_size: number;
+  mime_type: string;
+  content_hash: string;
+  uploaded_at: string;
+  redacted: boolean;
+}
+
+export interface ImageAttachmentSummary {
+  id: string;
+  issue_id: string;
+  issue_title: string;
+  file_name: string;
+  file_path: string;
+  file_size: number;
+  mime_type: string;
+  upload_hash: string;
+  uploaded_at: string;
+  pii_warning_acknowledged: boolean;
+  is_paste: boolean;
+}
+
+// ─── Attachment cross-incident commands ───────────────────────────────────────
+
+export const getLogFileContentCmd = (logFileId: string) =>
+  invoke<string>("get_log_file_content", { logFileId });
+
+export const listAllLogFilesCmd = (search?: string, issueId?: string) =>
+  invoke<LogFileSummary[]>("list_all_log_files", {
+    search: search ?? null,
+    issueId: issueId ?? null,
+  });
+
+export const getImageAttachmentDataCmd = (attachmentId: string) =>
+  invoke<string>("get_image_attachment_data", { attachmentId });
+
+export const listAllImageAttachmentsCmd = (search?: string, issueId?: string) =>
+  invoke<ImageAttachmentSummary[]>("list_all_image_attachments", {
+    search: search ?? null,
+    issueId: issueId ?? null,
+  });

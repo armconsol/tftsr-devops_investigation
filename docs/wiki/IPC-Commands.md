@@ -113,6 +113,34 @@ applyRedactionsCmd(logFileId: string, approvedSpanIds: string[]) → RedactedLog
 ```
 Rewrites file content with approved redactions. Records SHA-256 in audit log. Returns redacted content path.
 
+### `get_log_file_content`
+```typescript
+getLogFileContentCmd(logFileId: string) → string
+```
+Returns the plain-text content of a log file. Primary path: reads gzip-compressed BLOB from the `content_compressed` column and decompresses in-process (no external binary required). Fallback: reads from `file_path` on disk for records uploaded before migration 020.
+
+Used by the triage chat context loader and the "View" modal in the Attachments tab.
+
+### `list_all_log_files`
+```typescript
+listAllLogFilesCmd(search?: string, issueId?: string) → LogFileSummary[]
+```
+Cross-incident log file listing via `v_log_files_with_issue`. Optional `search` performs `file_name LIKE '%q%'`; optional `issueId` filters to a single incident. Ordered by `uploaded_at DESC`. Never includes the compressed content blob — content is fetched separately via `get_log_file_content`.
+```typescript
+interface LogFileSummary {
+    id: string;
+    issue_id: string;
+    issue_title: string;   // joined from issues table
+    file_name: string;
+    file_path: string;
+    file_size: number;
+    mime_type: string;
+    content_hash: string;
+    uploaded_at: string;
+    redacted: boolean;
+}
+```
+
 ---
 
 ## Image Attachment Commands
@@ -140,6 +168,37 @@ Deletes an image attachment from disk and database.
 uploadPasteImageCmd(issueId: string, base64Data: string, fileName: string, piiWarningAcknowledged: boolean) → ImageAttachment
 ```
 Uploads an image from clipboard paste (base64). Returns `ImageAttachment` record.
+
+**Note (v0.4+):** All three upload commands (`upload_image_attachment`, `upload_image_attachment_by_content`, `upload_paste_image`) now also store the raw image bytes in the `image_data` column of `image_attachments`, enabling retrieval without requiring the source file on disk.
+
+### `get_image_attachment_data`
+```typescript
+getImageAttachmentDataCmd(attachmentId: string) → string
+```
+Returns image content as a base64 data URL (`data:<mime>;base64,...`). Primary path: reads raw bytes from the `image_data` BLOB column. Fallback: reads from `file_path` on disk for records uploaded before migration 021.
+
+Suitable for use directly as an `<img src>` value or in the "View" modal.
+
+### `list_all_image_attachments`
+```typescript
+listAllImageAttachmentsCmd(search?: string, issueId?: string) → ImageAttachmentSummary[]
+```
+Cross-incident image listing via `v_image_attachments_with_issue`. Optional `search` performs `file_name LIKE '%q%'`; optional `issueId` filters to a single incident. Ordered by `uploaded_at DESC`. Never includes the raw image bytes blob.
+```typescript
+interface ImageAttachmentSummary {
+    id: string;
+    issue_id: string;
+    issue_title: string;   // joined from issues table
+    file_name: string;
+    file_path: string;
+    file_size: number;
+    mime_type: string;
+    upload_hash: string;
+    uploaded_at: string;
+    pii_warning_acknowledged: boolean;
+    is_paste: boolean;
+}
+```
 
 ---
 

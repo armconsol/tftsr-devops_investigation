@@ -433,6 +433,41 @@ pub struct ImageAttachment {
     pub is_paste: bool,
 }
 
+// ─── Attachment Summaries (cross-incident list views) ───────────────────────
+
+/// Lightweight log-file row joined with the parent issue title.
+/// Returned by `list_all_log_files` — never contains the compressed content blob.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LogFileSummary {
+    pub id: String,
+    pub issue_id: String,
+    pub issue_title: String,
+    pub file_name: String,
+    pub file_path: String,
+    pub file_size: i64,
+    pub mime_type: String,
+    pub content_hash: String,
+    pub uploaded_at: String,
+    pub redacted: bool,
+}
+
+/// Lightweight image-attachment row joined with the parent issue title.
+/// Returned by `list_all_image_attachments` — never contains the raw image bytes.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ImageAttachmentSummary {
+    pub id: String,
+    pub issue_id: String,
+    pub issue_title: String,
+    pub file_name: String,
+    pub file_path: String,
+    pub file_size: i64,
+    pub mime_type: String,
+    pub upload_hash: String,
+    pub uploaded_at: String,
+    pub pii_warning_acknowledged: bool,
+    pub is_paste: bool,
+}
+
 impl ImageAttachment {
     #[allow(clippy::too_many_arguments)]
     pub fn new(

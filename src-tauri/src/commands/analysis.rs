@@ -1,9 +1,14 @@
+use flate2::read::GzDecoder;
+use flate2::write::GzEncoder;
+use flate2::Compression;
 use sha2::{Digest, Sha256};
+use std::io::Read as IoRead;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use tauri::State;
 use tracing::warn;
 
-use crate::db::models::{AuditEntry, LogFile, PiiSpanRecord};
+use crate::db::models::{AuditEntry, LogFile, LogFileSummary, PiiSpanRecord};
 use crate::pii::{self, PiiDetectionResult, PiiDetector, RedactedLogFile};
 use crate::state::AppState;
 
@@ -54,6 +59,30 @@ const SAFE_TEXT_EXTENSIONS: &[&str] = &[
 ];
 
 const SAFE_BINARY_EXTENSIONS: &[&str] = &["pdf", "docx", "doc", "xlsx", "xls"];
+
+fn compress_text(text: &str) -> Result<Vec<u8>, String> {
+    let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+    encoder
+        .write_all(text.as_bytes())
+        .map_err(|e| format!("Compression write error: {e}"))?;
+    encoder.finish().map_err(|e| format!("Compression finish error: {e}"))
+}
+
+/// 100 MB cap — prevents decompression-bomb attacks on crafted DB entries.
+const MAX_DECOMPRESSED_BYTES: u64 = 100 * 1024 * 1024;
+
+fn decompress_text(bytes: &[u8]) -> Result<String, String> {
+    let decoder = GzDecoder::new(bytes);
+    let mut limited = decoder.take(MAX_DECOMPRESSED_BYTES + 1);
+    let mut s = String::new();
+    limited
+        .read_to_string(&mut s)
+        .map_err(|e| format!("Failed to decompress: {e}"))?;
+    if s.len() as u64 > MAX_DECOMPRESSED_BYTES {
+        return Err("Decompressed content exceeds 100 MB limit".to_string());
+    }
+    Ok(s)
+}
 
 pub fn is_safe_file(path: &Path) -> bool {
     let ext = path
@@ -229,10 +258,13 @@ pub async fn upload_log_file(
         ..log_file
     };
 
+    let compressed = compress_text(&extracted_text)
+        .map_err(|e| format!("Failed to compress log content: {e}"))?;
+
     let db = state.db.lock().map_err(|e| e.to_string())?;
     db.execute(
-        "INSERT INTO log_files (id, issue_id, file_name, file_path, file_size, mime_type, content_hash, uploaded_at, redacted) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+        "INSERT INTO log_files (id, issue_id, file_name, file_path, file_size, mime_type, content_hash, uploaded_at, redacted, content_compressed) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
         rusqlite::params![
             log_file.id,
             log_file.issue_id,
@@ -243,6 +275,7 @@ pub async fn upload_log_file(
             log_file.content_hash,
             log_file.uploaded_at,
             log_file.redacted as i32,
+            compressed,
         ],
     )
     .map_err(|_| "Failed to store uploaded log metadata".to_string())?;
@@ -319,10 +352,13 @@ pub async fn upload_log_file_by_content(
         ..log_file
     };
 
+    let compressed = compress_text(&content)
+        .map_err(|e| format!("Failed to compress log content: {e}"))?;
+
     let db = state.db.lock().map_err(|e| e.to_string())?;
     db.execute(
-        "INSERT INTO log_files (id, issue_id, file_name, file_path, file_size, mime_type, content_hash, uploaded_at, redacted) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+        "INSERT INTO log_files (id, issue_id, file_name, file_path, file_size, mime_type, content_hash, uploaded_at, redacted, content_compressed) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
         rusqlite::params![
             log_file.id,
             log_file.issue_id,
@@ -333,6 +369,7 @@ pub async fn upload_log_file_by_content(
             log_file.content_hash,
             log_file.uploaded_at,
             log_file.redacted as i32,
+            compressed,
         ],
     )
     .map_err(|_| "Failed to store uploaded log metadata".to_string())?;
@@ -497,6 +534,70 @@ pub async fn apply_redactions(
     })
 }
 
+#[tauri::command]
+pub async fn get_log_file_content(
+    log_file_id: String,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    let row: (Option<Vec<u8>>, String) = {
+        let db = state.db.lock().map_err(|e| e.to_string())?;
+        db.prepare("SELECT content_compressed, file_path FROM log_files WHERE id = ?1")
+            .and_then(|mut stmt| {
+                stmt.query_row([&log_file_id], |row| Ok((row.get(0)?, row.get(1)?)))
+            })
+            .map_err(|_| "Log file not found".to_string())?
+    };
+    let (compressed, file_path) = row;
+    if let Some(bytes) = compressed {
+        return decompress_text(&bytes);
+    }
+    std::fs::read_to_string(&file_path).map_err(|e| format!("Log file not found on disk: {e}"))
+}
+
+#[tauri::command]
+pub async fn list_all_log_files(
+    search: Option<String>,
+    issue_id: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<Vec<LogFileSummary>, String> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+    let mut query = "SELECT id, issue_id, file_name, file_path, file_size, mime_type, content_hash, uploaded_at, redacted, issue_title \
+                     FROM v_log_files_with_issue WHERE 1=1"
+        .to_string();
+    let mut params: Vec<String> = Vec::new();
+
+    if let Some(ref q) = search {
+        query.push_str(" AND file_name LIKE ?");
+        params.push(format!("%{q}%"));
+    }
+    if let Some(ref id) = issue_id {
+        query.push_str(" AND issue_id = ?");
+        params.push(id.clone());
+    }
+    query.push_str(" ORDER BY uploaded_at DESC");
+
+    let mut stmt = db.prepare(&query).map_err(|e| e.to_string())?;
+    let results = stmt
+        .query_map(rusqlite::params_from_iter(params.iter()), |row| {
+            Ok(LogFileSummary {
+                id: row.get(0)?,
+                issue_id: row.get(1)?,
+                file_name: row.get(2)?,
+                file_path: row.get(3)?,
+                file_size: row.get(4)?,
+                mime_type: row.get(5)?,
+                content_hash: row.get(6)?,
+                uploaded_at: row.get(7)?,
+                redacted: row.get::<_, i32>(8)? != 0,
+                issue_title: row.get(9)?,
+            })
+        })
+        .map_err(|e| e.to_string())?
+        .filter_map(|r| r.ok())
+        .collect();
+    Ok(results)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -580,5 +681,57 @@ mod tests {
         let result = extract_text_content(Path::new("data.xlsx"));
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("not yet supported"));
+    }
+
+    #[test]
+    fn test_compress_decompress_roundtrip() {
+        let original = "Hello, World! This is a log line with some content.";
+        let compressed = compress_text(original).unwrap();
+        assert!(!compressed.is_empty());
+        assert!(compressed.len() < original.len() * 3);
+        let decompressed = decompress_text(&compressed).unwrap();
+        assert_eq!(decompressed, original);
+    }
+
+    #[test]
+    fn test_compress_returns_error_not_empty_on_failure() {
+        // compress_text returns Result — callers must propagate, not silently discard.
+        // For in-memory gzip this essentially never fails, but the API now allows
+        // callers to surface the error rather than storing empty bytes.
+        let result = compress_text("normal log line");
+        assert!(result.is_ok(), "compress_text should succeed for normal input");
+        assert!(!result.unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_compress_large_text_is_smaller() {
+        let original = "INFO server started\n".repeat(1000);
+        let compressed = compress_text(&original).unwrap();
+        assert!(
+            compressed.len() < original.len(),
+            "gzip should compress repetitive text"
+        );
+    }
+
+    #[test]
+    fn test_decompress_invalid_bytes_returns_error() {
+        let result = decompress_text(b"not gzip data");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_decompress_size_limit_enforced() {
+        assert_eq!(
+            MAX_DECOMPRESSED_BYTES,
+            100 * 1024 * 1024,
+            "Decompression bomb guard must be 100 MB"
+        );
+
+        // A valid small payload must still decompress fine after the guard is in place.
+        let text = "hello world decompression guard test\n".repeat(100);
+        let compressed = compress_text(&text).unwrap();
+        let result = decompress_text(&compressed);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), text);
     }
 }

@@ -2,7 +2,7 @@
 
 ## Overview
 
-TFTSR uses **SQLite** via `rusqlite` with the `bundled-sqlcipher` feature for AES-256 encryption in production. 18 versioned migrations are tracked in the `_migrations` table.
+TFTSR uses **SQLite** via `rusqlite` with the `bundled-sqlcipher` feature for AES-256 encryption in production. 22 versioned migrations are tracked in the `_migrations` table.
 
 **DB file location:** `{app_data_dir}/tftsr.db`
 
@@ -343,6 +343,51 @@ CREATE TABLE mcp_resources (
 - `discovery_status` tracks connection state: `pending` → `connected` | `unreachable` | `error`
 - Cascade deletes ensure removing a server cleans up all associated tools and resources
 - Tools and resources are replaced atomically on each discovery run (delete-all + re-insert)
+
+### 020 — log_files content storage (Attachment Recall v0.4+)
+
+```sql
+ALTER TABLE log_files ADD COLUMN content_compressed BLOB;
+```
+
+Stores gzip-compressed extracted text for every log file uploaded after migration 020. Existing rows remain `NULL` and fall back to the `file_path` column.
+
+**Compression:** pure-Rust gzip via `flate2` (`rust_backend` / `miniz_oxide`) — no external binary dependency, works identically on Linux, Windows, macOS.
+
+**Usage:** The `get_log_file_content` command reads and decompresses this column. The column is never serialised to the frontend directly — content is requested on demand via IPC.
+
+### 021 — image_attachments byte storage (Attachment Recall v0.4+)
+
+```sql
+ALTER TABLE image_attachments ADD COLUMN image_data BLOB;
+```
+
+Stores raw image bytes for every image uploaded after migration 021. Existing rows fall back to `file_path`. Images are already compressed (PNG/JPEG) so no additional compression is applied.
+
+**Usage:** `get_image_attachment_data` reads this column and base64-encodes it into a data URL for frontend display. The `ImageThumbnail` component in the History → Attachments tab calls this on mount for each visible image.
+
+### 022 — attachment cross-incident views (Attachment Recall v0.4+)
+
+Two read-only views joining attachments with their parent issue titles:
+
+```sql
+CREATE VIEW IF NOT EXISTS v_log_files_with_issue AS
+    SELECT lf.id, lf.issue_id, lf.file_name, lf.file_path, lf.file_size,
+           lf.mime_type, lf.content_hash, lf.uploaded_at, lf.redacted,
+           i.title AS issue_title
+    FROM log_files lf
+    JOIN issues i ON i.id = lf.issue_id;
+
+CREATE VIEW IF NOT EXISTS v_image_attachments_with_issue AS
+    SELECT ia.id, ia.issue_id, ia.file_name, ia.file_path, ia.file_size,
+           ia.mime_type, ia.upload_hash, ia.uploaded_at,
+           ia.pii_warning_acknowledged, ia.is_paste,
+           i.title AS issue_title
+    FROM image_attachments ia
+    JOIN issues i ON i.id = ia.issue_id;
+```
+
+Used by `list_all_log_files` and `list_all_image_attachments` to power the cross-incident Attachments tab in the History page. Explicitly selects named columns (not `SELECT *`) to avoid including the BLOB data in list queries.
 
 ---
 
