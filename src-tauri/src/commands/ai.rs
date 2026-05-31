@@ -204,15 +204,19 @@ pub async fn chat_message(
         }
     };
 
-    // Load conversation history (use and_then to keep stmt lifetime within closure)
+    // Load conversation history across ALL conversations for this issue
     let history: Vec<Message> = {
         let db = state.db.lock().map_err(|e| e.to_string())?;
         let raw: Vec<(String, String)> = db
             .prepare(
-                "SELECT role, content FROM ai_messages WHERE conversation_id = ?1 ORDER BY created_at ASC",
+                "SELECT am.role, am.content \
+                 FROM ai_messages am \
+                 JOIN ai_conversations ac ON ac.id = am.conversation_id \
+                 WHERE ac.issue_id = ?1 \
+                 ORDER BY am.created_at ASC",
             )
             .and_then(|mut stmt| {
-                stmt.query_map([&conversation_id], |row| {
+                stmt.query_map([&issue_id], |row| {
                     Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
                 })
                 .map(|rows| rows.filter_map(|r| r.ok()).collect::<Vec<_>>())
@@ -1024,5 +1028,195 @@ mod tests {
         let text = "KEY_FINDINGS:\n- \n- Actual item\n-  \nNEXT:";
         let list = extract_list(text, "KEY_FINDINGS:");
         assert_eq!(list, vec!["Actual item"]);
+    }
+
+    #[test]
+    fn test_history_query_same_conversation() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        crate::db::migrations::run_migrations(&conn).unwrap();
+
+        let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+        conn.execute(
+            "INSERT INTO issues (id, title, created_at, updated_at) VALUES (?1, ?2, ?3, ?4)",
+            rusqlite::params!["issue-1", "Test", &now, &now],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO ai_conversations (id, issue_id, provider, model, created_at, title) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            rusqlite::params!["conv-1", "issue-1", "openai", "gpt-4o", &now, "Conv 1"],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO ai_messages (id, conversation_id, role, content, token_count, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            rusqlite::params!["msg-1", "conv-1", "user", "Hello", 5, "2025-01-01 10:00:00"],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO ai_messages (id, conversation_id, role, content, token_count, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            rusqlite::params!["msg-2", "conv-1", "assistant", "Hi there", 8, "2025-01-01 10:00:01"],
+        )
+        .unwrap();
+
+        let issue_id = "issue-1";
+        let raw: Vec<(String, String)> = conn
+            .prepare(
+                "SELECT am.role, am.content \
+                 FROM ai_messages am \
+                 JOIN ai_conversations ac ON ac.id = am.conversation_id \
+                 WHERE ac.issue_id = ?1 \
+                 ORDER BY am.created_at ASC",
+            )
+            .and_then(|mut stmt| {
+                stmt.query_map([&issue_id], |row| {
+                    Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                })
+                .map(|rows| rows.filter_map(|r| r.ok()).collect::<Vec<_>>())
+            })
+            .unwrap();
+
+        assert_eq!(raw.len(), 2);
+        assert_eq!(raw[0], ("user".to_string(), "Hello".to_string()));
+        assert_eq!(raw[1], ("assistant".to_string(), "Hi there".to_string()));
+    }
+
+    #[test]
+    fn test_history_query_across_conversations() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        crate::db::migrations::run_migrations(&conn).unwrap();
+
+        let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+        conn.execute(
+            "INSERT INTO issues (id, title, created_at, updated_at) VALUES (?1, ?2, ?3, ?4)",
+            rusqlite::params!["issue-1", "Test", &now, &now],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO ai_conversations (id, issue_id, provider, model, created_at, title) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            rusqlite::params!["conv-1", "issue-1", "openai", "gpt-4o", &now, "Conv 1"],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO ai_conversations (id, issue_id, provider, model, created_at, title) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            rusqlite::params!["conv-2", "issue-1", "anthropic", "claude-3", &now, "Conv 2"],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO ai_messages (id, conversation_id, role, content, token_count, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            rusqlite::params!["msg-1", "conv-1", "user", "From conv 1", 5, "2025-01-01 10:00:00"],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO ai_messages (id, conversation_id, role, content, token_count, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            rusqlite::params!["msg-2", "conv-2", "user", "From conv 2", 5, "2025-01-01 11:00:00"],
+        )
+        .unwrap();
+
+        let issue_id = "issue-1";
+        let raw: Vec<(String, String)> = conn
+            .prepare(
+                "SELECT am.role, am.content \
+                 FROM ai_messages am \
+                 JOIN ai_conversations ac ON ac.id = am.conversation_id \
+                 WHERE ac.issue_id = ?1 \
+                 ORDER BY am.created_at ASC",
+            )
+            .and_then(|mut stmt| {
+                stmt.query_map([&issue_id], |row| {
+                    Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                })
+                .map(|rows| rows.filter_map(|r| r.ok()).collect::<Vec<_>>())
+            })
+            .unwrap();
+
+        assert_eq!(raw.len(), 2);
+        assert_eq!(raw[0].1, "From conv 1");
+        assert_eq!(raw[1].1, "From conv 2");
+    }
+
+    #[test]
+    fn test_history_query_empty_for_new_issue() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        crate::db::migrations::run_migrations(&conn).unwrap();
+
+        let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+        conn.execute(
+            "INSERT INTO issues (id, title, created_at, updated_at) VALUES (?1, ?2, ?3, ?4)",
+            rusqlite::params!["issue-new", "Empty", &now, &now],
+        )
+        .unwrap();
+
+        let issue_id = "issue-new";
+        let raw: Vec<(String, String)> = conn
+            .prepare(
+                "SELECT am.role, am.content \
+                 FROM ai_messages am \
+                 JOIN ai_conversations ac ON ac.id = am.conversation_id \
+                 WHERE ac.issue_id = ?1 \
+                 ORDER BY am.created_at ASC",
+            )
+            .and_then(|mut stmt| {
+                stmt.query_map([&issue_id], |row| {
+                    Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                })
+                .map(|rows| rows.filter_map(|r| r.ok()).collect::<Vec<_>>())
+            })
+            .unwrap();
+
+        assert!(raw.is_empty());
+    }
+
+    #[test]
+    fn test_history_query_ordered_by_created_at() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        crate::db::migrations::run_migrations(&conn).unwrap();
+
+        let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+        conn.execute(
+            "INSERT INTO issues (id, title, created_at, updated_at) VALUES (?1, ?2, ?3, ?4)",
+            rusqlite::params!["issue-1", "Test", &now, &now],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO ai_conversations (id, issue_id, provider, model, created_at, title) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            rusqlite::params!["conv-1", "issue-1", "openai", "gpt-4o", &now, "Conv 1"],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO ai_conversations (id, issue_id, provider, model, created_at, title) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            rusqlite::params!["conv-2", "issue-1", "anthropic", "claude-3", &now, "Conv 2"],
+        )
+        .unwrap();
+        // Insert messages out of order: conv-2 message is earlier than conv-1 message
+        conn.execute(
+            "INSERT INTO ai_messages (id, conversation_id, role, content, token_count, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            rusqlite::params!["msg-1", "conv-1", "user", "Second", 5, "2025-01-01 12:00:00"],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO ai_messages (id, conversation_id, role, content, token_count, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            rusqlite::params!["msg-2", "conv-2", "user", "First", 5, "2025-01-01 09:00:00"],
+        )
+        .unwrap();
+
+        let issue_id = "issue-1";
+        let raw: Vec<(String, String)> = conn
+            .prepare(
+                "SELECT am.role, am.content \
+                 FROM ai_messages am \
+                 JOIN ai_conversations ac ON ac.id = am.conversation_id \
+                 WHERE ac.issue_id = ?1 \
+                 ORDER BY am.created_at ASC",
+            )
+            .and_then(|mut stmt| {
+                stmt.query_map([&issue_id], |row| {
+                    Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                })
+                .map(|rows| rows.filter_map(|r| r.ok()).collect::<Vec<_>>())
+            })
+            .unwrap();
+
+        assert_eq!(raw.len(), 2);
+        assert_eq!(raw[0].1, "First");
+        assert_eq!(raw[1].1, "Second");
     }
 }

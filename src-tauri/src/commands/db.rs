@@ -347,7 +347,7 @@ pub async fn list_issues(
     let offset = filter.offset.unwrap_or(0);
 
     let mut sql = String::from(
-        "SELECT i.id, i.title, i.severity, i.status, i.category, i.created_at, i.updated_at, \
+        "SELECT DISTINCT i.id, i.title, i.severity, i.status, i.category, i.created_at, i.updated_at, \
          (SELECT COUNT(*) FROM log_files lf WHERE lf.issue_id = i.id) as log_count, \
          (SELECT COUNT(*) FROM resolution_steps rs WHERE rs.issue_id = i.id) as step_count \
          FROM issues i WHERE 1=1",
@@ -384,9 +384,19 @@ pub async fn list_issues(
     }
     if let Some(ref search) = filter.search {
         let pattern = format!("%{search}%");
+        let idx = params.len() + 1;
         sql.push_str(&format!(
-            " AND (i.title LIKE ?{0} OR i.description LIKE ?{0} OR i.category LIKE ?{0})",
-            params.len() + 1
+            " AND (i.title LIKE ?{idx} OR i.description LIKE ?{idx} OR i.category LIKE ?{idx} \
+             OR EXISTS (SELECT 1 FROM ai_messages am \
+                        JOIN ai_conversations ac ON ac.id = am.conversation_id \
+                        WHERE ac.issue_id = i.id AND am.content LIKE ?{idx}) \
+             OR EXISTS (SELECT 1 FROM resolution_steps rs \
+                        WHERE rs.issue_id = i.id \
+                        AND (rs.why_question LIKE ?{idx} OR rs.answer LIKE ?{idx} OR rs.evidence LIKE ?{idx})) \
+             OR EXISTS (SELECT 1 FROM log_files lf \
+                        WHERE lf.issue_id = i.id AND lf.file_name LIKE ?{idx}) \
+             OR EXISTS (SELECT 1 FROM timeline_events te \
+                        WHERE te.issue_id = i.id AND te.description LIKE ?{idx}))",
         ));
         params.push(Box::new(pattern));
     }
@@ -634,4 +644,164 @@ pub async fn get_timeline_events(
         .filter_map(|r| r.ok())
         .collect();
     Ok(events)
+}
+
+#[cfg(test)]
+mod tests {
+    use rusqlite::Connection;
+
+    fn setup_test_db() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        crate::db::migrations::run_migrations(&conn).unwrap();
+        conn
+    }
+
+    fn insert_issue(conn: &Connection, id: &str, title: &str, description: &str) {
+        let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+        conn.execute(
+            "INSERT INTO issues (id, title, description, severity, status, category, source, created_at, updated_at, assigned_to, tags) \
+             VALUES (?1, ?2, ?3, 'medium', 'open', 'general', 'manual', ?4, ?5, '', '[]')",
+            rusqlite::params![id, title, description, &now, &now],
+        )
+        .unwrap();
+    }
+
+    fn run_search_query(conn: &Connection, search: &str) -> Vec<String> {
+        let pattern = format!("%{search}%");
+        let idx = 1;
+        let sql = format!(
+            "SELECT DISTINCT i.id, i.title, i.severity, i.status, i.category, i.created_at, i.updated_at, \
+             (SELECT COUNT(*) FROM log_files lf2 WHERE lf2.issue_id = i.id) as log_count, \
+             (SELECT COUNT(*) FROM resolution_steps rs2 WHERE rs2.issue_id = i.id) as step_count \
+             FROM issues i WHERE 1=1 \
+             AND (i.title LIKE ?{idx} OR i.description LIKE ?{idx} OR i.category LIKE ?{idx} \
+              OR EXISTS (SELECT 1 FROM ai_messages am \
+                         JOIN ai_conversations ac ON ac.id = am.conversation_id \
+                         WHERE ac.issue_id = i.id AND am.content LIKE ?{idx}) \
+              OR EXISTS (SELECT 1 FROM resolution_steps rs \
+                         WHERE rs.issue_id = i.id \
+                         AND (rs.why_question LIKE ?{idx} OR rs.answer LIKE ?{idx} OR rs.evidence LIKE ?{idx})) \
+              OR EXISTS (SELECT 1 FROM log_files lf \
+                         WHERE lf.issue_id = i.id AND lf.file_name LIKE ?{idx}) \
+              OR EXISTS (SELECT 1 FROM timeline_events te \
+                         WHERE te.issue_id = i.id AND te.description LIKE ?{idx})) \
+             ORDER BY i.updated_at DESC"
+        );
+        let mut stmt = conn.prepare(&sql).unwrap();
+        stmt.query_map([&pattern], |row| row.get::<_, String>(0))
+            .unwrap()
+            .filter_map(|r| r.ok())
+            .collect()
+    }
+
+    #[test]
+    fn test_search_finds_by_title() {
+        let conn = setup_test_db();
+        insert_issue(&conn, "issue-1", "Kubernetes OOM crash", "No details");
+        insert_issue(&conn, "issue-2", "Network timeout", "No details");
+
+        let results = run_search_query(&conn, "Kubernetes");
+        assert_eq!(results, vec!["issue-1"]);
+    }
+
+    #[test]
+    fn test_search_finds_by_description() {
+        let conn = setup_test_db();
+        insert_issue(
+            &conn,
+            "issue-1",
+            "Generic title",
+            "The pod was killed due to memory pressure",
+        );
+        insert_issue(&conn, "issue-2", "Other", "All fine");
+
+        let results = run_search_query(&conn, "memory pressure");
+        assert_eq!(results, vec!["issue-1"]);
+    }
+
+    #[test]
+    fn test_search_finds_by_ai_message_content() {
+        let conn = setup_test_db();
+        insert_issue(&conn, "issue-1", "Unrelated title", "Unrelated desc");
+        let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+        conn.execute(
+            "INSERT INTO ai_conversations (id, issue_id, provider, model, created_at, title) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            rusqlite::params!["conv-1", "issue-1", "openai", "gpt-4o", &now, "Conv"],
+        ).unwrap();
+        conn.execute(
+            "INSERT INTO ai_messages (id, conversation_id, role, content, token_count, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            rusqlite::params!["msg-1", "conv-1", "assistant", "The root cause is a deadlock in PostgreSQL", 10, &now],
+        ).unwrap();
+
+        let results = run_search_query(&conn, "deadlock in PostgreSQL");
+        assert_eq!(results, vec!["issue-1"]);
+    }
+
+    #[test]
+    fn test_search_finds_by_resolution_step_answer() {
+        let conn = setup_test_db();
+        insert_issue(&conn, "issue-1", "Unrelated title", "Unrelated desc");
+        let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+        conn.execute(
+            "INSERT INTO resolution_steps (id, issue_id, step_order, why_question, answer, evidence, created_at) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            rusqlite::params!["step-1", "issue-1", 1, "Why did it fail?", "Connection pool exhausted", "metrics dashboard", &now],
+        ).unwrap();
+
+        let results = run_search_query(&conn, "pool exhausted");
+        assert_eq!(results, vec!["issue-1"]);
+    }
+
+    #[test]
+    fn test_search_finds_by_log_file_name() {
+        let conn = setup_test_db();
+        insert_issue(&conn, "issue-1", "Unrelated title", "Unrelated desc");
+        let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+        conn.execute(
+            "INSERT INTO log_files (id, issue_id, file_name, file_path, file_size, mime_type, content_hash, uploaded_at, redacted) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            rusqlite::params!["lf-1", "issue-1", "nginx-error-2025.log", "/tmp/nginx-error-2025.log", 1024, "text/plain", "abc", &now, 0],
+        ).unwrap();
+
+        let results = run_search_query(&conn, "nginx-error");
+        assert_eq!(results, vec!["issue-1"]);
+    }
+
+    #[test]
+    fn test_search_finds_by_timeline_description() {
+        let conn = setup_test_db();
+        insert_issue(&conn, "issue-1", "Unrelated title", "Unrelated desc");
+        conn.execute(
+            "INSERT INTO timeline_events (id, issue_id, event_type, description, metadata, created_at) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            rusqlite::params!["te-1", "issue-1", "triage_started", "Engineer started investigating DNS resolution failure", "{}", "2025-01-15 10:00:00"],
+        ).unwrap();
+
+        let results = run_search_query(&conn, "DNS resolution");
+        assert_eq!(results, vec!["issue-1"]);
+    }
+
+    #[test]
+    fn test_search_no_duplicates_for_multiple_matches() {
+        let conn = setup_test_db();
+        insert_issue(
+            &conn,
+            "issue-1",
+            "Kubernetes crash",
+            "Kubernetes pod killed",
+        );
+        let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+        conn.execute(
+            "INSERT INTO ai_conversations (id, issue_id, provider, model, created_at, title) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            rusqlite::params!["conv-1", "issue-1", "openai", "gpt-4o", &now, "Conv"],
+        ).unwrap();
+        conn.execute(
+            "INSERT INTO ai_messages (id, conversation_id, role, content, token_count, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            rusqlite::params!["msg-1", "conv-1", "assistant", "Kubernetes OOM detected", 5, &now],
+        ).unwrap();
+
+        let results = run_search_query(&conn, "Kubernetes");
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0], "issue-1");
+    }
 }
