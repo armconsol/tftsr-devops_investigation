@@ -4,6 +4,14 @@ All notable changes to TFTSR are documented here.
 Commit types shown: feat, fix, perf, docs, refactor.
 CI, chore, and build changes are excluded.
 
+## [0.3.7] — 2026-05-31
+
+### Bug Fixes
+- Address PR review findings — compress errors, size guard, modal error display
+
+### Features
+- Attachment DB storage and cross-incident recall
+
 ## [0.3.6] — 2026-05-31
 
 ### Bug Fixes
