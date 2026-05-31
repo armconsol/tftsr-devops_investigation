@@ -206,7 +206,7 @@ jobs:
           fi
           git add CHANGELOG.md
           git commit -m "chore: update CHANGELOG.md for ${TAG} [skip ci]" || echo "No changes to commit"
-          git push origin master
+          git push origin HEAD:master
           echo "✓ CHANGELOG.md committed to master"
 
       - name: Upload CHANGELOG.md as release asset
