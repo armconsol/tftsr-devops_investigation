@@ -249,6 +249,16 @@ pub fn run_migrations(conn: &Connection) -> anyhow::Result<()> {
                 FOREIGN KEY(server_id) REFERENCES mcp_servers(id) ON DELETE CASCADE
             );",
         ),
+        (
+            "019_create_sudo_config",
+            "CREATE TABLE IF NOT EXISTS sudo_config (
+                id TEXT PRIMARY KEY,
+                username TEXT NOT NULL DEFAULT '',
+                encrypted_password TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );",
+        ),
     ];
 
     for (name, sql) in migrations {
@@ -1033,5 +1043,62 @@ mod tests {
             )
             .unwrap();
         assert_eq!(applied, 1, "018 should only be recorded once");
+    }
+
+    // ─── Migration 019: sudo_config ─────────────────────────────────────────────
+
+    #[test]
+    fn test_019_sudo_config_table_exists() {
+        let conn = setup_test_db();
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='sudo_config'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn test_019_sudo_config_columns() {
+        let conn = setup_test_db();
+        let mut stmt = conn.prepare("PRAGMA table_info(sudo_config)").unwrap();
+        let columns: Vec<String> = stmt
+            .query_map([], |row| row.get::<_, String>(1))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+
+        assert!(columns.contains(&"id".to_string()));
+        assert!(columns.contains(&"username".to_string()));
+        assert!(columns.contains(&"encrypted_password".to_string()));
+        assert!(columns.contains(&"created_at".to_string()));
+        assert!(columns.contains(&"updated_at".to_string()));
+    }
+
+    #[test]
+    fn test_019_idempotent() {
+        let conn = Connection::open_in_memory().unwrap();
+        run_migrations(&conn).unwrap();
+        run_migrations(&conn).unwrap();
+
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='sudo_config'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 1, "sudo_config table should exist after double-run");
+
+        let applied: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM _migrations WHERE name = '019_create_sudo_config'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(applied, 1, "019 should only be recorded once");
     }
 }

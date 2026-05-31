@@ -591,6 +591,26 @@ export function initiateMcpOauthCmd(id: string): Promise<void> {
   return invoke<void>("initiate_mcp_oauth", { id });
 }
 
+// ─── Sudo credential commands ─────────────────────────────────────────────────
+
+export interface SudoConfigStatus {
+  configured: boolean;
+  username: string;
+  updated_at: string;
+}
+
+export const setSudoPasswordCmd = (password: string, username?: string) =>
+  invoke<void>("set_sudo_password", { password, username: username ?? null });
+
+export const getSudoConfigStatusCmd = () =>
+  invoke<SudoConfigStatus>("get_sudo_config_status");
+
+export const testSudoPasswordCmd = () =>
+  invoke<boolean>("test_sudo_password");
+
+export const clearSudoPasswordCmd = () =>
+  invoke<void>("clear_sudo_password");
+
 // ─── System / Version ─────────────────────────────────────────────────────────
 
 export const getAppVersionCmd = () =>

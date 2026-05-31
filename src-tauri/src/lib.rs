@@ -133,6 +133,10 @@ pub fn run() {
             commands::system::update_settings,
             commands::system::get_audit_log,
             commands::system::get_app_version,
+            commands::system::set_sudo_password,
+            commands::system::get_sudo_config_status,
+            commands::system::test_sudo_password,
+            commands::system::clear_sudo_password,
             // MCP Servers
             mcp::commands::list_mcp_servers,
             mcp::commands::create_mcp_server,

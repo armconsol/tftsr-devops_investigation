@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Shield, RefreshCw } from "lucide-react";
+import { Shield, RefreshCw, Lock } from "lucide-react";
 import {
   Card,
   CardHeader,
@@ -7,7 +7,15 @@ import {
   CardContent,
   Badge,
 } from "@/components/ui";
-import { getAuditLogCmd, type AuditEntry } from "@/lib/tauriCommands";
+import {
+  getAuditLogCmd,
+  getSudoConfigStatusCmd,
+  setSudoPasswordCmd,
+  testSudoPasswordCmd,
+  clearSudoPasswordCmd,
+  type AuditEntry,
+  type SudoConfigStatus,
+} from "@/lib/tauriCommands";
 import { useSettingsStore } from "@/stores/settingsStore";
 
 const piiPatterns = [
@@ -28,8 +36,15 @@ export default function Security() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const [sudoPassword, setSudoPassword] = useState("");
+  const [sudoUsername, setSudoUsername] = useState("");
+  const [sudoStatus, setSudoStatus] = useState<SudoConfigStatus | null>(null);
+  const [sudoMessage, setSudoMessage] = useState("");
+  const [sudoTesting, setSudoTesting] = useState(false);
+
   useEffect(() => {
     loadAuditLog();
+    loadSudoStatus();
   }, []);
 
   const loadAuditLog = async () => {
@@ -41,6 +56,51 @@ export default function Security() {
       setError(String(err));
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const loadSudoStatus = async () => {
+    try {
+      const status = await getSudoConfigStatusCmd();
+      setSudoStatus(status);
+    } catch {
+      // ignore — table may not exist yet
+    }
+  };
+
+  const handleSaveSudo = async () => {
+    setSudoMessage("");
+    try {
+      await setSudoPasswordCmd(sudoPassword, sudoUsername || undefined);
+      setSudoPassword("");
+      setSudoMessage("Saved successfully");
+      await loadSudoStatus();
+    } catch (err) {
+      setSudoMessage(`Error: ${String(err)}`);
+    }
+  };
+
+  const handleTestSudo = async () => {
+    setSudoTesting(true);
+    setSudoMessage("");
+    try {
+      const ok = await testSudoPasswordCmd();
+      setSudoMessage(ok ? "Password verified" : "Authentication failed");
+    } catch (err) {
+      setSudoMessage(`Authentication failed: ${String(err)}`);
+    } finally {
+      setSudoTesting(false);
+    }
+  };
+
+  const handleClearSudo = async () => {
+    setSudoMessage("");
+    try {
+      await clearSudoPasswordCmd();
+      setSudoMessage("Credentials cleared");
+      await loadSudoStatus();
+    } catch (err) {
+      setSudoMessage(`Error: ${String(err)}`);
     }
   };
 
@@ -100,6 +160,82 @@ export default function Security() {
               </button>
             </div>
           ))}
+        </CardContent>
+      </Card>
+
+      {/* Sudo Credentials */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg flex items-center gap-2">
+            <Lock className="w-5 h-5" />
+            Sudo Credentials
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {sudoStatus?.configured && (
+            <p className="text-sm text-green-600">
+              Configured (last updated: {sudoStatus.updated_at})
+            </p>
+          )}
+          {sudoStatus && !sudoStatus.configured && (
+            <p className="text-sm text-muted-foreground">Not configured</p>
+          )}
+          <div className="space-y-3">
+            <div>
+              <label className="text-sm font-medium" htmlFor="sudo-username">
+                Username (optional)
+              </label>
+              <input
+                id="sudo-username"
+                type="text"
+                value={sudoUsername}
+                onChange={(e) => setSudoUsername(e.target.value)}
+                placeholder="Leave empty for current user"
+                className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+              />
+            </div>
+            <div>
+              <label className="text-sm font-medium" htmlFor="sudo-password">
+                Password
+              </label>
+              <input
+                id="sudo-password"
+                type="password"
+                value={sudoPassword}
+                onChange={(e) => setSudoPassword(e.target.value)}
+                placeholder="Enter sudo password"
+                className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+              />
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={handleSaveSudo}
+              disabled={!sudoPassword}
+              className="px-3 py-1.5 text-sm rounded-md bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+            >
+              Save
+            </button>
+            <button
+              onClick={handleTestSudo}
+              disabled={sudoTesting || !sudoStatus?.configured}
+              className="px-3 py-1.5 text-sm rounded-md border border-input hover:bg-accent disabled:opacity-50"
+            >
+              {sudoTesting ? "Testing..." : "Test"}
+            </button>
+            <button
+              onClick={handleClearSudo}
+              disabled={!sudoStatus?.configured}
+              className="px-3 py-1.5 text-sm rounded-md border border-destructive text-destructive hover:bg-destructive/10 disabled:opacity-50"
+            >
+              Clear
+            </button>
+          </div>
+          {sudoMessage && (
+            <p className={`text-sm ${sudoMessage.startsWith("Error") || sudoMessage.includes("failed") ? "text-destructive" : "text-green-600"}`}>
+              {sudoMessage}
+            </p>
+          )}
         </CardContent>
       </Card>
 

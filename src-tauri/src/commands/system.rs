@@ -284,3 +284,81 @@ pub async fn get_app_version() -> Result<String, String> {
         .or_else(|_| env::var("CARGO_PKG_VERSION"))
         .map_err(|e| format!("Failed to get version: {e}"))
 }
+
+// --- Sudo credential commands ---
+
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+pub struct SudoConfigStatus {
+    pub configured: bool,
+    pub username: String,
+    pub updated_at: String,
+}
+
+#[tauri::command]
+pub async fn set_sudo_password(
+    password: String,
+    username: Option<String>,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    let encrypted = crate::integrations::auth::encrypt_token(&password)?;
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+    let id = uuid::Uuid::now_v7().to_string();
+    let uname = username.unwrap_or_default();
+    db.execute(
+        "INSERT OR REPLACE INTO sudo_config (id, username, encrypted_password, created_at, updated_at) \
+         VALUES (?1, ?2, ?3, datetime('now'), datetime('now'))",
+        rusqlite::params![id, uname, encrypted],
+    )
+    .map_err(|e| format!("Failed to store sudo config: {e}"))?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn get_sudo_config_status(
+    state: tauri::State<'_, AppState>,
+) -> Result<SudoConfigStatus, String> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+    let result: Option<(String, String)> = db
+        .prepare("SELECT username, updated_at FROM sudo_config LIMIT 1")
+        .and_then(|mut stmt| {
+            stmt.query_row([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })
+        })
+        .ok();
+    match result {
+        Some((username, updated_at)) => Ok(SudoConfigStatus {
+            configured: true,
+            username,
+            updated_at,
+        }),
+        None => Ok(SudoConfigStatus {
+            configured: false,
+            username: String::new(),
+            updated_at: String::new(),
+        }),
+    }
+}
+
+#[tauri::command]
+pub async fn test_sudo_password(state: tauri::State<'_, AppState>) -> Result<bool, String> {
+    let encrypted: Option<String> = {
+        let db = state.db.lock().map_err(|e| e.to_string())?;
+        db.prepare("SELECT encrypted_password FROM sudo_config LIMIT 1")
+            .and_then(|mut stmt| stmt.query_row([], |row| row.get::<_, String>(0)))
+            .ok()
+    };
+    let encrypted = encrypted.ok_or("No sudo password configured")?;
+    let password = crate::integrations::auth::decrypt_token(&encrypted)?;
+    let result = crate::commands::agentic::run_sudo_command(&password, &["true"])
+        .map_err(|e| format!("Sudo test failed: {e}"))?;
+    Ok(result.success)
+}
+
+#[tauri::command]
+pub async fn clear_sudo_password(state: tauri::State<'_, AppState>) -> Result<(), String> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+    db.execute("DELETE FROM sudo_config", [])
+        .map_err(|e| format!("Failed to clear sudo config: {e}"))?;
+    Ok(())
+}
