@@ -128,6 +128,13 @@ jobs:
           # Use the tag output from autotag — never rely on git describe
           CURRENT_TAG="${RELEASE_TAG}"
           echo "Building changelog for $CURRENT_TAG"
+
+          # Verify the tag is present locally after fetch before running git-cliff
+          if ! git rev-parse "refs/tags/${CURRENT_TAG}" >/dev/null 2>&1; then
+            echo "ERROR: tag ${CURRENT_TAG} not found locally after fetch"
+            exit 1
+          fi
+
           git-cliff --config cliff.toml --output CHANGELOG.md
           PREV_TAG=$(git tag --sort=-version:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' \
             | grep -v "^${CURRENT_TAG}$" | head -1 || echo "")
