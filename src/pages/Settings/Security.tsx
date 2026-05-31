@@ -173,9 +173,10 @@ export default function Security() {
         </CardHeader>
         <CardContent className="space-y-4">
           {sudoStatus?.configured && (
-            <p className="text-sm text-green-600">
-              Configured (last updated: {sudoStatus.updated_at})
-            </p>
+            <div className="text-sm text-green-600 space-y-0.5">
+              <p>Configured for <strong>{sudoStatus.username}</strong></p>
+              <p className="text-xs text-muted-foreground">Last updated: {sudoStatus.updated_at}</p>
+            </div>
           )}
           {sudoStatus && !sudoStatus.configured && (
             <p className="text-sm text-muted-foreground">Not configured</p>
@@ -183,16 +184,19 @@ export default function Security() {
           <div className="space-y-3">
             <div>
               <label className="text-sm font-medium" htmlFor="sudo-username">
-                Username (optional)
+                Username
               </label>
               <input
                 id="sudo-username"
                 type="text"
                 value={sudoUsername}
                 onChange={(e) => setSudoUsername(e.target.value)}
-                placeholder="Leave empty for current user"
+                placeholder="Defaults to current OS user"
                 className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
               />
+              <p className="text-xs text-muted-foreground mt-1">
+                Credentials are scoped to this user. Leave blank to use the current OS user.
+              </p>
             </div>
             <div>
               <label className="text-sm font-medium" htmlFor="sudo-password">

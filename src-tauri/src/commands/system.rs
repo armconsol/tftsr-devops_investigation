@@ -294,6 +294,17 @@ pub struct SudoConfigStatus {
     pub updated_at: String,
 }
 
+/// Resolve the OS username to bind sudo credentials to.
+fn resolve_sudo_username(provided: Option<String>) -> String {
+    provided
+        .filter(|u| !u.trim().is_empty())
+        .unwrap_or_else(|| {
+            std::env::var("USER")
+                .or_else(|_| std::env::var("LOGNAME"))
+                .unwrap_or_else(|_| "local".to_string())
+        })
+}
+
 #[tauri::command]
 pub async fn set_sudo_password(
     password: String,
@@ -301,13 +312,18 @@ pub async fn set_sudo_password(
     state: tauri::State<'_, AppState>,
 ) -> Result<(), String> {
     let encrypted = crate::integrations::auth::encrypt_token(&password)?;
+    let uname = resolve_sudo_username(username);
     let db = state.db.lock().map_err(|e| e.to_string())?;
-    let id = uuid::Uuid::now_v7().to_string();
-    let uname = username.unwrap_or_default();
+    // DELETE then INSERT to guarantee exactly one row at all times.
+    // INSERT OR REPLACE with a freshly generated UUID never matches the
+    // existing primary key, so it inserts an additional row instead of
+    // replacing — this is the correct singleton pattern for SQLite.
+    db.execute("DELETE FROM sudo_config", [])
+        .map_err(|e| format!("Failed to clear sudo config: {e}"))?;
     db.execute(
-        "INSERT OR REPLACE INTO sudo_config (id, username, encrypted_password, created_at, updated_at) \
+        "INSERT INTO sudo_config (id, username, encrypted_password, created_at, updated_at) \
          VALUES (?1, ?2, ?3, datetime('now'), datetime('now'))",
-        rusqlite::params![id, uname, encrypted],
+        rusqlite::params![uuid::Uuid::now_v7().to_string(), uname, encrypted],
     )
     .map_err(|e| format!("Failed to store sudo config: {e}"))?;
     Ok(())
@@ -342,16 +358,26 @@ pub async fn get_sudo_config_status(
 
 #[tauri::command]
 pub async fn test_sudo_password(state: tauri::State<'_, AppState>) -> Result<bool, String> {
-    let encrypted: Option<String> = {
+    let (encrypted, stored_username) = {
         let db = state.db.lock().map_err(|e| e.to_string())?;
-        db.prepare("SELECT encrypted_password FROM sudo_config LIMIT 1")
-            .and_then(|mut stmt| stmt.query_row([], |row| row.get::<_, String>(0)))
+        db.prepare("SELECT encrypted_password, username FROM sudo_config LIMIT 1")
+            .and_then(|mut stmt| {
+                stmt.query_row([], |row| {
+                    Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                })
+            })
             .ok()
+            .ok_or("No sudo password configured".to_string())?
     };
-    let encrypted = encrypted.ok_or("No sudo password configured")?;
     let password = crate::integrations::auth::decrypt_token(&encrypted)?;
-    let result = crate::commands::agentic::run_sudo_command(&password, &["true"])
-        .map_err(|e| format!("Sudo test failed: {e}"))?;
+    // Scope the test to the stored username so credentials can only be
+    // verified for the user they were saved for.
+    let result = if stored_username.is_empty() {
+        crate::commands::agentic::run_sudo_command(&password, &["true"])
+    } else {
+        crate::commands::agentic::run_sudo_command(&password, &["-u", &stored_username, "true"])
+    }
+    .map_err(|e| format!("Sudo test failed: {e}"))?;
     Ok(result.success)
 }
 
@@ -361,4 +387,75 @@ pub async fn clear_sudo_password(state: tauri::State<'_, AppState>) -> Result<()
     db.execute("DELETE FROM sudo_config", [])
         .map_err(|e| format!("Failed to clear sudo config: {e}"))?;
     Ok(())
+}
+
+#[cfg(test)]
+mod sudo_tests {
+    use super::*;
+
+    fn setup_db() -> rusqlite::Connection {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        crate::db::migrations::run_migrations(&conn).unwrap();
+        conn
+    }
+
+    #[test]
+    fn test_set_sudo_singleton_delete_then_insert() {
+        let conn = setup_db();
+        // Insert two stale rows directly to simulate the old broken behaviour
+        conn.execute(
+            "INSERT INTO sudo_config (id, username, encrypted_password) VALUES ('id1', 'alice', 'enc1')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO sudo_config (id, username, encrypted_password) VALUES ('id2', 'bob', 'enc2')",
+            [],
+        )
+        .unwrap();
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM sudo_config", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 2);
+
+        // Apply the correct singleton pattern
+        conn.execute("DELETE FROM sudo_config", []).unwrap();
+        conn.execute(
+            "INSERT INTO sudo_config (id, username, encrypted_password) VALUES ('id3', 'charlie', 'enc3')",
+            [],
+        )
+        .unwrap();
+
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM sudo_config", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 1, "exactly one row must remain after set");
+
+        let username: String = conn
+            .query_row("SELECT username FROM sudo_config", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(username, "charlie");
+    }
+
+    #[test]
+    fn test_resolve_sudo_username_uses_provided() {
+        let result = resolve_sudo_username(Some("alice".to_string()));
+        assert_eq!(result, "alice");
+    }
+
+    #[test]
+    fn test_resolve_sudo_username_rejects_blank() {
+        let result = resolve_sudo_username(Some("   ".to_string()));
+        // blank string should fall through to env-based default
+        assert!(!result.trim().is_empty(), "username must never be blank");
+    }
+
+    #[test]
+    fn test_resolve_sudo_username_defaults_to_env() {
+        let env_user = std::env::var("USER")
+            .or_else(|_| std::env::var("LOGNAME"))
+            .unwrap_or_else(|_| "local".to_string());
+        let result = resolve_sudo_username(None);
+        assert_eq!(result, env_user);
+    }
 }
