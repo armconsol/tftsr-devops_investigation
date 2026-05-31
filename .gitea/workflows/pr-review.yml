@@ -154,7 +154,79 @@ jobs:
           INDEX=$(cat /tmp/codebase_index.txt)
           CONTEXT=$(cat /tmp/pr_context.txt)
 
-          PROMPT="You are a senior engineer performing a code review for the following pull request.\n\nPR Title: ${PR_TITLE}\nFiles changed: ${CHANGED_FILES}\n\n---\n${INDEX}\n---\n\n## Changed file contents\n\nEach section below contains the COMPLETE, FINAL content of one changed file. This is the full file after the PR's changes — not a diff. For files over 500 lines, only the changed sections are shown with surrounding context.\n\n---\n${CONTEXT}\n---\n\n## Instructions\n\nBefore writing any finding:\n1. Check that every function name, command name, and variable you cite exists in the CODEBASE INDEX above or in the file contents above. If it does not appear in either location, it does not exist — discard the finding.\n2. Quote the exact line(s) from the file contents that support the finding.\n3. Confirm the issue is a real problem, not intentional design.\n4. If any check fails, discard the finding silently — do not mention it.\n\nDo NOT show your reasoning. Do NOT list discarded findings. Only output confirmed issues.\n\nSeverity:\n- BLOCKER: will fail to compile, corrupt data, or introduce a security vulnerability\n- WARNING: real risk that should be fixed before merge\n- SUGGESTION: minor improvement, follow-up PR acceptable\n\nFocus on: security bugs, logic errors, data loss, injection vectors, unhandled error paths.\nIgnore: style, missing comments, speculative future concerns.\n\n## Output format (do not deviate)\n\n**Summary** (2-3 sentences: what the PR does and your overall assessment)\n\n**Findings**\n- [SEVERITY] file:line — description\n  Evidence: `exact quoted line`\n  Fix: concrete change\n\n(Write: No findings — if there are none.)\n\n**Verdict**: APPROVE / APPROVE WITH COMMENTS / REQUEST CHANGES"
+          # Build the prompt via a single-quoted heredoc so the shell never
+          # interprets backticks, dollar signs, or other special characters inside.
+          # Variables that must expand ($PR_TITLE etc.) are spliced in by jq --arg,
+          # not by shell interpolation, so the prompt text itself is always literal.
+          PROMPT_TEMPLATE=$(cat << 'ENDPROMPT'
+You are a senior engineer performing a code review for the following pull request.
+
+PR Title: __PR_TITLE__
+Files changed: __CHANGED_FILES__
+
+---
+__INDEX__
+---
+
+## Changed file contents
+
+Each section below contains the COMPLETE, FINAL content of one changed file after
+the PR's changes have been applied. This is the full file — not a diff. For files
+over 500 lines, only the changed sections are shown with surrounding context.
+
+---
+__CONTEXT__
+---
+
+## Instructions
+
+Before raising any finding:
+1. Confirm every symbol (function name, command name, variable) you cite exists in
+   the CODEBASE INDEX above or in the file contents above. If it appears in neither,
+   discard the finding — it does not exist in this project.
+2. Quote the exact line(s) from the file contents that support the finding.
+3. Confirm the issue is a genuine problem, not intentional design.
+4. If any step fails, discard the finding silently — do not mention it.
+
+Do NOT show your reasoning process. Do NOT mention discarded findings.
+Output only confirmed issues.
+
+Severity levels:
+- BLOCKER: will fail to compile, corrupt data, or introduce a security vulnerability
+- WARNING: real risk that should be addressed before merge
+- SUGGESTION: minor improvement, acceptable as a follow-up PR
+
+Focus on: security bugs, logic errors, data loss, injection vectors, unhandled
+error paths that could silently corrupt state.
+Ignore: style preferences, missing comments, speculative future concerns.
+
+## Output format (do not deviate)
+
+**Summary** (2-3 sentences: what the PR does and your overall assessment)
+
+**Findings**
+- [SEVERITY] file:line -- description
+  Evidence: quoted line from the file above
+  Fix: concrete suggested change
+
+(Write "No findings." if there are none.)
+
+**Verdict**: APPROVE / APPROVE WITH COMMENTS / REQUEST CHANGES
+ENDPROMPT
+)
+
+          # Splice runtime values into the template using sed so nothing is eval'd
+          PROMPT=$(printf '%s' "$PROMPT_TEMPLATE" \
+            | sed "s|__PR_TITLE__|${PR_TITLE}|g" \
+            | sed "s|__CHANGED_FILES__|${CHANGED_FILES}|g")
+          # INDEX and CONTEXT may contain special sed chars — use python for those
+          PROMPT=$(python3 -c "
+import sys
+template = sys.stdin.read()
+index   = open('/tmp/codebase_index.txt').read()
+context = open('/tmp/pr_context.txt').read()
+print(template.replace('__INDEX__', index).replace('__CONTEXT__', context), end='')
+" <<< "$PROMPT")
 
           BODY=$(jq -cn \
             --arg model "qwen3-coder-next" \
