@@ -149,44 +149,44 @@ jobs:
           set -euo pipefail
           CHANGED_FILES=$(tr '\n' ' ' < /tmp/pr_files.txt)
 
-          # Build prompt with printf + cat so every line stays indented within
-          # the YAML run: | block. Heredocs with unindented bodies terminate the
-          # YAML block scalar, breaking the workflow file entirely.
+          # Build prompt file. Use 'printf "%s\n" text' throughout so the format
+          # string is always "%s\n" and content with leading hyphens or embedded
+          # double-dashes is never misinterpreted as a printf option flag.
           {
-            printf 'You are a senior engineer performing a code review.\n\n'
+            printf '%s\n\n' 'You are a senior engineer performing a code review.'
             printf 'PR Title: %s\n' "$PR_TITLE"
             printf 'Files changed: %s\n\n' "$CHANGED_FILES"
-            printf '---\n'
+            printf '%s\n' '---'
             cat /tmp/codebase_index.txt
-            printf '---\n\n'
-            printf '## Changed file contents\n\n'
-            printf 'Each section is the COMPLETE, FINAL file after PR changes (not a diff).\n'
-            printf 'Files over 500 lines show only changed sections with surrounding context.\n\n'
-            printf '---\n'
+            printf '%s\n\n' '---'
+            printf '%s\n\n' '## Changed file contents'
+            printf '%s\n' 'Each section is the COMPLETE, FINAL file after PR changes (not a diff).'
+            printf '%s\n\n' 'Files over 500 lines show only changed sections with surrounding context.'
+            printf '%s\n' '---'
             cat /tmp/pr_context.txt
-            printf '---\n\n'
-            printf '## Instructions\n\n'
-            printf 'Before raising any finding:\n'
-            printf '1. Confirm every symbol you cite exists in the CODEBASE INDEX or file\n'
-            printf '   contents above. If absent from both, discard the finding.\n'
-            printf '2. Quote the exact line(s) from the file contents that support it.\n'
-            printf '3. Confirm the issue is genuine, not intentional design.\n'
-            printf '4. If any step fails, discard silently -- do not mention it.\n\n'
-            printf 'Do NOT show reasoning. Only output confirmed issues.\n\n'
-            printf 'Severity:\n'
-            printf '- BLOCKER: fails to compile, corrupts data, or security vulnerability\n'
-            printf '- WARNING: real risk to address before merge\n'
-            printf '- SUGGESTION: minor improvement, follow-up PR fine\n\n'
-            printf 'Focus: security bugs, logic errors, data loss, injection, unhandled errors.\n'
-            printf 'Ignore: style, missing comments, speculative future concerns.\n\n'
-            printf '## Output format (strict)\n\n'
-            printf '**Summary** (2-3 sentences)\n\n'
-            printf '**Findings**\n'
-            printf '- [SEVERITY] file:line -- description\n'
-            printf '  Evidence: quoted line\n'
-            printf '  Fix: concrete change\n\n'
-            printf '(Write "No findings." if none.)\n\n'
-            printf '**Verdict**: APPROVE / APPROVE WITH COMMENTS / REQUEST CHANGES\n'
+            printf '%s\n\n' '---'
+            printf '%s\n\n' '## Instructions'
+            printf '%s\n' 'Before raising any finding:'
+            printf '%s\n' '1. Confirm every symbol you cite exists in the CODEBASE INDEX or file'
+            printf '%s\n' '   contents above. If absent from both, discard the finding.'
+            printf '%s\n' '2. Quote the exact line(s) from the file contents that support it.'
+            printf '%s\n' '3. Confirm the issue is genuine, not intentional design.'
+            printf '%s\n\n' '4. If any step fails, discard silently - do not mention it.'
+            printf '%s\n\n' 'Do NOT show reasoning. Only output confirmed issues.'
+            printf '%s\n' 'Severity:'
+            printf '%s\n' '- BLOCKER: fails to compile, corrupts data, or security vulnerability'
+            printf '%s\n' '- WARNING: real risk to address before merge'
+            printf '%s\n\n' '- SUGGESTION: minor improvement, follow-up PR fine'
+            printf '%s\n\n' 'Focus: security bugs, logic errors, data loss, injection, unhandled errors.'
+            printf '%s\n\n' 'Ignore: style, missing comments, speculative future concerns.'
+            printf '%s\n\n' '## Output format (strict)'
+            printf '%s\n\n' '**Summary** (2-3 sentences)'
+            printf '%s\n' '**Findings**'
+            printf '%s\n' '- [SEVERITY] file:line - description'
+            printf '%s\n' '  Evidence: quoted line'
+            printf '%s\n\n' '  Fix: concrete change'
+            printf '%s\n\n' '(Write "No findings." if none.)'
+            printf '%s\n' '**Verdict**: APPROVE / APPROVE WITH COMMENTS / REQUEST CHANGES'
           } > /tmp/prompt.txt
 
           BODY=$(jq -cn \
