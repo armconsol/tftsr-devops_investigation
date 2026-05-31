@@ -96,6 +96,49 @@ jobs:
             echo "[CONTEXT TRUNCATED at 6000 lines — ${TOTAL} total]" >> /tmp/pr_context.txt
           fi
 
+      - name: Build codebase index
+        id: index
+        if: steps.context.outputs.diff_size != '0'
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Build a compact index of everything that EXISTS in this codebase.
+          # Included in the prompt so the model cannot invent functions/commands/tables
+          # that are not present — any finding referencing something absent from this
+          # index is immediately suspect.
+          {
+            echo "## CODEBASE INDEX"
+            echo "These are the ONLY Tauri commands, TypeScript exports, Rust public functions,"
+            echo "and database tables that exist in this project. Before raising any finding,"
+            echo "confirm that every symbol you cite appears in this list or in the file"
+            echo "contents below. If it does not appear in either, your finding is fabricated."
+            echo ""
+
+            echo "### Registered Tauri commands (lib.rs generate_handler![]):"
+            grep -oE 'commands::[a-z_]+::[a-z_]+' src-tauri/src/lib.rs 2>/dev/null \
+              | sort -u | sed 's/^/  /' || true
+            echo ""
+
+            echo "### TypeScript invoke wrappers (src/lib/tauriCommands.ts):"
+            grep -E '^export (const|interface|type) ' src/lib/tauriCommands.ts 2>/dev/null \
+              | sed 's/^/  /' || true
+            echo ""
+
+            echo "### Public Rust functions in src-tauri/src/commands/:"
+            grep -rh --include='*.rs' '^pub ' src-tauri/src/commands/ 2>/dev/null \
+              | grep 'fn ' | sed 's/^/  /' | sort || true
+            echo ""
+
+            echo "### Database tables (src-tauri/src/db/migrations.rs):"
+            grep -oE '"[0-9]+_[a-z_]+"' src-tauri/src/db/migrations.rs 2>/dev/null \
+              | tr -d '"' | sed 's/^/  /' || true
+            echo ""
+          } > /tmp/codebase_index.txt
+
+          INDEX_LINES=$(wc -l < /tmp/codebase_index.txt | tr -d ' ')
+          echo "index_lines=${INDEX_LINES}" >> $GITHUB_OUTPUT
+          echo "Built codebase index: ${INDEX_LINES} lines"
+
       - name: Analyze with LLM
         id: analyze
         if: steps.context.outputs.diff_size != '0'
@@ -108,9 +151,10 @@ jobs:
         run: |
           set -euo pipefail
           CHANGED_FILES=$(tr '\n' ' ' < /tmp/pr_files.txt)
+          INDEX=$(cat /tmp/codebase_index.txt)
           CONTEXT=$(cat /tmp/pr_context.txt)
 
-          PROMPT="You are a senior engineer performing a code review for the following pull request.\n\nPR Title: ${PR_TITLE}\nFiles changed: ${CHANGED_FILES}\n\n## What you are reading\n\nEach section below contains the COMPLETE, FINAL content of one changed file after the PR's changes have been applied. This is not a diff — it is the full file. For files over 500 lines, only the changed sections are shown (marked with + / - lines), but surrounding context is included.\n\nYou have full visibility into every function signature, every variable, every import in each file. There are no missing parameters, no truncated signatures, no partial implementations.\n\n---\n${CONTEXT}\n---\n\n## Instructions\n\nRead every file above completely before writing anything.\n\nThen, for each potential issue:\n1. Confirm it exists in the code above — quote the exact line.\n2. Confirm it is a real problem (not something that looks unusual but is intentional).\n3. If either check fails, discard the finding silently — do not mention it in your output.\n\nDo NOT show your verification reasoning. Do NOT mention findings you discarded. Only output confirmed issues.\n\nSeverity levels:\n- BLOCKER: provably broken — will fail to compile, corrupt data, or introduce a security vulnerability\n- WARNING: works today but carries real risk that should be fixed before merge\n- SUGGESTION: minor improvement worth a follow-up PR\n\nFocus on: security bugs, logic errors, data loss, race conditions, injection vectors, unhandled error paths that could silently corrupt state.\n\nIgnore: style preferences, missing comments, code organisation opinions, speculative future improvements.\n\n## Output format (strict — do not deviate)\n\n**Summary** (2-3 sentences describing what the PR does and your overall assessment)\n\n**Findings**\n- [SEVERITY] file:line — one-line description\n  Evidence: exact quoted line(s)\n  Fix: concrete suggested change\n\n(If there are no findings, write: No findings.)\n\n**Verdict**: APPROVE / APPROVE WITH COMMENTS / REQUEST CHANGES"
+          PROMPT="You are a senior engineer performing a code review for the following pull request.\n\nPR Title: ${PR_TITLE}\nFiles changed: ${CHANGED_FILES}\n\n---\n${INDEX}\n---\n\n## Changed file contents\n\nEach section below contains the COMPLETE, FINAL content of one changed file. This is the full file after the PR's changes — not a diff. For files over 500 lines, only the changed sections are shown with surrounding context.\n\n---\n${CONTEXT}\n---\n\n## Instructions\n\nBefore writing any finding:\n1. Check that every function name, command name, and variable you cite exists in the CODEBASE INDEX above or in the file contents above. If it does not appear in either location, it does not exist — discard the finding.\n2. Quote the exact line(s) from the file contents that support the finding.\n3. Confirm the issue is a real problem, not intentional design.\n4. If any check fails, discard the finding silently — do not mention it.\n\nDo NOT show your reasoning. Do NOT list discarded findings. Only output confirmed issues.\n\nSeverity:\n- BLOCKER: will fail to compile, corrupt data, or introduce a security vulnerability\n- WARNING: real risk that should be fixed before merge\n- SUGGESTION: minor improvement, follow-up PR acceptable\n\nFocus on: security bugs, logic errors, data loss, injection vectors, unhandled error paths.\nIgnore: style, missing comments, speculative future concerns.\n\n## Output format (do not deviate)\n\n**Summary** (2-3 sentences: what the PR does and your overall assessment)\n\n**Findings**\n- [SEVERITY] file:line — description\n  Evidence: `exact quoted line`\n  Fix: concrete change\n\n(Write: No findings — if there are none.)\n\n**Verdict**: APPROVE / APPROVE WITH COMMENTS / REQUEST CHANGES"
 
           BODY=$(jq -cn \
             --arg model "qwen3-coder-next" \
@@ -150,25 +194,31 @@ jobs:
         run: |
           set -euo pipefail
           # For each finding that contains a fenced code block under "Evidence:",
-          # grep at least one substantial line of that block against the actual changed
-          # files. If nothing matches, prepend a visible UNVERIFIED tag so reviewers
-          # know the model fabricated the evidence.
+          # grep at least one substantial line of that block against the FULL repository.
+          # Searching the full repo (not just changed files) prevents false UNVERIFIED
+          # tags when the model correctly quotes unchanged files, while still flagging
+          # fabricated code that doesn't exist anywhere in the codebase.
           python3 - << 'PYEOF'
-          import re, os
+          import re, os, subprocess
 
-          review   = open('/tmp/pr_review.txt').read()
-          filelist = [f.strip() for f in open('/tmp/pr_files.txt') if f.strip()]
+          review = open('/tmp/pr_review.txt').read()
 
-          # Load content of every changed file
-          repo_text = {}
-          for path in filelist:
+          # Load ENTIRE tracked repository (all .rs, .ts, .tsx, .yml, .toml, .json files)
+          result = subprocess.run(
+              ['git', 'ls-files', '--',
+               '*.rs', '*.ts', '*.tsx', '*.yml', '*.yaml', '*.toml', '*.json', '*.sql'],
+              capture_output=True, text=True
+          )
+          all_tracked = [f.strip() for f in result.stdout.splitlines() if f.strip()]
+
+          all_content_parts = []
+          for path in all_tracked:
               if os.path.isfile(path):
                   try:
-                      repo_text[path] = open(path).read()
+                      all_content_parts.append(open(path).read())
                   except Exception:
                       pass
-
-          all_content = '\n'.join(repo_text.values())
+          all_content = '\n'.join(all_content_parts)
 
           def evidence_exists(block: str) -> bool:
               """True if ≥1 significant line from the block is found verbatim in changed files."""
@@ -245,4 +295,4 @@ jobs:
       - name: Cleanup
         if: always()
         shell: bash
-        run: rm -f /tmp/pr_diff.txt /tmp/pr_context.txt /tmp/llm_response.json /tmp/pr_review.txt /tmp/pr_review_post_response.json /tmp/pr_files.txt
+        run: rm -f /tmp/pr_diff.txt /tmp/pr_context.txt /tmp/codebase_index.txt /tmp/llm_response.json /tmp/pr_review.txt /tmp/review_post_response.json /tmp/pr_files.txt
