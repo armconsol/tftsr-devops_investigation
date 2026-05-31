@@ -259,6 +259,30 @@ pub fn run_migrations(conn: &Connection) -> anyhow::Result<()> {
                 updated_at TEXT NOT NULL DEFAULT (datetime('now'))
             );",
         ),
+        (
+            "020_add_log_content_compressed",
+            "ALTER TABLE log_files ADD COLUMN content_compressed BLOB",
+        ),
+        (
+            "021_add_image_data",
+            "ALTER TABLE image_attachments ADD COLUMN image_data BLOB",
+        ),
+        (
+            "022_attachment_views",
+            "CREATE VIEW IF NOT EXISTS v_log_files_with_issue AS
+                SELECT lf.id, lf.issue_id, lf.file_name, lf.file_path, lf.file_size,
+                       lf.mime_type, lf.content_hash, lf.uploaded_at, lf.redacted,
+                       i.title AS issue_title
+                FROM log_files lf
+                JOIN issues i ON i.id = lf.issue_id;
+             CREATE VIEW IF NOT EXISTS v_image_attachments_with_issue AS
+                SELECT ia.id, ia.issue_id, ia.file_name, ia.file_path, ia.file_size,
+                       ia.mime_type, ia.upload_hash, ia.uploaded_at,
+                       ia.pii_warning_acknowledged, ia.is_paste,
+                       i.title AS issue_title
+                FROM image_attachments ia
+                JOIN issues i ON i.id = ia.issue_id;",
+        ),
     ];
 
     for (name, sql) in migrations {
@@ -276,6 +300,8 @@ pub fn run_migrations(conn: &Connection) -> anyhow::Result<()> {
                 }
             } else if name.ends_with("_add_use_datastore_upload")
                 || name.ends_with("_add_created_at")
+                || name.ends_with("_add_log_content_compressed")
+                || name.ends_with("_add_image_data")
             {
                 // Use execute for ALTER TABLE (SQLite only allows one statement per command)
                 // Skip error if column already exists (SQLITE_ERROR with "duplicate column name")
@@ -1100,5 +1126,111 @@ mod tests {
             )
             .unwrap();
         assert_eq!(applied, 1, "019 should only be recorded once");
+    }
+
+    // ─── Migration 020-022: attachment content storage ──────────────────────────
+
+    #[test]
+    fn test_020_log_content_compressed_column() {
+        let conn = setup_test_db();
+        let mut stmt = conn.prepare("PRAGMA table_info(log_files)").unwrap();
+        let columns: Vec<String> = stmt
+            .query_map([], |row| row.get::<_, String>(1))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        assert!(
+            columns.contains(&"content_compressed".to_string()),
+            "log_files should have content_compressed column"
+        );
+    }
+
+    #[test]
+    fn test_021_image_data_column() {
+        let conn = setup_test_db();
+        let mut stmt = conn
+            .prepare("PRAGMA table_info(image_attachments)")
+            .unwrap();
+        let columns: Vec<String> = stmt
+            .query_map([], |row| row.get::<_, String>(1))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        assert!(
+            columns.contains(&"image_data".to_string()),
+            "image_attachments should have image_data column"
+        );
+    }
+
+    #[test]
+    fn test_022_attachment_views_exist() {
+        let conn = setup_test_db();
+        for view in &["v_log_files_with_issue", "v_image_attachments_with_issue"] {
+            let count: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type='view' AND name=?1",
+                    [view],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            assert_eq!(count, 1, "view {view} should exist");
+        }
+    }
+
+    #[test]
+    fn test_022_views_join_issue_title() {
+        let conn = setup_test_db();
+        conn.execute("PRAGMA foreign_keys = ON", []).unwrap();
+        let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+
+        conn.execute(
+            "INSERT INTO issues (id, title, created_at, updated_at) VALUES (?1, ?2, ?3, ?4)",
+            rusqlite::params!["issue-view-1", "Disk Full Alert", now.clone(), now.clone()],
+        )
+        .unwrap();
+
+        conn.execute(
+            "INSERT INTO log_files (id, issue_id, file_name, file_path, uploaded_at) \
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            rusqlite::params![
+                "lf-1",
+                "issue-view-1",
+                "syslog.log",
+                "/var/log/syslog",
+                now.clone()
+            ],
+        )
+        .unwrap();
+
+        let issue_title: String = conn
+            .query_row(
+                "SELECT issue_title FROM v_log_files_with_issue WHERE id = 'lf-1'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(issue_title, "Disk Full Alert");
+    }
+
+    #[test]
+    fn test_020_021_idempotent() {
+        let conn = Connection::open_in_memory().unwrap();
+        run_migrations(&conn).unwrap();
+        run_migrations(&conn).unwrap();
+
+        for migration in &[
+            "020_add_log_content_compressed",
+            "021_add_image_data",
+            "022_attachment_views",
+        ] {
+            let count: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM _migrations WHERE name = ?1",
+                    [migration],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            assert_eq!(count, 1, "{migration} should be recorded exactly once");
+        }
     }
 }
