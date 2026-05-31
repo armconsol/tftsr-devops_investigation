@@ -252,8 +252,21 @@ export default function LogUpload() {
           multiple
           className="hidden"
           onChange={handleFileSelect}
-          accept=".log,.txt,.json,.csv,.xml,.yaml,.yml"
+          accept=".log,.txt,.out,.err,.syslog,.journal,.yaml,.yml,.json,.toml,.xml,.ini,.cfg,.conf,.config,.env,.properties,.md,.markdown,.rst,.csv,.tsv,.ndjson,.jsonl,.sql,.sh,.bash,.zsh,.py,.js,.ts,.rb,.go,.rs,.java,.html,.htm,.css,.diff,.patch,.pdf,.docx,.doc,.rtf,.xlsx,.xls"
         />
+        <details className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+          <summary className="cursor-pointer hover:text-gray-700 dark:hover:text-gray-200">
+            Supported formats
+          </summary>
+          <div className="mt-1 pl-3 space-y-1">
+            <div><span className="font-medium">Logs &amp; text:</span> .log, .txt, .out, .err, .syslog, .journal</div>
+            <div><span className="font-medium">Config &amp; markup:</span> .yaml, .yml, .json, .toml, .xml, .ini, .cfg, .conf, .env, .properties</div>
+            <div><span className="font-medium">Documents:</span> .pdf, .docx, .doc, .md, .rst, .rtf</div>
+            <div><span className="font-medium">Data:</span> .csv, .tsv, .xlsx, .xls, .ndjson, .jsonl, .sql</div>
+            <div><span className="font-medium">Code &amp; scripts:</span> .sh, .bash, .zsh, .py, .js, .ts, .rb, .go, .rs, .java, .html, .css, .diff, .patch</div>
+            <p className="mt-1 italic">Binary formats (PDF, DOCX, XLSX) will have their text extracted automatically.</p>
+          </div>
+        </details>
       </div>
 
       {/* File list */}
