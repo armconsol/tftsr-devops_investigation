@@ -108,6 +108,8 @@ fn extract_docx_text(path: &Path) -> Result<String, String> {
         zip::ZipArchive::new(file).map_err(|e| format!("Failed to open as ZIP/DOCX: {e}"))?;
     let mut xml_content = String::new();
     {
+        // Safety: only one hardcoded entry is ever accessed; no arbitrary path extraction is
+        // performed, so zip-slip path traversal attacks cannot apply here.
         let mut doc_xml = archive
             .by_name("word/document.xml")
             .map_err(|_| "Not a valid DOCX: missing word/document.xml".to_string())?;
