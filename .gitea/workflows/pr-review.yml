@@ -59,7 +59,7 @@ jobs:
           # Secret scrubbing: match actual credential VALUES only — known API key formats,
           # or keyword="long_quoted_literal" (25+ chars). Never scrub on keyword alone,
           # which would silently delete function signatures, variable declarations, and tests.
-          SECRET_PATTERN='AKIA[A-Z0-9]{16}|gh[opsu]_[A-Za-z0-9_]{36,}|xox[baprs]-[0-9]{10,13}-[0-9]{10,13}-[a-zA-Z0-9]{24}|(password|token|api_key|secret)[[:space:]]*=[[:space:]]*["'"'"'][A-Za-z0-9+/_\-!@#]{25,}["'"'"']'
+          SECRET_PATTERN='AKIA[A-Z0-9]{16}|gh[opsu]_[A-Za-z0-9_]{36,}|xox[baprs]-[0-9]{10,13}-[0-9]{10,13}-[a-zA-Z0-9]{24}|(password|token|api_key|secret)[[:space:]]*=[[:space:]]*["'"'"'][A-Za-z0-9+/_!@#-]{25,}["'"'"']'
           # Only strip lines that are ENTIRELY a long base64 blob (e.g. PEM cert bodies)
           B64_PATTERN='^[[:space:]]*[A-Za-z0-9+/]{60,}={0,2}[[:space:]]*$'
 
@@ -156,13 +156,13 @@ jobs:
             printf 'You are a senior engineer performing a code review.\n\n'
             printf 'PR Title: %s\n' "$PR_TITLE"
             printf 'Files changed: %s\n\n' "$CHANGED_FILES"
-            printf -- '---\n'
+            printf '---\n'
             cat /tmp/codebase_index.txt
             printf -- '---\n\n'
             printf '## Changed file contents\n\n'
             printf 'Each section is the COMPLETE, FINAL file after PR changes (not a diff).\n'
             printf 'Files over 500 lines show only changed sections with surrounding context.\n\n'
-            printf -- '---\n'
+            printf '---\n'
             cat /tmp/pr_context.txt
             printf -- '---\n\n'
             printf '## Instructions\n\n'
