@@ -144,6 +144,69 @@ jobs:
           echo "Review length: ${#REVIEW} chars"
           echo "$REVIEW" > /tmp/pr_review.txt
 
+      - name: Verify findings against codebase
+        if: steps.analyze.outcome == 'success'
+        shell: bash
+        run: |
+          set -euo pipefail
+          # For each finding that contains a fenced code block under "Evidence:",
+          # grep at least one substantial line of that block against the actual changed
+          # files. If nothing matches, prepend a visible UNVERIFIED tag so reviewers
+          # know the model fabricated the evidence.
+          python3 - << 'PYEOF'
+          import re, os
+
+          review   = open('/tmp/pr_review.txt').read()
+          filelist = [f.strip() for f in open('/tmp/pr_files.txt') if f.strip()]
+
+          # Load content of every changed file
+          repo_text = {}
+          for path in filelist:
+              if os.path.isfile(path):
+                  try:
+                      repo_text[path] = open(path).read()
+                  except Exception:
+                      pass
+
+          all_content = '\n'.join(repo_text.values())
+
+          def evidence_exists(block: str) -> bool:
+              """True if ≥1 significant line from the block is found verbatim in changed files."""
+              for raw in block.splitlines():
+                  line = raw.lstrip('+-').strip()
+                  # Skip blank, very short, pure-comment, or diff-header lines
+                  if len(line) < 20:
+                      continue
+                  if line.startswith(('//','#','/*','*','Fix:','Evidence:','---','+++')):
+                      continue
+                  if line in all_content:
+                      return True
+              return False
+
+          # Split on finding markers; re-join after optional tagging
+          severity_re = re.compile(r'\[(BLOCKER|WARNING|SUGGESTION)\]')
+
+          def tag_if_unverified(finding_text: str) -> str:
+              code_match = re.search(r'```[^\n]*\n(.*?)```', finding_text, re.DOTALL)
+              if code_match and not evidence_exists(code_match.group(1)):
+                  # Replace first severity tag with a prefixed version
+                  return severity_re.sub(
+                      lambda m: f'[{m.group(1)} — ⚠️ UNVERIFIED: evidence not found in PR files]',
+                      finding_text, count=1
+                  )
+              return finding_text
+
+          # Split review into preamble + individual finding blocks
+          # Each block starts at a severity marker line
+          parts  = re.split(r'(?=^\[(?:BLOCKER|WARNING|SUGGESTION)\])', review, flags=re.MULTILINE)
+          result = parts[0]                          # preamble (Summary, etc.)
+          for block in parts[1:]:
+              result += tag_if_unverified(block)
+
+          open('/tmp/pr_review.txt', 'w').write(result)
+          print(f"Verification complete — {len(parts)-1} finding(s) checked.")
+          PYEOF
+
       - name: Post review comment
         if: always() && steps.context.outputs.diff_size != '0'
         shell: bash
