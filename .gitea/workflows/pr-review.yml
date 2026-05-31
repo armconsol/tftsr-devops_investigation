@@ -40,8 +40,17 @@ jobs:
         run: |
           set -euo pipefail
           git fetch origin ${{ github.base_ref }}
-          git diff origin/${{ github.base_ref }}..HEAD > /tmp/pr_diff.txt
-          echo "diff_size=$(wc -l < /tmp/pr_diff.txt | tr -d ' ')" >> $GITHUB_OUTPUT
+          # Exclude generated/lock files — they add noise with no review value
+          git diff origin/${{ github.base_ref }}..HEAD \
+            -- ':!Cargo.lock' ':!package-lock.json' ':!*.lock' \
+            > /tmp/pr_diff.txt
+          FULL_SIZE=$(wc -l < /tmp/pr_diff.txt | tr -d ' ')
+          echo "diff_size=${FULL_SIZE}" >> $GITHUB_OUTPUT
+          echo "diff_full_size=${FULL_SIZE}" >> $GITHUB_OUTPUT
+          # Build a manifest of changed files so the prompt can include it
+          git diff --name-only origin/${{ github.base_ref }}..HEAD \
+            -- ':!Cargo.lock' ':!package-lock.json' ':!*.lock' \
+            > /tmp/pr_files.txt
 
       - name: Analyze with LLM
         id: analyze
@@ -57,10 +66,17 @@ jobs:
           if grep -q "^Binary files" /tmp/pr_diff.txt; then
             echo "WARNING: Binary file changes detected — they will be excluded from analysis"
           fi
-          DIFF_CONTENT=$(head -n 500 /tmp/pr_diff.txt \
+          CHANGED_FILES=$(cat /tmp/pr_files.txt | tr '\n' ' ')
+          FULL_LINES=$(wc -l < /tmp/pr_diff.txt | tr -d ' ')
+          DIFF_CONTENT=$(head -n 3000 /tmp/pr_diff.txt \
             | grep -v -E '^[+-].*(password[[:space:]]*[=:"'"'"']|token[[:space:]]*[=:"'"'"']|secret[[:space:]]*[=:"'"'"']|api_key[[:space:]]*[=:"'"'"']|private_key[[:space:]]*[=:"'"'"']|Authorization:[[:space:]]|AKIA[A-Z0-9]{16}|xox[baprs]-[0-9]{10,13}-[0-9]{10,13}-[a-zA-Z0-9]{24}|gh[opsu]_[A-Za-z0-9_]{36,}|https?://[^@[:space:]]+:[^@[:space:]]+@)' \
             | grep -v -E '^[+-].*[A-Za-z0-9+/]{40,}={0,2}([^A-Za-z0-9+/=]|$)')
-          PROMPT="You are a senior engineer performing a focused code review. Your review must be grounded strictly in the diff provided — do not invent issues about code you cannot see.\n\nPR Title: ${PR_TITLE}\n\nDiff:\n${DIFF_CONTENT}\n\n## Instructions\n\n1. **Read the entire diff first.** Before raising any issue, verify it against the actual lines in the diff. If something appears to be missing, confirm it is absent from ALL relevant files in the diff before claiming it is missing.\n\n2. **Quote the evidence.** For every issue you raise, cite the specific file and line from the diff that supports your claim. If you cannot quote a line, do not raise the issue.\n\n3. **Distinguish severity clearly:**\n   - BLOCKER: broken right now, will cause crashes or data loss\n   - WARNING: works but has a real risk that should be addressed before merge\n   - SUGGESTION: improvement worth considering in a follow-up PR\n\n4. **Do not raise issues about code outside the diff.** If a concern requires reading files not present in the diff, say 'outside the scope of this diff' and skip it.\n\n5. **Keep it concise.** Lead with a one-paragraph summary, then list only genuine findings with evidence. Avoid restating what the code already does correctly unless it is directly relevant to a finding.\n\n## Output format\n\n**Summary** (1 paragraph)\n\n**Findings** (only real issues with quoted evidence)\n- [BLOCKER/WARNING/SUGGESTION] filename:line — description and suggested fix\n\n**Verdict**: APPROVE / APPROVE WITH COMMENTS / REQUEST CHANGES"
+          if [ "$FULL_LINES" -gt 3000 ]; then
+            TRUNCATION_NOTICE="NOTE: This diff was truncated at 3000 lines (full diff is ${FULL_LINES} lines). Code appearing near the end of the diff may be incomplete. Do NOT raise findings about code that appears to be missing or incomplete — it may simply be outside the truncated window."
+          else
+            TRUNCATION_NOTICE="This diff is complete (${FULL_LINES} lines, no truncation)."
+          fi
+          PROMPT="You are a senior engineer performing a focused code review. Your review must be grounded strictly in the diff provided — do not speculate about code you cannot see.\n\nPR Title: ${PR_TITLE}\nFiles changed: ${CHANGED_FILES}\n${TRUNCATION_NOTICE}\n\nDiff:\n${DIFF_CONTENT}\n\n## Instructions\n\n1. **Read the entire diff before writing anything.** Do not begin composing your review until you have read every line of the diff above.\n\n2. **Verify before claiming.** Before raising any finding:\n   a. Quote the exact line(s) from the diff that support it.\n   b. For findings about missing identifiers (undeclared variables, missing parameters, undefined functions): search the ENTIRE diff for the identifier. If it appears anywhere in the diff, the finding is WRONG — discard it.\n   c. If you cannot quote supporting evidence from the diff, do not raise the finding.\n\n3. **Do not hallucinate.** You may only raise issues visible in the diff. If a concern requires reading a file not shown in the diff, write 'outside the scope of this diff' and skip it. Never infer that code is broken from partial information.\n\n4. **Distinguish severity:**\n   - BLOCKER: provably broken from what is shown — will fail to compile or cause data loss\n   - WARNING: works but has a real risk that should be addressed before merge\n   - SUGGESTION: improvement worth considering in a follow-up PR\n\n5. **Keep it concise.** Lead with a one-paragraph summary, then list only genuine findings with quoted evidence.\n\n## Output format\n\n**Summary** (1 paragraph)\n\n**Findings** (each must include a quoted line from the diff)\n- [BLOCKER/WARNING/SUGGESTION] filename:line — description, quoted evidence, suggested fix\n\n**Verdict**: APPROVE / APPROVE WITH COMMENTS / REQUEST CHANGES"
           BODY=$(jq -cn \
             --arg model "qwen3-coder-next" \
             --arg content "$PROMPT" \
