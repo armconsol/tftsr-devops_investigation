@@ -25,7 +25,7 @@ pub fn run_sudo_command(password: &str, args: &[&str]) -> Result<SudoOutput, Str
         .map_err(|e| format!("Failed to spawn sudo: {e}"))?;
 
     if let Some(mut stdin) = child.stdin.take() {
-        writeln!(stdin, "{}", password)
+        writeln!(stdin, "{password}")
             .map_err(|e| format!("Failed to write password to stdin: {e}"))?;
     }
 
