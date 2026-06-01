@@ -4,7 +4,7 @@ import path from "node:path";
 
 const autoTagWorkflowPath = path.resolve(
   process.cwd(),
-  ".gitea/workflows/auto-tag.yml",
+  ".github/workflows/release.yml",
 );
 
 describe("auto-tag release cross-platform artifact handling", () => {
@@ -18,8 +18,8 @@ describe("auto-tag release cross-platform artifact handling", () => {
   it("fails linux uploads when no artifacts are found", () => {
     const workflow = readFileSync(autoTagWorkflowPath, "utf-8");
 
-    expect(workflow).toContain("ERROR: No Linux amd64 artifacts were found to upload.");
-    expect(workflow).toContain("ERROR: No Linux arm64 artifacts were found to upload.");
+    expect(workflow).toContain("ERROR: No Linux amd64 artifacts found.");
+    expect(workflow).toContain("ERROR: No Linux arm64 artifacts found.");
     expect(workflow).toContain("CI=true npx tauri build");
     expect(workflow).toContain("find src-tauri/target/aarch64-unknown-linux-gnu/release/bundle -type f");
     expect(workflow).toContain("CC_aarch64_unknown_linux_gnu: aarch64-linux-gnu-gcc");
@@ -30,18 +30,16 @@ describe("auto-tag release cross-platform artifact handling", () => {
   it("fails windows uploads when no artifacts are found", () => {
     const workflow = readFileSync(autoTagWorkflowPath, "utf-8");
 
-    expect(workflow).toContain(
-      "ERROR: No Windows amd64 artifacts were found to upload.",
-    );
+    expect(workflow).toContain("ERROR: No Windows amd64 artifacts found.");
   });
 
   it("replaces existing release assets before uploading reruns", () => {
     const workflow = readFileSync(autoTagWorkflowPath, "utf-8");
 
-    expect(workflow).toContain("Deleting existing asset id=$id name=$NAME before upload...");
-    expect(workflow).toContain("-X DELETE \"$API/releases/$RELEASE_ID/assets/$id\"");
-    expect(workflow).toContain("UPLOAD_NAME=\"linux-amd64-$NAME\"");
-    expect(workflow).toContain("UPLOAD_NAME=\"linux-arm64-$NAME\"");
+    expect(workflow).toContain("gh release delete-asset");
+    expect(workflow).toContain("gh release upload");
+    expect(workflow).toContain("linux-amd64-$(basename");
+    expect(workflow).toContain("linux-arm64-$(basename");
   });
 
   it("uses pre-baked Ubuntu 22.04 cross-compiler image for arm64", () => {
