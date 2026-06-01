@@ -35,7 +35,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-linux-amd64-
       - name: Install npm dependencies
-        run: npm install --legacy-peer-deps
+        run: npm ci --legacy-peer-deps
       - name: Update version from Git
         run: node scripts/update-version.mjs
       - name: Generate lockfile
