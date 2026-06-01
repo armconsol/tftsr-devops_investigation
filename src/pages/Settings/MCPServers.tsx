@@ -562,7 +562,7 @@ export default function MCPServers() {
                       Space-separated KEY=value pairs for non-sensitive values (e.g., DEBUG=1 LOG_LEVEL=info)
                     </p>
                     <Input
-                      type="password"
+                      type="text"
                       value={form.plaintext_env}
                       onChange={(e) => setForm({ ...form, plaintext_env: e.target.value })}
                       placeholder="KEY1=value1 KEY2=value2"
