@@ -65,7 +65,9 @@ fn compress_text(text: &str) -> Result<Vec<u8>, String> {
     encoder
         .write_all(text.as_bytes())
         .map_err(|e| format!("Compression write error: {e}"))?;
-    encoder.finish().map_err(|e| format!("Compression finish error: {e}"))
+    encoder
+        .finish()
+        .map_err(|e| format!("Compression finish error: {e}"))
 }
 
 /// 100 MB cap — prevents decompression-bomb attacks on crafted DB entries.
@@ -352,8 +354,8 @@ pub async fn upload_log_file_by_content(
         ..log_file
     };
 
-    let compressed = compress_text(&content)
-        .map_err(|e| format!("Failed to compress log content: {e}"))?;
+    let compressed =
+        compress_text(&content).map_err(|e| format!("Failed to compress log content: {e}"))?;
 
     let db = state.db.lock().map_err(|e| e.to_string())?;
     db.execute(
@@ -714,7 +716,10 @@ mod tests {
         // For in-memory gzip this essentially never fails, but the API now allows
         // callers to surface the error rather than storing empty bytes.
         let result = compress_text("normal log line");
-        assert!(result.is_ok(), "compress_text should succeed for normal input");
+        assert!(
+            result.is_ok(),
+            "compress_text should succeed for normal input"
+        );
         assert!(!result.unwrap().is_empty());
     }
 
