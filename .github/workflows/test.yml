@@ -1,47 +1,53 @@
 name: Test
 
 on:
+  push:
+    branches:
+      - main
+      - 'feature/**'
+      - 'bug/**'
+      - 'fix/**'
   pull_request:
+    branches:
+      - main
 
 jobs:
-  rust-fmt-check:
+  rust-test:
     runs-on: ubuntu-latest
     container:
-      image: rust:1.88-slim
+      image: ghcr.io/msicie/trcaa-linux-amd64:rust1.88-node22
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
-      - run: rustup component add rustfmt
-      - run: cargo fmt --manifest-path src-tauri/Cargo.toml --check
-
-  rust-clippy:
-    runs-on: ubuntu-latest
-    container:
-      image: rust:1.88-slim
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - name: Cache cargo registry
+        uses: actions/cache@v4
         with:
-          fetch-depth: 1
-      - run: apt-get update -qq && apt-get install -y -qq libwebkit2gtk-4.1-dev libssl-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev patchelf pkg-config perl
-      - run: rustup component add clippy
-      - run: cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+          key: ${{ runner.os }}-cargo-linux-amd64-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-linux-amd64-
+      - name: Install npm dependencies
+        run: npm install --legacy-peer-deps
+      - name: Update version from Git
+        run: node scripts/update-version.mjs
+      - name: Generate lockfile
+        run: cargo generate-lockfile --manifest-path src-tauri/Cargo.toml
+      - name: Rust fmt check
+        run: cargo fmt --manifest-path src-tauri/Cargo.toml --check
+      - name: Rust clippy
+        run: cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
+      - name: Rust tests
+        run: cargo test --manifest-path src-tauri/Cargo.toml -- --test-threads=1
 
-  rust-tests:
-    runs-on: ubuntu-latest
-    container:
-      image: rust:1.88-slim
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
-      - run: apt-get update -qq && apt-get install -y -qq libwebkit2gtk-4.1-dev libssl-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev patchelf pkg-config perl
-      - run: cargo test --manifest-path src-tauri/Cargo.toml
-
-  frontend-typecheck:
+  frontend-test:
     runs-on: ubuntu-latest
     container:
       image: node:22-alpine
@@ -50,17 +56,16 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
-      - run: npm ci --legacy-peer-deps
-      - run: npx tsc --noEmit
-
-  frontend-tests:
-    runs-on: ubuntu-latest
-    container:
-      image: node:22-alpine
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - name: Cache npm
+        uses: actions/cache@v4
         with:
-          fetch-depth: 1
-      - run: npm ci --legacy-peer-deps
-      - run: npm run test:run
+          path: ~/.npm
+          key: ${{ runner.os }}-npm-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-npm-
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps
+      - name: TypeScript type check
+        run: npx tsc --noEmit
+      - name: Run frontend tests
+        run: npm run test:run

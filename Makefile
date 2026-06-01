@@ -1,10 +1,9 @@
-GOGS_API   := http://172.0.0.29:3000/api/v1
-GOGS_REPO  := sarman/tftsr-devops_investigation
+GH_REPO    := msicie/apollo_nxt-trcaa
 TAG        ?= v0.1.0-alpha
 TARGET     := aarch64-unknown-linux-gnu
 
 # Build linux/arm64 release artifact natively inside a Docker container,
-# then upload to the Gogs release for TAG.
+# then upload to the GitHub release for TAG.
 .PHONY: release-arm64
 release-arm64: build-arm64 upload-arm64
 
@@ -35,15 +34,11 @@ build-arm64:
 
 .PHONY: upload-arm64
 upload-arm64:
-	@test -n "$(GOGS_TOKEN)" || (echo "ERROR: set GOGS_TOKEN env var"; exit 1)
-	@RELEASE_ID=$$(curl -sf "$(GOGS_API)/repos/$(GOGS_REPO)/releases/tags/$(TAG)" \
-		-H "Authorization: token $(GOGS_TOKEN)" | \
-		grep -o '"id":[0-9]*' | head -1 | cut -d: -f2); \
-	echo "Release ID: $$RELEASE_ID"; \
-	for f in artifacts/linux-arm64/*; do \
+	@test -n "$(GH_TOKEN)" || (echo "ERROR: set GH_TOKEN env var"; exit 1)
+	@for f in artifacts/linux-arm64/*; do \
 		[ -f "$$f" ] || continue; \
-		echo "Uploading $$f..."; \
-		curl -sf -X POST "$(GOGS_API)/repos/$(GOGS_REPO)/releases/$$RELEASE_ID/assets" \
-			-H "Authorization: token $(GOGS_TOKEN)" \
-			-F "attachment=@$$f;filename=$$(basename $$f)" && echo "OK" || echo "FAIL: $$f"; \
+		NAME="linux-arm64-$$(basename $$f)"; \
+		echo "Uploading $$NAME..."; \
+		GH_TOKEN=$(GH_TOKEN) gh release upload $(TAG) "$$f#$$NAME" \
+			--repo $(GH_REPO) && echo "OK" || echo "FAIL: $$f"; \
 	done
