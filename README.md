@@ -325,7 +325,3 @@ Override with the `TFTSR_DATA_DIR` environment variable.
 | 12 | Release Packaging | ✅ linux/amd64 · linux/arm64 (native) · windows/amd64 |
 
 ---
-
-## License
-
-Private — internal tooling. All rights reserved.

@@ -5,7 +5,8 @@ use tracing::{info, warn};
 use crate::mcp::client::{connect_http, connect_stdio, list_resources, list_tools, McpConnection};
 use crate::mcp::models::McpServer;
 use crate::mcp::store::{
-    get_server_auth_value, list_servers, replace_resources, replace_tools, update_discovery_status,
+    get_server_auth_value, get_server_env_config, list_servers, replace_resources, replace_tools,
+    update_discovery_status,
 };
 
 /// Discover a single MCP server: connect, list tools/resources, persist.
@@ -55,11 +56,49 @@ async fn discover_server_inner(
                         .collect()
                 })
                 .unwrap_or_default();
-            connect_stdio(command, &args).await?
+
+            // Parse plaintext env vars from transport_config.env
+            let plaintext_env: std::collections::HashMap<String, String> = config
+                .get("env")
+                .and_then(|v| v.as_object())
+                .map(|obj| {
+                    obj.iter()
+                        .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
+                        .collect()
+                })
+                .unwrap_or_default();
+
+            // Decrypt and parse encrypted env vars from env_config column
+            let encrypted_env = {
+                let db = state.db.lock().map_err(|e| e.to_string())?;
+                get_server_env_config(&db, &server.id)?
+            };
+
+            // Merge env vars (encrypted takes precedence over plaintext)
+            let mut merged_env = plaintext_env;
+            if let Some(enc_env) = encrypted_env {
+                merged_env.extend(enc_env);
+            }
+
+            connect_stdio(command, &args, merged_env).await?
         }
         "http" => {
             let auth_header = auth_value.as_deref();
-            connect_http(&server.url, auth_header).await?
+
+            // Parse custom headers from transport_config.headers
+            let config: serde_json::Value =
+                serde_json::from_str(&server.transport_config).unwrap_or_default();
+            let custom_headers: std::collections::HashMap<String, String> = config
+                .get("headers")
+                .and_then(|v| v.as_object())
+                .map(|obj| {
+                    obj.iter()
+                        .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
+                        .collect()
+                })
+                .unwrap_or_default();
+
+            connect_http(&server.url, auth_header, custom_headers).await?
         }
         other => return Err(format!("Unknown transport type: {other}")),
     };

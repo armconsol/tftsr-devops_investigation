@@ -7,17 +7,26 @@ use crate::mcp::models::{McpResource, McpTool};
 /// Live connection to an MCP server.
 pub type McpConnection = RunningService<RoleClient, ()>;
 
-/// Connect to a stdio MCP server.
-pub async fn connect_stdio(command: &str, args: &[String]) -> Result<McpConnection, String> {
-    let transport = crate::mcp::transport::stdio::build_stdio_transport(command, args)?;
+/// Connect to a stdio MCP server with optional environment variables.
+pub async fn connect_stdio(
+    command: &str,
+    args: &[String],
+    env: std::collections::HashMap<String, String>,
+) -> Result<McpConnection, String> {
+    let transport = crate::mcp::transport::stdio::build_stdio_transport(command, args, env)?;
     ().serve(transport)
         .await
         .map_err(|e| format!("MCP stdio connection failed: {e}"))
 }
 
-/// Connect to an HTTP MCP server.
-pub async fn connect_http(url: &str, auth_header: Option<&str>) -> Result<McpConnection, String> {
-    let transport = crate::mcp::transport::http::build_http_transport(url, auth_header);
+/// Connect to an HTTP MCP server with optional custom headers.
+pub async fn connect_http(
+    url: &str,
+    auth_header: Option<&str>,
+    custom_headers: std::collections::HashMap<String, String>,
+) -> Result<McpConnection, String> {
+    let transport =
+        crate::mcp::transport::http::build_http_transport(url, auth_header, custom_headers);
     ().serve(transport)
         .await
         .map_err(|e| format!("MCP HTTP connection failed: {e}"))

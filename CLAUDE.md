@@ -57,6 +57,9 @@ cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
 
 # Rust quick type check (no linking)
 cargo check --manifest-path src-tauri/Cargo.toml
+
+# Frontend linting
+npx eslint . --max-warnings 0
 ```
 
 ### System Prerequisites (Linux/Fedora)
@@ -115,6 +118,8 @@ All command handlers receive `State<'_, AppState>` as a Tauri-injected parameter
 **AI provider factory**: `ai/provider.rs::create_provider(config)` dispatches on `config.name` to the matching struct. Adding a provider means implementing the `Provider` trait and adding a match arm.
 
 **Database encryption**: `cfg!(debug_assertions)` → plain SQLite; release → SQLCipher AES-256. Key from `TFTSR_DB_KEY` env var (defaults to a dev placeholder). DB path from `TFTSR_DATA_DIR` or platform data dir.
+
+**Credential encryption**: API keys stored in `AppSettings` are encrypted using AES-256-GCM via the `aes-gcm` crate. The encryption key is derived from `TFTSR_ENCRYPTION_KEY` env var. Credentials are encrypted on save and decrypted on load. See `commands/system.rs::save_settings()` for implementation.
 
 ### Frontend (React / TypeScript)
 
