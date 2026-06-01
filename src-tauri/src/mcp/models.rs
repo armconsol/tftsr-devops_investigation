@@ -18,6 +18,8 @@ pub struct McpServer {
     pub discovery_error: Option<String>,
     pub created_at: String,
     pub updated_at: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub env_config: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -64,6 +66,8 @@ pub struct CreateMcpServerRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub auth_value: Option<String>,
     pub enabled: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub env_config: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -82,4 +86,6 @@ pub struct UpdateMcpServerRequest {
     pub auth_value: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub enabled: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub env_config: Option<String>,
 }
