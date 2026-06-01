@@ -450,10 +450,19 @@ pub async fn detect_pii(
     })
 }
 
+/// Maximum text size accepted by scan_text_for_pii to prevent DoS on large payloads.
+const MAX_TEXT_SCAN_BYTES: usize = 32 * 1024; // 32 KB
+
 /// Scan arbitrary text for PII without creating any database records.
-/// Used to warn users before sending typed chat messages to AI providers.
+/// Used by the backend before sending typed chat messages to AI providers.
 #[tauri::command]
 pub async fn scan_text_for_pii(text: String) -> Result<PiiDetectionResult, String> {
+    if text.len() > MAX_TEXT_SCAN_BYTES {
+        return Err(format!(
+            "Text too large for inline PII scan ({} bytes; limit {MAX_TEXT_SCAN_BYTES})",
+            text.len()
+        ));
+    }
     let detector = PiiDetector::new();
     let spans = detector.detect(&text);
     let total_pii_found = spans.len();

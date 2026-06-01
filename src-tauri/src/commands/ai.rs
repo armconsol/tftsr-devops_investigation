@@ -277,13 +277,15 @@ pub async fn chat_message(
             vec![]
         };
 
+        // 8 KB embed limit; detect + redact on full content so PII at the boundary is caught.
+        const EMBED_LIMIT: usize = 8_000;
+
         let mut msg = base;
         for (file_name, file_path) in &files {
             let content = std::fs::read_to_string(file_path).unwrap_or_default();
-            let preview = &content[..content.len().min(8000)];
-            let spans = crate::pii::PiiDetector::new().detect(preview);
-            let body = if spans.is_empty() {
-                preview.to_string()
+            let spans = crate::pii::PiiDetector::new().detect(&content);
+            let redacted = if spans.is_empty() {
+                content
             } else {
                 let types: std::collections::HashSet<&str> =
                     spans.iter().map(|s| s.pii_type.as_str()).collect();
@@ -295,9 +297,22 @@ pub async fn chat_message(
                     pii_count = spans.len(),
                     "PII detected in chat attachment — auto-redacting before AI send"
                 );
-                crate::pii::apply_redactions(preview, &spans)
+                crate::pii::apply_redactions(&content, &spans)
             };
-            msg.push_str(&format!("\n\n--- Attached: {} ---\n{}", file_name, body));
+            // Truncate after redaction so the cut never lands inside a PII span.
+            let embed_end = if redacted.len() > EMBED_LIMIT {
+                let mut e = EMBED_LIMIT;
+                while !redacted.is_char_boundary(e) {
+                    e -= 1;
+                }
+                e
+            } else {
+                redacted.len()
+            };
+            msg.push_str(&format!(
+                "\n\n--- Attached: {file_name} ---\n{}",
+                &redacted[..embed_end]
+            ));
         }
         msg
     };

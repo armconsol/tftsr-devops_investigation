@@ -283,7 +283,7 @@ export const chatMessageCmd = (
   invoke<ChatResponse>("chat_message", {
     issueId,
     message,
-    logFileIds: logFileIds.length > 0 ? logFileIds : null,
+    logFileIds: logFileIds.length > 0 ? logFileIds : undefined,
     providerConfig,
     systemPrompt: systemPrompt ?? null,
   });

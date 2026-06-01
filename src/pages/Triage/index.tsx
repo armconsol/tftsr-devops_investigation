@@ -8,7 +8,6 @@ import { useSessionStore } from "@/stores/sessionStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import {
   chatMessageCmd,
-  detectPiiCmd,
   getIssueCmd,
   getIssueMessagesCmd,
   uploadLogFileCmd,
@@ -41,7 +40,6 @@ export default function Triage() {
   const navigate = useNavigate();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
   const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([]);
   // Track the last user message so we can save it as a resolution step when why level advances
   const lastUserMsgRef = useRef<string>("");
@@ -135,25 +133,6 @@ export default function Triage() {
 
     setIsLoading(true);
     setError(null);
-    setNotice(null);
-
-    // Pre-send attachment PII scan: surface a notice to the user about what will be
-    // auto-redacted. The send is NOT blocked — the backend performs the actual redaction.
-    const piiNotices: string[] = [];
-    for (const f of pendingFiles) {
-      try {
-        const result = await detectPiiCmd(f.logFileId);
-        if (result.total_pii_found > 0) {
-          const types = [...new Set(result.detections.map((d) => d.pii_type))].join(", ");
-          piiNotices.push(`"${f.name}" (${types})`);
-        }
-      } catch {
-        // Non-fatal — backend will still scan before sending to AI
-      }
-    }
-    if (piiNotices.length > 0) {
-      setNotice(`PII auto-redacted before sending: ${piiNotices.join("; ")}`);
-    }
 
     const fileNames = pendingFiles.map((f) => f.name);
     const displayContent =
@@ -257,11 +236,6 @@ export default function Triage() {
         <TriageProgress currentLevel={Math.min(currentWhyLevel, 5)} />
       </div>
 
-      {notice && (
-        <div className="mx-6 mt-3 p-3 bg-amber-50 border border-amber-200 rounded-md text-sm text-amber-700">
-          ℹ️ {notice}
-        </div>
-      )}
       {error && (
         <div className="mx-6 mt-3 p-3 bg-destructive/10 border border-destructive/20 rounded-md text-sm text-destructive">
           {error}
