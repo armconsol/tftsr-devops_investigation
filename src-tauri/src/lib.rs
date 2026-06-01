@@ -85,6 +85,7 @@ pub fn run() {
             commands::analysis::upload_log_file,
             commands::analysis::upload_log_file_by_content,
             commands::analysis::detect_pii,
+            commands::analysis::scan_text_for_pii,
             commands::analysis::apply_redactions,
             commands::analysis::get_log_file_content,
             commands::analysis::list_all_log_files,

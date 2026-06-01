@@ -8,8 +8,8 @@ use std::path::{Path, PathBuf};
 use tauri::State;
 use tracing::warn;
 
-use crate::db::models::{AuditEntry, LogFile, LogFileSummary, PiiSpanRecord};
-use crate::pii::{self, PiiDetectionResult, PiiDetector, RedactedLogFile};
+use crate::db::models::{AuditEntry, LogFile, LogFileSummary, PiiDetectionResult, PiiSpanRecord};
+use crate::pii::{self, PiiDetector, RedactedLogFile};
 use crate::state::AppState;
 
 const MAX_LOG_FILE_BYTES: u64 = 50 * 1024 * 1024;
@@ -65,7 +65,9 @@ fn compress_text(text: &str) -> Result<Vec<u8>, String> {
     encoder
         .write_all(text.as_bytes())
         .map_err(|e| format!("Compression write error: {e}"))?;
-    encoder.finish().map_err(|e| format!("Compression finish error: {e}"))
+    encoder
+        .finish()
+        .map_err(|e| format!("Compression finish error: {e}"))
 }
 
 /// 100 MB cap — prevents decompression-bomb attacks on crafted DB entries.
@@ -352,8 +354,8 @@ pub async fn upload_log_file_by_content(
         ..log_file
     };
 
-    let compressed = compress_text(&content)
-        .map_err(|e| format!("Failed to compress log content: {e}"))?;
+    let compressed =
+        compress_text(&content).map_err(|e| format!("Failed to compress log content: {e}"))?;
 
     let db = state.db.lock().map_err(|e| e.to_string())?;
     db.execute(
@@ -440,10 +442,34 @@ pub async fn detect_pii(
         }
     }
 
+    let total_pii_found = spans.len();
     Ok(PiiDetectionResult {
         log_file_id,
-        spans,
-        original_text: content,
+        detections: spans,
+        total_pii_found,
+    })
+}
+
+/// Maximum text size accepted by scan_text_for_pii to prevent DoS on large payloads.
+const MAX_TEXT_SCAN_BYTES: usize = 32 * 1024; // 32 KB
+
+/// Scan arbitrary text for PII without creating any database records.
+/// Used by the backend before sending typed chat messages to AI providers.
+#[tauri::command]
+pub async fn scan_text_for_pii(text: String) -> Result<PiiDetectionResult, String> {
+    if text.len() > MAX_TEXT_SCAN_BYTES {
+        return Err(format!(
+            "Text too large for inline PII scan ({} bytes; limit {MAX_TEXT_SCAN_BYTES})",
+            text.len()
+        ));
+    }
+    let detector = PiiDetector::new();
+    let spans = detector.detect(&text);
+    let total_pii_found = spans.len();
+    Ok(PiiDetectionResult {
+        log_file_id: String::new(),
+        detections: spans,
+        total_pii_found,
     })
 }
 
@@ -699,7 +725,10 @@ mod tests {
         // For in-memory gzip this essentially never fails, but the API now allows
         // callers to surface the error rather than storing empty bytes.
         let result = compress_text("normal log line");
-        assert!(result.is_ok(), "compress_text should succeed for normal input");
+        assert!(
+            result.is_ok(),
+            "compress_text should succeed for normal input"
+        );
         assert!(!result.unwrap().is_empty());
     }
 

@@ -14,6 +14,7 @@ interface SessionState {
 
   startSession: (issue: Issue) => void;
   addMessage: (message: TriageMessage) => void;
+  updateMessageContent: (id: string, content: string) => void;
   setPiiSpans: (spans: PiiSpan[]) => void;
   setApprovedRedactions: (spans: PiiSpan[]) => void;
   setWhyLevel: (level: number) => void;
@@ -40,6 +41,10 @@ export const useSessionStore = create<SessionState>((set) => ({
   ...initialState,
   startSession: (issue) => set({ currentIssue: issue, messages: [], currentWhyLevel: 1, activeDomain: issue.category }),
   addMessage: (message) => set((state) => ({ messages: [...state.messages, message] })),
+  updateMessageContent: (id, content) =>
+    set((state) => ({
+      messages: state.messages.map((m) => (m.id === id ? { ...m, content } : m)),
+    })),
   setPiiSpans: (spans) => set({ piiSpans: spans }),
   setApprovedRedactions: (spans) => set({ approvedRedactions: spans }),
   setWhyLevel: (level) => set({ currentWhyLevel: level }),

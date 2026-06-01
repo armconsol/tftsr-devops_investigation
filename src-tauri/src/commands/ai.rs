@@ -165,6 +165,7 @@ fn extract_list(text: &str, header: &str) -> Vec<String> {
 pub async fn chat_message(
     issue_id: String,
     message: String,
+    log_file_ids: Option<Vec<String>>,
     provider_config: ProviderConfig,
     system_prompt: Option<String>,
     app_handle: tauri::AppHandle,
@@ -233,6 +234,96 @@ pub async fn chat_message(
             .collect()
     };
 
+    // Auto-redact PII in both the typed message and any file attachments.
+    // The backend is the sole authority for redaction; the frontend sends original content.
+    let mut was_pii_redacted = false;
+    let mut redacted_pii_types: Vec<String> = Vec::new();
+
+    let full_message = {
+        // Step 1: redact the typed user message text.
+        let base = {
+            let spans = crate::pii::PiiDetector::new().detect(&message);
+            if spans.is_empty() {
+                message.clone()
+            } else {
+                let types: std::collections::HashSet<&str> =
+                    spans.iter().map(|s| s.pii_type.as_str()).collect();
+                let mut type_list: Vec<&str> = types.into_iter().collect();
+                type_list.sort_unstable();
+                warn!(
+                    pii_types = ?type_list,
+                    pii_count = spans.len(),
+                    "PII detected in typed chat message — auto-redacting before AI send"
+                );
+                was_pii_redacted = true;
+                redacted_pii_types.extend(type_list.iter().map(|s| s.to_string()));
+                crate::pii::apply_redactions(&message, &spans)
+            }
+        };
+
+        // Step 2: load attachment files from DB, scan, and embed clean content.
+        let files: Vec<(String, String)> = if let Some(ref ids) = log_file_ids {
+            let db = state.db.lock().map_err(|e| e.to_string())?;
+            let mut v = Vec::new();
+            for file_id in ids {
+                if let Ok((name, path)) = db
+                    .prepare("SELECT file_name, file_path FROM log_files WHERE id = ?1")
+                    .and_then(|mut s| {
+                        s.query_row([file_id], |row| {
+                            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                        })
+                    })
+                {
+                    v.push((name, path));
+                }
+            }
+            v
+        } else {
+            vec![]
+        };
+
+        // 8 KB embed limit; detect + redact on full content so PII at the boundary is caught.
+        const EMBED_LIMIT: usize = 8_000;
+
+        let mut msg = base;
+        for (file_name, file_path) in &files {
+            let content = std::fs::read_to_string(file_path).unwrap_or_default();
+            let spans = crate::pii::PiiDetector::new().detect(&content);
+            let redacted = if spans.is_empty() {
+                content
+            } else {
+                let types: std::collections::HashSet<&str> =
+                    spans.iter().map(|s| s.pii_type.as_str()).collect();
+                let mut type_list: Vec<&str> = types.into_iter().collect();
+                type_list.sort_unstable();
+                warn!(
+                    file_name = %file_name,
+                    pii_types = ?type_list,
+                    pii_count = spans.len(),
+                    "PII detected in chat attachment — auto-redacting before AI send"
+                );
+                was_pii_redacted = true;
+                redacted_pii_types.extend(type_list.iter().map(|s| s.to_string()));
+                crate::pii::apply_redactions(&content, &spans)
+            };
+            // Truncate after redaction so the cut never lands inside a PII span.
+            let embed_end = if redacted.len() > EMBED_LIMIT {
+                let mut e = EMBED_LIMIT;
+                while !redacted.is_char_boundary(e) {
+                    e -= 1;
+                }
+                e
+            } else {
+                redacted.len()
+            };
+            msg.push_str(&format!(
+                "\n\n--- Attached: {file_name} ---\n{}",
+                &redacted[..embed_end]
+            ));
+        }
+        msg
+    };
+
     let provider = create_provider(&provider_config);
 
     // Search integration sources for relevant context
@@ -290,7 +381,7 @@ pub async fn chat_message(
 
     messages.push(Message {
         role: "user".into(),
-        content: message.clone(),
+        content: full_message.clone(),
         tool_call_id: None,
         tool_calls: None,
     });
@@ -360,9 +451,11 @@ pub async fn chat_message(
     }
 
     // Save both user message and response to DB
+    let stored_user_message;
     {
         let db = state.db.lock().map_err(|e| e.to_string())?;
-        let user_msg = AiMessage::new(conversation_id.clone(), "user".to_string(), message);
+        let user_msg = AiMessage::new(conversation_id.clone(), "user".to_string(), full_message);
+        stored_user_message = user_msg.content.clone();
         let asst_msg = AiMessage::new(
             conversation_id,
             "assistant".to_string(),
@@ -390,11 +483,23 @@ pub async fn chat_message(
         .map_err(|e| e.to_string())?;
 
         // Audit - capture full transmission details
+        let pii_types_for_audit = {
+            use std::collections::HashSet;
+            let mut v: Vec<String> = redacted_pii_types
+                .into_iter()
+                .collect::<HashSet<_>>()
+                .into_iter()
+                .collect();
+            v.sort_unstable();
+            v
+        };
         let audit_details = serde_json::json!({
             "provider": provider_config.name,
             "model": provider_config.model,
             "api_url": provider_config.api_url,
             "user_message": user_msg.content,
+            "was_pii_redacted": was_pii_redacted,
+            "pii_types_redacted": pii_types_for_audit,
             "response_preview": if final_response.content.len() > 200 {
                 format!("{preview}...", preview = &final_response.content[..200])
             } else {
@@ -419,7 +524,10 @@ pub async fn chat_message(
         }
     }
 
-    Ok(final_response)
+    Ok(crate::ai::ChatResponse {
+        user_message: Some(stored_user_message),
+        ..final_response
+    })
 }
 
 #[tauri::command]

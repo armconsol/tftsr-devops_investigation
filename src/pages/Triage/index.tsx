@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { CheckCircle, ChevronRight } from "lucide-react";
 import { open } from "@tauri-apps/plugin-dialog";
-import { readTextFile } from "@tauri-apps/plugin-fs";
 import { ChatWindow } from "@/components/ChatWindow";
 import { TriageProgress } from "@/components/TriageProgress";
 import { useSessionStore } from "@/stores/sessionStore";
@@ -34,7 +33,7 @@ function isCloseIntent(message: string): boolean {
   return CLOSE_PATTERNS.some((p) => lower.includes(p));
 }
 
-type PendingFile = { name: string; content: string | null };
+type PendingFile = { name: string; logFileId: string };
 
 export default function Triage() {
   const { id } = useParams<{ id: string }>();
@@ -46,7 +45,7 @@ export default function Triage() {
   const lastUserMsgRef = useRef<string>("");
   const initialized = useRef(false);
 
-  const { currentIssue, messages, currentWhyLevel, activeDomain, startSession, addMessage, setWhyLevel, setActiveDomain } =
+  const { currentIssue, messages, currentWhyLevel, activeDomain, startSession, addMessage, updateMessageContent, setWhyLevel, setActiveDomain } =
     useSessionStore();
   const { getActiveProvider } = useSettingsStore();
 
@@ -101,14 +100,7 @@ export default function Triage() {
       const paths = Array.isArray(selected) ? selected : [selected];
       for (const filePath of paths) {
         const logFile = await uploadLogFileCmd(id, filePath);
-        let content: string | null = null;
-        try {
-          const raw = await readTextFile(filePath);
-          content = raw.slice(0, 8000); // cap at 8 KB to keep context manageable
-        } catch {
-          // Binary file (image) — include filename only as context
-        }
-        setPendingFiles((prev) => [...prev, { name: logFile.file_name, content }]);
+        setPendingFiles((prev) => [...prev, { name: logFile.file_name, logFileId: logFile.id }]);
       }
     } catch (e) {
       setError(`Attachment failed: ${String(e)}`);
@@ -142,18 +134,10 @@ export default function Triage() {
     setIsLoading(true);
     setError(null);
 
-    // Build AI context: user text + file contents; show only text + filenames in chat UI
-    const fileContext = pendingFiles
-      .map((f) =>
-        f.content
-          ? `\n\n--- Attached: ${f.name} ---\n${f.content}`
-          : `\n\n[Image attached: ${f.name} — describe what you see if relevant]`
-      )
-      .join("");
-    const aiMessage = pendingFiles.length > 0 ? `${message}${fileContext}` : message;
+    const fileNames = pendingFiles.map((f) => f.name);
     const displayContent =
       pendingFiles.length > 0
-        ? `${message}${message ? "\n" : ""}📎 ${pendingFiles.map((f) => f.name).join(", ")}`
+        ? `${message}${message ? "\n" : ""}📎 ${fileNames.join(", ")}`
         : message;
 
     const userMsg: TriageMessage = {
@@ -166,21 +150,29 @@ export default function Triage() {
     };
     lastUserMsgRef.current = message;
     addMessage(userMsg);
+    const logFileIds = pendingFiles.map((f) => f.logFileId);
     setPendingFiles([]);
 
     try {
       // Detect domain from conversation messages
       const messageContents = messages.map((m) => m.content);
       const detectedDomain = detectDomain(messageContents);
-      
+
       // Update active domain if it has changed
       if (detectedDomain !== activeDomain && detectedDomain !== "general") {
         setActiveDomain(detectedDomain);
       }
-      
+
       // Use the active domain for the system prompt
       const systemPrompt = activeDomain ? getDomainPrompt(activeDomain) : undefined;
-      const response = await chatMessageCmd(id, aiMessage, provider, systemPrompt);
+      // Backend auto-redacts PII in both message text and attachments before sending to AI.
+      const response = await chatMessageCmd(id, message, logFileIds, provider, systemPrompt);
+
+      // Update the user bubble with what was actually stored (may be auto-redacted).
+      // Fall back to the original message if user_message is absent (older backend builds).
+      const suffix = fileNames.length > 0 ? `\n📎 ${fileNames.join(", ")}` : "";
+      updateMessageContent(userMsg.id, (response.user_message ?? message) + suffix);
+
       const assistantMsg: TriageMessage = {
         id: `asst-${Date.now()}`,
         issue_id: id,

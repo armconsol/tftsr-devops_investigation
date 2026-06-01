@@ -34,6 +34,8 @@ export interface ChatResponse {
   content: string;
   model: string;
   usage?: TokenUsage;
+  /** What was stored in the DB — may be auto-redacted. Use this for display and history. */
+  user_message?: string;
 }
 
 export interface AnalysisResult {
@@ -271,8 +273,20 @@ export interface TriageMessage {
 export const analyzeLogsCmd = (issueId: string, logFileIds: string[], providerConfig: ProviderConfig) =>
   invoke<AnalysisResult>("analyze_logs", { issueId, logFileIds, providerConfig });
 
-export const chatMessageCmd = (issueId: string, message: string, providerConfig: ProviderConfig, systemPrompt?: string) =>
-  invoke<ChatResponse>("chat_message", { issueId, message, providerConfig, systemPrompt: systemPrompt ?? null });
+export const chatMessageCmd = (
+  issueId: string,
+  message: string,
+  logFileIds: string[],
+  providerConfig: ProviderConfig,
+  systemPrompt?: string
+) =>
+  invoke<ChatResponse>("chat_message", {
+    issueId,
+    message,
+    logFileIds: logFileIds.length > 0 ? logFileIds : undefined,
+    providerConfig,
+    systemPrompt: systemPrompt ?? null,
+  });
 
 export const listProvidersCmd = () => invoke<ProviderInfo[]>("list_providers");
 
@@ -307,6 +321,9 @@ export const deleteImageAttachmentCmd = (attachmentId: string) =>
 
 export const detectPiiCmd = (logFileId: string) =>
   invoke<PiiDetectionResult>("detect_pii", { logFileId });
+
+export const scanTextForPiiCmd = (text: string) =>
+  invoke<PiiDetectionResult>("scan_text_for_pii", { text });
 
 export const applyRedactionsCmd = (logFileId: string, approvedSpanIds: string[]) =>
   invoke<RedactedLogFile>("apply_redactions", { logFileId, approvedSpanIds });

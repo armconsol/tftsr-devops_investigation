@@ -116,6 +116,7 @@ impl Provider for AnthropicProvider {
             content,
             model,
             usage,
+            user_message: None,
             tool_calls: None,
         })
     }

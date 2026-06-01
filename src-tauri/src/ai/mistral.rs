@@ -84,6 +84,7 @@ impl Provider for MistralProvider {
             content,
             model: config.model.clone(),
             usage,
+            user_message: None,
             tool_calls: None,
         })
     }

@@ -30,6 +30,10 @@ pub struct ChatResponse {
     pub content: String,
     pub model: String,
     pub usage: Option<TokenUsage>,
+    /// The user message as it was stored in the DB (may be auto-redacted).
+    /// Set by chat_message; absent from direct provider calls.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub user_message: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_calls: Option<Vec<ToolCall>>,
 }
