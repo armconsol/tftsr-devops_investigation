@@ -208,7 +208,7 @@ Navigate to **Settings > MCP Servers** (`/settings/mcp`) to manage servers.
    - **Auth Value** — The token/key (will be encrypted on save). Leave blank for `none`.
    - **Environment Variables (Plaintext)** (stdio only) — Space-separated `KEY=value` pairs for non-sensitive values. **Always include `PATH=...` for `npx`/node/python-based servers** — the app bundle does not inherit the system PATH.
    - **Secure Environment Variables (Encrypted)** (stdio only) — Space-separated `KEY=value` pairs for sensitive values (API keys, tokens). Stored AES-256-GCM encrypted. Leave blank when editing to preserve existing values.
-   - **Custom Headers** (HTTP only) — Space-separated `KEY:value` pairs for custom HTTP headers.
+   - **Custom Headers** (HTTP only) — Not yet supported by the backend transport (currently ignored); do not use for secrets yet.
    - **Enabled** — Toggle on/off.
 3. Click **Save**. The server record is persisted.
 4. Click **Discover** to connect and enumerate available tools and resources.
