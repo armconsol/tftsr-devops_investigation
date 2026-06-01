@@ -15,10 +15,15 @@ pub fn create_server(conn: &Connection, req: &CreateMcpServerRequest) -> Result<
         _ => None,
     };
 
+    let encrypted_env = match &req.env_config {
+        Some(env_json) if !env_json.trim().is_empty() => Some(encrypt_token(env_json)?),
+        _ => None,
+    };
+
     conn.execute(
         "INSERT INTO mcp_servers
-            (id, name, url, transport_type, transport_config, auth_type, auth_value, enabled, created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9)",
+            (id, name, url, transport_type, transport_config, auth_type, auth_value, enabled, env_config, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?10)",
         rusqlite::params![
             id,
             req.name,
@@ -28,6 +33,7 @@ pub fn create_server(conn: &Connection, req: &CreateMcpServerRequest) -> Result<
             req.auth_type,
             encrypted_auth,
             req.enabled as i32,
+            encrypted_env,
             now,
         ],
     )
@@ -41,7 +47,7 @@ pub fn get_server(conn: &Connection, id: &str) -> Result<Option<McpServer>, Stri
         .query_row(
             "SELECT id, name, url, transport_type, transport_config, auth_type, auth_value,
                     enabled, last_discovered_at, discovery_status, discovery_error,
-                    created_at, updated_at
+                    created_at, updated_at, env_config
              FROM mcp_servers WHERE id = ?1",
             [id],
             |row| {
@@ -59,6 +65,7 @@ pub fn get_server(conn: &Connection, id: &str) -> Result<Option<McpServer>, Stri
                     discovery_error: row.get(10)?,
                     created_at: row.get(11)?,
                     updated_at: row.get(12)?,
+                    env_config: row.get(13)?,
                 })
             },
         )
@@ -72,7 +79,7 @@ pub fn list_servers(conn: &Connection) -> Result<Vec<McpServer>, String> {
         .prepare(
             "SELECT id, name, url, transport_type, transport_config, auth_type, auth_value,
                     enabled, last_discovered_at, discovery_status, discovery_error,
-                    created_at, updated_at
+                    created_at, updated_at, env_config
              FROM mcp_servers ORDER BY created_at ASC",
         )
         .map_err(|e| e.to_string())?;
@@ -93,6 +100,7 @@ pub fn list_servers(conn: &Connection) -> Result<Vec<McpServer>, String> {
                 discovery_error: row.get(10)?,
                 created_at: row.get(11)?,
                 updated_at: row.get(12)?,
+                env_config: row.get(13)?,
             })
         })
         .map_err(|e| e.to_string())?
@@ -116,11 +124,17 @@ pub fn update_server(
         None => existing.auth_value.clone(),
     };
 
+    let new_encrypted_env = match &req.env_config {
+        Some(env_json) if !env_json.trim().is_empty() => Some(encrypt_token(env_json)?),
+        Some(_) => None,                     // Empty string = clear env_config
+        None => existing.env_config.clone(), // No update requested
+    };
+
     conn.execute(
         "UPDATE mcp_servers SET
             name = ?1, url = ?2, transport_type = ?3, transport_config = ?4,
-            auth_type = ?5, auth_value = ?6, enabled = ?7, updated_at = ?8
-         WHERE id = ?9",
+            auth_type = ?5, auth_value = ?6, enabled = ?7, env_config = ?8, updated_at = ?9
+         WHERE id = ?10",
         rusqlite::params![
             req.name.as_deref().unwrap_or(&existing.name),
             req.url.as_deref().unwrap_or(&existing.url),
@@ -135,6 +149,7 @@ pub fn update_server(
             req.enabled
                 .map(|b| b as i32)
                 .unwrap_or(existing.enabled as i32),
+            new_encrypted_env,
             now,
             id,
         ],
@@ -308,6 +323,34 @@ pub fn get_resource_count(conn: &Connection, server_id: &str) -> Result<usize, S
     .map_err(|e| e.to_string())
 }
 
+/// Decrypt and parse env_config from database, returning a HashMap.
+/// Returns None if env_config is NULL, or an error if decryption/parsing fails.
+pub fn get_server_env_config(
+    conn: &Connection,
+    server_id: &str,
+) -> Result<Option<std::collections::HashMap<String, String>>, String> {
+    let encrypted: Option<String> = conn
+        .query_row(
+            "SELECT env_config FROM mcp_servers WHERE id = ?1",
+            [server_id],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?
+        .flatten();
+
+    match encrypted {
+        Some(enc) => {
+            let decrypted = decrypt_token(&enc)?;
+            let parsed: std::collections::HashMap<String, String> =
+                serde_json::from_str(&decrypted)
+                    .map_err(|e| format!("Failed to parse env_config JSON: {e}"))?;
+            Ok(Some(parsed))
+        }
+        None => Ok(None),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -328,6 +371,7 @@ mod tests {
             auth_type: "none".to_string(),
             auth_value: None,
             enabled: true,
+            env_config: None,
         }
     }
 
@@ -362,6 +406,7 @@ mod tests {
                 auth_type: None,
                 auth_value: None,
                 enabled: None,
+                env_config: None,
             },
         )
         .unwrap();
@@ -385,6 +430,7 @@ mod tests {
             auth_type: "bearer".to_string(),
             auth_value: Some("super-secret-token".to_string()),
             enabled: true,
+            env_config: None,
         };
         let server = create_server(&conn, &req).unwrap();
 
@@ -478,5 +524,128 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM mcp_tools", [], |r| r.get(0))
             .unwrap();
         assert_eq!(count, 0, "cascade delete should clear mcp_tools");
+    }
+
+    #[test]
+    fn test_env_config_encrypted_at_rest() {
+        let conn = setup();
+
+        let req = CreateMcpServerRequest {
+            name: "Env Test".to_string(),
+            url: "".to_string(),
+            transport_type: "stdio".to_string(),
+            transport_config: r#"{"command":"/usr/bin/test","args":[]}"#.to_string(),
+            auth_type: "none".to_string(),
+            auth_value: None,
+            enabled: true,
+            env_config: Some(r#"{"API_KEY":"secret123","DEBUG":"1"}"#.to_string()),
+        };
+        let server = create_server(&conn, &req).unwrap();
+
+        // Raw DB value must be encrypted (not equal to plaintext)
+        let raw: Option<String> = conn
+            .query_row(
+                "SELECT env_config FROM mcp_servers WHERE id = ?1",
+                [&server.id],
+                |r| r.get(0),
+            )
+            .unwrap();
+        let raw = raw.unwrap();
+        assert_ne!(
+            raw, r#"{"API_KEY":"secret123","DEBUG":"1"}"#,
+            "env_config should be encrypted at rest"
+        );
+
+        // Decrypted value must match original
+        let env_map = get_server_env_config(&conn, &server.id).unwrap().unwrap();
+        assert_eq!(env_map.get("API_KEY").unwrap(), "secret123");
+        assert_eq!(env_map.get("DEBUG").unwrap(), "1");
+    }
+
+    #[test]
+    fn test_update_env_config() {
+        let conn = setup();
+
+        let server = create_server(&conn, &make_req("Env Update")).unwrap();
+        assert!(server.env_config.is_none());
+
+        let updated = update_server(
+            &conn,
+            &server.id,
+            &UpdateMcpServerRequest {
+                name: None,
+                url: None,
+                transport_type: None,
+                transport_config: None,
+                auth_type: None,
+                auth_value: None,
+                enabled: None,
+                env_config: Some(r#"{"NEW_VAR":"value"}"#.to_string()),
+            },
+        )
+        .unwrap();
+
+        assert!(updated.env_config.is_some());
+        let env_map = get_server_env_config(&conn, &server.id).unwrap().unwrap();
+        assert_eq!(env_map.get("NEW_VAR").unwrap(), "value");
+    }
+
+    #[test]
+    fn test_clear_env_config_with_empty_string() {
+        let conn = setup();
+
+        let mut req = make_req("Clear Env");
+        req.env_config = Some(r#"{"KEY":"val"}"#.to_string());
+        let server = create_server(&conn, &req).unwrap();
+        assert!(server.env_config.is_some());
+
+        let updated = update_server(
+            &conn,
+            &server.id,
+            &UpdateMcpServerRequest {
+                name: None,
+                url: None,
+                transport_type: None,
+                transport_config: None,
+                auth_type: None,
+                auth_value: None,
+                enabled: None,
+                env_config: Some("".to_string()), // Clear
+            },
+        )
+        .unwrap();
+
+        assert!(updated.env_config.is_none());
+    }
+
+    #[test]
+    fn test_env_config_none_preserves_existing() {
+        let conn = setup();
+
+        let mut req = make_req("Preserve Env");
+        req.env_config = Some(r#"{"ORIGINAL":"value"}"#.to_string());
+        let server = create_server(&conn, &req).unwrap();
+
+        // Update without touching env_config
+        let updated = update_server(
+            &conn,
+            &server.id,
+            &UpdateMcpServerRequest {
+                name: Some("New Name".to_string()),
+                url: None,
+                transport_type: None,
+                transport_config: None,
+                auth_type: None,
+                auth_value: None,
+                enabled: None,
+                env_config: None, // Don't update
+            },
+        )
+        .unwrap();
+
+        // env_config should still be there
+        assert!(updated.env_config.is_some());
+        let env_map = get_server_env_config(&conn, &server.id).unwrap().unwrap();
+        assert_eq!(env_map.get("ORIGINAL").unwrap(), "value");
     }
 }

@@ -53,7 +53,7 @@ MCP support extends the AI's capabilities beyond conversation: during incident t
 
 ## Database Schema
 
-Three tables are created by **Migration 018** (`018_mcp_servers`):
+Three tables are created by **Migration 018** (`018_mcp_servers`). **Migration 023** adds the `env_config` column.
 
 ### `mcp_servers`
 
@@ -66,6 +66,7 @@ Three tables are created by **Migration 018** (`018_mcp_servers`):
 | `transport_config` | TEXT | NOT NULL DEFAULT `'{}'` (JSON) |
 | `auth_type` | TEXT | NOT NULL, CHECK IN (`'none'`, `'api_key'`, `'bearer'`, `'oauth2'`) |
 | `auth_value` | TEXT | Nullable — AES-256-GCM encrypted |
+| `env_config` | TEXT | Nullable — AES-256-GCM encrypted JSON object of env vars |
 | `enabled` | INTEGER | NOT NULL DEFAULT 1 |
 | `last_discovered_at` | TEXT | Nullable UTC timestamp |
 | `discovery_status` | TEXT | NOT NULL DEFAULT `'pending'`, CHECK IN (`'pending'`, `'connected'`, `'unreachable'`, `'error'`) |
@@ -108,14 +109,44 @@ The app spawns a local process and communicates over its stdin/stdout using the 
 ```json
 {
   "command": "/usr/local/bin/my-mcp-server",
-  "args": ["--port", "0", "--mode", "stdio"]
+  "args": ["--port", "0", "--mode", "stdio"],
+  "env": {
+    "DEBUG": "1",
+    "LOG_LEVEL": "info"
+  }
 }
 ```
 
 - `command` — **must be an absolute path**. Relative paths are rejected to prevent path traversal attacks.
 - `args` — optional array of command-line arguments.
+- `env` — optional object of plaintext environment variables for non-sensitive values.
+
+Sensitive environment variables (API keys, tokens) are stored separately in the `env_config` column (AES-256-GCM encrypted) and merged with plaintext env vars at discovery time. Encrypted values take precedence over plaintext for duplicate keys.
 
 The process is spawned via Tokio and wrapped with `rmcp::transport::TokioChildProcess`.
+
+#### Important: PATH for npx/node-based servers
+
+When TFTSR spawns a stdio process from a macOS `.app` bundle, it runs in a **stripped environment** — the system `PATH` is not inherited. Any server that relies on `node`, `npx`, `python`, or other tools found via `PATH` must have it explicitly set.
+
+In the **Environment Variables (Plaintext)** field, add:
+
+```
+PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin
+```
+
+Adjust the paths to match where your runtime is installed (`which node` will show the correct directory).
+
+**Example: GitHub MCP server**
+
+| Field | Value |
+|-------|-------|
+| Transport | stdio |
+| Command | `/opt/homebrew/bin/npx` |
+| Arguments | `-y @modelcontextprotocol/server-github` |
+| Auth Type | none |
+| Environment Variables (Plaintext) | `PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin` |
+| Secure Environment Variables (Encrypted) | `GITHUB_PERSONAL_ACCESS_TOKEN=ghp_yourtoken` |
 
 ### http (Streamable HTTP)
 
@@ -169,11 +200,15 @@ Navigate to **Settings > MCP Servers** (`/settings/mcp`) to manage servers.
 1. Click **Add Server**.
 2. Fill in:
    - **Name** — Human-readable label (e.g., "Weather API", "Filesystem Tools").
-   - **URL** — For HTTP: the server endpoint. For stdio: can be left as the command path for display.
+   - **URL** — For HTTP: the server endpoint. For stdio: leave blank.
    - **Transport** — `stdio` or `http`.
-   - **Transport Config** — JSON. For stdio: `{"command": "/path/to/binary", "args": [...]}`. For HTTP: typically `{}`.
+   - **Command** (stdio only) — Absolute path to the executable (e.g., `/opt/homebrew/bin/npx`).
+   - **Arguments** (stdio only) — Space-separated arguments (e.g., `-y @modelcontextprotocol/server-github`).
    - **Auth Type** — `none`, `api_key`, `bearer`, or `oauth2`.
    - **Auth Value** — The token/key (will be encrypted on save). Leave blank for `none`.
+   - **Environment Variables (Plaintext)** (stdio only) — Space-separated `KEY=value` pairs for non-sensitive values. **Always include `PATH=...` for `npx`/node/python-based servers** — the app bundle does not inherit the system PATH.
+   - **Secure Environment Variables (Encrypted)** (stdio only) — Space-separated `KEY=value` pairs for sensitive values (API keys, tokens). Stored AES-256-GCM encrypted. Leave blank when editing to preserve existing values.
+   - **Custom Headers** (HTTP only) — Not yet supported by the backend transport (currently ignored); do not use for secrets yet.
    - **Enabled** — Toggle on/off.
 3. Click **Save**. The server record is persisted.
 4. Click **Discover** to connect and enumerate available tools and resources.
@@ -263,6 +298,8 @@ See [IPC Commands](IPC-Commands#mcp-servers) for full type signatures.
 - **Audit logging** — `write_audit_event` called before every MCP tool execution
 - **PII scan** — Tool call arguments are scanned for PII patterns (non-blocking warning to user)
 - **Absolute path enforcement** — stdio transport rejects relative paths to prevent traversal attacks
+- **Encrypted env vars** — sensitive environment variables stored AES-256-GCM encrypted in `env_config`; never returned to the frontend
+- **Dangerous env var blocking** — `LD_PRELOAD`, `LD_LIBRARY_PATH`, `DYLD_INSERT_LIBRARIES`, and related privilege-escalation variables are rejected at the transport layer
 - **Cascade deletes** — Removing a server removes all associated tools and resources
 - **TLS** — HTTP transport uses `reqwest` with certificate verification for HTTPS endpoints
 

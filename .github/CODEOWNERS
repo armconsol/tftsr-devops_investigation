@@ -1,0 +1,9 @@
+# All files require review from owner and GitHub Copilot
+* @Shaun-Arman-VFK387_moto @github-copilot
+
+# Rust backend
+src-tauri/ @Shaun-Arman-VFK387_moto @github-copilot
+
+# CI/CD pipelines and Docker build configs
+.github/workflows/ @Shaun-Arman-VFK387_moto @github-copilot
+.docker/ @Shaun-Arman-VFK387_moto @github-copilot

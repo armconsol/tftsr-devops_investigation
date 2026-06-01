@@ -283,6 +283,10 @@ pub fn run_migrations(conn: &Connection) -> anyhow::Result<()> {
                 FROM image_attachments ia
                 JOIN issues i ON i.id = ia.issue_id;",
         ),
+        (
+            "023_add_mcp_env_config",
+            "ALTER TABLE mcp_servers ADD COLUMN env_config TEXT",
+        ),
     ];
 
     for (name, sql) in migrations {
@@ -1232,5 +1236,40 @@ mod tests {
                 .unwrap();
             assert_eq!(count, 1, "{migration} should be recorded exactly once");
         }
+    }
+
+    // ─── Migration 023: MCP env_config ──────────────────────────────────────────
+
+    #[test]
+    fn test_023_mcp_env_config_column() {
+        let conn = setup_test_db();
+
+        let mut stmt = conn.prepare("PRAGMA table_info(mcp_servers)").unwrap();
+        let columns: Vec<String> = stmt
+            .query_map([], |row| row.get::<_, String>(1))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+
+        assert!(
+            columns.contains(&"env_config".to_string()),
+            "mcp_servers table should have env_config column after migration 023"
+        );
+    }
+
+    #[test]
+    fn test_023_idempotent() {
+        let conn = Connection::open_in_memory().unwrap();
+        run_migrations(&conn).unwrap();
+        run_migrations(&conn).unwrap();
+
+        let applied: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM _migrations WHERE name = '023_add_mcp_env_config'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(applied, 1, "023 should only be recorded once");
     }
 }
