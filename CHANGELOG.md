@@ -4,6 +4,11 @@ All notable changes to TFTSR are documented here.
 Commit types shown: feat, fix, perf, docs, refactor.
 CI, chore, and build changes are excluded.
 
+## [0.3.9] — 2026-06-01
+
+### Bug Fixes
+- **security**: Expand Password PII patterns; add regression tests
+
 ## [0.3.8] — 2026-06-01
 
 ### Bug Fixes
