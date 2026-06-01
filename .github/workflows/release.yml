@@ -474,6 +474,8 @@ jobs:
           key: ${{ runner.os }}-npm-${{ hashFiles('**/package-lock.json') }}
           restore-keys: |
             ${{ runner.os }}-npm-
+      - name: Set Rust toolchain default
+        run: rustup default 1.88.0
       - name: Build
         env:
           CC_aarch64_unknown_linux_gnu: aarch64-linux-gnu-gcc
