@@ -288,6 +288,44 @@ pub async fn chat_message(
         messages.push(context_message);
     }
 
+    // Defence-in-depth: reject messages containing unredacted file attachment content.
+    // The frontend gates this too, but we enforce it here as a hard stop.
+    if message.contains("--- Attached:") {
+        let mut in_attachment = false;
+        let mut body = String::new();
+        for line in message.lines() {
+            if line.starts_with("--- Attached:") {
+                in_attachment = true;
+            } else if in_attachment {
+                body.push_str(line);
+                body.push('\n');
+            }
+        }
+
+        if !body.is_empty() {
+            let detector = crate::pii::PiiDetector::new();
+            let spans = detector.detect(&body);
+            if !spans.is_empty() {
+                let mut types: Vec<&str> = {
+                    use std::collections::HashSet;
+                    spans
+                        .iter()
+                        .map(|s| s.pii_type.as_str())
+                        .collect::<HashSet<_>>()
+                        .into_iter()
+                        .collect()
+                };
+                types.sort_unstable();
+                return Err(format!(
+                    "PII detected in attached file content ({} items: {}). \
+                     Use Log Analysis to redact before attaching to AI messages.",
+                    spans.len(),
+                    types.join(", ")
+                ));
+            }
+        }
+    }
+
     messages.push(Message {
         role: "user".into(),
         content: message.clone(),

@@ -308,6 +308,9 @@ export const deleteImageAttachmentCmd = (attachmentId: string) =>
 export const detectPiiCmd = (logFileId: string) =>
   invoke<PiiDetectionResult>("detect_pii", { logFileId });
 
+export const scanTextForPiiCmd = (text: string) =>
+  invoke<PiiDetectionResult>("scan_text_for_pii", { text });
+
 export const applyRedactionsCmd = (logFileId: string, approvedSpanIds: string[]) =>
   invoke<RedactedLogFile>("apply_redactions", { logFileId, approvedSpanIds });
 

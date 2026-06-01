@@ -8,8 +8,8 @@ use std::path::{Path, PathBuf};
 use tauri::State;
 use tracing::warn;
 
-use crate::db::models::{AuditEntry, LogFile, LogFileSummary, PiiSpanRecord};
-use crate::pii::{self, PiiDetectionResult, PiiDetector, RedactedLogFile};
+use crate::db::models::{AuditEntry, LogFile, LogFileSummary, PiiDetectionResult, PiiSpanRecord};
+use crate::pii::{self, PiiDetector, RedactedLogFile};
 use crate::state::AppState;
 
 const MAX_LOG_FILE_BYTES: u64 = 50 * 1024 * 1024;
@@ -440,10 +440,25 @@ pub async fn detect_pii(
         }
     }
 
+    let total_pii_found = spans.len();
     Ok(PiiDetectionResult {
         log_file_id,
-        spans,
-        original_text: content,
+        detections: spans,
+        total_pii_found,
+    })
+}
+
+/// Scan arbitrary text for PII without creating any database records.
+/// Used to warn users before sending typed chat messages to AI providers.
+#[tauri::command]
+pub async fn scan_text_for_pii(text: String) -> Result<PiiDetectionResult, String> {
+    let detector = PiiDetector::new();
+    let spans = detector.detect(&text);
+    let total_pii_found = spans.len();
+    Ok(PiiDetectionResult {
+        log_file_id: String::new(),
+        detections: spans,
+        total_pii_found,
     })
 }
 

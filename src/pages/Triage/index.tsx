@@ -9,6 +9,8 @@ import { useSessionStore } from "@/stores/sessionStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import {
   chatMessageCmd,
+  detectPiiCmd,
+  scanTextForPiiCmd,
   getIssueCmd,
   getIssueMessagesCmd,
   uploadLogFileCmd,
@@ -34,7 +36,7 @@ function isCloseIntent(message: string): boolean {
   return CLOSE_PATTERNS.some((p) => lower.includes(p));
 }
 
-type PendingFile = { name: string; content: string | null };
+type PendingFile = { name: string; content: string | null; logFileId: string };
 
 export default function Triage() {
   const { id } = useParams<{ id: string }>();
@@ -45,6 +47,10 @@ export default function Triage() {
   // Track the last user message so we can save it as a resolution step when why level advances
   const lastUserMsgRef = useRef<string>("");
   const initialized = useRef(false);
+  // PII warning state: if the user sends a message that triggers a PII warning,
+  // store it here. Sending the same message a second time bypasses the warning
+  // (explicit acknowledgment). Cleared after each successful send.
+  const piiWarnedMessageRef = useRef<string>("");
 
   const { currentIssue, messages, currentWhyLevel, activeDomain, startSession, addMessage, setWhyLevel, setActiveDomain } =
     useSessionStore();
@@ -108,7 +114,7 @@ export default function Triage() {
         } catch {
           // Binary file (image) — include filename only as context
         }
-        setPendingFiles((prev) => [...prev, { name: logFile.file_name, content }]);
+        setPendingFiles((prev) => [...prev, { name: logFile.file_name, content, logFileId: logFile.id }]);
       }
     } catch (e) {
       setError(`Attachment failed: ${String(e)}`);
@@ -141,6 +147,49 @@ export default function Triage() {
 
     setIsLoading(true);
     setError(null);
+
+    // PII gate: scan each text attachment before it is sent to an AI provider.
+    // Images (content === null) have no text to scan.
+    for (const f of pendingFiles) {
+      if (f.content === null) continue;
+      try {
+        const result = await detectPiiCmd(f.logFileId);
+        if (result.total_pii_found > 0) {
+          const types = [...new Set(result.detections.map((d) => d.pii_type))].join(", ");
+          setError(
+            `PII detected in "${f.name}" (${result.total_pii_found} item${result.total_pii_found !== 1 ? "s" : ""}: ${types}). ` +
+              `Open Log Analysis to redact before attaching.`
+          );
+          setIsLoading(false);
+          return;
+        }
+      } catch (e) {
+        setError(`PII scan failed for "${f.name}": ${String(e)}`);
+        setIsLoading(false);
+        return;
+      }
+    }
+
+    // PII warning for typed message text. Unlike attachments (hard block), typed
+    // messages only warn once — sending the same text a second time is treated as
+    // explicit acknowledgment and proceeds.
+    if (message.trim() && message !== piiWarnedMessageRef.current) {
+      try {
+        const textResult = await scanTextForPiiCmd(message);
+        if (textResult.total_pii_found > 0) {
+          const types = [...new Set(textResult.detections.map((d) => d.pii_type))].join(", ");
+          piiWarnedMessageRef.current = message;
+          setError(
+            `Your message may contain sensitive data (${types} detected). ` +
+              `Edit your message to remove it, or send again to proceed.`
+          );
+          setIsLoading(false);
+          return;
+        }
+      } catch {
+        // Non-fatal: if the scan fails, do not block the send
+      }
+    }
 
     // Build AI context: user text + file contents; show only text + filenames in chat UI
     const fileContext = pendingFiles
@@ -214,6 +263,7 @@ export default function Triage() {
       setError(String(e));
     } finally {
       setIsLoading(false);
+      piiWarnedMessageRef.current = "";
     }
   };
 
