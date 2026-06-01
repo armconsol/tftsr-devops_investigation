@@ -2,14 +2,12 @@ import { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { CheckCircle, ChevronRight } from "lucide-react";
 import { open } from "@tauri-apps/plugin-dialog";
-import { readTextFile } from "@tauri-apps/plugin-fs";
 import { ChatWindow } from "@/components/ChatWindow";
 import { TriageProgress } from "@/components/TriageProgress";
 import { useSessionStore } from "@/stores/sessionStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import {
   chatMessageCmd,
-  detectPiiCmd,
   scanTextForPiiCmd,
   getIssueCmd,
   getIssueMessagesCmd,
@@ -36,7 +34,7 @@ function isCloseIntent(message: string): boolean {
   return CLOSE_PATTERNS.some((p) => lower.includes(p));
 }
 
-type PendingFile = { name: string; content: string | null; logFileId: string };
+type PendingFile = { name: string; logFileId: string };
 
 export default function Triage() {
   const { id } = useParams<{ id: string }>();
@@ -47,10 +45,6 @@ export default function Triage() {
   // Track the last user message so we can save it as a resolution step when why level advances
   const lastUserMsgRef = useRef<string>("");
   const initialized = useRef(false);
-  // PII warning state: if the user sends a message that triggers a PII warning,
-  // store it here. Sending the same message a second time bypasses the warning
-  // (explicit acknowledgment). Cleared after each successful send.
-  const piiWarnedMessageRef = useRef<string>("");
 
   const { currentIssue, messages, currentWhyLevel, activeDomain, startSession, addMessage, setWhyLevel, setActiveDomain } =
     useSessionStore();
@@ -107,14 +101,7 @@ export default function Triage() {
       const paths = Array.isArray(selected) ? selected : [selected];
       for (const filePath of paths) {
         const logFile = await uploadLogFileCmd(id, filePath);
-        let content: string | null = null;
-        try {
-          const raw = await readTextFile(filePath);
-          content = raw.slice(0, 8000); // cap at 8 KB to keep context manageable
-        } catch {
-          // Binary file (image) — include filename only as context
-        }
-        setPendingFiles((prev) => [...prev, { name: logFile.file_name, content, logFileId: logFile.id }]);
+        setPendingFiles((prev) => [...prev, { name: logFile.file_name, logFileId: logFile.id }]);
       }
     } catch (e) {
       setError(`Attachment failed: ${String(e)}`);
@@ -148,62 +135,29 @@ export default function Triage() {
     setIsLoading(true);
     setError(null);
 
-    // PII gate: scan each text attachment before it is sent to an AI provider.
-    // Images (content === null) have no text to scan.
-    for (const f of pendingFiles) {
-      if (f.content === null) continue;
-      try {
-        const result = await detectPiiCmd(f.logFileId);
-        if (result.total_pii_found > 0) {
-          const types = [...new Set(result.detections.map((d) => d.pii_type))].join(", ");
-          setError(
-            `PII detected in "${f.name}" (${result.total_pii_found} item${result.total_pii_found !== 1 ? "s" : ""}: ${types}). ` +
-              `Open Log Analysis to redact before attaching.`
-          );
-          setIsLoading(false);
-          return;
-        }
-      } catch (e) {
-        setError(`PII scan failed for "${f.name}": ${String(e)}`);
-        setIsLoading(false);
-        return;
-      }
-    }
-
-    // PII warning for typed message text. Unlike attachments (hard block), typed
-    // messages only warn once — sending the same text a second time is treated as
-    // explicit acknowledgment and proceeds.
-    if (message.trim() && message !== piiWarnedMessageRef.current) {
+    // Auto-redact PII in typed message text before sending to AI.
+    // Spans are replaced in reverse-start-offset order to preserve byte positions.
+    let outMessage = message;
+    if (message.trim()) {
       try {
         const textResult = await scanTextForPiiCmd(message);
         if (textResult.total_pii_found > 0) {
-          const types = [...new Set(textResult.detections.map((d) => d.pii_type))].join(", ");
-          piiWarnedMessageRef.current = message;
-          setError(
-            `Your message may contain sensitive data (${types} detected). ` +
-              `Edit your message to remove it, or send again to proceed.`
-          );
-          setIsLoading(false);
-          return;
+          const sorted = [...textResult.detections].sort((a, b) => b.start - a.start);
+          let redacted = message;
+          for (const span of sorted) {
+            redacted = redacted.slice(0, span.start) + span.replacement + redacted.slice(span.end);
+          }
+          outMessage = redacted;
         }
       } catch {
-        // Non-fatal: if the scan fails, do not block the send
+        // Non-fatal: if the scan fails, send original
       }
     }
 
-    // Build AI context: user text + file contents; show only text + filenames in chat UI
-    const fileContext = pendingFiles
-      .map((f) =>
-        f.content
-          ? `\n\n--- Attached: ${f.name} ---\n${f.content}`
-          : `\n\n[Image attached: ${f.name} — describe what you see if relevant]`
-      )
-      .join("");
-    const aiMessage = pendingFiles.length > 0 ? `${message}${fileContext}` : message;
     const displayContent =
       pendingFiles.length > 0
-        ? `${message}${message ? "\n" : ""}📎 ${pendingFiles.map((f) => f.name).join(", ")}`
-        : message;
+        ? `${outMessage}${outMessage ? "\n" : ""}📎 ${pendingFiles.map((f) => f.name).join(", ")}`
+        : outMessage;
 
     const userMsg: TriageMessage = {
       id: `user-${Date.now()}`,
@@ -213,23 +167,24 @@ export default function Triage() {
       why_level: currentWhyLevel,
       created_at: Date.now(),
     };
-    lastUserMsgRef.current = message;
+    lastUserMsgRef.current = outMessage;
     addMessage(userMsg);
+    const logFileIds = pendingFiles.map((f) => f.logFileId);
     setPendingFiles([]);
 
     try {
       // Detect domain from conversation messages
       const messageContents = messages.map((m) => m.content);
       const detectedDomain = detectDomain(messageContents);
-      
+
       // Update active domain if it has changed
       if (detectedDomain !== activeDomain && detectedDomain !== "general") {
         setActiveDomain(detectedDomain);
       }
-      
+
       // Use the active domain for the system prompt
       const systemPrompt = activeDomain ? getDomainPrompt(activeDomain) : undefined;
-      const response = await chatMessageCmd(id, aiMessage, provider, systemPrompt);
+      const response = await chatMessageCmd(id, outMessage, logFileIds, provider, systemPrompt);
       const assistantMsg: TriageMessage = {
         id: `asst-${Date.now()}`,
         issue_id: id,
@@ -263,7 +218,6 @@ export default function Triage() {
       setError(String(e));
     } finally {
       setIsLoading(false);
-      piiWarnedMessageRef.current = "";
     }
   };
 

@@ -271,8 +271,20 @@ export interface TriageMessage {
 export const analyzeLogsCmd = (issueId: string, logFileIds: string[], providerConfig: ProviderConfig) =>
   invoke<AnalysisResult>("analyze_logs", { issueId, logFileIds, providerConfig });
 
-export const chatMessageCmd = (issueId: string, message: string, providerConfig: ProviderConfig, systemPrompt?: string) =>
-  invoke<ChatResponse>("chat_message", { issueId, message, providerConfig, systemPrompt: systemPrompt ?? null });
+export const chatMessageCmd = (
+  issueId: string,
+  message: string,
+  logFileIds: string[],
+  providerConfig: ProviderConfig,
+  systemPrompt?: string
+) =>
+  invoke<ChatResponse>("chat_message", {
+    issueId,
+    message,
+    logFileIds: logFileIds.length > 0 ? logFileIds : null,
+    providerConfig,
+    systemPrompt: systemPrompt ?? null,
+  });
 
 export const listProvidersCmd = () => invoke<ProviderInfo[]>("list_providers");
 

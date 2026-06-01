@@ -165,6 +165,7 @@ fn extract_list(text: &str, header: &str) -> Vec<String> {
 pub async fn chat_message(
     issue_id: String,
     message: String,
+    log_file_ids: Option<Vec<String>>,
     provider_config: ProviderConfig,
     system_prompt: Option<String>,
     app_handle: tauri::AppHandle,
@@ -233,6 +234,54 @@ pub async fn chat_message(
             .collect()
     };
 
+    // Load attachment files from DB, scan for PII, and embed clean content into the message.
+    // File content never passes through the frontend — the backend is the single source of truth.
+    let full_message = {
+        let files: Vec<(String, String)> = if let Some(ref ids) = log_file_ids {
+            let db = state.db.lock().map_err(|e| e.to_string())?;
+            let mut v = Vec::new();
+            for file_id in ids {
+                if let Ok((name, path)) = db
+                    .prepare("SELECT file_name, file_path FROM log_files WHERE id = ?1")
+                    .and_then(|mut s| {
+                        s.query_row([file_id], |row| {
+                            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                        })
+                    })
+                {
+                    v.push((name, path));
+                }
+            }
+            v
+        } else {
+            vec![]
+        };
+
+        let mut msg = message.clone();
+        for (file_name, file_path) in &files {
+            let content = std::fs::read_to_string(file_path).unwrap_or_default();
+            let preview = &content[..content.len().min(8000)];
+            let spans = crate::pii::PiiDetector::new().detect(preview);
+            let body = if spans.is_empty() {
+                preview.to_string()
+            } else {
+                let types: std::collections::HashSet<&str> =
+                    spans.iter().map(|s| s.pii_type.as_str()).collect();
+                let mut type_list: Vec<&str> = types.into_iter().collect();
+                type_list.sort_unstable();
+                warn!(
+                    file_name = %file_name,
+                    pii_types = ?type_list,
+                    pii_count = spans.len(),
+                    "PII detected in chat attachment — auto-redacting before AI send"
+                );
+                crate::pii::apply_redactions(preview, &spans)
+            };
+            msg.push_str(&format!("\n\n--- Attached: {} ---\n{}", file_name, body));
+        }
+        msg
+    };
+
     let provider = create_provider(&provider_config);
 
     // Search integration sources for relevant context
@@ -288,47 +337,9 @@ pub async fn chat_message(
         messages.push(context_message);
     }
 
-    // Defence-in-depth: reject messages containing unredacted file attachment content.
-    // The frontend gates this too, but we enforce it here as a hard stop.
-    if message.contains("--- Attached:") {
-        let mut in_attachment = false;
-        let mut body = String::new();
-        for line in message.lines() {
-            if line.starts_with("--- Attached:") {
-                in_attachment = true;
-            } else if in_attachment {
-                body.push_str(line);
-                body.push('\n');
-            }
-        }
-
-        if !body.is_empty() {
-            let detector = crate::pii::PiiDetector::new();
-            let spans = detector.detect(&body);
-            if !spans.is_empty() {
-                let mut types: Vec<&str> = {
-                    use std::collections::HashSet;
-                    spans
-                        .iter()
-                        .map(|s| s.pii_type.as_str())
-                        .collect::<HashSet<_>>()
-                        .into_iter()
-                        .collect()
-                };
-                types.sort_unstable();
-                return Err(format!(
-                    "PII detected in attached file content ({} items: {}). \
-                     Use Log Analysis to redact before attaching to AI messages.",
-                    spans.len(),
-                    types.join(", ")
-                ));
-            }
-        }
-    }
-
     messages.push(Message {
         role: "user".into(),
-        content: message.clone(),
+        content: full_message.clone(),
         tool_call_id: None,
         tool_calls: None,
     });
@@ -400,7 +411,7 @@ pub async fn chat_message(
     // Save both user message and response to DB
     {
         let db = state.db.lock().map_err(|e| e.to_string())?;
-        let user_msg = AiMessage::new(conversation_id.clone(), "user".to_string(), message);
+        let user_msg = AiMessage::new(conversation_id.clone(), "user".to_string(), full_message);
         let asst_msg = AiMessage::new(
             conversation_id,
             "assistant".to_string(),
