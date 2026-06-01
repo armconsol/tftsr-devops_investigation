@@ -22,10 +22,22 @@ pub fn get_patterns() -> Vec<(PiiType, Regex)> {
             )
             .unwrap(),
         ),
-        // Password
+        // Password (key=value / config file form) — word-boundary anchored
         (
             PiiType::Password,
-            Regex::new(r"(?i)(?:password|passwd|pwd)\s*[=:]\s*\S+").unwrap(),
+            Regex::new(
+                r"(?i)\b(?:password|passwd|passphrase|pass|pwd|secret)\s*[=:]\s*\S+",
+            )
+            .unwrap(),
+        ),
+        // Password (natural language form): "password is X", "password X"
+        // Value must contain at least one digit or special char to avoid flagging plain words.
+        (
+            PiiType::Password,
+            Regex::new(
+                r"(?i)\b(?:password|passwd|passphrase)\s+(?:is\s+|was\s+)?[A-Za-z0-9!@#$%^&*_\-+=@#,.]*[0-9!@#$%^&*_\-+=@#][A-Za-z0-9!@#$%^&*_\-+=@#,.]*",
+            )
+            .unwrap(),
         ),
         // SSN (check before phone to avoid partial matches)
         (

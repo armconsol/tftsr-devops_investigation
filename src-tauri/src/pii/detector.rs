@@ -87,6 +87,91 @@ mod tests {
     }
 
     #[test]
+    fn test_detect_password_keyword() {
+        let detector = PiiDetector::new();
+        // Full keyword forms
+        assert!(detector
+            .detect("password: hunter2")
+            .iter()
+            .any(|s| s.pii_type == "Password"));
+        assert!(detector
+            .detect("passwd=hunter2")
+            .iter()
+            .any(|s| s.pii_type == "Password"));
+        assert!(detector
+            .detect("pwd: hunter2")
+            .iter()
+            .any(|s| s.pii_type == "Password"));
+    }
+
+    #[test]
+    fn test_detect_pass_abbreviation() {
+        let detector = PiiDetector::new();
+        // Abbreviated form used in credential files (was the failing case)
+        let text = "user: alpha\npass: abc123!!";
+        let spans = detector.detect(text);
+        assert!(
+            spans.iter().any(|s| s.pii_type == "Password"),
+            "Expected Password span for 'pass: abc123!!' — got: {spans:?}"
+        );
+    }
+
+    #[test]
+    fn test_detect_secret_keyword() {
+        let detector = PiiDetector::new();
+        assert!(detector
+            .detect("secret: mysecretvalue")
+            .iter()
+            .any(|s| s.pii_type == "Password"));
+        assert!(detector
+            .detect("passphrase: correct horse battery staple")
+            .iter()
+            .any(|s| s.pii_type == "Password"));
+    }
+
+    #[test]
+    fn test_detect_password_natural_language() {
+        let detector = PiiDetector::new();
+        // Direct juxtaposition: "password <value>" (was the second failing case)
+        let spans = detector.detect("Is the password password123 good");
+        assert!(
+            spans.iter().any(|s| s.pii_type == "Password"),
+            "Expected Password span for natural-language 'password password123' — got: {spans:?}"
+        );
+        // "password is X"
+        assert!(detector
+            .detect("my password is hunter2")
+            .iter()
+            .any(|s| s.pii_type == "Password"));
+        // Value must have digit or special — plain words should not trigger
+        assert!(
+            !detector
+                .detect("password strength")
+                .iter()
+                .any(|s| s.pii_type == "Password"),
+            "False positive: 'password strength' should not match"
+        );
+        assert!(
+            !detector
+                .detect("password policy")
+                .iter()
+                .any(|s| s.pii_type == "Password"),
+            "False positive: 'password policy' should not match"
+        );
+    }
+
+    #[test]
+    fn test_password_no_false_positive_bypass() {
+        let detector = PiiDetector::new();
+        // "bypass" contains "pass" as a substring — must NOT match
+        let spans = detector.detect("bypass: enabled");
+        assert!(
+            !spans.iter().any(|s| s.pii_type == "Password"),
+            "False positive: 'bypass:' should not match Password pattern"
+        );
+    }
+
+    #[test]
     fn test_no_overlap() {
         let detector = PiiDetector::new();
         let text = "IP: 192.168.1.1 user: test@test.com";
