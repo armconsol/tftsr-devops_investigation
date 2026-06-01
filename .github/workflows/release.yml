@@ -251,6 +251,8 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
+      - name: Mark workspace as safe for git
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
       - name: Cache cargo registry
         uses: actions/cache@v4
         with:
@@ -290,8 +292,7 @@ jobs:
           printf '%s\n' "$ARTIFACTS" | while IFS= read -r f; do
             NAME="linux-amd64-$(basename "$f")"
             echo "Uploading $NAME..."
-            gh release delete-asset "$TAG" "$NAME" --yes 2>/dev/null || true
-            gh release upload "$TAG" "$f#$NAME"
+            gh release upload "$TAG" "$f#$NAME" --clobber
             echo "✓ Uploaded $NAME"
           done
 
@@ -308,6 +309,8 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
+      - name: Mark workspace as safe for git
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
       - name: Cache cargo registry
         uses: actions/cache@v4
         with:
@@ -352,8 +355,7 @@ jobs:
           printf '%s\n' "$ARTIFACTS" | while IFS= read -r f; do
             NAME="windows-amd64-$(basename "$f")"
             echo "Uploading $NAME..."
-            gh release delete-asset "$TAG" "$NAME" --yes 2>/dev/null || true
-            gh release upload "$TAG" "$f#$NAME"
+            gh release upload "$TAG" "$f#$NAME" --clobber
             echo "✓ Uploaded $NAME"
           done
 
@@ -397,53 +399,7 @@ jobs:
           printf '%s\n' "$ARTIFACTS" | while IFS= read -r f; do
             NAME="macos-arm64-$(basename "$f")"
             echo "Uploading $NAME..."
-            gh release delete-asset "$TAG" "$NAME" --yes 2>/dev/null || true
-            gh release upload "$TAG" "$f#$NAME"
-            echo "✓ Uploaded $NAME"
-          done
-
-  build-macos-intel:
-    needs: autotag
-    runs-on: macos-13
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
-      - name: Build
-        env:
-          MACOSX_DEPLOYMENT_TARGET: "10.15"
-        run: |
-          npm ci --legacy-peer-deps
-          rustup target add x86_64-apple-darwin
-          CI=true npx tauri build --target x86_64-apple-darwin --bundles app
-          APP=$(find src-tauri/target/x86_64-apple-darwin/release/bundle/macos -maxdepth 1 -type d -name "*.app" | head -n 1)
-          if [ -z "$APP" ]; then
-            echo "ERROR: Could not find macOS app bundle"
-            exit 1
-          fi
-          APP_NAME=$(basename "$APP" .app)
-          codesign --deep --force --sign - "$APP"
-          mkdir -p src-tauri/target/x86_64-apple-darwin/release/bundle/dmg
-          DMG=src-tauri/target/x86_64-apple-darwin/release/bundle/dmg/${APP_NAME}.dmg
-          hdiutil create -volname "$APP_NAME" -srcfolder "$APP" -ov -format UDZO "$DMG"
-      - name: Upload artifacts to GitHub release
-        env:
-          RELEASE_TAG: ${{ needs.autotag.outputs.release_tag }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -eu
-          TAG="${RELEASE_TAG}"
-          ARTIFACTS=$(find src-tauri/target/x86_64-apple-darwin/release/bundle -type f -name "*.dmg")
-          if [ -z "$ARTIFACTS" ]; then
-            echo "ERROR: No macOS Intel DMG artifacts found."
-            exit 1
-          fi
-          printf '%s\n' "$ARTIFACTS" | while IFS= read -r f; do
-            NAME="macos-intel-$(basename "$f")"
-            echo "Uploading $NAME..."
-            gh release delete-asset "$TAG" "$NAME" --yes 2>/dev/null || true
-            gh release upload "$TAG" "$f#$NAME"
+            gh release upload "$TAG" "$f#$NAME" --clobber
             echo "✓ Uploaded $NAME"
           done
 
@@ -460,6 +416,8 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
+      - name: Mark workspace as safe for git
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
       - name: Cache cargo registry
         uses: actions/cache@v4
         with:
@@ -517,7 +475,6 @@ jobs:
           printf '%s\n' "$ARTIFACTS" | while IFS= read -r f; do
             NAME="linux-arm64-$(basename "$f")"
             echo "Uploading $NAME..."
-            gh release delete-asset "$TAG" "$NAME" --yes 2>/dev/null || true
-            gh release upload "$TAG" "$f#$NAME"
+            gh release upload "$TAG" "$f#$NAME" --clobber
             echo "✓ Uploaded $NAME"
           done
