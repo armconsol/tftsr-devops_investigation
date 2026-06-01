@@ -26,10 +26,10 @@ describe("auto-tag workflow release triggering", () => {
     expect(workflow).toContain("git tag --sort=-version:refname");
   });
 
-  it("also includes macOS Intel build job", () => {
+  it("uses --clobber for artifact uploads to handle re-runs cleanly", () => {
     const workflow = readFileSync(autoTagWorkflowPath, "utf-8");
 
-    expect(workflow).toContain("build-macos-intel:");
-    expect(workflow).toContain("macos-13");
+    const clobberCount = (workflow.match(/--clobber/g) ?? []).length;
+    expect(clobberCount).toBeGreaterThanOrEqual(4);
   });
 });
