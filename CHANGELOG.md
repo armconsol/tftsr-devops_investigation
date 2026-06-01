@@ -4,6 +4,17 @@ All notable changes to TFTSR are documented here.
 Commit types shown: feat, fix, perf, docs, refactor.
 CI, chore, and build changes are excluded.
 
+## [0.3.10] — 2026-06-01
+
+### Bug Fixes
+- **mcp**: Add env encryption to store layer
+- **mcp**: Parse and merge env vars in discovery layer
+- **mcp**: Add environment variable and HTTP header support for MCP servers
+- **mcp**: Improve UX clarity for encrypted env vars during edit
+- **mcp**: Change plaintext env input to type=text
+- **mcp**: Add validation to block dangerous environment variables
+- **mcp**: Fix test_allows_safe_env_vars test failure
+
 ## [0.3.9] — 2026-06-01
 
 ### Bug Fixes
