@@ -54,6 +54,42 @@ function parseTransportConfig(config: string): { command: string; args: string[]
   }
 }
 
+function parseEnvVars(input: string): Record<string, string> {
+  const result: Record<string, string> = {};
+  const pairs = input.trim().split(/\s+/).filter(Boolean);
+  for (const pair of pairs) {
+    const [key, ...valueParts] = pair.split("=");
+    if (key) {
+      result[key] = valueParts.join("=") || "";
+    }
+  }
+  return result;
+}
+
+function formatEnvVars(obj: Record<string, string>): string {
+  return Object.entries(obj)
+    .map(([k, v]) => `${k}=${v}`)
+    .join(" ");
+}
+
+function parseHeaders(input: string): Record<string, string> {
+  const result: Record<string, string> = {};
+  const pairs = input.trim().split(/\s+/).filter(Boolean);
+  for (const pair of pairs) {
+    const [key, ...valueParts] = pair.split(":");
+    if (key) {
+      result[key] = valueParts.join(":") || "";
+    }
+  }
+  return result;
+}
+
+function formatHeaders(obj: Record<string, string>): string {
+  return Object.entries(obj)
+    .map(([k, v]) => `${k}:${v}`)
+    .join(" ");
+}
+
 type StatusKey = McpServerStatus["status"];
 
 const statusColors: Record<StatusKey, string> = {
@@ -72,6 +108,9 @@ interface ServerForm {
   auth_type: "none" | "api_key" | "bearer" | "oauth2";
   auth_value: string;
   enabled: boolean;
+  plaintext_env: string;
+  encrypted_env: string;
+  http_headers: string;
 }
 
 const emptyForm: ServerForm = {
@@ -83,6 +122,9 @@ const emptyForm: ServerForm = {
   auth_type: "none",
   auth_value: "",
   enabled: true,
+  plaintext_env: "",
+  encrypted_env: "",
+  http_headers: "",
 };
 
 export default function MCPServers() {
@@ -155,6 +197,21 @@ export default function MCPServers() {
 
   const startEdit = (server: McpServer) => {
     const parsed = parseTransportConfig(server.transport_config);
+
+    // Parse plaintext env from transport_config.env
+    let plaintextEnv = "";
+    let httpHeaders = "";
+    try {
+      const config = JSON.parse(server.transport_config);
+      if (server.transport_type === "stdio" && config.env) {
+        plaintextEnv = formatEnvVars(config.env);
+      } else if (server.transport_type === "http" && config.headers) {
+        httpHeaders = formatHeaders(config.headers);
+      }
+    } catch {
+      // Invalid JSON, ignore
+    }
+
     setForm({
       name: server.name,
       url: server.url,
@@ -164,6 +221,9 @@ export default function MCPServers() {
       auth_type: server.auth_type,
       auth_value: "",
       enabled: server.enabled,
+      plaintext_env: plaintextEnv,
+      encrypted_env: "", // Never populate (security: don't show encrypted values)
+      http_headers: httpHeaders,
     });
     setEditServer(server);
     setIsAdding(true);
@@ -180,10 +240,25 @@ export default function MCPServers() {
     if (form.transport_type === "http" && !form.url) return;
     if (form.transport_type === "stdio" && !form.command) return;
 
+    // Build transport_config with env vars or headers
+    const plaintextEnvObj = parseEnvVars(form.plaintext_env);
+    const httpHeadersObj = parseHeaders(form.http_headers);
+
     const transportConfig =
       form.transport_type === "stdio"
-        ? JSON.stringify({ command: form.command, args: form.args.split(/\s+/).filter(Boolean) })
-        : "{}";
+        ? JSON.stringify({
+            command: form.command,
+            args: form.args.split(/\s+/).filter(Boolean),
+            env: plaintextEnvObj,
+          })
+        : JSON.stringify({
+            headers: httpHeadersObj,
+          });
+
+    // Build env_config (encrypted env) as JSON string
+    const encryptedEnvObj = parseEnvVars(form.encrypted_env);
+    const envConfig =
+      Object.keys(encryptedEnvObj).length > 0 ? JSON.stringify(encryptedEnvObj) : undefined;
 
     const url = form.transport_type === "http" ? form.url : "";
 
@@ -196,6 +271,7 @@ export default function MCPServers() {
           transport_config: transportConfig,
           auth_type: form.auth_type,
           enabled: form.enabled,
+          env_config: envConfig,
         };
         if (form.auth_value) {
           request.auth_value = form.auth_value;
@@ -210,6 +286,7 @@ export default function MCPServers() {
           auth_type: form.auth_type,
           auth_value: form.auth_value || undefined,
           enabled: form.enabled,
+          env_config: envConfig,
         };
         await createMcpServerCmd(request);
       }
@@ -473,6 +550,62 @@ export default function MCPServers() {
                   Opens a browser window to complete OAuth2 authentication.
                 </p>
               </div>
+            )}
+
+            {form.transport_type === "stdio" && (
+              <>
+                <Separator />
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label>Environment Variables (Plaintext)</Label>
+                    <p className="text-xs text-muted-foreground">
+                      Space-separated KEY=value pairs for non-sensitive values (e.g., DEBUG=1 LOG_LEVEL=info)
+                    </p>
+                    <Input
+                      type="password"
+                      value={form.plaintext_env}
+                      onChange={(e) => setForm({ ...form, plaintext_env: e.target.value })}
+                      placeholder="KEY1=value1 KEY2=value2"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Secure Environment Variables (Encrypted)</Label>
+                    <p className="text-xs text-muted-foreground">
+                      For sensitive values like API keys. Space-separated KEY=value pairs.
+                    </p>
+                    <Input
+                      type="password"
+                      value={form.encrypted_env}
+                      onChange={(e) => setForm({ ...form, encrypted_env: e.target.value })}
+                      placeholder="API_KEY=secret TOKEN=xyz"
+                    />
+                    {editServer && (
+                      <p className="text-xs text-yellow-600 dark:text-yellow-400 mt-1">
+                        Leave blank to keep existing encrypted values
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </>
+            )}
+
+            {form.transport_type === "http" && (
+              <>
+                <Separator />
+                <div className="space-y-2">
+                  <Label>Custom Headers (Optional)</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Space-separated KEY:value pairs for custom HTTP headers (e.g., X-API-Key:secret X-Custom:value)
+                  </p>
+                  <Input
+                    type="password"
+                    value={form.http_headers}
+                    onChange={(e) => setForm({ ...form, http_headers: e.target.value })}
+                    placeholder="X-API-Key:secret X-Custom-Header:value"
+                  />
+                </div>
+              </>
             )}
 
             <Separator />

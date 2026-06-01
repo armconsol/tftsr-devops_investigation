@@ -562,6 +562,7 @@ export interface CreateMcpServerRequest {
   auth_type: "none" | "api_key" | "bearer" | "oauth2";
   auth_value?: string;
   enabled: boolean;
+  env_config?: string;
 }
 
 export interface UpdateMcpServerRequest {
@@ -572,6 +573,7 @@ export interface UpdateMcpServerRequest {
   auth_type?: "none" | "api_key" | "bearer" | "oauth2";
   auth_value?: string;
   enabled?: boolean;
+  env_config?: string;
 }
 
 // ─── MCP Commands ─────────────────────────────────────────────────────────────
