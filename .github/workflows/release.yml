@@ -464,23 +464,30 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
-            ~/.cargo/registry/index
-            ~/.cargo/registry/cache
-            ~/.cargo/git/db
+            /root/.cargo/registry/index
+            /root/.cargo/registry/cache
+            /root/.cargo/git/db
           key: ${{ runner.os }}-cargo-arm64-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-arm64-
       - name: Cache npm
         uses: actions/cache@v4
         with:
-          path: ~/.npm
+          path: /root/.npm
           key: ${{ runner.os }}-npm-${{ hashFiles('**/package-lock.json') }}
           restore-keys: |
             ${{ runner.os }}-npm-
       - name: Set Rust toolchain default
-        run: rustup default 1.88.0
+        env:
+          RUSTUP_HOME: /root/.rustup
+          CARGO_HOME: /root/.cargo
+        run: |
+          rustup default 1.88.0
+          rustup target add aarch64-unknown-linux-gnu
       - name: Build
         env:
+          RUSTUP_HOME: /root/.rustup
+          CARGO_HOME: /root/.cargo
           CC_aarch64_unknown_linux_gnu: aarch64-linux-gnu-gcc
           CXX_aarch64_unknown_linux_gnu: aarch64-linux-gnu-g++
           AR_aarch64_unknown_linux_gnu: aarch64-linux-gnu-ar
