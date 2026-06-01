@@ -34,6 +34,8 @@ export interface ChatResponse {
   content: string;
   model: string;
   usage?: TokenUsage;
+  /** What was stored in the DB — may be auto-redacted. Use this for display and history. */
+  user_message?: string;
 }
 
 export interface AnalysisResult {

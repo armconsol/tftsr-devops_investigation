@@ -100,6 +100,7 @@ impl Provider for OllamaProvider {
             content,
             model: config.model.clone(),
             usage,
+            user_message: None,
             tool_calls: None,
         })
     }

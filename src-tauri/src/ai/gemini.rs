@@ -119,6 +119,7 @@ impl Provider for GeminiProvider {
             content,
             model: config.model.clone(),
             usage,
+            user_message: None,
             tool_calls: None,
         })
     }

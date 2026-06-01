@@ -197,6 +197,7 @@ impl OpenAiProvider {
             content,
             model: config.model.clone(),
             usage,
+            user_message: None,
             tool_calls,
         })
     }
@@ -397,6 +398,7 @@ impl OpenAiProvider {
             content,
             model: config.model.clone(),
             usage: None, // This custom REST contract doesn't provide token usage in response
+            user_message: None,
             tool_calls,
         })
     }

@@ -8,7 +8,6 @@ import { useSessionStore } from "@/stores/sessionStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import {
   chatMessageCmd,
-  scanTextForPiiCmd,
   getIssueCmd,
   getIssueMessagesCmd,
   uploadLogFileCmd,
@@ -135,29 +134,10 @@ export default function Triage() {
     setIsLoading(true);
     setError(null);
 
-    // Auto-redact PII in typed message text before sending to AI.
-    // Spans are replaced in reverse-start-offset order to preserve byte positions.
-    let outMessage = message;
-    if (message.trim()) {
-      try {
-        const textResult = await scanTextForPiiCmd(message);
-        if (textResult.total_pii_found > 0) {
-          const sorted = [...textResult.detections].sort((a, b) => b.start - a.start);
-          let redacted = message;
-          for (const span of sorted) {
-            redacted = redacted.slice(0, span.start) + span.replacement + redacted.slice(span.end);
-          }
-          outMessage = redacted;
-        }
-      } catch {
-        // Non-fatal: if the scan fails, send original
-      }
-    }
-
     const displayContent =
       pendingFiles.length > 0
-        ? `${outMessage}${outMessage ? "\n" : ""}📎 ${pendingFiles.map((f) => f.name).join(", ")}`
-        : outMessage;
+        ? `${message}${message ? "\n" : ""}📎 ${pendingFiles.map((f) => f.name).join(", ")}`
+        : message;
 
     const userMsg: TriageMessage = {
       id: `user-${Date.now()}`,
@@ -167,7 +147,7 @@ export default function Triage() {
       why_level: currentWhyLevel,
       created_at: Date.now(),
     };
-    lastUserMsgRef.current = outMessage;
+    lastUserMsgRef.current = message;
     addMessage(userMsg);
     const logFileIds = pendingFiles.map((f) => f.logFileId);
     setPendingFiles([]);
@@ -184,7 +164,8 @@ export default function Triage() {
 
       // Use the active domain for the system prompt
       const systemPrompt = activeDomain ? getDomainPrompt(activeDomain) : undefined;
-      const response = await chatMessageCmd(id, outMessage, logFileIds, provider, systemPrompt);
+      // Backend auto-redacts PII in both message text and attachments before sending to AI.
+      const response = await chatMessageCmd(id, message, logFileIds, provider, systemPrompt);
       const assistantMsg: TriageMessage = {
         id: `asst-${Date.now()}`,
         issue_id: id,
