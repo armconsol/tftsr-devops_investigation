@@ -4,6 +4,16 @@ All notable changes to TFTSR are documented here.
 Commit types shown: feat, fix, perf, docs, refactor.
 CI, chore, and build changes are excluded.
 
+## [0.3.8] — 2026-06-01
+
+### Bug Fixes
+- **security**: Block PII in chat attachments and typed messages
+- **security**: Address PR review — move attachment handling to backend, auto-redact PII
+- **security**: Backend-only PII redaction; fix fmt CI failure
+- **security**: Frontend attachment scan notice, bubble redaction update, fmt fix
+- **security**: Full-content PII scan, clippy, IPC null fix, scan size cap
+- Audit PII redaction metadata, safe bubble update, update ticket
+
 ## [0.3.7] — 2026-05-31
 
 ### Bug Fixes
