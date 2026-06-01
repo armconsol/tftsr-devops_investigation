@@ -103,9 +103,16 @@ async fn discover_server_inner(
         other => return Err(format!("Unknown transport type: {other}")),
     };
 
-    // List tools and resources
+    // List tools and resources (resources are optional — not all servers implement them)
     let tools = list_tools(&conn, &server.id, &server.name).await?;
-    let resources = list_resources(&conn, &server.id).await?;
+    let resources = match list_resources(&conn, &server.id).await {
+        Ok(r) => r,
+        Err(e) if e.contains("-32601") || e.contains("Method not found") => {
+            info!(server_id = %server.id, "Server does not support resources/list (optional)");
+            vec![]
+        }
+        Err(e) => return Err(e),
+    };
 
     // Persist to DB
     {
