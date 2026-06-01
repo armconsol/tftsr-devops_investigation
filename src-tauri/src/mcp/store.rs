@@ -126,8 +126,8 @@ pub fn update_server(
 
     let new_encrypted_env = match &req.env_config {
         Some(env_json) if !env_json.trim().is_empty() => Some(encrypt_token(env_json)?),
-        Some(_) => None,  // Empty string = clear env_config
-        None => existing.env_config.clone(),  // No update requested
+        Some(_) => None,                     // Empty string = clear env_config
+        None => existing.env_config.clone(), // No update requested
     };
 
     conn.execute(
@@ -342,8 +342,9 @@ pub fn get_server_env_config(
     match encrypted {
         Some(enc) => {
             let decrypted = decrypt_token(&enc)?;
-            let parsed: std::collections::HashMap<String, String> = serde_json::from_str(&decrypted)
-                .map_err(|e| format!("Failed to parse env_config JSON: {e}"))?;
+            let parsed: std::collections::HashMap<String, String> =
+                serde_json::from_str(&decrypted)
+                    .map_err(|e| format!("Failed to parse env_config JSON: {e}"))?;
             Ok(Some(parsed))
         }
         None => Ok(None),
@@ -551,8 +552,7 @@ mod tests {
             .unwrap();
         let raw = raw.unwrap();
         assert_ne!(
-            raw,
-            r#"{"API_KEY":"secret123","DEBUG":"1"}"#,
+            raw, r#"{"API_KEY":"secret123","DEBUG":"1"}"#,
             "env_config should be encrypted at rest"
         );
 

@@ -578,11 +578,11 @@ export default function MCPServers() {
                       type="password"
                       value={form.encrypted_env}
                       onChange={(e) => setForm({ ...form, encrypted_env: e.target.value })}
-                      placeholder="API_KEY=secret TOKEN=xyz"
+                      placeholder={editServer ? "Leave blank to keep existing values" : "API_KEY=secret TOKEN=xyz"}
                     />
                     {editServer && (
                       <p className="text-xs text-yellow-600 dark:text-yellow-400 mt-1">
-                        Leave blank to keep existing encrypted values
+                        Encrypted values are stored securely and never displayed. Leave blank to preserve existing values.
                       </p>
                     )}
                   </div>
