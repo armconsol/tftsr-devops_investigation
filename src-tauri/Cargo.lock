@@ -6482,7 +6482,7 @@ dependencies = [
  "tauri-plugin-http",
  "tauri-plugin-shell",
  "tauri-plugin-stronghold",
- "thiserror 1.0.69",
+ "thiserror 2.0.18",
  "tokio",
  "tokio-test",
  "tracing",
