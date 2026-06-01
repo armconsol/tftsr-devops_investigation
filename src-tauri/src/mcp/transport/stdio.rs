@@ -102,22 +102,33 @@ mod tests {
 
     #[test]
     fn test_allows_safe_env_vars() {
-        let mut env = HashMap::new();
-        env.insert("DEBUG".to_string(), "1".to_string());
-        env.insert("API_KEY".to_string(), "secret123".to_string());
-        env.insert("PATH".to_string(), "/usr/bin".to_string());
+        // Test that safe env vars pass validation (validation happens before spawn)
+        let safe_vars = vec![
+            ("DEBUG", "1"),
+            ("API_KEY", "secret123"),
+            ("PATH", "/usr/bin"),
+            ("HOME", "/home/user"),
+            ("GITHUB_PERSONAL_ACCESS_TOKEN", "ghp_token"),
+            ("LOG_LEVEL", "info"),
+        ];
 
-        // Note: This will fail to spawn since /usr/bin/test may not exist,
-        // but we're testing that it doesn't reject the env vars
-        let result = build_stdio_transport("/usr/bin/test", &[], env);
+        for (key, value) in safe_vars {
+            let mut env = HashMap::new();
+            env.insert(key.to_string(), value.to_string());
 
-        // Should fail with spawn error, not env var validation error
-        if let Err(err) = result {
-            assert!(
-                !err.contains("Dangerous environment variable"),
-                "Should not reject safe env vars, got: {}",
-                err
-            );
+            // This will fail to spawn since /usr/bin/nonexistent doesn't exist,
+            // but if validation passed, error won't mention "Dangerous environment variable"
+            let result = build_stdio_transport("/usr/bin/nonexistent", &[], env);
+
+            // Validation passes (doesn't reject env var), spawn fails (command doesn't exist)
+            if let Err(err) = result {
+                assert!(
+                    !err.contains("Dangerous environment variable"),
+                    "Should not reject safe env var '{}', got: {}",
+                    key,
+                    err
+                );
+            }
         }
     }
 }
