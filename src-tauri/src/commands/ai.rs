@@ -236,6 +236,9 @@ pub async fn chat_message(
 
     // Auto-redact PII in both the typed message and any file attachments.
     // The backend is the sole authority for redaction; the frontend sends original content.
+    let mut was_pii_redacted = false;
+    let mut redacted_pii_types: Vec<String> = Vec::new();
+
     let full_message = {
         // Step 1: redact the typed user message text.
         let base = {
@@ -252,6 +255,8 @@ pub async fn chat_message(
                     pii_count = spans.len(),
                     "PII detected in typed chat message — auto-redacting before AI send"
                 );
+                was_pii_redacted = true;
+                redacted_pii_types.extend(type_list.iter().map(|s| s.to_string()));
                 crate::pii::apply_redactions(&message, &spans)
             }
         };
@@ -297,6 +302,8 @@ pub async fn chat_message(
                     pii_count = spans.len(),
                     "PII detected in chat attachment — auto-redacting before AI send"
                 );
+                was_pii_redacted = true;
+                redacted_pii_types.extend(type_list.iter().map(|s| s.to_string()));
                 crate::pii::apply_redactions(&content, &spans)
             };
             // Truncate after redaction so the cut never lands inside a PII span.
@@ -476,11 +483,23 @@ pub async fn chat_message(
         .map_err(|e| e.to_string())?;
 
         // Audit - capture full transmission details
+        let pii_types_for_audit = {
+            use std::collections::HashSet;
+            let mut v: Vec<String> = redacted_pii_types
+                .into_iter()
+                .collect::<HashSet<_>>()
+                .into_iter()
+                .collect();
+            v.sort_unstable();
+            v
+        };
         let audit_details = serde_json::json!({
             "provider": provider_config.name,
             "model": provider_config.model,
             "api_url": provider_config.api_url,
             "user_message": user_msg.content,
+            "was_pii_redacted": was_pii_redacted,
+            "pii_types_redacted": pii_types_for_audit,
             "response_preview": if final_response.content.len() > 200 {
                 format!("{preview}...", preview = &final_response.content[..200])
             } else {

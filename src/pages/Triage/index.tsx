@@ -169,10 +169,9 @@ export default function Triage() {
       const response = await chatMessageCmd(id, message, logFileIds, provider, systemPrompt);
 
       // Update the user bubble with what was actually stored (may be auto-redacted).
-      if (response.user_message) {
-        const suffix = fileNames.length > 0 ? `\n📎 ${fileNames.join(", ")}` : "";
-        updateMessageContent(userMsg.id, response.user_message + suffix);
-      }
+      // Fall back to the original message if user_message is absent (older backend builds).
+      const suffix = fileNames.length > 0 ? `\n📎 ${fileNames.join(", ")}` : "";
+      updateMessageContent(userMsg.id, (response.user_message ?? message) + suffix);
 
       const assistantMsg: TriageMessage = {
         id: `asst-${Date.now()}`,
