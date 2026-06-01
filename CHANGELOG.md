@@ -4,6 +4,14 @@ All notable changes to TFTSR are documented here.
 Commit types shown: feat, fix, perf, docs, refactor.
 CI, chore, and build changes are excluded.
 
+## [0.3.11] — 2026-06-01
+
+### Bug Fixes
+- **mcp**: Treat missing resources/list as non-fatal for servers that don't implement it
+
+### Documentation
+- **wiki**: Update MCP-Servers.md with env var support, PATH requirement, and new schema column
+
 ## [0.3.10] — 2026-06-01
 
 ### Bug Fixes
