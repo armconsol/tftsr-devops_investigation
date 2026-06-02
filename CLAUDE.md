@@ -94,7 +94,7 @@ cargo tauri build  # Outputs to src-tauri/target/release/bundle/
 pub struct AppState {
     pub db: Arc<Mutex<rusqlite::Connection>>,
     pub settings: Arc<Mutex<AppSettings>>,
-    pub app_data_dir: PathBuf,  // ~/.local/share/tftsr on Linux
+    pub app_data_dir: PathBuf,  // ~/.local/share/trcaa on Linux
 }
 ```
 
@@ -118,9 +118,9 @@ All command handlers receive `State<'_, AppState>` as a Tauri-injected parameter
 
 **AI provider factory**: `ai/provider.rs::create_provider(config)` dispatches on `config.name` to the matching struct. Adding a provider means implementing the `Provider` trait and adding a match arm.
 
-**Database encryption**: `cfg!(debug_assertions)` → plain SQLite; release → SQLCipher AES-256. Key from `TFTSR_DB_KEY` env var (defaults to a dev placeholder). DB path from `TFTSR_DATA_DIR` or platform data dir.
+**Database encryption**: `cfg!(debug_assertions)` → plain SQLite; release → SQLCipher AES-256. Key from `TRCAA_DB_KEY` (or legacy `TRCAA_DB_KEY`) env var (defaults to a dev placeholder). DB path from `TRCAA_DATA_DIR` (or legacy `TRCAA_DATA_DIR`) or platform data dir.
 
-**Credential encryption**: API keys stored in `AppSettings` are encrypted using AES-256-GCM via the `aes-gcm` crate. The encryption key is derived from `TFTSR_ENCRYPTION_KEY` env var. Credentials are encrypted on save and decrypted on load. See `commands/system.rs::save_settings()` for implementation.
+**Credential encryption**: API keys stored in `AppSettings` are encrypted using AES-256-GCM via the `aes-gcm` crate. The encryption key is derived from `TRCAA_ENCRYPTION_KEY` (or legacy `TRCAA_ENCRYPTION_KEY`) env var. Credentials are encrypted on save and decrypted on load. See `commands/system.rs::save_settings()` for implementation.
 
 ### Frontend (React / TypeScript)
 
@@ -128,7 +128,7 @@ All command handlers receive `State<'_, AppState>` as a Tauri-injected parameter
 
 **Stores** (Zustand):
 - `sessionStore.ts` — ephemeral triage session: current issue, chat messages, PII spans, why-level (0–5), loading state. **Not persisted.**
-- `settingsStore.ts` — AI providers, theme, Ollama URL. **Persisted** to `localStorage` as `"tftsr-settings"`.
+- `settingsStore.ts` — AI providers, theme, Ollama URL. **Persisted** to `localStorage` as `"trcaa-settings"`.
 - `historyStore.ts` — read-only cache of past issues for the History page.
 
 **Page flow**:

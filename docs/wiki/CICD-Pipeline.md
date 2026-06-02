@@ -4,7 +4,7 @@
 
 | Component | URL | Notes |
 |-----------|-----|-------|
-| Gitea | `https://gogs.tftsr.com` / `http://172.0.0.29:3000` | Git server (migrated from Gogs 0.14) |
+| Gitea | `https://gogs.trcaa.com` / `http://172.0.0.29:3000` | Git server (migrated from Gogs 0.14) |
 | Woodpecker CI (direct) | `http://172.0.0.29:8084` | v2.x |
 | Woodpecker CI (proxy) | `http://172.0.0.29:8085` | nginx reverse proxy |
 | PostgreSQL (Gitea DB) | Container: `gogs_postgres_db` | DB: `gogsdb`, User: `gogs` |
@@ -135,7 +135,7 @@ Jobs (run in parallel after autotag):
   build-macos-arm64   → cargo tauri build (aarch64-apple-darwin) — runs on local Mac
                          → {.dmg} uploaded to Gitea release
                          → existing same-name assets are deleted before upload (rerun-safe)
-                         → unsigned; after install run: xattr -cr /Applications/TFTSR.app
+                         → unsigned; after install run: xattr -cr /Applications/TRCAA.app
 ```
 
 **Per-step agent routing (Woodpecker 2.x labels):**
@@ -167,7 +167,7 @@ clone:
     network_mode: gogs_default
     commands:
       - git init -b master
-      - git remote add origin http://gitea_app:3000/sarman/tftsr-devops_investigation.git
+      - git remote add origin http://gitea_app:3000/sarman/trcaa-devops_investigation.git
       - git fetch --depth=1 origin +refs/tags/${CI_COMMIT_TAG}:refs/tags/${CI_COMMIT_TAG}
       - git checkout ${CI_COMMIT_TAG}
 ```
@@ -202,11 +202,11 @@ migration. The secret name stays `GOGS_TOKEN` for pipeline compatibility.
 **Gitea Release API (replaces Gogs API — same endpoints, different container name):**
 ```bash
 # Create release
-POST http://gitea_app:3000/api/v1/repos/sarman/tftsr-devops_investigation/releases
+POST http://gitea_app:3000/api/v1/repos/sarman/trcaa-devops_investigation/releases
 Authorization: token $GOGS_TOKEN
 
 # Upload artifact
-POST http://gitea_app:3000/api/v1/repos/sarman/tftsr-devops_investigation/releases/{id}/assets
+POST http://gitea_app:3000/api/v1/repos/sarman/trcaa-devops_investigation/releases/{id}/assets
 ```
 
 From the arm64 agent (local machine), use `http://172.0.0.29:3000/api/v1` instead.
@@ -235,7 +235,7 @@ After migration, Woodpecker 2.x registers webhooks automatically when a repo is
 activated via the UI. No manual JWT-signed webhook setup required.
 
 1. Log in at `http://172.0.0.29:8085` via Gitea OAuth2
-2. Add repo `sarman/tftsr-devops_investigation`
+2. Add repo `sarman/trcaa-devops_investigation`
 3. Woodpecker creates webhook in Gitea automatically
 
 ---

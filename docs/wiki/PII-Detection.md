@@ -2,7 +2,7 @@
 
 ## Overview
 
-Before any text is sent to an AI provider, TFTSR scans it for personally identifiable information (PII). Users must review and approve each detected span before the redacted text is transmitted.
+Before any text is sent to an AI provider, TRCAA scans it for personally identifiable information (PII). Users must review and approve each detected span before the redacted text is transmitted.
 
 ## Detection Flow
 

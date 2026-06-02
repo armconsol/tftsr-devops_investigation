@@ -3,12 +3,12 @@ export async function waitForApp(timeout = 10000) {
     async () => {
       try {
         const title = await browser.getTitle();
-        return title.includes("TFTSR");
+        return title.includes("TRCAA");
       } catch {
         return false;
       }
     },
-    { timeout, timeoutMsg: "TFTSR app did not load within timeout" }
+    { timeout, timeoutMsg: "TRCAA app did not load within timeout" }
   );
 }
 

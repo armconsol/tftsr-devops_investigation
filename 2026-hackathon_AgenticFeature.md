@@ -1,10 +1,10 @@
-# Agentic Shell Command Execution for TFTSR Application
+# Agentic Shell Command Execution for TRCAA Application
 
 ## Context
 
-The TFTSR (Troubleshooting and RCA Assistant) is an AI-powered desktop application built with Tauri 2 and React that helps with IT incident triage using the 5-Whys methodology. Currently, it guides users through conversations but requires them to manually execute diagnostic commands and paste results back.
+The TRCAA (Troubleshooting and RCA Assistant) is an AI-powered desktop application built with Tauri 2 and React that helps with IT incident triage using the 5-Whys methodology. Currently, it guides users through conversations but requires them to manually execute diagnostic commands and paste results back.
 
-**The Goal**: Transform TFTSR into an agentic application where the AI can autonomously execute shell commands (kubectl, Proxmox tools, general diagnostics) with intelligent safety controls, requiring user approval only for potentially dangerous operations.
+**The Goal**: Transform TRCAA into an agentic application where the AI can autonomously execute shell commands (kubectl, Proxmox tools, general diagnostics) with intelligent safety controls, requiring user approval only for potentially dangerous operations.
 
 **Why This Matters**: For the upcoming hackathon (starting next week), this will demonstrate autonomous troubleshooting where the AI can directly inspect Kubernetes clusters, query Proxmox infrastructure, and gather diagnostic data without requiring the user to be a command-line expert.
 
@@ -1326,7 +1326,7 @@ Create comprehensive documentation:
 
 ## Overview
 
-TFTSR's agentic shell execution allows the AI to autonomously run diagnostic commands with intelligent safety controls.
+TRCAA's agentic shell execution allows the AI to autonomously run diagnostic commands with intelligent safety controls.
 
 ## Supported Command Types
 
@@ -1367,7 +1367,7 @@ Commands containing `$()` or backticks are automatically escalated to Tier 2 for
 
 ### Auto-Detection
 
-On startup, TFTSR checks for `~/.kube/config` and imports all contexts automatically.
+On startup, TRCAA checks for `~/.kube/config` and imports all contexts automatically.
 
 ### Multiple Clusters
 
@@ -1822,7 +1822,7 @@ Total: 48 hours with tests driving all development.
 
 ## Final Notes
 
-This implementation reuses 90% of existing TFTSR infrastructure, making it low-risk for a one-week hackathon timeline. The agentic loop already exists; we're simply adding a new tool to its registry and implementing the safety controls around it.
+This implementation reuses 90% of existing TRCAA infrastructure, making it low-risk for a one-week hackathon timeline. The agentic loop already exists; we're simply adding a new tool to its registry and implementing the safety controls around it.
 
 The three-tier classification system provides clear safety boundaries:
 - Tier 1 commands are completely safe → No user friction

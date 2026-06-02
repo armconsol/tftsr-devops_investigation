@@ -457,7 +457,7 @@ graph TB
     subgraph "Layer 3: Key Management"
         DB_KEY[.dbkey file\nPer-install random 256-bit key\nMode 0600 — owner only]
         ENC_KEY[.enckey file\nPer-install random 256-bit key\nMode 0600 — owner only]
-        ENV_OVERRIDE[TFTSR_DB_KEY / TFTSR_ENCRYPTION_KEY\nOptional env var override]
+        ENV_OVERRIDE[TRCAA_DB_KEY / TRCAA_ENCRYPTION_KEY\nOptional env var override]
     end
 
     subgraph "Layer 4: PII Protection"
@@ -685,7 +685,7 @@ graph LR
 ```mermaid
 graph TB
     subgraph "Source Control"
-        GOGS[Gogs / Gitea\ngogs.tftsr.com\nSarman Repository]
+        GOGS[Gogs / Gitea\ngogs.trcaa.com\nSarman Repository]
     end
 
     subgraph "CI/CD Triggers"
@@ -820,7 +820,7 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    A[App Launch] --> B{TFTSR_DB_KEY env var set?}
+    A[App Launch] --> B{TRCAA_DB_KEY env var set?}
     B -->|Yes| C[Use env var key]
     B -->|No| D{Release build?}
     D -->|Debug| E[Use hardcoded dev key]

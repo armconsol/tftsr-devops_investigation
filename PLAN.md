@@ -1,10 +1,10 @@
-# TFTSR — IT Triage & Root-Cause Analysis Desktop Application
+# TRCAA — IT Triage & Root-Cause Analysis Desktop Application
 
 ## Implementation Plan
 
 ### Overview
 
-TFTSR is a **desktop-first, offline-capable** application that helps IT teams
+TRCAA is a **desktop-first, offline-capable** application that helps IT teams
 perform structured incident triage using the *5-Whys* methodology, backed by
 pluggable AI providers (Ollama local, OpenAI, Anthropic, Mistral, Gemini).
 It automates PII redaction, guides engineers through root-cause analysis, and
@@ -32,7 +32,7 @@ produces post-mortem documents (Markdown / PDF / DOCX).
 ## Directory Structure
 
 ```
-tftsr/
+trcaa/
 ├── .woodpecker/
 │   ├── test.yml              # lint + unit tests on push / PR
 │   └── release.yml           # multi-platform build on tag
@@ -123,7 +123,7 @@ tftsr/
 
 ## Database Schema (SQLCipher)
 
-All tables live in a single encrypted `tftsr.db` file under the Tauri
+All tables live in a single encrypted `trcaa.db` file under the Tauri
 app-data directory.
 
 ### 1. `issues`
@@ -322,7 +322,7 @@ All frontend ↔ backend communication goes through Tauri's `invoke()`.
 - [x] Write initial unit tests (PII, sessionStore, settingsStore) — 13/13 passing
 - [x] Write E2E scaffolding (wdio config, helpers, skeleton specs)
 - [x] Create CLI stub (`cli/`)
-- [x] Push to Gogs at http://172.0.0.29:3000/sarman/tftsr-devops_investigation
+- [x] Push to Gogs at http://172.0.0.29:3000/sarman/trcaa-devops_investigation
 - [x] Write README.md
 - [x] Deploy Woodpecker CI v0.15.4 (server + agent + nginx proxy)
 - [ ] **BLOCKED**: Verify CI green on push (Woodpecker hook auth issue — see below)

@@ -34,15 +34,15 @@ npm install --legacy-peer-deps
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `TFTSR_DATA_DIR` | Platform data dir | Override DB location |
-| `TFTSR_DB_KEY` | _(none)_ | DB encryption key (required in release builds) |
-| `TFTSR_ENCRYPTION_KEY` | _(none)_ | Credential encryption key (required in release builds) |
+| `TRCAA_DATA_DIR` (or legacy `TRCAA_DATA_DIR`) | Platform data dir | Override DB location |
+| `TRCAA_DB_KEY` (or legacy `TRCAA_DB_KEY`) | _(none)_ | DB encryption key (required in release builds) |
+| `TRCAA_ENCRYPTION_KEY` (or legacy `TRCAA_ENCRYPTION_KEY`) | _(none)_ | Credential encryption key (required in release builds) |
 | `RUST_LOG` | `info` | Tracing verbosity: `debug`, `info`, `warn`, `error` |
 
 Application data is stored at:
-- **Linux:** `~/.local/share/tftsr/`
-- **macOS:** `~/Library/Application Support/tftsr/`
-- **Windows:** `%APPDATA%\tftsr\`
+- **Linux:** `~/.local/share/trcaa/`
+- **macOS:** `~/Library/Application Support/trcaa/`
+- **Windows:** `%APPDATA%\trcaa\`
 
 ---
 
@@ -121,7 +121,7 @@ cargo tauri build
 # Outputs: .deb, .rpm, .AppImage (Linux)
 ```
 
-Release builds enforce secure key configuration. Set both `TFTSR_DB_KEY` and `TFTSR_ENCRYPTION_KEY` before building.
+Release builds enforce secure key configuration. Set both `TRCAA_DB_KEY` (or legacy `TRCAA_DB_KEY`) and `TRCAA_ENCRYPTION_KEY` (or legacy `TRCAA_ENCRYPTION_KEY`) before building.
 
 ---
 

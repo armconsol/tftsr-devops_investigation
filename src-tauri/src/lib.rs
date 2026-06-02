@@ -42,7 +42,7 @@ pub fn run() {
         pending_approvals: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
     };
     let stronghold_salt = format!(
-        "tftsr-stronghold-salt-v1-{:x}",
+        "trcaa-stronghold-salt-v1-{:x}",
         Sha256::digest(data_dir.to_string_lossy().as_bytes())
     );
 
@@ -176,7 +176,12 @@ pub fn run() {
 
 /// Determine the application data directory.
 fn dirs_data_dir() -> std::path::PathBuf {
+    // Support both TRCAA_DATA_DIR (new) and TFTSR_DATA_DIR (legacy) for backwards compatibility
+    if let Ok(dir) = std::env::var("TRCAA_DATA_DIR") {
+        return std::path::PathBuf::from(dir);
+    }
     if let Ok(dir) = std::env::var("TFTSR_DATA_DIR") {
+        tracing::warn!("TFTSR_DATA_DIR is deprecated, use TRCAA_DATA_DIR instead");
         return std::path::PathBuf::from(dir);
     }
 

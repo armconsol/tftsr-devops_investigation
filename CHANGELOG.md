@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to TFTSR are documented here.
+All notable changes to TRCAA are documented here.
 Commit types shown: feat, fix, perf, docs, refactor.
 CI, chore, and build changes are excluded.
 
@@ -168,10 +168,10 @@ CI, chore, and build changes are excluded.
 - Use bash shell and remove bash-only substring expansion in pr-review
 - Restore migration 014, bump version to 0.2.50, harden pr-review workflow
 - Harden pr-review workflow and sync versions to 0.2.50
-- Configure container DNS to resolve ollama-ui.tftsr.com
+- Configure container DNS to resolve ollama-ui.trcaa.com
 - Harden pr-review workflow — URLs, DNS, correctness and reliability
 - Resolve AI review false positives and address high/medium issues
-- Replace github.server_url with hardcoded gogs.tftsr.com for container access
+- Replace github.server_url with hardcoded gogs.trcaa.com for container access
 - Revert to two-dot diff — three-dot requires merge base unavailable in shallow clone
 - Harden pr-review workflow — secret redaction, log safety, auth header
 - **ci**: Address AI review — rustup idempotency and cargo --locked
@@ -229,7 +229,7 @@ CI, chore, and build changes are excluded.
 - Update CHANGELOG.md for v0.2.71
 
 ### Features
-- Initial implementation of TFTSR IT Triage & RCA application
+- Initial implementation of TRCAA IT Triage & RCA application
 - Add Windows amd64 cross-compile to release pipeline; add arm64 QEMU agent
 - Add native linux/arm64 release build step
 - Add macOS arm64 act_runner and release build job

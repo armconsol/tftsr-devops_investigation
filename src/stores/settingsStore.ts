@@ -54,7 +54,7 @@ export const useSettingsStore = create<SettingsState>()(
       },
     }),
     {
-      name: "tftsr-settings",
+      name: "trcaa-settings",
       // Don't persist ai_providers to localStorage - they're stored in encrypted database
       partialize: (state) => ({
         theme: state.theme,

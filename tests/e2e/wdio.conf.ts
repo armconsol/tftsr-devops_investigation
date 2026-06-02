@@ -10,16 +10,16 @@ const tauriDriver = join(
   "tauri-driver"
 );
 
-// Path to the compiled TFTSR binary
+// Path to the compiled TRCAA binary
 const getBinaryPath = () => {
   const envPath = process.env.TAURI_BINARY_PATH;
   if (envPath) return envPath;
 
   const platform = process.platform;
   if (platform === "win32") {
-    return join(__dirname, "../../src-tauri/target/release/tftsr.exe");
+    return join(__dirname, "../../src-tauri/target/release/trcaa.exe");
   }
-  return join(__dirname, "../../src-tauri/target/release/tftsr");
+  return join(__dirname, "../../src-tauri/target/release/trcaa");
 };
 
 let driverProcess: ReturnType<typeof spawn> | null = null;

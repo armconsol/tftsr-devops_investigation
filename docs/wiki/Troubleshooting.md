@@ -6,7 +6,7 @@
 
 **Check:**
 1. Verify the workflow file exists in `.gitea/workflows/` on the pushed branch
-2. Check the Actions tab at `http://172.0.0.29:3000/sarman/tftsr-devops_investigation/actions`
+2. Check the Actions tab at `http://172.0.0.29:3000/sarman/trcaa-devops_investigation/actions`
 3. Confirm the act_runner is online: `docker logs gitea_act_runner_amd64 --since 5m`
 
 ---
@@ -50,7 +50,7 @@ Restart runner: `docker restart gitea_act_runner_amd64`
   run: |
     apt-get update -qq && apt-get install -y -qq git
     git init
-    git remote add origin http://172.0.0.29:3000/sarman/tftsr-devops_investigation.git
+    git remote add origin http://172.0.0.29:3000/sarman/trcaa-devops_investigation.git
     git fetch --depth=1 origin $GITHUB_SHA
     git checkout FETCH_HEAD
 ```
@@ -175,9 +175,9 @@ sudo apt-get install -y libwebkit2gtk-4.1-dev libssl-dev libgtk-3-dev \
 
 **Symptom:** App fails to start with SQLCipher error.
 
-1. `TFTSR_DB_KEY` env var is set
+1. `TRCAA_DB_KEY` (or legacy `TRCAA_DB_KEY`) env var is set
 2. Key matches what was used when DB was created
-3. File isn't corrupted: `file tftsr.db` should say `SQLite 3.x database`
+3. File isn't corrupted: `file trcaa.db` should say `SQLite 3.x database`
 
 ---
 

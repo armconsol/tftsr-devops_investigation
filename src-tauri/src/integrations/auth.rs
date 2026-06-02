@@ -169,8 +169,15 @@ fn urlencoding_encode(s: &str) -> String {
 }
 
 fn get_encryption_key_material() -> Result<String, String> {
+    // Support both TRCAA_ENCRYPTION_KEY (new) and TFTSR_ENCRYPTION_KEY (legacy) for backwards compatibility
+    if let Ok(key) = std::env::var("TRCAA_ENCRYPTION_KEY") {
+        if !key.trim().is_empty() {
+            return Ok(key);
+        }
+    }
     if let Ok(key) = std::env::var("TFTSR_ENCRYPTION_KEY") {
         if !key.trim().is_empty() {
+            tracing::warn!("TFTSR_ENCRYPTION_KEY is deprecated, use TRCAA_ENCRYPTION_KEY instead");
             return Ok(key);
         }
     }
@@ -244,7 +251,7 @@ fn derive_aes_key() -> Result<[u8; 32], String> {
 }
 
 /// Encrypt a token using AES-256-GCM.
-/// Key is derived from TFTSR_ENCRYPTION_KEY env var or a default dev key.
+/// Key is derived from TRCAA_ENCRYPTION_KEY env var (or legacy TFTSR_ENCRYPTION_KEY) or a default dev key.
 /// Returns base64-encoded ciphertext with nonce prepended.
 pub fn encrypt_token(token: &str) -> Result<String, String> {
     use aes_gcm::{
@@ -550,14 +557,14 @@ mod tests {
     fn test_decrypt_wrong_key_fails() {
         // Encrypt with one key
         std::env::set_var(
-            "TFTSR_ENCRYPTION_KEY",
+            "TRCAA_ENCRYPTION_KEY",
             "key-1-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
         );
         let encrypted = encrypt_token("secret").unwrap();
 
         // Try to decrypt with different key
         std::env::set_var(
-            "TFTSR_ENCRYPTION_KEY",
+            "TRCAA_ENCRYPTION_KEY",
             "key-2-yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy",
         );
         let result = decrypt_token(&encrypted);
@@ -566,7 +573,7 @@ mod tests {
         assert!(result.unwrap_err().contains("Decryption failed"));
 
         // Reset env var
-        std::env::remove_var("TFTSR_ENCRYPTION_KEY");
+        std::env::remove_var("TRCAA_ENCRYPTION_KEY");
     }
 
     #[test]

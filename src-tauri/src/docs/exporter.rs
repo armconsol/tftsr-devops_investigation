@@ -249,7 +249,7 @@ mod tests {
 
     #[test]
     fn test_export_markdown_writes_file() {
-        let dir = std::env::temp_dir().join("tftsr_test_export");
+        let dir = std::env::temp_dir().join("trcaa_test_export");
         let path = dir.join("test.md");
         let _ = std::fs::remove_file(&path);
         export_markdown("# Test\n\nContent", path.to_str().unwrap()).unwrap();

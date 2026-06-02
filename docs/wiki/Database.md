@@ -2,9 +2,9 @@
 
 ## Overview
 
-TFTSR uses **SQLite** via `rusqlite` with the `bundled-sqlcipher` feature for AES-256 encryption in production. 22 versioned migrations are tracked in the `_migrations` table.
+TRCAA uses **SQLite** via `rusqlite` with the `bundled-sqlcipher` feature for AES-256 encryption in production. 22 versioned migrations are tracked in the `_migrations` table.
 
-**DB file location:** `{app_data_dir}/tftsr.db`
+**DB file location:** `{app_data_dir}/trcaa.db`
 
 ---
 
@@ -13,7 +13,7 @@ TFTSR uses **SQLite** via `rusqlite` with the `bundled-sqlcipher` feature for AE
 | Build type | Encryption | Key |
 |-----------|-----------|-----|
 | Debug (`debug_assertions`) | None (plain SQLite) | — |
-| Release | SQLCipher AES-256 | `TFTSR_DB_KEY` env var |
+| Release | SQLCipher AES-256 | `TRCAA_DB_KEY` (or legacy `TRCAA_DB_KEY`) env var |
 
 **SQLCipher settings (production):**
 - Cipher: AES-256-CBC
@@ -24,7 +24,7 @@ TFTSR uses **SQLite** via `rusqlite` with the `bundled-sqlcipher` feature for AE
 ```rust
 // Simplified init logic
 pub fn init_db(data_dir: &Path) -> anyhow::Result<Connection> {
-    let key = env::var("TFTSR_DB_KEY")
+    let key = env::var("TRCAA_DB_KEY")
         .unwrap_or_else(|_| "dev-key-change-in-prod".to_string());
     let conn = if cfg!(debug_assertions) {
         Connection::open(db_path)?           // plain SQLite
@@ -236,7 +236,7 @@ CREATE TABLE image_attachments (
 
 **Encryption:**
 - OAuth2 tokens encrypted with AES-256-GCM
-- Key derived from `TFTSR_DB_KEY` environment variable
+- Key derived from `TRCAA_DB_KEY` (or legacy `TRCAA_DB_KEY`) environment variable
 - Random 96-bit nonce per encryption
 - Format: `base64(nonce || ciphertext || tag)`
 

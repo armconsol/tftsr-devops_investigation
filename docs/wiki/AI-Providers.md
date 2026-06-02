@@ -1,6 +1,6 @@
 # AI Providers
 
-TFTSR supports 6+ AI providers, including custom providers with flexible authentication and API formats. API keys are stored encrypted with AES-256-GCM.
+TRCAA supports 6+ AI providers, including custom providers with flexible authentication and API formats. API keys are stored encrypted with AES-256-GCM.
 
 ## Provider Factory
 

@@ -1,9 +1,9 @@
 {
-  "name": "tftsr-cli",
+  "name": "trcaa-cli",
   "version": "0.1.0",
-  "description": "TFTSR IT Triage & RCA CLI",
+  "description": "TRCAA IT Triage & RCA CLI",
   "type": "module",
-  "bin": { "tftsr-cli": "./src/main.js" },
+  "bin": { "trcaa-cli": "./src/main.js" },
   "scripts": {
     "start": "node src/main.js",
     "build": "tsc"

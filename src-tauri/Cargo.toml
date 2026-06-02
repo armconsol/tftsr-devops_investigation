@@ -1,10 +1,10 @@
 [package]
 name = "trcaa"
-version = "1.0.0"
+version = "1.0.1"
 edition = "2021"
 
 [lib]
-name = "tftsr_lib"
+name = "trcaa_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

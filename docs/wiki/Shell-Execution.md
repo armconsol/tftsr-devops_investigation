@@ -277,7 +277,7 @@ Navigate to **Settings → Shell Execution** to view recent command executions:
 
 ### Encryption
 - **Kubeconfig Files**: AES-256-GCM encryption at rest
-- **Encryption Key**: Derived from `TFTSR_ENCRYPTION_KEY` environment variable
+- **Encryption Key**: Derived from `TRCAA_ENCRYPTION_KEY` (or legacy `TRCAA_ENCRYPTION_KEY`) environment variable
 - **Nonce**: Random 12-byte nonce per encryption operation
 - **Authentication Tag**: 16-byte tag for integrity verification
 

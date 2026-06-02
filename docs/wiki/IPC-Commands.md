@@ -620,7 +620,7 @@ CREATE TABLE credentials (
 
 **Encryption:**
 - Algorithm: AES-256-GCM
-- Key derivation: From `TFTSR_DB_KEY` environment variable
+- Key derivation: From `TRCAA_DB_KEY` (or legacy `TRCAA_DB_KEY`) environment variable
 - Nonce: Random 96-bit per encryption
 - Format: `base64(nonce || ciphertext || tag)`
 

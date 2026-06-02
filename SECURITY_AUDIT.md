@@ -105,15 +105,15 @@ fn derive_aes_key() -> Result<[u8; 32], String> {
 
 ---
 
-### H3. Release Build Fails Open if TFTSR_ENCRYPTION_KEY is Unset
+### H3. Release Build Fails Open if TRCAA_ENCRYPTION_KEY is Unset
 
 **File**: `src-tauri/src/integrations/auth.rs`, line 182
 
 ```rust
-Err("TFTSR_ENCRYPTION_KEY must be set in release builds".to_string())
+Err("TRCAA_ENCRYPTION_KEY must be set in release builds".to_string())
 ```
 
-**Issue**: In release mode, if the `TFTSR_ENCRYPTION_KEY` environment variable is not set, any attempt to store or retrieve credentials will fail with an error. Unlike the database key management (which auto-generates and persists a key), credential encryption requires manual environment variable configuration. For a desktop app distributed to end users, this is an unworkable UX: users will never set this variable, meaning credential storage will be broken out of the box in release builds.
+**Issue**: In release mode, if the `TRCAA_ENCRYPTION_KEY` (or legacy `TRCAA_ENCRYPTION_KEY`) environment variable is not set, any attempt to store or retrieve credentials will fail with an error. Unlike the database key management (which auto-generates and persists a key), credential encryption requires manual environment variable configuration. For a desktop app distributed to end users, this is an unworkable UX: users will never set this variable, meaning credential storage will be broken out of the box in release builds.
 
 **Recommended Fix**: Mirror the database key management pattern: auto-generate a random key on first use, persist it to a file in the app data directory with 0600 permissions (as already done for `.dbkey`), and read it back on subsequent launches.
 
@@ -239,7 +239,7 @@ style-src 'self' 'unsafe-inline'
 - `.idea/copilot.data.migration.ask2agent.xml`
 - `.idea/misc.xml`
 - `.idea/modules.xml`
-- `.idea/tftsr-devops_investigation.iml`
+- `.idea/trcaa-devops_investigation.iml`
 - `.idea/vcs.xml`
 
 **Issue**: IDE configuration files are tracked. These may leak editor preferences and do not belong in an open-source repository.

@@ -7,7 +7,7 @@ describe("Onboarding Flow", () => {
 
   it("loads the dashboard on first launch", async () => {
     const title = await browser.getTitle();
-    expect(title).toContain("TFTSR");
+    expect(title).toContain("TRCAA");
   });
 
   it("shows navigation sidebar", async () => {

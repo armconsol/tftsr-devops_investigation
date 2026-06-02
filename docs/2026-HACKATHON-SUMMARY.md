@@ -1,6 +1,6 @@
 # 2026 Hackathon: Agentic Shell Command Execution
 
-**Project**: TFTSR (Troubleshooting and RCA Assistant)  
+**Project**: TRCAA (Troubleshooting and RCA Assistant)  
 **Feature**: Autonomous AI-Powered Shell Command Execution  
 **Version**: 1.0.0 (Major Release)  
 **Date**: June 2, 2026  
@@ -11,7 +11,7 @@
 
 ## Executive Summary
 
-This hackathon transformed TFTSR from a conversational AI assistant into an **autonomous troubleshooting agent** capable of directly executing diagnostic commands with intelligent safety controls. The AI can now autonomously query Kubernetes clusters, inspect infrastructure, and gather diagnostic data without manual intervention, while maintaining strict security through a three-tier safety classification system.
+This hackathon transformed TRCAA from a conversational AI assistant into an **autonomous troubleshooting agent** capable of directly executing diagnostic commands with intelligent safety controls. The AI can now autonomously query Kubernetes clusters, inspect infrastructure, and gather diagnostic data without manual intervention, while maintaining strict security through a three-tier safety classification system.
 
 ### Key Achievement
 **Reduced troubleshooting time from hours to minutes** by enabling the AI to autonomously execute read-only diagnostic commands while requiring explicit user approval for any potentially destructive operations.
@@ -335,7 +335,7 @@ GitHub Copilot performed automated code review with 9 findings, all addressed:
 ## Demo Script
 
 ### Setup
-1. Launch TFTSR application
+1. Launch TRCAA application
 2. Upload kubeconfig via Settings → Kubeconfig Manager
 3. Create new troubleshooting issue
 
@@ -381,9 +381,9 @@ AI: Command denied: rm -rf /tmp/* (Tier 3: Destructive filesystem operation)
 5. Create issue and start troubleshooting
 
 ### Configuration
-- **Encryption Key**: Set `TFTSR_ENCRYPTION_KEY` env var for production
-- **Database Key**: Set `TFTSR_DB_KEY` for SQLCipher encryption
-- **Data Directory**: Customize via `TFTSR_DATA_DIR`
+- **Encryption Key**: Set `TRCAA_ENCRYPTION_KEY` (or legacy `TRCAA_ENCRYPTION_KEY`) env var for production
+- **Database Key**: Set `TRCAA_DB_KEY` (or legacy `TRCAA_DB_KEY`) for SQLCipher encryption
+- **Data Directory**: Customize via `TRCAA_DATA_DIR` (or legacy `TRCAA_DATA_DIR`)
 
 ---
 
