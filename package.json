@@ -37,12 +37,13 @@
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16",
     "@testing-library/user-event": "^14",
+    "@types/node": "^25.9.1",
     "@types/react": "^18",
     "@types/react-dom": "^18",
     "@typescript-eslint/eslint-plugin": "^8.58.1",
     "@typescript-eslint/parser": "^8.58.1",
     "@vitejs/plugin-react": "^4.7.0",
-    "@vitest/coverage-v8": "^2",
+    "@vitest/coverage-v8": "^4",
     "@wdio/cli": "^9",
     "@wdio/mocha-framework": "^9",
     "autoprefixer": "^10",
@@ -53,7 +54,7 @@
     "postcss": "^8",
     "typescript": "^5",
     "vite": "^6",
-    "vitest": "^2",
+    "vitest": "^4",
     "webdriverio": "^9"
   }
 }
