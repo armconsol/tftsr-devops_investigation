@@ -51,6 +51,116 @@ pub async fn check_ollama() -> anyhow::Result<OllamaStatus> {
     })
 }
 
+/// Attempt to start Ollama service if installed but not running
+pub async fn start_ollama_service() -> anyhow::Result<bool> {
+    let status = check_ollama().await?;
+
+    // If already running, nothing to do
+    if status.running {
+        tracing::info!("Ollama is already running");
+        return Ok(true);
+    }
+
+    // If not installed, can't start it
+    if !status.installed {
+        tracing::warn!("Ollama is not installed, cannot auto-start");
+        return Ok(false);
+    }
+
+    tracing::info!("Ollama is installed but not running, attempting to start...");
+
+    // Platform-specific start logic
+    #[cfg(target_os = "macos")]
+    {
+        // On macOS, try to launch Ollama.app which manages the service
+        let ollama_app = "/Applications/Ollama.app";
+        if std::path::Path::new(ollama_app).exists() {
+            tracing::info!("Launching Ollama.app...");
+            let result = std::process::Command::new("open")
+                .arg(ollama_app)
+                .spawn();
+
+            match result {
+                Ok(_) => {
+                    // Wait a few seconds for Ollama to start
+                    tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
+
+                    // Check if it's now running
+                    let new_status = check_ollama().await?;
+                    if new_status.running {
+                        tracing::info!("Ollama started successfully via Ollama.app");
+                        return Ok(true);
+                    } else {
+                        tracing::warn!("Ollama.app launched but service not responding yet");
+                        return Ok(false);
+                    }
+                }
+                Err(e) => {
+                    tracing::error!("Failed to launch Ollama.app: {}", e);
+                }
+            }
+        }
+
+        // Fallback: try direct ollama serve
+        tracing::info!("Attempting to start ollama serve directly...");
+        let result = std::process::Command::new("ollama")
+            .arg("serve")
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn();
+
+        match result {
+            Ok(_) => {
+                // Wait for service to become available
+                tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+                let new_status = check_ollama().await?;
+                Ok(new_status.running)
+            }
+            Err(e) => {
+                tracing::error!("Failed to start ollama serve: {}", e);
+                Ok(false)
+            }
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        // On Linux, start ollama serve in background
+        tracing::info!("Starting ollama serve...");
+        let result = std::process::Command::new("ollama")
+            .arg("serve")
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn();
+
+        match result {
+            Ok(_) => {
+                tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+                let new_status = check_ollama().await?;
+                if new_status.running {
+                    tracing::info!("Ollama started successfully");
+                    Ok(true)
+                } else {
+                    tracing::warn!("ollama serve started but not responding yet");
+                    Ok(false)
+                }
+            }
+            Err(e) => {
+                tracing::error!("Failed to start ollama serve: {}", e);
+                Ok(false)
+            }
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        // On Windows, Ollama should be running as a system service
+        // If it's not, user needs to start it manually or reinstall
+        tracing::warn!("Ollama is installed but not running on Windows - user should start it from system tray");
+        Ok(false)
+    }
+}
+
 pub fn get_install_instructions(platform: &str) -> InstallGuide {
     let url = "https://ollama.com/download".to_string();
     match platform {

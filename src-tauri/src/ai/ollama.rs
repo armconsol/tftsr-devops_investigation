@@ -41,6 +41,22 @@ impl Provider for OllamaProvider {
         } else {
             config.api_url.trim_end_matches('/').to_string()
         };
+
+        // Auto-start Ollama if using localhost and it's not running
+        if base_url == "http://localhost:11434" {
+            match crate::ollama::installer::start_ollama_service().await {
+                Ok(started) => {
+                    if started {
+                        tracing::info!("Ollama service auto-started successfully");
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to auto-start Ollama: {}", e);
+                    // Continue anyway - maybe it's already running or will start soon
+                }
+            }
+        }
+
         let url = format!("{base_url}/api/chat");
 
         // Ollama expects {model, messages: [{role, content}], stream: false}
