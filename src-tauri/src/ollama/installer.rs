@@ -51,6 +51,43 @@ pub async fn check_ollama() -> anyhow::Result<OllamaStatus> {
     })
 }
 
+/// Find the full path to the ollama binary
+fn find_ollama_binary() -> Option<std::path::PathBuf> {
+    // Try which/where command first
+    let which_cmd = if cfg!(target_os = "windows") {
+        "where"
+    } else {
+        "which"
+    };
+
+    if let Ok(output) = std::process::Command::new(which_cmd).arg("ollama").output() {
+        if output.status.success() {
+            if let Ok(path_str) = String::from_utf8(output.stdout) {
+                let path = path_str.trim();
+                if !path.is_empty() {
+                    return Some(std::path::PathBuf::from(path));
+                }
+            }
+        }
+    }
+
+    // Fallback: check common install paths
+    let common_paths = [
+        "/usr/local/bin/ollama",
+        "/opt/homebrew/bin/ollama",
+        "/usr/bin/ollama",
+    ];
+
+    for path in &common_paths {
+        let pb = std::path::PathBuf::from(path);
+        if pb.exists() {
+            return Some(pb);
+        }
+    }
+
+    None
+}
+
 /// Attempt to start Ollama service if installed but not running
 pub async fn start_ollama_service() -> anyhow::Result<bool> {
     let status = check_ollama().await?;
@@ -76,9 +113,7 @@ pub async fn start_ollama_service() -> anyhow::Result<bool> {
         let ollama_app = "/Applications/Ollama.app";
         if std::path::Path::new(ollama_app).exists() {
             tracing::info!("Launching Ollama.app...");
-            let result = std::process::Command::new("open")
-                .arg(ollama_app)
-                .spawn();
+            let result = std::process::Command::new("open").arg(ollama_app).spawn();
 
             match result {
                 Ok(_) => {
@@ -101,54 +136,67 @@ pub async fn start_ollama_service() -> anyhow::Result<bool> {
             }
         }
 
-        // Fallback: try direct ollama serve
-        tracing::info!("Attempting to start ollama serve directly...");
-        let result = std::process::Command::new("ollama")
-            .arg("serve")
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .spawn();
+        // Fallback: try direct ollama serve with full path
+        if let Some(ollama_bin) = find_ollama_binary() {
+            tracing::info!(
+                "Attempting to start ollama serve directly at {:?}...",
+                ollama_bin
+            );
+            let result = std::process::Command::new(&ollama_bin)
+                .arg("serve")
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .spawn();
 
-        match result {
-            Ok(_) => {
-                // Wait for service to become available
-                tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
-                let new_status = check_ollama().await?;
-                Ok(new_status.running)
+            match result {
+                Ok(_) => {
+                    // Wait for service to become available
+                    tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+                    let new_status = check_ollama().await?;
+                    Ok(new_status.running)
+                }
+                Err(e) => {
+                    tracing::error!("Failed to start ollama serve: {}", e);
+                    Ok(false)
+                }
             }
-            Err(e) => {
-                tracing::error!("Failed to start ollama serve: {}", e);
-                Ok(false)
-            }
+        } else {
+            tracing::error!("Ollama binary not found in PATH or common locations");
+            Ok(false)
         }
     }
 
     #[cfg(target_os = "linux")]
     {
-        // On Linux, start ollama serve in background
-        tracing::info!("Starting ollama serve...");
-        let result = std::process::Command::new("ollama")
-            .arg("serve")
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .spawn();
+        // On Linux, start ollama serve in background using full path
+        if let Some(ollama_bin) = find_ollama_binary() {
+            tracing::info!("Starting ollama serve at {:?}...", ollama_bin);
+            let result = std::process::Command::new(&ollama_bin)
+                .arg("serve")
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .spawn();
 
-        match result {
-            Ok(_) => {
-                tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
-                let new_status = check_ollama().await?;
-                if new_status.running {
-                    tracing::info!("Ollama started successfully");
-                    Ok(true)
-                } else {
-                    tracing::warn!("ollama serve started but not responding yet");
+            match result {
+                Ok(_) => {
+                    tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+                    let new_status = check_ollama().await?;
+                    if new_status.running {
+                        tracing::info!("Ollama started successfully");
+                        Ok(true)
+                    } else {
+                        tracing::warn!("ollama serve started but not responding yet");
+                        Ok(false)
+                    }
+                }
+                Err(e) => {
+                    tracing::error!("Failed to start ollama serve: {}", e);
                     Ok(false)
                 }
             }
-            Err(e) => {
-                tracing::error!("Failed to start ollama serve: {}", e);
-                Ok(false)
-            }
+        } else {
+            tracing::error!("Ollama binary not found in PATH or common locations");
+            Ok(false)
         }
     }
 

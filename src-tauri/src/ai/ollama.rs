@@ -1,9 +1,13 @@
 use async_trait::async_trait;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use crate::ai::provider::Provider;
 use crate::ai::{ChatResponse, Message, ProviderInfo, TokenUsage};
 use crate::state::ProviderConfig;
+
+// Track if we've already attempted auto-start this session
+static AUTO_START_ATTEMPTED: AtomicBool = AtomicBool::new(false);
 
 pub struct OllamaProvider;
 
@@ -42,8 +46,11 @@ impl Provider for OllamaProvider {
             config.api_url.trim_end_matches('/').to_string()
         };
 
-        // Auto-start Ollama if using localhost and it's not running
-        if base_url == "http://localhost:11434" {
+        // Auto-start Ollama if using localhost and we haven't tried yet this session
+        // Only attempt once to avoid recurring latency on every chat() call
+        if base_url == "http://localhost:11434"
+            && !AUTO_START_ATTEMPTED.swap(true, Ordering::Relaxed)
+        {
             match crate::ollama::installer::start_ollama_service().await {
                 Ok(started) => {
                     if started {
