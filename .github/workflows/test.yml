@@ -38,6 +38,10 @@ jobs:
         run: npm ci --legacy-peer-deps
       - name: Update version from Git
         run: node scripts/update-version.mjs
+      - name: Download kubectl binaries
+        run: |
+          chmod +x scripts/download-kubectl.sh
+          ./scripts/download-kubectl.sh
       - name: Generate lockfile
         run: cargo generate-lockfile --manifest-path src-tauri/Cargo.toml
       - name: Rust fmt check

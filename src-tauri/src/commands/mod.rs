@@ -5,4 +5,5 @@ pub mod db;
 pub mod docs;
 pub mod image;
 pub mod integrations;
+pub mod shell;
 pub mod system;

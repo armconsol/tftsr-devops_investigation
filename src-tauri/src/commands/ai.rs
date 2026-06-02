@@ -992,13 +992,78 @@ async fn execute_tool_call(
             )
             .await
         }
+        "execute_shell_command" => execute_shell_tool_call(tool_call, app_handle, app_state).await,
         name if name.starts_with("mcp_") => execute_mcp_tool_call(tool_call, app_state).await,
         _ => {
             let error = format!("Unknown tool: {}", tool_call.name);
-            tracing::warn!("{}", error);
+            tracing::warn!("{error}");
             Err(error)
         }
     }
+}
+
+async fn execute_shell_tool_call(
+    tool_call: &crate::ai::ToolCall,
+    app_handle: &tauri::AppHandle,
+    app_state: &State<'_, AppState>,
+) -> Result<String, String> {
+    // Parse arguments
+    let args: serde_json::Value = serde_json::from_str(&tool_call.arguments)
+        .map_err(|e| format!("Failed to parse tool arguments: {e}"))?;
+
+    let command = args
+        .get("command")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| "Missing command parameter".to_string())?;
+
+    let working_directory = args.get("working_directory").and_then(|v| v.as_str());
+    let kubeconfig_id = args.get("kubeconfig_id").and_then(|v| v.as_str());
+
+    // PII detection
+    {
+        let detector = crate::pii::detector::PiiDetector::new();
+        let spans = detector.detect(command);
+        if !spans.is_empty() {
+            tracing::warn!(
+                tool = %tool_call.name,
+                pii_spans = spans.len(),
+                "PII detected in shell command"
+            );
+        }
+    }
+
+    // Audit log
+    {
+        let db = app_state.db.lock().map_err(|e| e.to_string())?;
+        let details = serde_json::json!({
+            "tool": tool_call.name,
+            "command": command,
+        });
+        crate::audit::log::write_audit_event(
+            &db,
+            "shell_tool_call",
+            "shell_command",
+            command,
+            &details.to_string(),
+        )
+        .map_err(|e| format!("Audit log failed: {e}"))?;
+    }
+
+    // Execute with approval flow
+    let result = crate::shell::executor::execute_with_approval(
+        command,
+        app_handle,
+        app_state.inner(),
+        kubeconfig_id,
+        working_directory,
+    )
+    .await?;
+
+    // Format output for AI
+    Ok(format!(
+        "Exit Code: {}\n\nStdout:\n{}\n\nStderr:\n{}",
+        result.exit_code, result.stdout, result.stderr
+    ))
 }
 
 async fn execute_mcp_tool_call(

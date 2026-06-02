@@ -287,6 +287,74 @@ pub fn run_migrations(conn: &Connection) -> anyhow::Result<()> {
             "023_add_mcp_env_config",
             "ALTER TABLE mcp_servers ADD COLUMN env_config TEXT",
         ),
+        (
+            "024_create_shell_commands",
+            "CREATE TABLE IF NOT EXISTS shell_commands (
+                id TEXT PRIMARY KEY,
+                command_template TEXT NOT NULL,
+                tier INTEGER NOT NULL CHECK(tier IN (1, 2, 3)),
+                description TEXT,
+                category TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+
+            INSERT INTO shell_commands (id, command_template, tier, description, category) VALUES
+            ('kubectl_get', 'kubectl get', 1, 'Read Kubernetes resources', 'kubectl'),
+            ('kubectl_describe', 'kubectl describe', 1, 'Describe Kubernetes resources', 'kubectl'),
+            ('kubectl_logs', 'kubectl logs', 1, 'View pod logs', 'kubectl'),
+            ('kubectl_apply', 'kubectl apply', 2, 'Apply configuration', 'kubectl'),
+            ('kubectl_delete', 'kubectl delete', 2, 'Delete resources', 'kubectl'),
+            ('pvecm_status', 'pvecm status', 1, 'Check Proxmox cluster status', 'proxmox'),
+            ('qm_status', 'qm status', 1, 'Check VM status', 'proxmox');",
+        ),
+        (
+            "025_create_kubeconfig_files",
+            "CREATE TABLE IF NOT EXISTS kubeconfig_files (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                encrypted_content TEXT NOT NULL,
+                context TEXT NOT NULL,
+                cluster_url TEXT,
+                is_active INTEGER NOT NULL DEFAULT 0,
+                uploaded_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_kubeconfig_active ON kubeconfig_files(is_active);",
+        ),
+        (
+            "026_create_command_executions",
+            "CREATE TABLE IF NOT EXISTS command_executions (
+                id TEXT PRIMARY KEY,
+                issue_id TEXT,
+                command TEXT NOT NULL,
+                tier INTEGER NOT NULL,
+                approval_status TEXT NOT NULL,
+                kubeconfig_id TEXT,
+                exit_code INTEGER,
+                stdout TEXT,
+                stderr TEXT,
+                execution_time_ms INTEGER,
+                executed_at TEXT NOT NULL DEFAULT (datetime('now')),
+                FOREIGN KEY (issue_id) REFERENCES issues(id) ON DELETE CASCADE,
+                FOREIGN KEY (kubeconfig_id) REFERENCES kubeconfig_files(id) ON DELETE SET NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_command_executions_issue ON command_executions(issue_id);
+            CREATE INDEX IF NOT EXISTS idx_command_executions_executed ON command_executions(executed_at);",
+        ),
+        (
+            "027_create_approval_decisions",
+            "CREATE TABLE IF NOT EXISTS approval_decisions (
+                id TEXT PRIMARY KEY,
+                command_pattern TEXT NOT NULL,
+                decision TEXT NOT NULL CHECK(decision IN ('allow_once', 'allow_session', 'deny')),
+                session_id TEXT,
+                decided_at TEXT NOT NULL DEFAULT (datetime('now')),
+                expires_at TEXT
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_approval_decisions_session ON approval_decisions(session_id);",
+        ),
     ];
 
     for (name, sql) in migrations {

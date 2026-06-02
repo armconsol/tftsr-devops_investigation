@@ -13,6 +13,8 @@ import {
   ChevronRight,
   Sun,
   Moon,
+  Terminal,
+  FileCode,
 } from "lucide-react";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { getAppVersionCmd, loadAiProvidersCmd, testProviderConnectionCmd } from "@/lib/tauriCommands";
@@ -30,6 +32,9 @@ import Ollama from "@/pages/Settings/Ollama";
 import Integrations from "@/pages/Settings/Integrations";
 import MCPServers from "@/pages/Settings/MCPServers";
 import Security from "@/pages/Settings/Security";
+import ShellExecution from "@/pages/Settings/ShellExecution";
+import KubeconfigManager from "@/pages/Settings/KubeconfigManager";
+import { ShellApprovalModal } from "@/components/ShellApprovalModal";
 
 const navItems = [
   { to: "/", icon: Home, label: "Dashboard" },
@@ -40,6 +45,8 @@ const navItems = [
 const settingsItems = [
   { to: "/settings/providers", icon: Cpu, label: "AI Providers" },
   { to: "/settings/ollama", icon: Bot, label: "Ollama" },
+  { to: "/settings/shell", icon: Terminal, label: "Shell Execution" },
+  { to: "/settings/kubeconfig", icon: FileCode, label: "Kubeconfig" },
   { to: "/settings/integrations", icon: Link, label: "Integrations" },
   { to: "/settings/mcp", icon: Plug, label: "MCP Servers" },
   { to: "/settings/security", icon: Shield, label: "Security" },
@@ -82,6 +89,7 @@ export default function App() {
 
   return (
     <div className={theme === "dark" ? "dark" : ""}>
+      <ShellApprovalModal />
       <div className="grid h-screen" style={{ gridTemplateColumns: collapsed ? "64px 1fr" : "240px 1fr" }}>
         {/* Sidebar */}
         <aside className="bg-card border-r flex flex-col h-screen overflow-y-auto">
@@ -174,6 +182,8 @@ export default function App() {
             <Route path="/history" element={<History />} />
             <Route path="/settings/providers" element={<AIProviders />} />
             <Route path="/settings/ollama" element={<Ollama />} />
+            <Route path="/settings/shell" element={<ShellExecution />} />
+            <Route path="/settings/kubeconfig" element={<KubeconfigManager />} />
             <Route path="/settings/integrations" element={<Integrations />} />
             <Route path="/settings/mcp" element={<MCPServers />} />
             <Route path="/settings/security" element={<Security />} />

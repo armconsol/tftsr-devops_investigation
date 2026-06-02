@@ -68,6 +68,13 @@ impl Default for AppSettings {
     }
 }
 
+/// Approval response for shell command execution
+#[derive(Debug, Clone)]
+pub struct ApprovalResponse {
+    pub approved: bool,
+    pub decision: String, // "deny", "allow_once", "allow_session"
+}
+
 pub struct AppState {
     pub db: Arc<Mutex<rusqlite::Connection>>,
     pub settings: Arc<Mutex<AppSettings>>,
@@ -77,6 +84,9 @@ pub struct AppState {
     /// Live MCP server connections: server_id -> connection
     pub mcp_connections:
         Arc<TokioMutex<HashMap<String, Arc<TokioMutex<crate::mcp::client::McpConnection>>>>>,
+    /// Pending shell command approvals: approval_id -> response channel
+    pub pending_approvals:
+        Arc<TokioMutex<HashMap<String, tokio::sync::oneshot::Sender<ApprovalResponse>>>>,
 }
 
 /// Determine the application data directory.

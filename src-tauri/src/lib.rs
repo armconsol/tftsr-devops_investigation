@@ -7,6 +7,7 @@ pub mod integrations;
 pub mod mcp;
 pub mod ollama;
 pub mod pii;
+pub mod shell;
 pub mod state;
 
 use sha2::{Digest, Sha256};
@@ -38,6 +39,7 @@ pub fn run() {
         app_data_dir: data_dir.clone(),
         integration_webviews: Arc::new(Mutex::new(std::collections::HashMap::new())),
         mcp_connections: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
+        pending_approvals: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
     };
     let stronghold_salt = format!(
         "tftsr-stronghold-salt-v1-{:x}",
@@ -61,11 +63,19 @@ pub fn run() {
         .manage(app_state)
         .setup(|app| {
             let handle = app.handle().clone();
+
+            // Initialize MCP servers
             tauri::async_runtime::spawn(async move {
                 if let Err(e) = crate::mcp::discovery::init_all_servers(&handle).await {
                     tracing::warn!("MCP startup discovery error: {e}");
                 }
             });
+
+            // Auto-detect kubeconfig
+            // Note: Kubeconfig auto-detection is implemented in shell::kubeconfig::auto_detect_kubeconfig
+            // but not called at startup because it requires database access which may not be initialized yet.
+            // Users can manually upload kubeconfig files via the frontend UI.
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -151,6 +161,14 @@ pub fn run() {
             mcp::commands::discover_mcp_server,
             mcp::commands::get_mcp_server_status,
             mcp::commands::initiate_mcp_oauth,
+            // Shell Execution
+            commands::shell::upload_kubeconfig,
+            commands::shell::list_kubeconfigs,
+            commands::shell::activate_kubeconfig,
+            commands::shell::delete_kubeconfig,
+            commands::shell::respond_to_shell_approval,
+            commands::shell::list_command_executions,
+            commands::shell::check_kubectl_installed,
         ])
         .run(tauri::generate_context!())
         .expect("Error running Troubleshooting and RCA Assistant application");

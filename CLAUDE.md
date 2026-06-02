@@ -163,6 +163,44 @@ On the TypeScript side, `tauriCommands.ts` mirrors this shape exactly.
 
 Before any text is sent to an AI provider, `apply_redactions` must be called and the resulting SHA-256 hash recorded via `audit::log::write_audit_event`.
 
+### Shell Command Execution (v1.0.0)
+
+**Status**: Production-ready agentic shell execution with three-tier safety classification.
+
+**Features**:
+- kubectl commands with bundled binary (v1.30.0)
+- Proxmox tools (pvecm, pvesh, qm)
+- General shell diagnostics
+- Real-time approval modal for Tier 2 commands
+- Multiple kubeconfig support with AES-256 encrypted storage
+- Pipe/chain command analysis with tier escalation
+- Command execution history and audit logging
+
+**Three-Tier Safety System**:
+- **Tier 1** (Auto-execute): `kubectl get|describe|logs`, `cat|grep|ls`
+- **Tier 2** (User approval): `kubectl apply|delete|scale`, `ssh`, `systemctl restart`
+- **Tier 3** (Always deny): `rm -rf`, `shutdown`, `mkfs`
+
+**Key Files**:
+- `src-tauri/src/shell/classifier.rs`: Command safety classification (19 tests, 100% coverage)
+- `src-tauri/src/shell/executor.rs`: Execution flow with approval gates
+- `src-tauri/src/shell/kubectl.rs`: kubectl binary management
+- `src-tauri/src/shell/kubeconfig.rs`: Kubeconfig parsing and encryption
+- `src-tauri/src/commands/shell.rs`: 7 Tauri commands for kubeconfig and execution management
+- `src-tauri/src/ai/tools.rs`: `execute_shell_command` tool registration
+- `src/components/ShellApprovalModal.tsx`: Real-time approval UI
+- `src/pages/Settings/ShellExecution.tsx`: Settings and history view
+- `src/pages/Settings/KubeconfigManager.tsx`: Multi-cluster management UI
+- `scripts/download-kubectl.sh`: Binary download for all platforms
+
+**Database Tables** (Migrations 024-027):
+- `shell_commands`: Pre-defined command templates with tier definitions
+- `kubeconfig_files`: Encrypted kubeconfig storage
+- `command_executions`: Full audit trail (command, tier, status, exit code, stdout, stderr, timing)
+- `approval_decisions`: Session-based approval preferences
+
+**Documentation**: `docs/wiki/Shell-Execution.md`
+
 ### GitHub Actions CI
 
 All pipelines run on GitHub Actions at `https://github.com/msicie/apollo_nxt-trcaa/actions`.
@@ -170,6 +208,7 @@ All pipelines run on GitHub Actions at `https://github.com/msicie/apollo_nxt-trc
 - `GITHUB_TOKEN` is the only credential needed — no external secrets required
 - Builder images are hosted on `ghcr.io/msicie/` (GitHub Container Registry)
 - Branch protection on `main` requires `rust-test` and `frontend-test` checks to pass, plus Copilot code review, before merging
+- kubectl binaries downloaded during build via `scripts/download-kubectl.sh` for all platforms
 
 ---
 
@@ -193,6 +232,7 @@ The project wiki lives at `https://github.com/msicie/apollo_nxt-trcaa/wiki`.
 | Dev setup, prerequisites, build commands | `docs/wiki/Development-Setup.md` |
 | Integration stubs or v0.2 progress (`integrations/`) | `docs/wiki/Integrations.md` |
 | Recurring bugs and fixes | `docs/wiki/Troubleshooting.md` |
+| Shell execution, kubectl, kubeconfig management (`shell/`) | `docs/wiki/Shell-Execution.md` |
 
 To manually push wiki changes without waiting for CI:
 ```bash
