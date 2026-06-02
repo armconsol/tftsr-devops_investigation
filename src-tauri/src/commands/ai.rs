@@ -379,13 +379,6 @@ pub async fn chat_message(
         messages.push(context_message);
     }
 
-    messages.push(Message {
-        role: "user".into(),
-        content: full_message.clone(),
-        tool_call_id: None,
-        tool_calls: None,
-    });
-
     // Get available tools — static + MCP
     let mut all_tools = crate::ai::tools::get_available_tools();
     let mcp_tools = crate::ai::tools::get_enabled_mcp_tools(&state).await;
@@ -395,6 +388,34 @@ pub async fn chat_message(
     } else {
         Some(all_tools)
     };
+
+    // If tools are available AND using OpenAI-compatible provider, add explicit JSON format instruction
+    // Only OpenAI-compatible providers (default case in create_provider) actually support tool calling.
+    // Others (anthropic, gemini, mistral, ollama) either ignore tools or use provider-specific formats.
+    let is_openai_compatible = {
+        let kind = if provider_config.provider_type.is_empty() {
+            provider_config.name.as_str()
+        } else {
+            provider_config.provider_type.as_str()
+        };
+        !matches!(kind, "anthropic" | "gemini" | "mistral" | "ollama")
+    };
+
+    if tools.is_some() && is_openai_compatible {
+        messages.push(Message {
+            role: "system".into(),
+            content: "CRITICAL: You have tools available. When calling tools, you MUST use the native JSON function calling format in your API response. DO NOT output XML tags like <tool_name>. DO NOT output text descriptions of tool calls. Use the structured tool_calls field in your response.".into(),
+            tool_call_id: None,
+            tool_calls: None,
+        });
+    }
+
+    messages.push(Message {
+        role: "user".into(),
+        content: full_message.clone(),
+        tool_call_id: None,
+        tool_calls: None,
+    });
 
     // Tool-calling loop: keep calling until AI gives final answer
     let final_response;
