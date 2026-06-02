@@ -24,11 +24,11 @@ pub struct PatCredential {
 
 /// Generate a PKCE code verifier and challenge for OAuth flows.
 pub fn generate_pkce() -> PkceChallenge {
-    use rand::{thread_rng, RngCore};
+    use rand::RngCore;
 
     // Generate a random 32-byte verifier
     let mut verifier_bytes = [0u8; 32];
-    thread_rng().fill_bytes(&mut verifier_bytes);
+    rand::rng().fill_bytes(&mut verifier_bytes);
 
     let code_verifier = base64_url_encode(&verifier_bytes);
     let challenge_hash = Sha256::digest(code_verifier.as_bytes());
@@ -197,7 +197,7 @@ fn get_encryption_key_material() -> Result<String, String> {
         // Generate and store new key
         use rand::RngCore;
         let mut bytes = [0u8; 32];
-        rand::rngs::OsRng.fill_bytes(&mut bytes);
+        rand::rng().fill_bytes(&mut bytes);
         let key = hex::encode(bytes);
 
         // Ensure directory exists
@@ -251,7 +251,7 @@ pub fn encrypt_token(token: &str) -> Result<String, String> {
         aead::{Aead, KeyInit},
         Aes256Gcm, Nonce,
     };
-    use rand::{thread_rng, RngCore};
+    use rand::RngCore;
 
     let key_bytes = derive_aes_key()?;
 
@@ -259,7 +259,7 @@ pub fn encrypt_token(token: &str) -> Result<String, String> {
 
     // Generate random nonce
     let mut nonce_bytes = [0u8; 12];
-    thread_rng().fill_bytes(&mut nonce_bytes);
+    rand::rng().fill_bytes(&mut nonce_bytes);
     let nonce = Nonce::from_slice(&nonce_bytes);
 
     // Encrypt
@@ -650,14 +650,14 @@ mod tests {
             aead::{Aead, KeyInit},
             Aes256Gcm, Nonce,
         };
-        use rand::{thread_rng, RngCore};
+        use rand::RngCore;
 
         let cipher = Aes256Gcm::new_from_slice(key_bytes)
             .map_err(|e| format!("Failed to create cipher: {e}"))?;
 
         // Generate random nonce
         let mut nonce_bytes = [0u8; 12];
-        thread_rng().fill_bytes(&mut nonce_bytes);
+        rand::rng().fill_bytes(&mut nonce_bytes);
         let nonce = Nonce::from_slice(&nonce_bytes);
 
         // Encrypt

@@ -1,7 +1,7 @@
 {
   "name": "tftsr",
   "private": true,
-  "version": "0.2.68",
+  "version": "0.3.1",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -33,15 +33,15 @@
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2",
+    "@testing-library/dom": "^10.4.1",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16",
     "@testing-library/user-event": "^14",
     "@types/react": "^18",
     "@types/react-dom": "^18",
-    "@types/testing-library__react": "^10",
     "@typescript-eslint/eslint-plugin": "^8.58.1",
     "@typescript-eslint/parser": "^8.58.1",
-    "@vitejs/plugin-react": "^6",
+    "@vitejs/plugin-react": "^4.7.0",
     "@vitest/coverage-v8": "^2",
     "@wdio/cli": "^9",
     "@wdio/mocha-framework": "^9",
