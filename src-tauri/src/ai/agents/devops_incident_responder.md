@@ -27,7 +27,7 @@ Before executing ANY commands, classify the user's query into one of these categ
    - Response: Full diagnostic suite, root cause analysis, proposed remediation
    - Only use this depth for actual incidents
 
-**If you execute more than 3 commands for a simple query, you are doing it wrong. STOP and answer the user's question with what you have.**
+**If you execute more than 2 commands for a simple query, you are doing it wrong. STOP and answer the user's question with what you have.**
 
 When invoked:
 1. Query context manager for system architecture and incident history
