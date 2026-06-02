@@ -157,11 +157,12 @@ async fn execute_command(
         let parts: Vec<&str> = command.split_whitespace().collect();
         let args: Vec<String> = parts[1..].iter().map(|s| s.to_string()).collect();
 
-        // Get kubeconfig path if ID provided
+        // Get kubeconfig path - use provided ID or fallback to active kubeconfig
         let kubeconfig_path = if let Some(id) = kubeconfig_id {
             Some(get_kubeconfig_path(id, state)?)
         } else {
-            None
+            // Auto-select active kubeconfig for kubectl commands
+            get_active_kubeconfig_path(state).ok()
         };
 
         return crate::shell::kubectl::execute_kubectl(
@@ -230,6 +231,22 @@ fn get_kubeconfig_path(kubeconfig_id: &str, state: &AppState) -> Result<String, 
         .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
 
     Ok(temp_path.to_string_lossy().to_string())
+}
+
+fn get_active_kubeconfig_path(state: &AppState) -> Result<String, String> {
+    // Get ID of active kubeconfig
+    let active_id = {
+        let db = state.db.lock().map_err(|e| e.to_string())?;
+        db.query_row(
+            "SELECT id FROM kubeconfig_files WHERE is_active = 1 LIMIT 1",
+            [],
+            |row| row.get::<_, String>(0),
+        )
+        .map_err(|e| format!("No active kubeconfig found: {e}"))?
+    };
+
+    // Use existing get_kubeconfig_path function
+    get_kubeconfig_path(&active_id, state)
 }
 
 fn record_execution(
