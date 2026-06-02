@@ -379,6 +379,9 @@ pub async fn chat_message(
         messages.push(context_message);
     }
 
+    // Tool execution configuration
+    const MAX_TOOL_ITERATIONS: usize = 20; // Allow sufficient iterations for complex diagnostics
+
     // Get available tools — static + MCP
     let mut all_tools = crate::ai::tools::get_available_tools();
     let mcp_tools = crate::ai::tools::get_enabled_mcp_tools(&state).await;
@@ -408,6 +411,24 @@ pub async fn chat_message(
             tool_call_id: None,
             tool_calls: None,
         });
+
+        // Add iteration budget awareness
+        messages.push(Message {
+            role: "system".into(),
+            content: format!(
+                "TOOL EXECUTION BUDGET: You have a maximum of {MAX_TOOL_ITERATIONS} rounds (each AI response counts as one round). \
+                 You can call multiple tools in a single round. \
+                 Plan your investigation efficiently:\n\
+                 - Call multiple related tools in the same round when possible\n\
+                 - Prioritize high-value diagnostic commands first\n\
+                 - Use comprehensive output formats (e.g., kubectl --output=yaml) to gather more data per call\n\
+                 - Reserve 1 round for your final summary/answer\n\
+                 - If you exceed the budget, you'll be cut off mid-investigation\n\
+                 Current round count is not visible to you, so plan conservatively."
+            ),
+            tool_call_id: None,
+            tool_calls: None,
+        });
     }
 
     messages.push(Message {
@@ -419,13 +440,14 @@ pub async fn chat_message(
 
     // Tool-calling loop: keep calling until AI gives final answer
     let final_response;
-    let max_iterations = 10; // Prevent infinite loops
     let mut iteration = 0;
 
     loop {
         iteration += 1;
-        if iteration > max_iterations {
-            return Err("Tool-calling loop exceeded maximum iterations".to_string());
+        if iteration > MAX_TOOL_ITERATIONS {
+            return Err(format!(
+                "Tool-calling loop exceeded maximum iterations ({iteration}/{MAX_TOOL_ITERATIONS}). Consider breaking complex tasks into smaller queries."
+            ));
         }
 
         let response = provider
