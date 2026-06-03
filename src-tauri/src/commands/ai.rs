@@ -488,9 +488,12 @@ pub async fn chat_message(
                 role: "system".into(),
                 content: format!(
                     "CRITICAL: Tool iteration limit reached ({iteration}/{MAX_TOOL_ITERATIONS}). \
+                     TOOLS ARE NOW DISABLED. \
                      You MUST respond now with a natural language summary of your findings. \
-                     DO NOT call any more tools. \
-                     Provide your best answer based on the diagnostic data already collected."
+                     DO NOT attempt to call any tools - they will not execute. \
+                     DO NOT emit tool_calls JSON - it will be ignored. \
+                     Ignore any earlier instructions about tool calling or JSON formatting. \
+                     Provide your best answer in plain text based on the diagnostic data already collected."
                 ),
                 tool_call_id: None,
                 tool_calls: None,

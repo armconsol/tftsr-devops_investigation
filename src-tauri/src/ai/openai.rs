@@ -431,46 +431,71 @@ impl OpenAiProvider {
                         .enumerate()
                         .filter_map(|(index, call)| {
                             // Try OpenAI format first
-                            if let (Some(id), Some(name), Some(args)) = (
+                            if let (Some(id), Some(name)) = (
                                 call.get("id").and_then(|v| v.as_str()),
                                 call.get("function")
                                     .and_then(|f| f.get("name"))
                                     .and_then(|n| n.as_str())
                                     .or_else(|| call.get("name").and_then(|n| n.as_str())),
-                                call.get("function")
-                                    .and_then(|f| f.get("arguments"))
-                                    .and_then(|a| a.as_str())
-                                    .or_else(|| call.get("arguments").and_then(|a| a.as_str())),
                             ) {
-                                tracing::info!("MSI GenAI: Parsed tool call: {} ({})", name, id);
-                                return Some(crate::ai::ToolCall {
-                                    id: id.to_string(),
-                                    name: name.to_string(),
-                                    arguments: args.to_string(),
-                                });
+                                // Accept arguments as either string or object (MSI GenAI returns both)
+                                let arguments = call
+                                    .get("function")
+                                    .and_then(|f| f.get("arguments"))
+                                    .or_else(|| call.get("arguments"))
+                                    .and_then(|args| {
+                                        if let Some(s) = args.as_str() {
+                                            Some(s.to_string())
+                                        } else {
+                                            // Serialize object to JSON string
+                                            serde_json::to_string(args).ok()
+                                        }
+                                    });
+
+                                if let Some(args) = arguments {
+                                    tracing::info!(
+                                        "MSI GenAI: Parsed tool call: {} ({})",
+                                        name,
+                                        id
+                                    );
+                                    return Some(crate::ai::ToolCall {
+                                        id: id.to_string(),
+                                        name: name.to_string(),
+                                        arguments: args,
+                                    });
+                                }
                             }
 
                             // Try simpler format
-                            if let (Some(name), Some(args)) = (
-                                call.get("name").and_then(|n| n.as_str()),
-                                call.get("arguments").and_then(|a| a.as_str()),
-                            ) {
-                                // Generate unique ID if missing (avoids duplicates)
-                                let id = call
-                                    .get("id")
-                                    .and_then(|v| v.as_str())
-                                    .map(|s| s.to_string())
-                                    .unwrap_or_else(|| format!("tool_call_{index}"));
-                                tracing::info!(
-                                    "MSI GenAI: Parsed tool call (simple format): {} ({})",
-                                    name,
-                                    id
-                                );
-                                return Some(crate::ai::ToolCall {
-                                    id,
-                                    name: name.to_string(),
-                                    arguments: args.to_string(),
+                            if let Some(name) = call.get("name").and_then(|n| n.as_str()) {
+                                // Accept arguments as either string or object
+                                let arguments = call.get("arguments").and_then(|args| {
+                                    if let Some(s) = args.as_str() {
+                                        Some(s.to_string())
+                                    } else {
+                                        // Serialize object to JSON string
+                                        serde_json::to_string(args).ok()
+                                    }
                                 });
+
+                                if let Some(args) = arguments {
+                                    // Generate unique ID if missing (avoids duplicates)
+                                    let id = call
+                                        .get("id")
+                                        .and_then(|v| v.as_str())
+                                        .map(|s| s.to_string())
+                                        .unwrap_or_else(|| format!("tool_call_{index}"));
+                                    tracing::info!(
+                                        "MSI GenAI: Parsed tool call (simple format): {} ({})",
+                                        name,
+                                        id
+                                    );
+                                    return Some(crate::ai::ToolCall {
+                                        id,
+                                        name: name.to_string(),
+                                        arguments: args,
+                                    });
+                                }
                             }
 
                             tracing::warn!("MSI GenAI: Failed to parse tool call: {:?}", call);
