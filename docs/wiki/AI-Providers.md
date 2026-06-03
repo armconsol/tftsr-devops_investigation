@@ -145,9 +145,42 @@ Standard OpenAI `/chat/completions` endpoint with Bearer authentication.
 
 ---
 
-### Format: Custom REST
+### Format: MSI GenAI
 
-**Enterprise AI Gateway** — For AI platforms that use a non-OpenAI request/response format with centralized cost tracking and model access.
+**MSI GenAI Gateway** — Enterprise AI gateway with model proxying and cost tracking.
+
+| Field | Value |
+|-------|-------|
+| `config.provider_type` | `"custom"` |
+| `config.api_format` | `"msi-genai"` |
+| Status | ⚠️ **Limited compatibility** |
+
+**Known Limitations:**
+- ❌ **Tool calling not supported**: Gateway returns `503 Service Unavailable` with error `"Gemini Filter Triggered: UNEXPECTED_TOOL_CALL"`
+- ❌ **Shell execution unavailable**: Cannot use `execute_shell_command` or other function calling features
+- ✅ **Basic chat works**: Text-only conversations function correctly
+- ✅ **Workaround parser included**: Attempts to extract tool calls from malformed responses (ChatGPT JSON in `msg` field, Claude XML wrapper)
+
+**Recommendation**: Use **LiteLLM + AWS Bedrock** (see [LiteLLM Setup Guide](LiteLLM-Bedrock-Setup)) or **Ollama** for full tool calling support.
+
+**Root Cause**: MSI GenAI gateway applies content filtering that blocks structured tool call responses before they reach the client. This is a gateway-level restriction that cannot be worked around from the client side.
+
+**Configuration (if needed for text-only use):**
+```
+Name:             MSI GenAI
+Type:             Custom
+API Format:       MSI GenAI
+API URL:          https://your-gateway/api/v2/chat
+Model:            your-model-name
+API Key:          (your API key)
+User ID:          user@example.com (optional, for cost tracking)
+```
+
+---
+
+### Format: Custom REST (Generic)
+
+**Generic Enterprise AI Gateway** — For AI platforms that use a non-OpenAI request/response format with centralized cost tracking and model access.
 
 | Field | Value |
 |-------|-------|
