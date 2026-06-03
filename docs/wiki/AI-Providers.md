@@ -121,11 +121,11 @@ The domain prompt is injected as the first `system` role message in every new co
 
 ---
 
-## 6. Custom Provider (Custom REST & Others)
+## 6. Custom Provider (Multiple API Formats)
 
 **Status:** ✅ **Implemented** (v0.2.6)
 
-Custom providers allow integration with non-OpenAI-compatible APIs. The application supports two API formats:
+Custom providers allow integration with non-OpenAI-compatible APIs. The application supports multiple API formats:
 
 ### Format: OpenAI Compatible (Default)
 
