@@ -555,7 +555,9 @@ impl OpenAiProvider {
     }
 
     /// Extract ToolCall structs from JSON array
-    fn extract_tool_calls_from_array(calls: &[serde_json::Value]) -> Option<Vec<crate::ai::ToolCall>> {
+    fn extract_tool_calls_from_array(
+        calls: &[serde_json::Value],
+    ) -> Option<Vec<crate::ai::ToolCall>> {
         let parsed: Vec<crate::ai::ToolCall> = calls
             .iter()
             .enumerate()
