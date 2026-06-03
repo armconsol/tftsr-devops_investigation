@@ -334,6 +334,9 @@ export const applyRedactionsCmd = (logFileId: string, approvedSpanIds: string[])
 export const testProviderConnectionCmd = (providerConfig: ProviderConfig) =>
   invoke<ChatResponse>("test_provider_connection", { providerConfig });
 
+export const detectToolCallingSupportCmd = (providerConfig: ProviderConfig) =>
+  invoke<boolean>("detect_tool_calling_support", { providerConfig });
+
 export const createIssueCmd = (newIssue: NewIssue) =>
   invoke<Issue>("create_issue", {
     title: newIssue.title,

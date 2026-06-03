@@ -292,9 +292,64 @@ All providers support the following optional configuration fields (v0.2.6+):
 | `api_format` | `Option<String>` | API format (`openai` or `custom_rest`) | `openai` |
 | `session_id` | `Option<String>` | Session ID for stateful APIs | None |
 | `user_id` | `Option<String>` | User ID for cost tracking (Custom REST gateways) | None |
+| `supports_tool_calling` | `Option<bool>` | Enable function/tool calling | `true` for built-in providers, `false` for custom |
 
 **Backward Compatibility:**
 All fields are optional and default to OpenAI-compatible behavior. Existing provider configurations are unaffected.
+
+---
+
+## Tool Calling Auto-Detection
+
+**Status:** ✅ **Implemented** (v1.0.9+)
+
+TRCAA can automatically detect whether a custom AI provider supports tool calling (function calling) by sending a test tool call and analyzing the response.
+
+### How It Works
+
+1. Navigate to **Settings → AI Providers** → Add/Edit Custom Provider
+2. Configure your provider (API URL, key, model)
+3. Click **"Auto-Detect Tool Calling Support"** button
+4. System sends a simple test tool call to the provider
+5. Checkbox automatically enabled/disabled based on result
+6. Success/warning message displayed
+
+### Detection Criteria
+
+| Scenario | Result | Explanation |
+|----------|--------|-------------|
+| Provider returns `tool_calls` array with test tool | ✅ Tool calling supported | Checkbox enabled automatically |
+| Provider responds without tool_calls | ⚠️ Not supported | Checkbox disabled automatically |
+| Gateway returns 503 / "tool" error | ⚠️ Blocked at gateway level | Checkbox disabled (e.g., MSI GenAI) |
+| Connection/auth/timeout error | ❌ Error displayed | User must fix connection issue |
+
+### Test Tool
+
+The auto-detection sends this minimal tool:
+
+```rust
+{
+  "name": "test_tool",
+  "description": "A test tool that returns 'success'. Call this tool with no arguments.",
+  "parameters": {
+    "type": "object",
+    "properties": {},
+    "required": []
+  }
+}
+```
+
+### Known Limitations
+
+- **MSI GenAI**: Gateway blocks tool calls with `503 UNEXPECTED_TOOL_CALL` before they reach the model. Auto-detect correctly identifies this as "not supported."
+- **Small Models**: Models <3B parameters (e.g., `llama3.2:1b`) may respond but describe tools instead of calling them. Auto-detect may return `true` (model capability) but runtime behavior will fail.
+- **Timeout**: Detection uses same timeout as regular chat (60-180s depending on provider). Slow providers may timeout during detection.
+
+### Manual Override
+
+You can always manually toggle the `supports_tool_calling` checkbox:
+- ✅ Enable: For providers you know support tool calling
+- ❌ Disable: For text-only chat without shell execution or integrations
 
 ---
 

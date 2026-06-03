@@ -19,6 +19,7 @@ import {
 import { useSettingsStore } from "@/stores/settingsStore";
 import {
   testProviderConnectionCmd,
+  detectToolCallingSupportCmd,
   saveAiProviderCmd,
   loadAiProvidersCmd,
   deleteAiProviderCmd,
@@ -84,7 +85,8 @@ export default function AIProviders() {
   const [isAdding, setIsAdding] = useState(false);
   const [form, setForm] = useState<ProviderConfig>({ ...emptyProvider });
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
-  const [isTesting, setIsTesting] = useState(false);
+  const [isTestingConnection, setIsTestingConnection] = useState(false);
+  const [isDetectingToolCalling, setIsDetectingToolCalling] = useState(false);
   const [isCustomModel, setIsCustomModel] = useState(false);
   const [customModelInput, setCustomModelInput] = useState("");
   const [ollamaModels, setOllamaModels] = useState<OllamaModel[]>([]);
@@ -192,7 +194,7 @@ export default function AIProviders() {
   };
 
   const handleTest = async () => {
-    setIsTesting(true);
+    setIsTestingConnection(true);
     setTestResult(null);
     try {
       const response = await testProviderConnectionCmd(form);
@@ -200,7 +202,27 @@ export default function AIProviders() {
     } catch (err) {
       setTestResult({ success: false, message: String(err) });
     } finally {
-      setIsTesting(false);
+      setIsTestingConnection(false);
+    }
+  };
+
+  const handleAutoDetectToolCalling = async () => {
+    setIsDetectingToolCalling(true);
+    setTestResult(null);
+    try {
+      const supportsTools = await detectToolCallingSupportCmd(form);
+      // Use functional update to avoid stale closure
+      setForm((prev) => ({ ...prev, supports_tool_calling: supportsTools }));
+      setTestResult({
+        success: supportsTools, // Align success with actual outcome
+        message: supportsTools
+          ? "✅ Tool calling supported! Checkbox enabled automatically."
+          : "⚠️ Tool calling not supported. Checkbox disabled automatically.",
+      });
+    } catch (err) {
+      setTestResult({ success: false, message: `Auto-detect failed: ${String(err)}` });
+    } finally {
+      setIsDetectingToolCalling(false);
     }
   };
 
@@ -575,12 +597,12 @@ export default function AIProviders() {
                     <Button
                       variant="outline"
                       size="sm"
-                      disabled
-                      className="w-full opacity-50 cursor-not-allowed"
-                      title="Auto-detection feature coming in a future release"
+                      onClick={handleAutoDetectToolCalling}
+                      disabled={isTestingConnection || isDetectingToolCalling}
+                      className="w-full"
                     >
                       <Zap className="w-4 h-4 mr-2" />
-                      Auto-Detect Tool Calling Support (Coming Soon)
+                      {isDetectingToolCalling ? "Detecting..." : "Auto-Detect Tool Calling Support"}
                     </Button>
                   </div>
                 </div>
@@ -609,8 +631,8 @@ export default function AIProviders() {
 
             <div className="flex items-center gap-2">
               <Button onClick={handleSave}>Save</Button>
-              <Button variant="outline" onClick={handleTest} disabled={isTesting}>
-                {isTesting ? "Testing..." : "Test Connection"}
+              <Button variant="outline" onClick={handleTest} disabled={isTestingConnection || isDetectingToolCalling}>
+                {isTestingConnection ? "Testing..." : "Test Connection"}
               </Button>
               <Button variant="ghost" onClick={handleCancel}>
                 Cancel

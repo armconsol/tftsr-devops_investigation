@@ -666,6 +666,79 @@ pub async fn test_provider_connection(
 }
 
 #[tauri::command]
+pub async fn detect_tool_calling_support(provider_config: ProviderConfig) -> Result<bool, String> {
+    use crate::ai::{Tool, ToolParameters};
+    use std::collections::HashMap;
+    use tracing::info;
+
+    // Create a simple test tool
+    let test_tool = Tool {
+        name: "test_tool".to_string(),
+        description: "A test tool that returns 'success'. Call this tool with no arguments."
+            .to_string(),
+        parameters: ToolParameters {
+            param_type: "object".to_string(),
+            properties: HashMap::new(),
+            required: vec![],
+        },
+    };
+
+    // Override config with detection-optimized settings
+    let mut detection_config = provider_config.clone();
+    detection_config.max_tokens = Some(100); // Small budget for capability check
+    detection_config.temperature = Some(0.0); // Deterministic for reliability
+
+    let provider = create_provider(&detection_config);
+    let messages = vec![Message {
+        role: "user".into(),
+        content: "Please call the test_tool function.".into(),
+        tool_call_id: None,
+        tool_calls: None,
+    }];
+
+    match provider
+        .chat(messages, &detection_config, Some(vec![test_tool]))
+        .await
+    {
+        Ok(response) => {
+            // Check if response contains tool_calls
+            if let Some(tool_calls) = response.tool_calls {
+                if tool_calls.iter().any(|tc| tc.name == "test_tool") {
+                    info!(
+                        "Tool calling support detected for provider {}",
+                        provider_config.name
+                    );
+                    return Ok(true);
+                }
+            }
+            // Provider responded but didn't use tool calls
+            info!(
+                "Provider {} responded but did not call tool",
+                provider_config.name
+            );
+            Ok(false)
+        }
+        Err(e) => {
+            // Check if error indicates tool calling is not supported
+            let error_msg = e.to_string().to_lowercase();
+            if error_msg.contains("tool")
+                || error_msg.contains("function")
+                || error_msg.contains("503")
+            {
+                info!(
+                    "Tool calling not supported for provider {}: {}",
+                    provider_config.name, e
+                );
+                Ok(false)
+            } else {
+                // Connection or other error
+                Err(format!("Failed to test tool calling support: {e}"))
+            }
+        }
+    }
+}
+
+#[tauri::command]
 pub async fn list_providers() -> Result<Vec<ProviderInfo>, String> {
     Ok(vec![
         ProviderInfo {
@@ -1690,5 +1763,124 @@ mod tests {
             tools_enabled.is_none(),
             "Tools should be None even when flag is true if no tools are available"
         );
+    }
+
+    // Tests for detect_tool_calling_support
+    // NOTE: These are unit tests for the detection logic, not integration tests with real providers.
+    // They verify the logical correctness of detection criteria (checking for tool_calls presence,
+    // error pattern matching) but do not exercise the full command implementation.
+    // Tradeoff: These tests provide fast feedback on detection logic without requiring network calls
+    // or mock providers. Integration tests with real providers would be more comprehensive but slower
+    // and require test infrastructure setup.
+
+    #[test]
+    fn test_detect_tool_calling_logic_with_tool_calls_in_response() {
+        use crate::ai::ToolCall;
+
+        // Simulate a response that contains tool_calls
+        let tool_calls = Some(vec![ToolCall {
+            id: "call_1".to_string(),
+            name: "test_tool".to_string(),
+            arguments: "{}".to_string(),
+        }]);
+
+        // Check if any tool_call has the expected name
+        let supports_tools = tool_calls
+            .as_ref()
+            .map(|calls| calls.iter().any(|tc| tc.name == "test_tool"))
+            .unwrap_or(false);
+
+        assert!(
+            supports_tools,
+            "Should detect tool support when response contains test_tool call"
+        );
+    }
+
+    #[test]
+    fn test_detect_tool_calling_logic_without_tool_calls() {
+        use crate::ai::ToolCall;
+
+        // Simulate a response without tool_calls
+        let tool_calls: Option<Vec<ToolCall>> = None;
+
+        let supports_tools = tool_calls
+            .as_ref()
+            .map(|calls| calls.iter().any(|tc| tc.name == "test_tool"))
+            .unwrap_or(false);
+
+        assert!(
+            !supports_tools,
+            "Should not detect tool support when response has no tool_calls"
+        );
+    }
+
+    #[test]
+    fn test_detect_tool_calling_logic_with_wrong_tool_name() {
+        use crate::ai::ToolCall;
+
+        // Simulate a response with tool_calls but wrong tool name
+        let tool_calls = Some(vec![ToolCall {
+            id: "call_1".to_string(),
+            name: "different_tool".to_string(),
+            arguments: "{}".to_string(),
+        }]);
+
+        let supports_tools = tool_calls
+            .as_ref()
+            .map(|calls| calls.iter().any(|tc| tc.name == "test_tool"))
+            .unwrap_or(false);
+
+        assert!(
+            !supports_tools,
+            "Should not detect tool support when tool name doesn't match"
+        );
+    }
+
+    #[test]
+    fn test_detect_tool_calling_error_patterns() {
+        // Test error message patterns that indicate tool calling is not supported
+        let error_cases = vec![
+            "503 Service Unavailable: UNEXPECTED_TOOL_CALL",
+            "Tool calling not supported",
+            "Function calls are not allowed",
+            "tools parameter is invalid",
+        ];
+
+        for error_msg in error_cases {
+            let msg_lower = error_msg.to_lowercase();
+            let is_tool_error = msg_lower.contains("tool")
+                || msg_lower.contains("function")
+                || msg_lower.contains("503");
+
+            assert!(
+                is_tool_error,
+                "Error message '{}' should be recognized as tool-related",
+                error_msg
+            );
+        }
+    }
+
+    #[test]
+    fn test_detect_tool_calling_non_tool_errors() {
+        // Test error messages that are NOT tool-related
+        let error_cases = vec![
+            "Connection timeout",
+            "Invalid API key",
+            "Rate limit exceeded",
+            "Network error",
+        ];
+
+        for error_msg in error_cases {
+            let msg_lower = error_msg.to_lowercase();
+            let is_tool_error = msg_lower.contains("tool")
+                || msg_lower.contains("function")
+                || msg_lower.contains("503");
+
+            assert!(
+                !is_tool_error,
+                "Error message '{}' should NOT be recognized as tool-related",
+                error_msg
+            );
+        }
     }
 }

@@ -2,8 +2,8 @@
 
 **Project**: TRCAA (Troubleshooting and RCA Assistant)  
 **Feature**: Autonomous AI-Powered Shell Command Execution  
-**Version**: 1.0.0 (Major Release)  
-**Date**: June 2, 2026  
+**Version**: 1.0.0 → 1.0.9 (Major Release + Post-Hackathon Iterations)  
+**Date**: June 2-3, 2026  
 **Team**: Shaun Arman (VFK387)  
 **ADO Work Item**: [#727547](https://dev.azure.com/msi-cie/Apollo/_workitems/edit/727547)
 
@@ -260,32 +260,38 @@ GitHub Copilot performed automated code review with 9 findings, all addressed:
 
 ## Metrics & Impact
 
-### Lines of Code (Including Post-Release)
+### Lines of Code (Including Post-Release v1.0.1-v1.0.9)
 - **Rust**: ~2,200 new lines (shell module + commands + AI improvements)
 - **TypeScript/React**: ~900 new lines (components + types)
-- **Tests**: ~800 lines (280 tests total, was 272)
+- **Tests**: ~800 lines (431 tests total: 297 backend + 134 frontend)
 - **Documentation**: ~2,200 lines (including this summary + wiki updates)
 - **Total**: ~6,100 lines of production code
 
 ### Development Time
 - **Initial Hackathon (v1.0.0)**: ~44 hours
-- **Post-Release Development (v1.0.1-v1.0.5)**: ~22 hours
-  - Security updates: 2 hours
-  - LiteLLM integration: 4 hours
-  - Query classification: 3 hours
-  - Graceful exit + MSI GenAI: 8 hours
-  - Agent prompt improvements: 2 hours
-  - Copilot reviews (3 rounds): 3 hours
-- **Total**: ~66 hours
+- **Post-Release Development (v1.0.1-v1.0.9)**: ~28 hours
+  - Security updates (v1.0.1): 2 hours
+  - LiteLLM integration (v1.0.2): 4 hours
+  - Query classification (v1.0.3): 3 hours
+  - Graceful exit + MSI GenAI (v1.0.4): 8 hours
+  - Agent prompt improvements (v1.0.5-v1.0.6): 2 hours
+  - Ollama function calling (v1.0.7): 3 hours
+  - Connection reliability (v1.0.8): 3 hours
+  - Tool calling auto-detect (v1.0.9): 3 hours
+- **Total**: ~72 hours
 
 ### Files Modified
 - **v1.0.0**: 35 files (PR #27, #28)
-- **v1.0.1**: 6 files (PR #29 - Dependencies)
+- **v1.0.1**: 6 files (PR #29, #32 - Dependencies + rebrand)
 - **v1.0.2**: 4 files (PR #31 - LiteLLM)
-- **v1.0.3**: 1 file (PR #37 - Query classification)
+- **v1.0.3**: 1 file (PR #36, #37 - Query classification)
 - **v1.0.4**: 7 files (PR #38 - Graceful exit + MSI GenAI)
-- **v1.0.5**: 7 files (PR #39 - Agent output + provider docs + version bumps)
-- **Total**: 60 files modified across 8 PRs
+- **v1.0.5**: 7 files (PR #39 - Agent output + provider docs)
+- **v1.0.6**: 4 files (PR #40 - JSON example removal)
+- **v1.0.7**: 5 files (PR #41 - Ollama function calling)
+- **v1.0.8**: 8 files (PR #42 - Connection reliability)
+- **v1.0.9**: 7 files (PR #44 - Tool calling auto-detect, in review)
+- **Total**: ~84 files modified across 25 PRs
 
 ---
 
@@ -648,6 +654,56 @@ Testing revealed models <3B parameters cannot reliably follow tool calling instr
 - ✅ TypeScript clean
 - ✅ Cargo fmt clean
 
+#### v1.0.9 (June 3, 2026) - Auto-Detect Tool Calling Support
+**PR #44**: Automatic detection of AI provider tool calling support
+
+**Problem Identified:**
+Users unsure if custom AI providers support tool calling, requiring manual trial-and-error and leading to runtime failures.
+
+**User Request:** "It would be great if we can enable a way to auto-scan the provider during a test to see if it does provide tool calling support!"
+
+**Solution Implemented:**
+1. **New Backend Command**: `detect_tool_calling_support()`
+   - Sends minimal test tool call with no arguments
+   - Analyzes response for `tool_calls` array presence
+   - Handles gateway-level blocking (503 errors)
+   
+2. **Smart Error Handling**:
+   - Tool-related errors (503, "tool", "function") → false (not supported)
+   - Non-tool errors (connection, auth, timeout) → propagated to user
+   
+3. **UI Integration**:
+   - "Test Tool Calling" button in AI Providers settings
+   - Auto-enables/disables `supports_tool_calling` checkbox
+   - Clear success/warning/error feedback
+
+**Implementation Details:**
+- Test tool: Simple no-argument tool named "test_tool"
+- Detection criteria: Response contains tool_calls with matching name
+- Test coverage: +5 backend tests, +7 frontend tests
+- Total: 297 backend + 134 frontend tests passing
+
+**Files Changed:**
+- `src-tauri/src/commands/ai.rs`: +110 lines (detection logic + tests)
+- `src-tauri/src/lib.rs`: +1 line (register command)
+- `src/lib/tauriCommands.ts`: +3 lines (TypeScript wrapper)
+- `src/pages/Settings/AIProviders.tsx`: +18 lines (UI button + handler)
+- `tests/unit/detectToolCalling.test.ts`: +170 lines (frontend tests)
+
+**Impact:**
+- ✅ Eliminates guesswork about provider tool calling support
+- ✅ Prevents runtime errors from misconfigured providers
+- ✅ Improves onboarding experience for new providers
+- ✅ Clear, immediate feedback about provider capabilities
+- ✅ Documented in `docs/wiki/AI-Providers.md` with examples
+
+**Test Coverage:**
+- ✅ 297 backend tests passing
+- ✅ 134 frontend tests passing
+- ✅ Clippy clean
+- ✅ TypeScript clean
+- ✅ Cargo fmt clean
+
 ---
 
 ## Post-Hackathon Challenges Solved
@@ -726,6 +782,44 @@ Testing revealed models <3B parameters cannot reliably follow tool calling instr
 - Health check prevents wasted 60-180s timeouts
 - Clear model guidance prevents user confusion
 - Documented in v1.0.8-summary.md and wiki
+
+### Challenge 14: Tool Calling Support Detection
+**Problem**: Users unsure if custom AI providers support tool calling, marked as "Coming Soon" in v1.0.8  
+**User Request**: "It would be great if we can enable a way to auto-scan the provider during a test to see if it does provide tool calling support!"  
+**Root Cause**: Manual trial-and-error required, leading to runtime failures and frustration  
+
+**Solution** (v1.0.9 / PR #44):
+1. New backend command: `detect_tool_calling_support()`
+2. Sends minimal test tool call with no arguments
+3. Analyzes response for `tool_calls` array presence
+4. Handles gateway-level blocking (503 errors)
+5. Auto-enables/disables `supports_tool_calling` checkbox
+6. Clear success/warning/error feedback
+
+**Implementation Details:**
+- Test tool: Simple no-argument tool named "test_tool"
+- Detection criteria: Response contains tool_calls with matching name
+- Error handling: Tool-related errors (503, "tool", "function") → false (not supported)
+- Non-tool errors (connection, auth, timeout) → propagated to user
+
+**Test Coverage:**
+- Backend: +5 unit tests (detection logic, error patterns)
+- Frontend: +7 unit tests (command interface, error handling)
+- Total: 297 backend + 134 frontend tests passing
+
+**Files Changed:**
+- `src-tauri/src/commands/ai.rs`: +110 lines (detection logic + tests)
+- `src-tauri/src/lib.rs`: +1 line (register command)
+- `src/lib/tauriCommands.ts`: +3 lines (TypeScript wrapper)
+- `src/pages/Settings/AIProviders.tsx`: +18 lines (UI button + handler)
+- `tests/unit/detectToolCalling.test.ts`: +170 lines (frontend tests)
+
+**Impact**:
+- Eliminates guesswork about provider tool calling support
+- Prevents runtime errors from misconfigured providers
+- Improves onboarding experience for new providers
+- Clear, immediate feedback about provider capabilities
+- Documented in `docs/wiki/AI-Providers.md` with examples
 
 ---
 
@@ -894,7 +988,7 @@ CREATE TABLE approval_decisions (
 
 **Document Status**: Living Document  
 **Last Updated**: June 3, 2026  
-**Version**: Includes v1.0.0-v1.0.8 development  
+**Version**: Includes v1.0.0-v1.0.9 development  
 **Maintainer**: Shaun Arman (VFK387)  
 **Review Cycle**: Update after each PR merge or significant milestone
 
@@ -912,4 +1006,5 @@ CREATE TABLE approval_decisions (
 | v1.0.5 | Jun 3 | #39 | Agent output quality, MSI GenAI docs | ✅ Merged |
 | v1.0.6 | Jun 3 | #40 | Removed JSON examples from agent prompts (liteLLM fix) | ✅ Merged |
 | v1.0.7 | Jun 3 | #41 | Ollama function calling support | ✅ Merged |
-| v1.0.8 | Jun 3 | #42 | Connection reliability, retry logic, model recommendations (≥3B) | 🔄 In Review |
+| v1.0.8 | Jun 3 | #42 | Connection reliability, retry logic, model recommendations (≥3B) | ✅ Merged |
+| v1.0.9 | Jun 3 | #44 | Auto-detect tool calling support for AI providers | 🔄 In Review |
