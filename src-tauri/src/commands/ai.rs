@@ -450,11 +450,10 @@ pub async fn chat_message(
             messages.push(Message {
                 role: "system".into(),
                 content: format!(
-                    "WARNING: You are on iteration {}/{} (2 rounds remaining). \
+                    "WARNING: You are on iteration {iteration}/{MAX_TOOL_ITERATIONS} (2 rounds remaining). \
                      You MUST provide your final answer in the NEXT round. \
                      Do NOT call any more tools. \
-                     Summarize your findings based on the data you've already gathered.",
-                    iteration, MAX_TOOL_ITERATIONS
+                     Summarize your findings based on the data you've already gathered."
                 ),
                 tool_call_id: None,
                 tool_calls: None,
@@ -485,11 +484,10 @@ pub async fn chat_message(
             final_messages.push(Message {
                 role: "system".into(),
                 content: format!(
-                    "CRITICAL: Tool iteration limit reached ({}/{}). \
+                    "CRITICAL: Tool iteration limit reached ({iteration}/{MAX_TOOL_ITERATIONS}). \
                      You MUST respond now with a natural language summary of your findings. \
                      DO NOT call any more tools. \
-                     Provide your best answer based on the diagnostic data already collected.",
-                    iteration, MAX_TOOL_ITERATIONS
+                     Provide your best answer based on the diagnostic data already collected."
                 ),
                 tool_call_id: None,
                 tool_calls: None,

@@ -567,7 +567,7 @@ impl OpenAiProvider {
                     .get("id")
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string())
-                    .unwrap_or_else(|| format!("tool_call_{}", index));
+                    .unwrap_or_else(|| format!("tool_call_{index}"));
 
                 // Try nested function.name format (OpenAI style)
                 let name = call
