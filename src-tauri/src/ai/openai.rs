@@ -7,8 +7,8 @@ use crate::state::ProviderConfig;
 
 pub struct OpenAiProvider;
 
-fn is_custom_rest_format(api_format: Option<&str>) -> bool {
-    matches!(api_format, Some("custom_rest"))
+fn is_msi_genai_format(api_format: Option<&str>) -> bool {
+    matches!(api_format, Some("msi-genai") | Some("custom_rest")) // custom_rest for backward compatibility
 }
 
 #[async_trait]
@@ -35,11 +35,11 @@ impl Provider for OpenAiProvider {
         config: &ProviderConfig,
         tools: Option<Vec<crate::ai::Tool>>,
     ) -> anyhow::Result<ChatResponse> {
-        // Check if using custom REST format
+        // Check if using MSI GenAI format (or legacy custom_rest)
         let api_format = config.api_format.as_deref().unwrap_or("openai");
 
-        if is_custom_rest_format(Some(api_format)) {
-            self.chat_custom_rest(messages, config, tools).await
+        if is_msi_genai_format(Some(api_format)) {
+            self.chat_msi_genai(messages, config, tools).await
         } else {
             self.chat_openai(messages, config, tools).await
         }
@@ -48,17 +48,90 @@ impl Provider for OpenAiProvider {
 
 #[cfg(test)]
 mod tests {
-    use super::is_custom_rest_format;
+    use super::{is_msi_genai_format, OpenAiProvider};
 
     #[test]
-    fn custom_rest_format_is_recognized() {
-        assert!(is_custom_rest_format(Some("custom_rest")));
+    fn msi_genai_format_is_recognized() {
+        assert!(is_msi_genai_format(Some("msi-genai")));
     }
 
     #[test]
-    fn openai_format_is_not_custom_rest() {
-        assert!(!is_custom_rest_format(Some("openai")));
-        assert!(!is_custom_rest_format(None));
+    fn custom_rest_format_backward_compatible() {
+        // Keep backward compatibility with old format name
+        assert!(is_msi_genai_format(Some("custom_rest")));
+    }
+
+    #[test]
+    fn openai_format_is_not_msi_genai() {
+        assert!(!is_msi_genai_format(Some("openai")));
+        assert!(!is_msi_genai_format(None));
+    }
+
+    #[test]
+    fn parse_msigenai_chatgpt_tool_calls_from_json_text() {
+        // MSIGenAI ChatGPT format: returns tool calls as JSON object in msg
+        let content = r#"{"tool_calls":[{"id":"call_1","type":"function","function":{"name":"execute_shell_command","arguments":{"command":"kubectl get namespaces"}}}]}"#;
+
+        let result = OpenAiProvider::parse_tool_calls_from_text(content);
+        assert!(result.is_some());
+
+        let calls = result.unwrap();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].id, "call_1");
+        assert_eq!(calls[0].name, "execute_shell_command");
+        assert!(calls[0].arguments.contains("kubectl get namespaces"));
+    }
+
+    #[test]
+    fn parse_msigenai_claude_tool_calls_from_xml_wrapper() {
+        // MSIGenAI Claude format: XML wrapper around JSON array
+        let content = r#"<tool_calls>
+[{"id":"call_1","type":"function","function":{"name":"execute_shell_command","arguments":{"command":"kubectl get pods"}}}]
+</tool_calls>"#;
+
+        let result = OpenAiProvider::parse_tool_calls_from_text(content);
+        assert!(result.is_some());
+
+        let calls = result.unwrap();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].id, "call_1");
+        assert_eq!(calls[0].name, "execute_shell_command");
+        assert!(calls[0].arguments.contains("kubectl get pods"));
+    }
+
+    #[test]
+    fn parse_multiple_tool_calls_from_text() {
+        let content = r#"{"tool_calls":[
+            {"id":"call_1","function":{"name":"kubectl_get","arguments":{"resource":"pods"}}},
+            {"id":"call_2","function":{"name":"kubectl_describe","arguments":{"resource":"svc/nginx"}}}
+        ]}"#;
+
+        let result = OpenAiProvider::parse_tool_calls_from_text(content);
+        assert!(result.is_some());
+
+        let calls = result.unwrap();
+        assert_eq!(calls.len(), 2);
+        assert_eq!(calls[0].name, "kubectl_get");
+        assert_eq!(calls[1].name, "kubectl_describe");
+    }
+
+    #[test]
+    fn parse_tool_calls_returns_none_for_normal_text() {
+        let content = "Hello, I found 5 pods running in the cluster.";
+        let result = OpenAiProvider::parse_tool_calls_from_text(content);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn parse_tool_calls_handles_arguments_as_string() {
+        // Some providers return arguments as string, not object
+        let content = r#"{"tool_calls":[{"id":"call_1","function":{"name":"test","arguments":"{\"key\":\"value\"}"}}]}"#;
+
+        let result = OpenAiProvider::parse_tool_calls_from_text(content);
+        assert!(result.is_some());
+
+        let calls = result.unwrap();
+        assert_eq!(calls[0].arguments, r#"{"key":"value"}"#);
     }
 }
 
@@ -202,8 +275,13 @@ impl OpenAiProvider {
         })
     }
 
-    /// Custom REST format (non-OpenAI payload contract)
-    async fn chat_custom_rest(
+    /// MSI GenAI format (non-OpenAI payload contract)
+    ///
+    /// MSI GenAI uses a custom API format with 'prompt' field instead of 'messages',
+    /// and has a known bug where tool calls are returned as JSON text in the 'msg'
+    /// field instead of structured 'tool_calls' array. This implementation includes
+    /// workaround parsing to extract tool calls from text.
+    async fn chat_msi_genai(
         &self,
         messages: Vec<Message>,
         config: &ProviderConfig,
@@ -284,7 +362,7 @@ impl OpenAiProvider {
             body["tools"] = serde_json::Value::from(formatted_tools);
             body["tool_choice"] = serde_json::Value::from("auto");
 
-            tracing::info!("Custom REST: Sending {} tools in request", tool_count);
+            tracing::info!("MSI GenAI: Sending {} tools in request", tool_count);
         }
 
         // Use custom auth header and prefix (no default prefix for custom REST)
@@ -306,13 +384,13 @@ impl OpenAiProvider {
         if !resp.status().is_success() {
             let status = resp.status();
             let text = resp.text().await?;
-            anyhow::bail!("Custom REST API error {status}: {text}");
+            anyhow::bail!("MSI GenAI API error {status}: {text}");
         }
 
         let json: serde_json::Value = resp.json().await?;
 
         tracing::debug!(
-            "Custom REST response: {}",
+            "MSI GenAI response: {}",
             serde_json::to_string_pretty(&json).unwrap_or_else(|_| "invalid JSON".to_string())
         );
 
@@ -323,7 +401,7 @@ impl OpenAiProvider {
             .to_string();
 
         // Parse tool_calls if present (check multiple possible field names)
-        let tool_calls = json
+        let mut tool_calls = json
             .get("tool_calls")
             .or_else(|| json.get("toolCalls"))
             .or_else(|| json.get("function_calls"))
@@ -344,7 +422,7 @@ impl OpenAiProvider {
                                     .and_then(|a| a.as_str())
                                     .or_else(|| call.get("arguments").and_then(|a| a.as_str())),
                             ) {
-                                tracing::info!("Custom REST: Parsed tool call: {} ({})", name, id);
+                                tracing::info!("MSI GenAI: Parsed tool call: {} ({})", name, id);
                                 return Some(crate::ai::ToolCall {
                                     id: id.to_string(),
                                     name: name.to_string(),
@@ -363,7 +441,7 @@ impl OpenAiProvider {
                                     .unwrap_or("tool_call_0")
                                     .to_string();
                                 tracing::info!(
-                                    "Custom REST: Parsed tool call (simple format): {} ({})",
+                                    "MSI GenAI: Parsed tool call (simple format): {} ({})",
                                     name,
                                     id
                                 );
@@ -374,20 +452,34 @@ impl OpenAiProvider {
                                 });
                             }
 
-                            tracing::warn!("Custom REST: Failed to parse tool call: {:?}", call);
+                            tracing::warn!("MSI GenAI: Failed to parse tool call: {:?}", call);
                             None
                         })
                         .collect();
                     if calls.is_empty() {
                         None
                     } else {
-                        tracing::info!("Custom REST: Found {} tool calls", calls.len());
+                        tracing::info!("MSI GenAI: Found {} tool calls", calls.len());
                         Some(calls)
                     }
                 } else {
                     None
                 }
             });
+
+        // WORKAROUND: MSIGenAI gateway bug - tool calls returned as JSON text in 'msg' field
+        // Expected: {"tool_calls": [...]}
+        // Actual: {"msg": '{"tool_calls":[...]}'}  or  {"msg": '<tool_calls>[...]</tool_calls>'}
+        if tool_calls.is_none() {
+            // Try parsing tool calls from msg content (MSIGenAI workaround)
+            if let Some(parsed_calls) = Self::parse_tool_calls_from_text(&content) {
+                tracing::warn!(
+                    "MSI GenAI: MSIGenAI workaround - parsed {} tool calls from msg text (gateway should return structured tool_calls field)",
+                    parsed_calls.len()
+                );
+                tool_calls = Some(parsed_calls);
+            }
+        }
 
         // Note: sessionId from response should be stored back to config.session_id
         // This would require making config mutable or returning it as part of ChatResponse
@@ -401,5 +493,88 @@ impl OpenAiProvider {
             user_message: None,
             tool_calls,
         })
+    }
+
+    /// Parse tool calls from text content (MSIGenAI gateway workaround)
+    ///
+    /// MSIGenAI returns tool calls as JSON text in the 'msg' field instead of structured data:
+    /// - ChatGPT models: `{"tool_calls":[...]}`
+    /// - Claude models: `<tool_calls>[...]</tool_calls>`
+    fn parse_tool_calls_from_text(content: &str) -> Option<Vec<crate::ai::ToolCall>> {
+        // Try parsing as direct JSON object
+        if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(content) {
+            if let Some(calls) = parsed.get("tool_calls").and_then(|v| v.as_array()) {
+                return Self::extract_tool_calls_from_array(calls);
+            }
+        }
+
+        // Try finding JSON in text (handle Claude XML wrapper: <tool_calls>[...]</tool_calls>)
+        if let Some(start) = content.find("<tool_calls>") {
+            if let Some(end) = content.find("</tool_calls>") {
+                let json_str = &content[start + 12..end].trim();
+                if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(json_str) {
+                    if let Some(calls) = parsed.as_array() {
+                        return Self::extract_tool_calls_from_array(calls);
+                    }
+                }
+            }
+        }
+
+        // Try finding raw JSON array in text
+        if let Some(start) = content.find("[{") {
+            if let Some(end) = content.rfind("}]") {
+                let json_str = &content[start..=end + 1];
+                if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(json_str) {
+                    if let Some(calls) = parsed.as_array() {
+                        return Self::extract_tool_calls_from_array(calls);
+                    }
+                }
+            }
+        }
+
+        None
+    }
+
+    /// Extract ToolCall structs from JSON array
+    fn extract_tool_calls_from_array(calls: &[serde_json::Value]) -> Option<Vec<crate::ai::ToolCall>> {
+        let parsed: Vec<crate::ai::ToolCall> = calls
+            .iter()
+            .filter_map(|call| {
+                let id = call.get("id").and_then(|v| v.as_str())?.to_string();
+
+                // Try nested function.name format (OpenAI style)
+                let name = call
+                    .get("function")
+                    .and_then(|f| f.get("name"))
+                    .and_then(|n| n.as_str())
+                    .or_else(|| call.get("name").and_then(|n| n.as_str()))?
+                    .to_string();
+
+                // Arguments can be string or object
+                let arguments = call
+                    .get("function")
+                    .and_then(|f| f.get("arguments"))
+                    .or_else(|| call.get("arguments"))
+                    .and_then(|args| {
+                        if let Some(s) = args.as_str() {
+                            Some(s.to_string())
+                        } else {
+                            serde_json::to_string(args).ok()
+                        }
+                    })?;
+
+                Some(crate::ai::ToolCall {
+                    id,
+                    name,
+                    arguments,
+                })
+            })
+            .collect();
+
+        if parsed.is_empty() {
+            None
+        } else {
+            Some(parsed)
+        }
     }
 }
