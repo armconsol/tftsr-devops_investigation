@@ -39,7 +39,7 @@ pub struct ChatResponse {
 }
 
 /// Represents a tool call made by the AI
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ToolCall {
     pub id: String,
     pub name: String,

@@ -463,8 +463,25 @@ pub async fn chat_message(
 
         // Force stop at limit with collected data
         if iteration > MAX_TOOL_ITERATIONS {
-            // Instead of erroring, force AI to respond with what it has
-            messages.push(Message {
+            // Sanitize messages: convert 'tool' role to 'system' and drop tool_call_id/tool_calls
+            // This prevents validation errors on the final call (tool messages require preceding assistant tool_calls)
+            let sanitized_messages: Vec<Message> = messages
+                .into_iter()
+                .map(|mut msg| {
+                    if msg.role == "tool" {
+                        // Convert tool responses to system messages with context
+                        msg.role = "system".into();
+                        msg.content = format!("[Tool Result]: {}", msg.content);
+                        msg.tool_call_id = None;
+                    }
+                    msg.tool_calls = None; // Strip tool_calls from all messages
+                    msg
+                })
+                .collect();
+
+            // Add final instruction
+            let mut final_messages = sanitized_messages;
+            final_messages.push(Message {
                 role: "system".into(),
                 content: format!(
                     "CRITICAL: Tool iteration limit reached ({}/{}). \
@@ -479,7 +496,7 @@ pub async fn chat_message(
 
             // Make one final call WITHOUT tools to force text response
             let final_attempt = provider
-                .chat(messages.clone(), &provider_config, None) // No tools available
+                .chat(final_messages, &provider_config, None) // No tools available
                 .await
                 .map_err(|e| {
                     format!("AI provider request failed after reaching iteration limit: {e}")
@@ -1477,5 +1494,94 @@ mod tests {
         assert_eq!(raw.len(), 2);
         assert_eq!(raw[0].1, "First");
         assert_eq!(raw[1].1, "Second");
+    }
+
+    #[test]
+    fn test_message_sanitization_converts_tool_role_to_system() {
+        // Simulate messages with 'tool' role that would cause validation errors
+        let messages = vec![
+            Message {
+                role: "user".into(),
+                content: "What pods are running?".into(),
+                tool_call_id: None,
+                tool_calls: None,
+            },
+            Message {
+                role: "assistant".into(),
+                content: "".into(),
+                tool_call_id: None,
+                tool_calls: Some(vec![crate::ai::ToolCall {
+                    id: "call_123".into(),
+                    name: "execute_shell_command".into(),
+                    arguments: r#"{"command":"kubectl get pods"}"#.into(),
+                }]),
+            },
+            Message {
+                role: "tool".into(),
+                content: "pod1 Running\npod2 Running".into(),
+                tool_call_id: Some("call_123".into()),
+                tool_calls: None,
+            },
+        ];
+
+        // Simulate sanitization from iteration limit code
+        let sanitized: Vec<Message> = messages
+            .into_iter()
+            .map(|mut msg| {
+                if msg.role == "tool" {
+                    msg.role = "system".into();
+                    msg.content = format!("[Tool Result]: {}", msg.content);
+                    msg.tool_call_id = None;
+                }
+                msg.tool_calls = None;
+                msg
+            })
+            .collect();
+
+        // Verify sanitization
+        assert_eq!(sanitized.len(), 3);
+        assert_eq!(sanitized[0].role, "user");
+        assert_eq!(sanitized[1].role, "assistant");
+        assert_eq!(sanitized[1].tool_calls, None); // Stripped
+        assert_eq!(sanitized[2].role, "system"); // Converted from 'tool'
+        assert!(sanitized[2].content.starts_with("[Tool Result]:")); // Prefixed
+        assert_eq!(sanitized[2].tool_call_id, None); // Stripped
+    }
+
+    #[test]
+    fn test_message_sanitization_preserves_non_tool_messages() {
+        let messages = vec![
+            Message {
+                role: "system".into(),
+                content: "You are a helpful assistant".into(),
+                tool_call_id: None,
+                tool_calls: None,
+            },
+            Message {
+                role: "user".into(),
+                content: "Hello".into(),
+                tool_call_id: None,
+                tool_calls: None,
+            },
+        ];
+
+        let sanitized: Vec<Message> = messages
+            .into_iter()
+            .map(|mut msg| {
+                if msg.role == "tool" {
+                    msg.role = "system".into();
+                    msg.content = format!("[Tool Result]: {}", msg.content);
+                    msg.tool_call_id = None;
+                }
+                msg.tool_calls = None;
+                msg
+            })
+            .collect();
+
+        assert_eq!(sanitized.len(), 2);
+        assert_eq!(sanitized[0].role, "system");
+        assert_eq!(sanitized[0].content, "You are a helpful assistant");
+        assert_eq!(sanitized[1].role, "user");
+        assert_eq!(sanitized[1].content, "Hello");
     }
 }
