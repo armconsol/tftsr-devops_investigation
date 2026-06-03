@@ -284,8 +284,8 @@ GitHub Copilot performed automated code review with 9 findings, all addressed:
 - **v1.0.2**: 4 files (PR #31 - LiteLLM)
 - **v1.0.3**: 1 file (PR #37 - Query classification)
 - **v1.0.4**: 7 files (PR #38 - Graceful exit + MSI GenAI)
-- **v1.0.5**: 6 files (PR #39 - Agent output + provider docs)
-- **Total**: 59 files modified across 8 PRs
+- **v1.0.5**: 7 files (PR #39 - Agent output + provider docs + version bumps)
+- **Total**: 60 files modified across 8 PRs
 
 ---
 
