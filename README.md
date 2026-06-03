@@ -1,3 +1,5 @@
+![TRCAA Banner](new_banner.png)
+
 # Troubleshooting and RCA Assistant
 
 A structured, AI-backed desktop tool for IT incident triage, 5-Whys root cause analysis, RCA document generation, and blameless post-mortems. Runs fully offline via Ollama local models, or connects to cloud AI providers.

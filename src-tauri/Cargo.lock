@@ -6082,6 +6082,7 @@ dependencies = [
  "flate2",
  "futures",
  "hex",
+ "http 1.4.1",
  "infer 0.15.0",
  "lazy_static",
  "lopdf",

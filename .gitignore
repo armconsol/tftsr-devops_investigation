@@ -24,3 +24,4 @@ BUGFIX_SUMMARY.md
 PR_DESCRIPTION.md
 docs/images/user-guide/
 *.bak
+.DS_Store
