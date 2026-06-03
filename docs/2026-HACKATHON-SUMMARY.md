@@ -5,8 +5,8 @@
 **Version**: 1.0.0 → 1.0.8 (Major Release + Iterations)  
 **Duration**: 36 hours (June 2, 2026 7:00 AM CST → June 3, 2026 7:00 PM CST)  
 **Team**:
-- **Development**: Shaun Arman (VFK387), Henry Castle, RJ Cooper, David Weinrich, Stephane Lalande
-- **Leadership**: Heidi Pickett, Martin Noel, Marc Chantelois, Thomas Essex, Donnie Jones
+- **Development**: Shaun Arman (VFK387), Henry Castle, RJ Cooper, David Weinrich, Stephane Lalande, Thomas Essex, Donnie Jones
+- **Leadership**: Heidi Pickett, Martin Noel, Marc Chantelois
 
 **ADO Work Item**: [#727547](https://dev.azure.com/msi-cie/Apollo/_workitems/edit/727547)
 
