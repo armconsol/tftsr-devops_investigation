@@ -260,26 +260,30 @@ GitHub Copilot performed automated code review with 9 findings, all addressed:
 
 ## Metrics & Impact
 
-### Lines of Code
-- **Rust**: ~1,800 new lines (shell module + commands)
+### Lines of Code (Including Post-Release)
+- **Rust**: ~2,200 new lines (shell module + commands + AI improvements)
 - **TypeScript/React**: ~900 new lines (components + types)
-- **Tests**: ~500 lines
-- **Documentation**: ~1,500 lines
-- **Total**: ~4,700 lines of production code
+- **Tests**: ~800 lines (280 tests total, was 272)
+- **Documentation**: ~2,000 lines (including this summary update)
+- **Total**: ~5,900 lines of production code
 
 ### Development Time
-- Planning & Design: 4 hours
-- Core Implementation: 24 hours
-- Testing & Debugging: 8 hours
-- Documentation: 4 hours
-- Code Review Response: 4 hours
-- **Total**: ~44 hours
+- **Initial Hackathon (v1.0.0)**: ~44 hours
+- **Post-Release Development (v1.0.1-v1.0.4)**: ~20 hours
+  - Security updates: 2 hours
+  - LiteLLM integration: 4 hours
+  - Query classification: 3 hours
+  - Graceful exit + MSI GenAI: 8 hours
+  - Copilot reviews (3 rounds): 3 hours
+- **Total**: ~64 hours
 
 ### Files Modified
-- 35 files changed across 2 PRs
-- 13 new files created
-- 4 new database migrations
-- 3 new React components
+- **v1.0.0**: 35 files (PR #27, #28)
+- **v1.0.1**: 6 files (PR #29 - Dependencies)
+- **v1.0.2**: 4 files (PR #31 - LiteLLM)
+- **v1.0.3**: 1 file (PR #37 - Query classification)
+- **v1.0.4**: 7 files (PR #38 - Graceful exit + MSI GenAI)
+- **Total**: 53 files modified across 7 PRs
 
 ---
 
@@ -322,6 +326,10 @@ GitHub Copilot performed automated code review with 9 findings, all addressed:
   - Tool is registered and functional
   - AI defaults to suggesting manual commands instead of executing
   - Needs explicit instruction in domain-specific prompts
+- ⚠️ **Failed to keep hackathon summary updated during post-release work**
+  - Summary stuck at v1.0.0 for too long
+  - Should have updated after each PR merge
+  - Created technical debt in documentation
 
 ### Best Practices Established
 - Always verify Tauri plugin versions match (NPM ↔ Rust)
@@ -387,6 +395,161 @@ AI: Command denied: rm -rf /tmp/* (Tier 3: Destructive filesystem operation)
 
 ---
 
+## Post-Release Development (v1.0.1 - v1.0.4)
+
+### Version History
+
+#### v1.0.0 (June 2, 2026) - Initial Hackathon Release
+- Agentic shell command execution
+- Three-tier safety classification
+- Multi-cluster kubectl support
+- Real-time approval modal
+- Complete audit trail
+
+#### v1.0.1 (June 2, 2026) - Security Updates
+**PR #29**: Dependency security updates via Dependabot
+- ✅ postcss 8.5.8 → 8.5.15 (XSS fixes, arbitrary file read)
+- ✅ vite 6.4.1 → 6.4.3 (path traversal fixes)
+- ✅ lodash 4.17.23 → 4.18.1 (multiple security patches)
+- ✅ ws 8.19.0 → 8.21.0
+- ✅ basic-ftp 5.2.0 → 5.3.1 (DoS protection)
+- ✅ vitest 2.1.9 → 4.1.8 (major upgrade, all tests passing)
+
+#### v1.0.2 (June 2, 2026) - LiteLLM Integration & Bug Fixes
+**PR #31**: AI provider integration improvements
+- ✅ LiteLLM integration for AWS Bedrock Claude support
+- ✅ Fixed Ollama "error sending request" with auto-start
+- ✅ Fixed AI responding in JSON format instead of natural language
+- ✅ Improved agent prompt clarity
+
+#### v1.0.3 (June 2, 2026) - Query Classification
+**PR #37**: AI over-investigation prevention
+- ✅ Added three-tier query classification to devops-incident-responder agent
+- ✅ Simple queries (1-2 commands): "What pods are running?"
+- ✅ Diagnostic queries (3-8 commands): "Why is this pod failing?"
+- ✅ Incident response (8-20 commands): "Production is down"
+- ✅ Prevents AI from executing 20+ commands for simple questions
+
+#### v1.0.4 (June 3, 2026) - Graceful Exit & MSI GenAI Support
+**PR #38**: Tool iteration limit handling + MSI GenAI provider support (IN PROGRESS)
+
+**Major Features:**
+1. **Graceful Exit on Tool Iteration Limit**
+   - Iteration 18: Warns AI to finish in next round
+   - Iteration 21+: Forces final response without tools
+   - Message sanitization: Convert tool→assistant with `[UNTRUSTED TOOL OUTPUT]` label
+   - Returns collected diagnostic data instead of hard failure
+
+2. **MSI GenAI Gateway Support**
+   - Rebranded `custom_rest` → `msi-genai` format
+   - Workaround parser for malformed tool call responses
+   - Handles ChatGPT format (JSON in msg) and Claude format (XML wrapper)
+   - Accepts both string and object arguments
+   - 9 unit tests for all parsing scenarios
+
+3. **Enhanced Final Instructions**
+   - Explicitly states "TOOLS ARE NOW DISABLED"
+   - Overrides earlier tool-calling instructions
+   - Prevents model from trying to emit tool calls on final attempt
+
+**Test Coverage:**
+- ✅ 280 tests passing (was 272, added 8 new)
+- ✅ All Copilot reviews addressed (10 issues)
+- ✅ Clippy clean
+- ✅ Formatting clean
+
+---
+
+## Post-Hackathon Challenges Solved
+
+### Challenge 6: AI JSON Response Format
+**Problem**: After LiteLLM Bedrock integration, AI responding in JSON tool call format instead of natural language  
+**Root Cause**: Agent prompt didn't distinguish between tool calling format and user response format  
+**Solution**: Clarified agent prompt - tool calls use JSON, user responses use natural language  
+**Impact**: Natural language responses restored while maintaining tool calling functionality
+
+### Challenge 7: Ollama Service Not Running
+**Problem**: Users getting "error sending request" when Ollama service wasn't running  
+**Root Cause**: Ollama daemon not auto-starting, users had to manually run `ollama serve`  
+**Solution**: Implemented auto-start with PATH resolution and AtomicBool one-time attempt  
+**Impact**: Seamless Ollama integration without manual service management
+
+### Challenge 8: Tool Iteration Limit Exceeded
+**Problem**: Simple query "What pods are running?" triggered 20+ kubectl commands, hit iteration limit  
+**Audit Log Evidence**: Repeated executions: get pods → describe → logs → events (multiple times)  
+**Root Cause**: devops-incident-responder agent treated every query as incident requiring deep investigation  
+**Solution 1**: Added three-tier query classification (Simple/Diagnostic/Incident)  
+**Solution 2**: Graceful exit returning collected data instead of hard failure  
+**Impact**: Users get answers instead of cryptic errors
+
+### Challenge 9: Message Sanitization Bug
+**Problem**: Tool role messages require preceding assistant messages with tool_calls, validation errors on final call  
+**Root Cause**: Graceful exit reused messages with `role: "tool"` that need specific context  
+**Solution**: Sanitize messages before final call - convert tool→assistant, strip IDs  
+**Impact**: Graceful degradation path now reliable
+
+### Challenge 10: MSI GenAI Tool Calling Format Issue
+**Problem**: MSI GenAI gateway returns tool calls as JSON text in `msg` field instead of structured `tool_calls` array  
+**Observed Formats**:
+- ChatGPT: `{"msg": "{\"tool_calls\":[...]}"}`
+- Claude: `{"msg": "<tool_calls>[...]</tool_calls>"}`
+**Root Cause**: MSI GenAI gateway not properly translating between provider formats and OpenAI protocol  
+**Solution**: Workaround parser extracts tool calls from text and converts to structured format  
+**Status**: Workaround functional, gateway bug documented, alternative models recommended
+
+---
+
+## Copilot Code Review Process
+
+### Overview
+GitHub Copilot performed automated code review across 3 rounds with 10 findings total, all addressed.
+
+### Round 1 (2 issues) - PR #38 Initial Review
+1. ✅ **Prompt Injection Risk (CRITICAL)**: Converting tool output to `role="system"` elevates untrusted command output
+   - **Fix**: Changed system → user
+   - **Later Improved**: user → assistant with `[UNTRUSTED TOOL OUTPUT]` label
+
+2. ✅ **Silent Tool Call Dropping**: Parser required `id` field, dropped calls without it
+   - **Fix**: Generate fallback IDs (`tool_call_0`, `tool_call_1`)
+
+### Round 2 (6 issues) - After Initial Fixes
+1. ✅ **Prompt Injection (Better Fix)**: `role="user"` doesn't reduce injection risk
+   - **Fix**: Changed to `role="assistant"` with explicit `[UNTRUSTED TOOL OUTPUT]` prefix
+
+2. ✅ **Test Decoupling**: Tests re-implemented sanitization inline
+   - **Fix**: Extracted `sanitize_messages_for_final_call()` helper function
+
+3. ✅ **Test Assertions**: Hard-coded expectations don't match production
+   - **Fix**: Tests now call production helper
+
+4. ✅ **Duplicate Fallback IDs**: Constant `"tool_call_0"` creates duplicates
+   - **Fix**: Use indexed format with `enumerate()` in both parsing paths
+
+5. ✅ **.bak File Committed**: Backup file in repo
+   - **Fix**: Removed file, added `*.bak` to `.gitignore`
+
+6. ✅ **Code Formatting**: Various formatting issues
+   - **Fix**: Ran `cargo fmt`, fixed clippy warnings
+
+### Round 3 (2 issues) - Final Review
+1. ✅ **Arguments Parsing (Reliability)**: Structured parsing only accepted string arguments
+   - **Fix**: Accept both string and object, serialize objects to JSON
+   - **Impact**: Prevents tool calls from being silently dropped
+
+2. ✅ **Final Instruction Override**: Didn't explicitly override tool-calling instructions
+   - **Fix**: Enhanced final message: "TOOLS ARE NOW DISABLED", "DO NOT emit tool_calls JSON"
+   - **Impact**: Reduces risk of model emitting tool calls on final attempt
+
+### Review Statistics
+- **Total Issues**: 10 (2 + 6 + 2)
+- **Security**: 3 issues (all critical, all fixed)
+- **Reliability**: 5 issues (all fixed)
+- **Maintainability**: 2 issues (all fixed)
+- **Response Time**: All issues addressed within 24 hours
+- **Final Status**: ✅ All 10 issues resolved, no outstanding concerns
+
+---
+
 ## References
 
 ### ADO Work Item
@@ -395,14 +558,21 @@ AI: Command denied: rm -rf /tmp/* (Tier 3: Destructive filesystem operation)
 
 ### GitHub
 - **Repository**: https://github.com/msicie/apollo_nxt-trcaa
-- **PR #27**: https://github.com/msicie/apollo_nxt-trcaa/pull/27
-- **PR #28**: https://github.com/msicie/apollo_nxt-trcaa/pull/28
-- **Release**: https://github.com/msicie/apollo_nxt-trcaa/releases/tag/v1.0.0
+- **PR #27**: https://github.com/msicie/apollo_nxt-trcaa/pull/27 (v1.0.0 - Initial hackathon)
+- **PR #28**: https://github.com/msicie/apollo_nxt-trcaa/pull/28 (v1.0.0 - Copilot fixes)
+- **PR #29**: https://github.com/msicie/apollo_nxt-trcaa/pull/29 (v1.0.1 - Security updates)
+- **PR #31**: https://github.com/msicie/apollo_nxt-trcaa/pull/31 (v1.0.2 - LiteLLM + bug fixes)
+- **PR #37**: https://github.com/msicie/apollo_nxt-trcaa/pull/37 (v1.0.3 - Query classification)
+- **PR #38**: https://github.com/msicie/apollo_nxt-trcaa/pull/38 (v1.0.4 - Graceful exit + MSI GenAI)
+- **Releases**: 
+  - v1.0.0: https://github.com/msicie/apollo_nxt-trcaa/releases/tag/v1.0.0
+  - v1.0.1-v1.0.4: Pending merge
 
 ### Documentation
 - **Wiki**: https://github.com/msicie/apollo_nxt-trcaa/wiki/Shell-Execution
 - **Architecture**: docs/architecture/
 - **CLAUDE.md**: Repository root
+- **MSI GenAI Bug Report**: /tmp/MSIGenAI-ToolCalling-Bug-Report.md
 
 ---
 
@@ -489,6 +659,19 @@ CREATE TABLE approval_decisions (
 ---
 
 **Document Status**: Living Document  
-**Last Updated**: June 2, 2026  
+**Last Updated**: June 3, 2026  
+**Version**: Includes v1.0.0-v1.0.4 development  
 **Maintainer**: Shaun Arman (VFK387)  
-**Review Cycle**: Update after each major milestone or significant change
+**Review Cycle**: Update after each PR merge or significant milestone
+
+---
+
+## Version Summary Table
+
+| Version | Date | PR | Key Features | Status |
+|---------|------|----| -------------|--------|
+| v1.0.0 | Jun 2 | #27, #28 | Agentic shell execution, Three-tier safety, kubectl bundled | ✅ Released |
+| v1.0.1 | Jun 2 | #29 | Security updates (postcss, vite, lodash, vitest 4.1.8) | ✅ Merged |
+| v1.0.2 | Jun 2 | #31 | LiteLLM Bedrock, Ollama auto-start, JSON format fix | ✅ Merged |
+| v1.0.3 | Jun 2 | #37 | Query classification (Simple/Diagnostic/Incident) | ✅ Merged |
+| v1.0.4 | Jun 3 | #38 | Graceful exit, MSI GenAI support, 10 Copilot fixes | 🔄 Pending CI |
