@@ -264,18 +264,19 @@ GitHub Copilot performed automated code review with 9 findings, all addressed:
 - **Rust**: ~2,200 new lines (shell module + commands + AI improvements)
 - **TypeScript/React**: ~900 new lines (components + types)
 - **Tests**: ~800 lines (280 tests total, was 272)
-- **Documentation**: ~2,000 lines (including this summary update)
-- **Total**: ~5,900 lines of production code
+- **Documentation**: ~2,200 lines (including this summary + wiki updates)
+- **Total**: ~6,100 lines of production code
 
 ### Development Time
 - **Initial Hackathon (v1.0.0)**: ~44 hours
-- **Post-Release Development (v1.0.1-v1.0.4)**: ~20 hours
+- **Post-Release Development (v1.0.1-v1.0.5)**: ~22 hours
   - Security updates: 2 hours
   - LiteLLM integration: 4 hours
   - Query classification: 3 hours
   - Graceful exit + MSI GenAI: 8 hours
+  - Agent prompt improvements: 2 hours
   - Copilot reviews (3 rounds): 3 hours
-- **Total**: ~64 hours
+- **Total**: ~66 hours
 
 ### Files Modified
 - **v1.0.0**: 35 files (PR #27, #28)
@@ -283,7 +284,8 @@ GitHub Copilot performed automated code review with 9 findings, all addressed:
 - **v1.0.2**: 4 files (PR #31 - LiteLLM)
 - **v1.0.3**: 1 file (PR #37 - Query classification)
 - **v1.0.4**: 7 files (PR #38 - Graceful exit + MSI GenAI)
-- **Total**: 53 files modified across 7 PRs
+- **v1.0.5**: 6 files (PR #39 - Agent output + provider docs)
+- **Total**: 59 files modified across 8 PRs
 
 ---
 
@@ -431,7 +433,7 @@ AI: Command denied: rm -rf /tmp/* (Tier 3: Destructive filesystem operation)
 - ✅ Prevents AI from executing 20+ commands for simple questions
 
 #### v1.0.4 (June 3, 2026) - Graceful Exit & MSI GenAI Support
-**PR #38**: Tool iteration limit handling + MSI GenAI provider support (IN PROGRESS)
+**PR #38**: Tool iteration limit handling + MSI GenAI provider support
 
 **Major Features:**
 1. **Graceful Exit on Tool Iteration Limit**
@@ -457,6 +459,30 @@ AI: Command denied: rm -rf /tmp/* (Tier 3: Destructive filesystem operation)
 - ✅ All Copilot reviews addressed (10 issues)
 - ✅ Clippy clean
 - ✅ Formatting clean
+
+#### v1.0.5 (June 3, 2026) - Agent Output Quality & Provider Documentation
+**PR #39**: Agent prompt improvements and MSI GenAI compatibility documentation
+
+**Issues Fixed:**
+1. **Ollama Verbose JSON Output**
+   - Agent was echoing raw JSON tool call payloads to users
+   - Added CRITICAL instruction: Never echo tool call requests/responses in user-facing output
+   
+2. **LiteLLM Investigation Failure**
+   - Agent outputting status JSON instead of executing diagnostic commands
+   - Strengthened Diagnostic Investigation instructions: Must execute commands, not status updates
+   - Added warning: Outputting status JSON instead of executing commands is a critical failure
+   
+3. **MSI GenAI Tool Calling Incompatibility**
+   - Gateway returns 503 "Gemini Filter Triggered: UNEXPECTED_TOOL_CALL"
+   - Documented in AI-Providers.md wiki with limitations and recommended alternatives
+   - Root cause: Gateway-level filtering blocks tool calls before workaround parser
+
+**Test Coverage:**
+- ✅ 280 tests passing
+- ✅ 103 frontend tests passing
+- ✅ Clippy clean
+- ✅ TypeScript clean
 
 ---
 
@@ -496,6 +522,20 @@ AI: Command denied: rm -rf /tmp/* (Tier 3: Destructive filesystem operation)
 **Root Cause**: MSI GenAI gateway not properly translating between provider formats and OpenAI protocol  
 **Solution**: Workaround parser extracts tool calls from text and converts to structured format  
 **Status**: Workaround functional, gateway bug documented, alternative models recommended
+
+### Challenge 11: Ollama Verbose JSON Output
+**Problem**: Agent echoing raw JSON tool call requests and responses to users instead of clean output  
+**Observed**: Users saw `{"requesting_agent": "devops-incident-responder", ...}` payloads in chat  
+**Root Cause**: Agent prompt didn't explicitly prohibit showing tool call JSON  
+**Solution**: Added CRITICAL instruction to suppress JSON echoing in devops_incident_responder.md  
+**Impact**: Clean, human-readable agent responses without raw JSON
+
+### Challenge 12: Agent Status JSON Instead of Investigation
+**Problem**: Diagnostic queries like "investigate telemetry issues" returned status JSON without executing commands  
+**Observed**: Agent outputted `{"agent": "devops-incident-responder", "status": "investigating"}` with no kubectl execution  
+**Root Cause**: Agent confused reporting status with taking action  
+**Solution**: Strengthened Diagnostic Investigation section with explicit command execution requirements  
+**Impact**: Diagnostic queries now produce actual investigation results
 
 ---
 
@@ -564,9 +604,10 @@ GitHub Copilot performed automated code review across 3 rounds with 10 findings 
 - **PR #31**: https://github.com/msicie/apollo_nxt-trcaa/pull/31 (v1.0.2 - LiteLLM + bug fixes)
 - **PR #37**: https://github.com/msicie/apollo_nxt-trcaa/pull/37 (v1.0.3 - Query classification)
 - **PR #38**: https://github.com/msicie/apollo_nxt-trcaa/pull/38 (v1.0.4 - Graceful exit + MSI GenAI)
+- **PR #39**: https://github.com/msicie/apollo_nxt-trcaa/pull/39 (v1.0.5 - Agent output + provider docs)
 - **Releases**: 
   - v1.0.0: https://github.com/msicie/apollo_nxt-trcaa/releases/tag/v1.0.0
-  - v1.0.1-v1.0.4: Pending merge
+  - v1.0.1-v1.0.5: Pending merge
 
 ### Documentation
 - **Wiki**: https://github.com/msicie/apollo_nxt-trcaa/wiki/Shell-Execution
@@ -660,7 +701,7 @@ CREATE TABLE approval_decisions (
 
 **Document Status**: Living Document  
 **Last Updated**: June 3, 2026  
-**Version**: Includes v1.0.0-v1.0.4 development  
+**Version**: Includes v1.0.0-v1.0.5 development  
 **Maintainer**: Shaun Arman (VFK387)  
 **Review Cycle**: Update after each PR merge or significant milestone
 
@@ -674,4 +715,5 @@ CREATE TABLE approval_decisions (
 | v1.0.1 | Jun 2 | #29 | Security updates (postcss, vite, lodash, vitest 4.1.8) | ✅ Merged |
 | v1.0.2 | Jun 2 | #31 | LiteLLM Bedrock, Ollama auto-start, JSON format fix | ✅ Merged |
 | v1.0.3 | Jun 2 | #37 | Query classification (Simple/Diagnostic/Incident) | ✅ Merged |
-| v1.0.4 | Jun 3 | #38 | Graceful exit, MSI GenAI support, 10 Copilot fixes | 🔄 Pending CI |
+| v1.0.4 | Jun 3 | #38 | Graceful exit, MSI GenAI support, 10 Copilot fixes | ✅ Merged |
+| v1.0.5 | Jun 3 | #39 | Agent output quality, MSI GenAI docs | 🔄 In Review |
