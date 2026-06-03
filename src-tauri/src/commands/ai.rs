@@ -161,6 +161,24 @@ fn extract_list(text: &str, header: &str) -> Vec<String> {
         .collect()
 }
 
+/// Sanitize messages for final call when tool iteration limit is reached.
+/// Converts tool role messages to assistant role with clear labeling as untrusted data.
+fn sanitize_messages_for_final_call(messages: Vec<Message>) -> Vec<Message> {
+    messages
+        .into_iter()
+        .map(|mut msg| {
+            if msg.role == "tool" {
+                // Convert tool output to assistant role with clear labeling as untrusted data
+                msg.role = "assistant".into();
+                msg.content = format!("[UNTRUSTED TOOL OUTPUT]: {}", msg.content);
+                msg.tool_call_id = None;
+            }
+            msg.tool_calls = None; // Strip tool_calls from all messages
+            msg
+        })
+        .collect()
+}
+
 #[tauri::command]
 pub async fn chat_message(
     issue_id: String,
@@ -462,22 +480,7 @@ pub async fn chat_message(
 
         // Force stop at limit with collected data
         if iteration > MAX_TOOL_ITERATIONS {
-            // Sanitize messages: convert 'tool' role to 'user' and drop tool_call_id/tool_calls
-            // This prevents validation errors on the final call (tool messages require preceding assistant tool_calls)
-            // Use 'user' instead of 'system' to avoid prompt injection risk from untrusted tool output
-            let sanitized_messages: Vec<Message> = messages
-                .into_iter()
-                .map(|mut msg| {
-                    if msg.role == "tool" {
-                        // Convert tool responses to user messages (not system - avoid prompt injection)
-                        msg.role = "user".into();
-                        msg.content = format!("[Tool Result]: {}", msg.content);
-                        msg.tool_call_id = None;
-                    }
-                    msg.tool_calls = None; // Strip tool_calls from all messages
-                    msg
-                })
-                .collect();
+            let sanitized_messages = sanitize_messages_for_final_call(messages);
 
             // Add final instruction
             let mut final_messages = sanitized_messages;
@@ -1496,8 +1499,8 @@ mod tests {
     }
 
     #[test]
-    fn test_message_sanitization_converts_tool_role_to_user() {
-        // Simulate messages with 'tool' role that would cause validation errors
+    fn test_message_sanitization_converts_tool_role_to_assistant() {
+        // Messages with 'tool' role that would cause validation errors
         let messages = vec![
             Message {
                 role: "user".into(),
@@ -1523,28 +1526,16 @@ mod tests {
             },
         ];
 
-        // Simulate sanitization from iteration limit code
-        let sanitized: Vec<Message> = messages
-            .into_iter()
-            .map(|mut msg| {
-                if msg.role == "tool" {
-                    // Use 'user' to avoid prompt injection from untrusted tool output
-                    msg.role = "user".into();
-                    msg.content = format!("[Tool Result]: {}", msg.content);
-                    msg.tool_call_id = None;
-                }
-                msg.tool_calls = None;
-                msg
-            })
-            .collect();
+        // Use production sanitization helper
+        let sanitized = sanitize_messages_for_final_call(messages);
 
         // Verify sanitization
         assert_eq!(sanitized.len(), 3);
         assert_eq!(sanitized[0].role, "user");
         assert_eq!(sanitized[1].role, "assistant");
         assert_eq!(sanitized[1].tool_calls, None); // Stripped
-        assert_eq!(sanitized[2].role, "user"); // Converted from 'tool' (not 'system' - security)
-        assert!(sanitized[2].content.starts_with("[Tool Result]:")); // Prefixed
+        assert_eq!(sanitized[2].role, "assistant"); // Converted from 'tool' to assistant
+        assert!(sanitized[2].content.starts_with("[UNTRUSTED TOOL OUTPUT]:")); // Labeled as untrusted
         assert_eq!(sanitized[2].tool_call_id, None); // Stripped
     }
 
@@ -1565,23 +1556,43 @@ mod tests {
             },
         ];
 
-        let sanitized: Vec<Message> = messages
-            .into_iter()
-            .map(|mut msg| {
-                if msg.role == "tool" {
-                    msg.role = "user".into();
-                    msg.content = format!("[Tool Result]: {}", msg.content);
-                    msg.tool_call_id = None;
-                }
-                msg.tool_calls = None;
-                msg
-            })
-            .collect();
+        // Use production sanitization helper
+        let sanitized = sanitize_messages_for_final_call(messages);
 
+        // Verify non-tool messages preserved
         assert_eq!(sanitized.len(), 2);
         assert_eq!(sanitized[0].role, "system");
         assert_eq!(sanitized[0].content, "You are a helpful assistant");
         assert_eq!(sanitized[1].role, "user");
         assert_eq!(sanitized[1].content, "Hello");
     }
+
+    #[test]
+    fn test_sanitize_messages_strips_tool_calls_from_all_messages() {
+        let messages = vec![
+            Message {
+                role: "assistant".into(),
+                content: "".into(),
+                tool_call_id: None,
+                tool_calls: Some(vec![crate::ai::ToolCall {
+                    id: "call_1".into(),
+                    name: "test".into(),
+                    arguments: "{}".into(),
+                }]),
+            },
+            Message {
+                role: "tool".into(),
+                content: "output".into(),
+                tool_call_id: Some("call_1".into()),
+                tool_calls: None,
+            },
+        ];
+
+        let sanitized = sanitize_messages_for_final_call(messages);
+
+        assert_eq!(sanitized.len(), 2);
+        assert_eq!(sanitized[0].tool_calls, None); // Stripped from assistant
+        assert_eq!(sanitized[1].tool_calls, None); // Already None, but verified
+    }
 }
+

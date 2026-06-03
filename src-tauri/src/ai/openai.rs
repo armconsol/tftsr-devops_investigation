@@ -428,7 +428,8 @@ impl OpenAiProvider {
                 if let Some(arr) = tc.as_array() {
                     let calls: Vec<crate::ai::ToolCall> = arr
                         .iter()
-                        .filter_map(|call| {
+                        .enumerate()
+                        .filter_map(|(index, call)| {
                             // Try OpenAI format first
                             if let (Some(id), Some(name), Some(args)) = (
                                 call.get("id").and_then(|v| v.as_str()),
@@ -454,11 +455,12 @@ impl OpenAiProvider {
                                 call.get("name").and_then(|n| n.as_str()),
                                 call.get("arguments").and_then(|a| a.as_str()),
                             ) {
+                                // Generate unique ID if missing (avoids duplicates)
                                 let id = call
                                     .get("id")
                                     .and_then(|v| v.as_str())
-                                    .unwrap_or("tool_call_0")
-                                    .to_string();
+                                    .map(|s| s.to_string())
+                                    .unwrap_or_else(|| format!("tool_call_{index}"));
                                 tracing::info!(
                                     "MSI GenAI: Parsed tool call (simple format): {} ({})",
                                     name,
