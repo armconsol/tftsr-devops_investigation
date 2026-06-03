@@ -4,11 +4,11 @@ use rmcp::transport::StreamableHttpClientTransport;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-/// Parse and validate custom headers, injecting default Accept header if needed.
+/// Parse and validate custom headers for MCP transport.
 /// Returns a HashMap of validated HTTP headers ready for use in transport config.
 ///
 /// Invalid headers (bad names or values) are logged and skipped.
-/// If no Accept header is provided, auto-injects "application/json, text/event-stream".
+/// Reserved headers (accept, mcp-session-id, etc.) are rejected by rmcp and should not be provided.
 fn build_header_map(custom_headers: HashMap<String, String>) -> HashMap<HeaderName, HeaderValue> {
     let mut http_headers = HashMap::new();
 
@@ -19,30 +19,38 @@ fn build_header_map(custom_headers: HashMap<String, String>) -> HashMap<HeaderNa
 
         match (name_result, value_result) {
             (Ok(name), Ok(val)) => {
+                // Skip reserved headers - rmcp manages these internally
+                if name.as_str().eq_ignore_ascii_case("accept")
+                    || name.as_str().eq_ignore_ascii_case("mcp-session-id")
+                    || name.as_str().eq_ignore_ascii_case("last-event-id")
+                {
+                    tracing::warn!(
+                        header_name = %name,
+                        "Header is reserved by rmcp, skipping (rmcp manages it automatically)"
+                    );
+                    continue;
+                }
+                tracing::debug!(header_name = %name, "Added custom header");
                 http_headers.insert(name, val);
-                tracing::debug!("Added custom header: {key}");
             }
             (Err(name_err), _) => {
                 tracing::warn!(
-                    "Invalid header name '{key}': {name_err}, skipping (value: <redacted>)"
+                    error = %name_err,
+                    "Invalid header name, skipping (value: <redacted>)"
                 );
             }
-            (Ok(_), Err(value_err)) => {
+            (Ok(name), Err(value_err)) => {
                 tracing::warn!(
-                    "Invalid header value for '{key}': {value_err}, skipping (value: <redacted>)"
+                    header_name = %name,
+                    error = %value_err,
+                    "Invalid header value, skipping (value: <redacted>)"
                 );
             }
         }
     }
 
-    // Always add required Accept header for MCP servers that need both MIME types
-    // (unless already provided by the caller)
-    let accept_key = HeaderName::from_static("accept");
-    http_headers.entry(accept_key).or_insert_with(|| {
-        tracing::debug!("Added default Accept header for MCP compatibility");
-        HeaderValue::from_static("application/json, text/event-stream")
-    });
-
+    // NOTE: Do NOT add Accept header here - rmcp automatically sends:
+    // "Accept: text/event-stream, application/json" which is what MCP servers need.
     http_headers
 }
 
@@ -74,46 +82,46 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_default_accept_header_injected() {
+    fn test_empty_headers_returns_empty_map() {
         let headers = HashMap::new();
         let result = build_header_map(headers);
 
-        let accept = HeaderName::from_static("accept");
-        assert!(result.contains_key(&accept), "Should inject Accept header");
-        assert_eq!(
-            result.get(&accept).unwrap(),
-            "application/json, text/event-stream"
-        );
+        // rmcp handles Accept header automatically, so our map should be empty
+        assert_eq!(result.len(), 0, "Should not add any headers");
     }
 
     #[test]
-    fn test_caller_accept_header_respected() {
+    fn test_rejects_reserved_accept_header() {
         let mut headers = HashMap::new();
         headers.insert("Accept".to_string(), "application/json".to_string());
 
         let result = build_header_map(headers);
 
-        let accept = HeaderName::from_static("accept");
-        assert_eq!(
-            result.get(&accept).unwrap(),
-            "application/json",
-            "Should use caller's Accept header, not default"
-        );
+        // Accept is reserved - should be rejected
+        assert_eq!(result.len(), 0, "Reserved headers should be rejected");
+        assert!(!result.contains_key(&HeaderName::from_static("accept")));
     }
 
     #[test]
-    fn test_case_insensitive_accept_preserved() {
+    fn test_rejects_reserved_session_id_header() {
         let mut headers = HashMap::new();
-        headers.insert("accept".to_string(), "text/plain".to_string());
+        headers.insert("Mcp-Session-Id".to_string(), "test123".to_string());
 
         let result = build_header_map(headers);
 
-        let accept = HeaderName::from_static("accept");
-        assert_eq!(
-            result.get(&accept).unwrap(),
-            "text/plain",
-            "Lowercase 'accept' should be preserved"
-        );
+        // Session ID is reserved
+        assert_eq!(result.len(), 0);
+    }
+
+    #[test]
+    fn test_rejects_reserved_last_event_id_header() {
+        let mut headers = HashMap::new();
+        headers.insert("Last-Event-Id".to_string(), "123".to_string());
+
+        let result = build_header_map(headers);
+
+        // Last-Event-Id is reserved
+        assert_eq!(result.len(), 0);
     }
 
     #[test]
@@ -137,8 +145,8 @@ mod tests {
 
         let result = build_header_map(headers);
 
-        // Plus Accept = 4 total
-        assert_eq!(result.len(), 4);
+        // Should have exactly 3 custom headers
+        assert_eq!(result.len(), 3);
         assert!(result.contains_key(&HeaderName::from_static("x-header-one")));
         assert!(result.contains_key(&HeaderName::from_static("x-header-two")));
         assert!(result.contains_key(&HeaderName::from_static("x-header-three")));
@@ -152,10 +160,9 @@ mod tests {
 
         let result = build_header_map(headers);
 
-        // Should have valid header + Accept, but not invalid
-        assert_eq!(result.len(), 2);
+        // Should have only valid header, invalid is skipped
+        assert_eq!(result.len(), 1);
         assert!(result.contains_key(&HeaderName::from_static("valid-header")));
-        assert!(result.contains_key(&HeaderName::from_static("accept")));
     }
 
     #[test]
@@ -166,8 +173,8 @@ mod tests {
 
         let result = build_header_map(headers);
 
-        // Should have valid header + Accept, but not invalid
-        assert_eq!(result.len(), 2);
+        // Should have only valid header
+        assert_eq!(result.len(), 1);
         assert!(result.contains_key(&HeaderName::from_static("x-another")));
         assert_eq!(
             result.get(&HeaderName::from_static("x-another")).unwrap(),
@@ -183,8 +190,8 @@ mod tests {
 
         let result = build_header_map(headers);
 
-        // Should have good header + Accept, but not bad
-        assert_eq!(result.len(), 2);
+        // Should have only good header
+        assert_eq!(result.len(), 1);
         assert!(result.contains_key(&HeaderName::from_static("x-good-header")));
     }
 
@@ -196,19 +203,9 @@ mod tests {
 
         let result = build_header_map(headers);
 
-        // Should have good header + Accept, but not bad
-        assert_eq!(result.len(), 2);
-        assert!(result.contains_key(&HeaderName::from_static("x-good")));
-    }
-
-    #[test]
-    fn test_empty_custom_headers_only_has_accept() {
-        let headers = HashMap::new();
-        let result = build_header_map(headers);
-
-        // Should only have the default Accept header
+        // Should have only good header
         assert_eq!(result.len(), 1);
-        assert!(result.contains_key(&HeaderName::from_static("accept")));
+        assert!(result.contains_key(&HeaderName::from_static("x-good")));
     }
 
     #[test]
@@ -237,14 +234,16 @@ mod tests {
         let result = build_header_map(headers);
 
         // HeaderValue accepts valid UTF-8
-        assert_eq!(result.len(), 3); // unicode + valid + accept
+        assert_eq!(result.len(), 2); // unicode + valid
         assert!(result.contains_key(&HeaderName::from_static("x-valid")));
         assert!(result.contains_key(&HeaderName::from_static("x-unicode")));
     }
 
     #[test]
-    fn test_confluence_compatible_headers() {
+    fn test_reserved_accept_header_rejected() {
         let mut headers = HashMap::new();
+        headers.insert("X-Custom".to_string(), "value".to_string());
+        // Try to override Accept - should be rejected as reserved
         headers.insert(
             "Accept".to_string(),
             "application/json, text/event-stream".to_string(),
@@ -252,11 +251,10 @@ mod tests {
 
         let result = build_header_map(headers);
 
-        // Should use the Confluence-required Accept header
-        assert_eq!(
-            result.get(&HeaderName::from_static("accept")).unwrap(),
-            "application/json, text/event-stream"
-        );
+        // Should have only custom header, Accept is reserved by rmcp
+        assert_eq!(result.len(), 1);
+        assert!(result.contains_key(&HeaderName::from_static("x-custom")));
+        assert!(!result.contains_key(&HeaderName::from_static("accept")));
     }
 
     // Transport building tests (verify no panics with Tokio runtime)
