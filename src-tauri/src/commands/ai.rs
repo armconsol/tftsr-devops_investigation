@@ -1595,4 +1595,3 @@ mod tests {
         assert_eq!(sanitized[1].tool_calls, None); // Already None, but verified
     }
 }
-
