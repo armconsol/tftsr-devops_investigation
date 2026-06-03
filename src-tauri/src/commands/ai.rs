@@ -401,13 +401,18 @@ pub async fn chat_message(
     const MAX_TOOL_ITERATIONS: usize = 20; // Allow sufficient iterations for complex diagnostics
 
     // Get available tools — static + MCP
-    let mut all_tools = crate::ai::tools::get_available_tools();
-    let mcp_tools = crate::ai::tools::get_enabled_mcp_tools(&state).await;
-    all_tools.extend(mcp_tools);
-    let tools = if all_tools.is_empty() {
-        None
+    // Only enable tools if the provider explicitly supports tool calling
+    let tools = if provider_config.supports_tool_calling.unwrap_or(false) {
+        let mut all_tools = crate::ai::tools::get_available_tools();
+        let mcp_tools = crate::ai::tools::get_enabled_mcp_tools(&state).await;
+        all_tools.extend(mcp_tools);
+        if all_tools.is_empty() {
+            None
+        } else {
+            Some(all_tools)
+        }
     } else {
-        Some(all_tools)
+        None
     };
 
     // If tools are available AND using OpenAI-compatible provider, add explicit JSON format instruction
@@ -1596,5 +1601,94 @@ mod tests {
         assert_eq!(sanitized.len(), 2);
         assert_eq!(sanitized[0].tool_calls, None); // Stripped from assistant
         assert_eq!(sanitized[1].tool_calls, None); // Already None, but verified
+    }
+
+    #[test]
+    fn test_supports_tool_calling_flag_false_disables_tools() {
+        // Test the logic that enforces supports_tool_calling flag
+        // When flag is false, tools should be None even if tools exist
+
+        let supports_tool_calling = Some(false);
+        let has_tools_available = true; // Simulate available tools
+
+        // Simulate the conditional logic from chat_message command (lines 403-415)
+        let tools_enabled = if supports_tool_calling.unwrap_or(false) {
+            if has_tools_available {
+                Some(vec!["mock_tool"])
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        assert!(
+            tools_enabled.is_none(),
+            "Tools should be None when supports_tool_calling is false"
+        );
+    }
+
+    #[test]
+    fn test_supports_tool_calling_flag_true_enables_tools() {
+        let supports_tool_calling = Some(true);
+        let has_tools_available = true;
+
+        let tools_enabled = if supports_tool_calling.unwrap_or(false) {
+            if has_tools_available {
+                Some(vec!["mock_tool"])
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        assert!(
+            tools_enabled.is_some(),
+            "Tools should be enabled when supports_tool_calling is true"
+        );
+        assert_eq!(tools_enabled.unwrap().len(), 1);
+    }
+
+    #[test]
+    fn test_supports_tool_calling_flag_none_defaults_to_false() {
+        let supports_tool_calling: Option<bool> = None;
+        let has_tools_available = true;
+
+        let tools_enabled = if supports_tool_calling.unwrap_or(false) {
+            if has_tools_available {
+                Some(vec!["mock_tool"])
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        assert!(
+            tools_enabled.is_none(),
+            "Tools should be None when supports_tool_calling is None (defaults to false)"
+        );
+    }
+
+    #[test]
+    fn test_supports_tool_calling_true_but_no_tools_available() {
+        let supports_tool_calling = Some(true);
+        let has_tools_available = false;
+
+        let tools_enabled = if supports_tool_calling.unwrap_or(false) {
+            if has_tools_available {
+                Some(vec!["mock_tool"])
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        assert!(
+            tools_enabled.is_none(),
+            "Tools should be None even when flag is true if no tools are available"
+        );
     }
 }

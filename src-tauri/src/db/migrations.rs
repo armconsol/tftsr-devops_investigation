@@ -355,6 +355,11 @@ pub fn run_migrations(conn: &Connection) -> anyhow::Result<()> {
 
             CREATE INDEX IF NOT EXISTS idx_approval_decisions_session ON approval_decisions(session_id);",
         ),
+        (
+            "028_add_supports_tool_calling",
+            "ALTER TABLE ai_providers ADD COLUMN supports_tool_calling INTEGER DEFAULT 1;
+             -- Default to true for existing providers to maintain backward compatibility",
+        ),
     ];
 
     for (name, sql) in migrations {
@@ -374,6 +379,7 @@ pub fn run_migrations(conn: &Connection) -> anyhow::Result<()> {
                 || name.ends_with("_add_created_at")
                 || name.ends_with("_add_log_content_compressed")
                 || name.ends_with("_add_image_data")
+                || name.ends_with("_add_supports_tool_calling")
             {
                 // Use execute for ALTER TABLE (SQLite only allows one statement per command)
                 // Skip error if column already exists (SQLITE_ERROR with "duplicate column name")

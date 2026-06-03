@@ -252,7 +252,7 @@ export default function LogUpload() {
           multiple
           className="hidden"
           onChange={handleFileSelect}
-          accept=".log,.txt,.out,.err,.syslog,.journal,.yaml,.yml,.json,.toml,.xml,.ini,.cfg,.conf,.config,.env,.properties,.md,.markdown,.rst,.csv,.tsv,.ndjson,.jsonl,.sql,.sh,.bash,.zsh,.py,.js,.ts,.rb,.go,.rs,.java,.html,.htm,.css,.diff,.patch,.pdf,.docx,.doc,.rtf,.xlsx,.xls"
+          accept=".log,.txt,.out,.err,.syslog,.journal,.yaml,.yml,.json,.toml,.xml,.ini,.cfg,.conf,.config,.env,.properties,.md,.markdown,.rst,.csv,.tsv,.ndjson,.jsonl,.sql,.sh,.bash,.zsh,.py,.js,.ts,.rb,.go,.rs,.java,.html,.htm,.css,.diff,.patch,.pdf,.docx,.doc,.rtf,.pcap,.pcapng,.cap"
         />
         <details className="mt-2 text-sm text-gray-500 dark:text-gray-400">
           <summary className="cursor-pointer hover:text-gray-700 dark:hover:text-gray-200">
@@ -262,9 +262,10 @@ export default function LogUpload() {
             <div><span className="font-medium">Logs &amp; text:</span> .log, .txt, .out, .err, .syslog, .journal</div>
             <div><span className="font-medium">Config &amp; markup:</span> .yaml, .yml, .json, .toml, .xml, .ini, .cfg, .conf, .env, .properties</div>
             <div><span className="font-medium">Documents:</span> .pdf, .docx, .doc, .md, .rst, .rtf</div>
-            <div><span className="font-medium">Data:</span> .csv, .tsv, .xlsx, .xls, .ndjson, .jsonl, .sql</div>
+            <div><span className="font-medium">Data:</span> .csv, .tsv, .ndjson, .jsonl, .sql</div>
             <div><span className="font-medium">Code &amp; scripts:</span> .sh, .bash, .zsh, .py, .js, .ts, .rb, .go, .rs, .java, .html, .css, .diff, .patch</div>
-            <p className="mt-1 italic">Binary formats (PDF, DOCX, XLSX) will have their text extracted automatically.</p>
+            <div><span className="font-medium">Network captures:</span> .pcap, .pcapng, .cap (requires tshark or tcpdump)</div>
+            <p className="mt-1 italic">Binary formats (PDF, DOCX, PCAP) will have their text extracted automatically. XLSX/XLS files are NOT supported - export as CSV instead.</p>
           </div>
         </details>
       </div>

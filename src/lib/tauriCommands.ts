@@ -17,6 +17,7 @@ export interface ProviderConfig {
   session_id?: string;
   user_id?: string;
   use_datastore_upload?: boolean;
+  supports_tool_calling?: boolean;
 }
 
 export interface Message {

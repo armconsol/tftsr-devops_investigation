@@ -43,6 +43,10 @@ pub struct ProviderConfig {
     /// Optional: When true, file uploads go to GenAI datastore instead of prompt
     #[serde(skip_serializing_if = "Option::is_none")]
     pub use_datastore_upload: Option<bool>,
+    /// Optional: Whether this provider supports tool/function calling
+    /// If None, defaults to false (provider can only be used for chat)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub supports_tool_calling: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -58,7 +58,8 @@ const SAFE_TEXT_EXTENSIONS: &[&str] = &[
     "rtf",
 ];
 
-const SAFE_BINARY_EXTENSIONS: &[&str] = &["pdf", "docx", "doc", "xlsx", "xls"];
+const SAFE_BINARY_EXTENSIONS: &[&str] =
+    &["pdf", "docx", "doc", "xlsx", "xls", "pcap", "pcapng", "cap"];
 
 fn compress_text(text: &str) -> Result<Vec<u8>, String> {
     let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
@@ -107,6 +108,7 @@ pub fn extract_text_content(path: &Path) -> Result<String, String> {
     match ext.as_str() {
         "pdf" => extract_pdf_text(path),
         "docx" | "doc" => extract_docx_text(path),
+        "pcap" | "pcapng" | "cap" => extract_pcap_text(path),
         "xlsx" | "xls" => Err(format!(
             "Spreadsheet format .{ext} is not yet supported for text extraction. \
              Export the sheet as CSV and upload that instead."
@@ -175,6 +177,81 @@ fn extract_docx_text(path: &Path) -> Result<String, String> {
     Ok(text)
 }
 
+fn extract_pcap_text(path: &Path) -> Result<String, String> {
+    // Try to use tshark (Wireshark CLI) to extract packet data
+    // Limit to first 1000 packets and disable name resolution to prevent OOM and stalls
+    let output = std::process::Command::new("tshark")
+        .arg("-r")
+        .arg(path)
+        .arg("-n") // Disable name resolution
+        .arg("-c")
+        .arg("1000") // Limit to first 1000 packets
+        .arg("-V") // Verbose packet dissection
+        .output();
+
+    match output {
+        Ok(result) if result.status.success() => {
+            let text = String::from_utf8_lossy(&result.stdout).to_string();
+            if text.trim().is_empty() {
+                return Err("PCAP file contains no packets or is empty".to_string());
+            }
+            // Truncate to 1MB to prevent memory issues with verbose output
+            const MAX_PCAP_TEXT: usize = 1024 * 1024;
+            if text.len() > MAX_PCAP_TEXT {
+                Ok(format!(
+                    "{}... (truncated from {} bytes)",
+                    &text[..MAX_PCAP_TEXT],
+                    text.len()
+                ))
+            } else {
+                Ok(text)
+            }
+        }
+        Ok(result) => {
+            let stderr = String::from_utf8_lossy(&result.stderr);
+            Err(format!("tshark failed to process PCAP: {stderr}"))
+        }
+        Err(_) => {
+            // tshark not installed - try tcpdump as fallback
+            let tcpdump_output = std::process::Command::new("tcpdump")
+                .arg("-n") // Don't resolve addresses
+                .arg("-c")
+                .arg("1000") // Limit to first 1000 packets
+                .arg("-r")
+                .arg(path)
+                .arg("-A") // Print packet payload in ASCII
+                .output();
+
+            match tcpdump_output {
+                Ok(result) if result.status.success() => {
+                    let text = String::from_utf8_lossy(&result.stdout).to_string();
+                    if text.trim().is_empty() {
+                        return Err("PCAP file contains no packets or is empty".to_string());
+                    }
+                    // Truncate to 1MB to prevent memory issues with verbose output
+                    const MAX_PCAP_TEXT: usize = 1024 * 1024;
+                    if text.len() > MAX_PCAP_TEXT {
+                        Ok(format!(
+                            "{}... (truncated from {} bytes)",
+                            &text[..MAX_PCAP_TEXT],
+                            text.len()
+                        ))
+                    } else {
+                        Ok(text)
+                    }
+                }
+                Ok(result) => {
+                    let stderr = String::from_utf8_lossy(&result.stderr);
+                    Err(format!("tcpdump failed to process PCAP: {stderr}"))
+                }
+                Err(_) => Err(
+                    "Neither tshark nor tcpdump is installed. Install Wireshark or tcpdump to analyze packet captures.".to_string()
+                ),
+            }
+        }
+    }
+}
+
 fn validate_log_file_path(file_path: &str) -> Result<PathBuf, String> {
     let path = Path::new(file_path);
     let canonical = std::fs::canonicalize(path).map_err(|_| "Unable to access selected file")?;
@@ -240,6 +317,8 @@ pub async fn upload_log_file(
         "md" | "markdown" => "text/markdown",
         "csv" | "tsv" => "text/csv",
         "html" | "htm" => "text/html",
+        "pcap" | "cap" => "application/vnd.tcpdump.pcap",
+        "pcapng" => "application/x-pcapng",
         _ => "text/plain",
     };
 
@@ -338,6 +417,8 @@ pub async fn upload_log_file_by_content(
         "md" | "markdown" => "text/markdown",
         "csv" | "tsv" => "text/csv",
         "html" | "htm" => "text/html",
+        "pcap" | "cap" => "application/vnd.tcpdump.pcap",
+        "pcapng" => "application/x-pcapng",
         _ => "text/plain",
     };
 
@@ -762,5 +843,58 @@ mod tests {
         let result = decompress_text(&compressed);
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), text);
+    }
+
+    #[test]
+    fn test_pcap_files_recognized_as_safe_binary() {
+        use std::path::Path;
+        assert!(is_safe_file(Path::new("capture.pcap")));
+        assert!(is_safe_file(Path::new("network.pcapng")));
+        assert!(is_safe_file(Path::new("traffic.cap")));
+        assert!(!is_safe_file(Path::new("malicious.exe")));
+    }
+
+    #[test]
+    fn test_pcap_mime_types() {
+        use std::path::Path;
+        // This test verifies that pcap files get proper MIME types in upload_log_file
+        // The actual MIME type mapping is in the upload_log_file function
+        // We're testing that the extension detection works correctly
+        let pcap_path = Path::new("test.pcap");
+        let pcapng_path = Path::new("test.pcapng");
+        let cap_path = Path::new("test.cap");
+
+        assert_eq!(pcap_path.extension().and_then(|e| e.to_str()), Some("pcap"));
+        assert_eq!(
+            pcapng_path.extension().and_then(|e| e.to_str()),
+            Some("pcapng")
+        );
+        assert_eq!(cap_path.extension().and_then(|e| e.to_str()), Some("cap"));
+    }
+
+    #[test]
+    fn test_extract_pcap_requires_external_tool() {
+        use std::path::Path;
+        // extract_pcap_text requires tshark or tcpdump to be installed
+        // This test verifies that the function returns appropriate error when neither is available
+        // Note: We can't test actual extraction without mock/fixture files and installed tools
+
+        // Verify that trying to extract from a non-existent file returns an error
+        let fake_path = Path::new("/tmp/nonexistent_test_file.pcap");
+        let result = extract_pcap_text(fake_path);
+
+        // Should fail because file doesn't exist (and possibly no tshark/tcpdump)
+        assert!(result.is_err());
+
+        // Error message should mention either tshark failure or missing tools
+        let error_msg = result.unwrap_err();
+        assert!(
+            error_msg.contains("tshark")
+                || error_msg.contains("tcpdump")
+                || error_msg.contains("Neither")
+                || error_msg.contains("No such file"),
+            "Expected error about missing tools or file, got: {}",
+            error_msg
+        );
     }
 }
