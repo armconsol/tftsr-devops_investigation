@@ -444,10 +444,53 @@ pub async fn chat_message(
 
     loop {
         iteration += 1;
+
+        // Warn AI when approaching limit
+        if iteration == MAX_TOOL_ITERATIONS - 2 {
+            messages.push(Message {
+                role: "system".into(),
+                content: format!(
+                    "WARNING: You are on iteration {}/{} (2 rounds remaining). \
+                     You MUST provide your final answer in the NEXT round. \
+                     Do NOT call any more tools. \
+                     Summarize your findings based on the data you've already gathered.",
+                    iteration, MAX_TOOL_ITERATIONS
+                ),
+                tool_call_id: None,
+                tool_calls: None,
+            });
+        }
+
+        // Force stop at limit with collected data
         if iteration > MAX_TOOL_ITERATIONS {
-            return Err(format!(
-                "Tool-calling loop exceeded maximum iterations ({iteration}/{MAX_TOOL_ITERATIONS}). Consider breaking complex tasks into smaller queries."
-            ));
+            // Instead of erroring, force AI to respond with what it has
+            messages.push(Message {
+                role: "system".into(),
+                content: format!(
+                    "CRITICAL: Tool iteration limit reached ({}/{}). \
+                     You MUST respond now with a natural language summary of your findings. \
+                     DO NOT call any more tools. \
+                     Provide your best answer based on the diagnostic data already collected.",
+                    iteration, MAX_TOOL_ITERATIONS
+                ),
+                tool_call_id: None,
+                tool_calls: None,
+            });
+
+            // Make one final call WITHOUT tools to force text response
+            let final_attempt = provider
+                .chat(messages.clone(), &provider_config, None) // No tools available
+                .await
+                .map_err(|e| {
+                    format!("AI provider request failed after reaching iteration limit: {e}")
+                })?;
+
+            final_response = final_attempt;
+            tracing::warn!(
+                "Tool iteration limit exceeded, forced final response: {} chars",
+                final_response.content.len()
+            );
+            break;
         }
 
         let response = provider
