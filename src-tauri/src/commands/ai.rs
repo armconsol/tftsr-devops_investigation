@@ -463,14 +463,15 @@ pub async fn chat_message(
 
         // Force stop at limit with collected data
         if iteration > MAX_TOOL_ITERATIONS {
-            // Sanitize messages: convert 'tool' role to 'system' and drop tool_call_id/tool_calls
+            // Sanitize messages: convert 'tool' role to 'user' and drop tool_call_id/tool_calls
             // This prevents validation errors on the final call (tool messages require preceding assistant tool_calls)
+            // Use 'user' instead of 'system' to avoid prompt injection risk from untrusted tool output
             let sanitized_messages: Vec<Message> = messages
                 .into_iter()
                 .map(|mut msg| {
                     if msg.role == "tool" {
-                        // Convert tool responses to system messages with context
-                        msg.role = "system".into();
+                        // Convert tool responses to user messages (not system - avoid prompt injection)
+                        msg.role = "user".into();
                         msg.content = format!("[Tool Result]: {}", msg.content);
                         msg.tool_call_id = None;
                     }
@@ -1497,7 +1498,7 @@ mod tests {
     }
 
     #[test]
-    fn test_message_sanitization_converts_tool_role_to_system() {
+    fn test_message_sanitization_converts_tool_role_to_user() {
         // Simulate messages with 'tool' role that would cause validation errors
         let messages = vec![
             Message {
@@ -1529,7 +1530,8 @@ mod tests {
             .into_iter()
             .map(|mut msg| {
                 if msg.role == "tool" {
-                    msg.role = "system".into();
+                    // Use 'user' to avoid prompt injection from untrusted tool output
+                    msg.role = "user".into();
                     msg.content = format!("[Tool Result]: {}", msg.content);
                     msg.tool_call_id = None;
                 }
@@ -1543,7 +1545,7 @@ mod tests {
         assert_eq!(sanitized[0].role, "user");
         assert_eq!(sanitized[1].role, "assistant");
         assert_eq!(sanitized[1].tool_calls, None); // Stripped
-        assert_eq!(sanitized[2].role, "system"); // Converted from 'tool'
+        assert_eq!(sanitized[2].role, "user"); // Converted from 'tool' (not 'system' - security)
         assert!(sanitized[2].content.starts_with("[Tool Result]:")); // Prefixed
         assert_eq!(sanitized[2].tool_call_id, None); // Stripped
     }
@@ -1569,7 +1571,7 @@ mod tests {
             .into_iter()
             .map(|mut msg| {
                 if msg.role == "tool" {
-                    msg.role = "system".into();
+                    msg.role = "user".into();
                     msg.content = format!("[Tool Result]: {}", msg.content);
                     msg.tool_call_id = None;
                 }

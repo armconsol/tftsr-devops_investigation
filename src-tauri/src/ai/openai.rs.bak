@@ -48,23 +48,17 @@ impl Provider for OpenAiProvider {
 
 #[cfg(test)]
 mod tests {
-    use super::{is_msi_genai_format, OpenAiProvider};
+    use super::{is_custom_rest_format, OpenAiProvider};
 
     #[test]
-    fn msi_genai_format_is_recognized() {
-        assert!(is_msi_genai_format(Some("msi-genai")));
+    fn custom_rest_format_is_recognized() {
+        assert!(is_custom_rest_format(Some("custom_rest")));
     }
 
     #[test]
-    fn custom_rest_format_backward_compatible() {
-        // Keep backward compatibility with old format name
-        assert!(is_msi_genai_format(Some("custom_rest")));
-    }
-
-    #[test]
-    fn openai_format_is_not_msi_genai() {
-        assert!(!is_msi_genai_format(Some("openai")));
-        assert!(!is_msi_genai_format(None));
+    fn openai_format_is_not_custom_rest() {
+        assert!(!is_custom_rest_format(Some("openai")));
+        assert!(!is_custom_rest_format(None));
     }
 
     #[test]
@@ -132,25 +126,6 @@ mod tests {
 
         let calls = result.unwrap();
         assert_eq!(calls[0].arguments, r#"{"key":"value"}"#);
-    }
-
-    #[test]
-    fn parse_tool_calls_generates_fallback_id_when_missing() {
-        // Some providers may omit id field - generate fallback to prevent silent drop
-        let content = r#"{"tool_calls":[
-            {"function":{"name":"kubectl_get","arguments":{"resource":"pods"}}},
-            {"id":"call_2","function":{"name":"kubectl_describe","arguments":{"resource":"svc"}}}
-        ]}"#;
-
-        let result = OpenAiProvider::parse_tool_calls_from_text(content);
-        assert!(result.is_some());
-
-        let calls = result.unwrap();
-        assert_eq!(calls.len(), 2);
-        assert_eq!(calls[0].id, "tool_call_0"); // Fallback generated
-        assert_eq!(calls[0].name, "kubectl_get");
-        assert_eq!(calls[1].id, "call_2"); // Original preserved
-        assert_eq!(calls[1].name, "kubectl_describe");
     }
 }
 
@@ -381,7 +356,7 @@ impl OpenAiProvider {
             body["tools"] = serde_json::Value::from(formatted_tools);
             body["tool_choice"] = serde_json::Value::from("auto");
 
-            tracing::info!("MSI GenAI: Sending {} tools in request", tool_count);
+            tracing::info!("Custom REST: Sending {} tools in request", tool_count);
         }
 
         // Use custom auth header and prefix (no default prefix for custom REST)
@@ -403,13 +378,13 @@ impl OpenAiProvider {
         if !resp.status().is_success() {
             let status = resp.status();
             let text = resp.text().await?;
-            anyhow::bail!("MSI GenAI API error {status}: {text}");
+            anyhow::bail!("Custom REST API error {status}: {text}");
         }
 
         let json: serde_json::Value = resp.json().await?;
 
         tracing::debug!(
-            "MSI GenAI response: {}",
+            "Custom REST response: {}",
             serde_json::to_string_pretty(&json).unwrap_or_else(|_| "invalid JSON".to_string())
         );
 
@@ -441,7 +416,7 @@ impl OpenAiProvider {
                                     .and_then(|a| a.as_str())
                                     .or_else(|| call.get("arguments").and_then(|a| a.as_str())),
                             ) {
-                                tracing::info!("MSI GenAI: Parsed tool call: {} ({})", name, id);
+                                tracing::info!("Custom REST: Parsed tool call: {} ({})", name, id);
                                 return Some(crate::ai::ToolCall {
                                     id: id.to_string(),
                                     name: name.to_string(),
@@ -460,7 +435,7 @@ impl OpenAiProvider {
                                     .unwrap_or("tool_call_0")
                                     .to_string();
                                 tracing::info!(
-                                    "MSI GenAI: Parsed tool call (simple format): {} ({})",
+                                    "Custom REST: Parsed tool call (simple format): {} ({})",
                                     name,
                                     id
                                 );
@@ -471,14 +446,14 @@ impl OpenAiProvider {
                                 });
                             }
 
-                            tracing::warn!("MSI GenAI: Failed to parse tool call: {:?}", call);
+                            tracing::warn!("Custom REST: Failed to parse tool call: {:?}", call);
                             None
                         })
                         .collect();
                     if calls.is_empty() {
                         None
                     } else {
-                        tracing::info!("MSI GenAI: Found {} tool calls", calls.len());
+                        tracing::info!("Custom REST: Found {} tool calls", calls.len());
                         Some(calls)
                     }
                 } else {
@@ -493,7 +468,7 @@ impl OpenAiProvider {
             // Try parsing tool calls from msg content (MSIGenAI workaround)
             if let Some(parsed_calls) = Self::parse_tool_calls_from_text(&content) {
                 tracing::warn!(
-                    "MSI GenAI: MSIGenAI workaround - parsed {} tool calls from msg text (gateway should return structured tool_calls field)",
+                    "Custom REST: MSIGenAI workaround - parsed {} tool calls from msg text (gateway should return structured tool_calls field)",
                     parsed_calls.len()
                 );
                 tool_calls = Some(parsed_calls);
@@ -558,14 +533,8 @@ impl OpenAiProvider {
     fn extract_tool_calls_from_array(calls: &[serde_json::Value]) -> Option<Vec<crate::ai::ToolCall>> {
         let parsed: Vec<crate::ai::ToolCall> = calls
             .iter()
-            .enumerate()
-            .filter_map(|(index, call)| {
-                // Generate fallback ID if missing (consistent with earlier parsing logic in this file)
-                let id = call
-                    .get("id")
-                    .and_then(|v| v.as_str())
-                    .map(|s| s.to_string())
-                    .unwrap_or_else(|| format!("tool_call_{}", index));
+            .filter_map(|call| {
+                let id = call.get("id").and_then(|v| v.as_str())?.to_string();
 
                 // Try nested function.name format (OpenAI style)
                 let name = call
