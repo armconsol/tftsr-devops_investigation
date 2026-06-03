@@ -2,9 +2,12 @@
 
 **Project**: TRCAA (Troubleshooting and RCA Assistant)  
 **Feature**: Autonomous AI-Powered Shell Command Execution  
-**Version**: 1.0.0 → 1.0.9 (Major Release + Post-Hackathon Iterations)  
-**Date**: June 2-3, 2026  
-**Team**: Shaun Arman (VFK387)  
+**Version**: 1.0.0 → 1.0.8 (Major Release + Iterations)  
+**Duration**: 36 hours (June 2, 2026 7:00 AM CST → June 3, 2026 7:00 PM CST)  
+**Team**:
+- **Development**: Shaun Arman (VFK387), Henry Castle, RJ Cooper, David Weinrich, Stephane Lalande
+- **Leadership**: Heidi Pickett, Martin Noel, Marc Chantelois, Thomas Essex, Donnie Jones
+
 **ADO Work Item**: [#727547](https://dev.azure.com/msi-cie/Apollo/_workitems/edit/727547)
 
 ---
@@ -260,38 +263,54 @@ GitHub Copilot performed automated code review with 9 findings, all addressed:
 
 ## Metrics & Impact
 
-### Lines of Code (Including Post-Release v1.0.1-v1.0.9)
-- **Rust**: ~2,200 new lines (shell module + commands + AI improvements)
-- **TypeScript/React**: ~900 new lines (components + types)
-- **Tests**: ~800 lines (431 tests total: 297 backend + 134 frontend)
-- **Documentation**: ~2,200 lines (including this summary + wiki updates)
-- **Total**: ~6,100 lines of production code
+### Lines of Code (36-Hour Development Cycle)
+From first commit (June 2, 2026 10:18 AM CST) to last commit (June 3, 2026 12:12 PM CST) - approximately 26 hours of active development:
+- **Total Changes**: 80 files changed, +4,528 insertions, -386 deletions
+- **Net New Code**: ~4,142 lines
+- **Breakdown**:
+  - **Rust Backend**: ~2,400 lines (shell execution, AI improvements, migrations)
+  - **TypeScript/React Frontend**: ~1,000 lines (UI components, command wrappers, tests)
+  - **Tests**: ~800 lines (297 backend + 134 frontend tests)
+  - **Documentation**: ~2,300 lines (wiki updates, ADRs, this summary)
 
 ### Development Time
-- **Initial Hackathon (v1.0.0)**: ~44 hours
-- **Post-Release Development (v1.0.1-v1.0.9)**: ~28 hours
-  - Security updates (v1.0.1): 2 hours
-  - LiteLLM integration (v1.0.2): 4 hours
-  - Query classification (v1.0.3): 3 hours
-  - Graceful exit + MSI GenAI (v1.0.4): 8 hours
-  - Agent prompt improvements (v1.0.5-v1.0.6): 2 hours
-  - Ollama function calling (v1.0.7): 3 hours
-  - Connection reliability (v1.0.8): 3 hours
-  - Tool calling auto-detect (v1.0.9): 3 hours
-- **Total**: ~72 hours
+**Total Duration**: 36 hours (June 2, 2026 7:00 AM CST → June 3, 2026 7:00 PM CST)  
+**Active Development Window**: ~26 hours (first commit: June 2, 10:18 AM CST → last commit: June 3, 12:12 PM CST)
 
-### Files Modified
-- **v1.0.0**: 35 files (PR #27, #28)
-- **v1.0.1**: 6 files (PR #29, #32 - Dependencies + rebrand)
-- **v1.0.2**: 4 files (PR #31 - LiteLLM)
-- **v1.0.3**: 1 file (PR #36, #37 - Query classification)
-- **v1.0.4**: 7 files (PR #38 - Graceful exit + MSI GenAI)
-- **v1.0.5**: 7 files (PR #39 - Agent output + provider docs)
-- **v1.0.6**: 4 files (PR #40 - JSON example removal)
-- **v1.0.7**: 5 files (PR #41 - Ollama function calling)
-- **v1.0.8**: 8 files (PR #42 - Connection reliability)
-- **v1.0.9**: 7 files (PR #44 - Tool calling auto-detect, in review)
-- **Total**: ~84 files modified across 25 PRs
+**Timeline Breakdown**:
+- **Initial Implementation (v1.0.0)**: June 2, 7:00 AM - 3:00 PM CST (~8 hours)
+- **Iteration & Refinement (v1.0.1-v1.0.8)**: June 2, 3:00 PM - June 3, 7:00 PM CST (~28 hours)
+  - Continuous integration and testing
+  - Bug fixes and feature enhancements
+  - Documentation and review cycles
+
+**Key Milestones**:
+- **37 commits** across the 36-hour period
+- **17 pull requests** created and merged (PR #45 in progress)
+- **Continuous deployment** with automated CI/CD
+- **Real-time issue resolution** based on testing and feedback
+
+### Pull Requests (Complete History - June 2-3, 2026)
+1. **PR #27**: feat: Agentic Shell Command Execution (v1.0.0) - MERGED
+2. **PR #28**: fix: Copilot review fixes and plugin version sync - MERGED
+3. **PR #29**: fix: ARM64 build + AI tool usage + UI contrast - MERGED
+4. **PR #30**: fix: escape template literal in kubernetes domain prompt - MERGED
+5. **PR #31**: fix: explicitly require JSON tool calling format - MERGED
+6. **PR #32**: feat: rebrand TFTSR to TRCAA (v1.0.1) - MERGED
+7. **PR #33**: fix: Force JSON tool format with explicit system message - MERGED
+8. **PR #34**: fix: Auto-select active kubeconfig and fix button visibility - MERGED
+9. **PR #35**: fix: Increase tool iteration limit from 10 to 20 - MERGED
+10. **PR #36**: fix: AI responding in JSON format (v1.0.3) - MERGED
+11. **PR #37**: fix: prevent over-investigation on simple queries - MERGED
+12. **PR #38**: feat: graceful exit when tool iteration limit reached (v1.0.4) - MERGED
+13. **PR #39**: fix: suppress JSON output in agent responses - MERGED
+14. **PR #40**: fix: Remove JSON examples from devops-incident-responder - MERGED
+15. **PR #41**: feat: Add function calling support to Ollama (v1.0.7) - MERGED
+16. **PR #42**: fix: Ollama connection reliability (v1.0.8) - MERGED
+17. **PR #44**: feat: Auto-Detect Tool Calling Support - MERGED
+18. **PR #45**: docs: Update hackathon summary with team and metrics - IN PROGRESS (this PR)
+
+**Total**: 17 PRs merged during hackathon, 1 PR in progress (documentation update)
 
 ---
 
@@ -999,12 +1018,11 @@ CREATE TABLE approval_decisions (
 | Version | Date | PR | Key Features | Status |
 |---------|------|----| -------------|--------|
 | v1.0.0 | Jun 2 | #27, #28 | Agentic shell execution, Three-tier safety, kubectl bundled | ✅ Released |
-| v1.0.1 | Jun 2 | #29 | Security updates (postcss, vite, lodash, vitest 4.1.8) | ✅ Merged |
-| v1.0.2 | Jun 2 | #31 | LiteLLM Bedrock, Ollama auto-start, JSON format fix | ✅ Merged |
-| v1.0.3 | Jun 2 | #37 | Query classification (Simple/Diagnostic/Incident) | ✅ Merged |
+| v1.0.1 | Jun 2 | #29, #32 | Security updates + TFTSR→TRCAA rebrand | ✅ Merged |
+| v1.0.2 | Jun 2 | #30, #31, #33 | LiteLLM Bedrock, Ollama auto-start, JSON format fixes | ✅ Merged |
+| v1.0.3 | Jun 2 | #34, #35, #36, #37 | Query classification, iteration limit, kubeconfig auto-select | ✅ Merged |
 | v1.0.4 | Jun 3 | #38 | Graceful exit, MSI GenAI support, 10 Copilot fixes | ✅ Merged |
 | v1.0.5 | Jun 3 | #39 | Agent output quality, MSI GenAI docs | ✅ Merged |
 | v1.0.6 | Jun 3 | #40 | Removed JSON examples from agent prompts (liteLLM fix) | ✅ Merged |
 | v1.0.7 | Jun 3 | #41 | Ollama function calling support | ✅ Merged |
-| v1.0.8 | Jun 3 | #42 | Connection reliability, retry logic, model recommendations (≥3B) | ✅ Merged |
-| v1.0.9 | Jun 3 | #44 | Auto-detect tool calling support for AI providers | 🔄 In Review |
+| v1.0.8 | Jun 3 | #42, #44 | Connection reliability, retry logic, tool calling auto-detect | ✅ Merged |
