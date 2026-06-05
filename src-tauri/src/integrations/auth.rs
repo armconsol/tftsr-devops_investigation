@@ -54,7 +54,7 @@ pub fn build_auth_url(
         urlencoding_encode(client_id),
         urlencoding_encode(redirect_uri),
         urlencoding_encode(scope),
-        &pkce.code_challenge,
+        pkce.code_challenge,
     )
 }
 
