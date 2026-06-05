@@ -95,6 +95,189 @@ pub fn get_install_instructions(platform: &str) -> InstallGuide {
     }
 }
 
+/// Helper to find Ollama binary in common locations
+fn find_ollama_binary() -> Option<std::path::PathBuf> {
+    let common_paths = [
+        "/usr/local/bin/ollama",
+        "/opt/homebrew/bin/ollama",
+        "/usr/bin/ollama",
+        "/home/linuxbrew/.linuxbrew/bin/ollama",
+    ];
+
+    for path in &common_paths {
+        let p = std::path::Path::new(path);
+        if p.exists() {
+            return Some(p.to_path_buf());
+        }
+    }
+
+    // Fallback to which/where command
+    let which_cmd = if cfg!(target_os = "windows") {
+        "where"
+    } else {
+        "which"
+    };
+
+    std::process::Command::new(which_cmd)
+        .arg("ollama")
+        .output()
+        .ok()
+        .and_then(|output| {
+            if output.status.success() {
+                String::from_utf8(output.stdout)
+                    .ok()
+                    .map(|s| std::path::PathBuf::from(s.trim()))
+            } else {
+                None
+            }
+        })
+}
+
+/// Attempt to start Ollama service if installed but not running
+pub async fn start_ollama_service() -> anyhow::Result<bool> {
+    let status = check_ollama().await?;
+
+    // If already running, nothing to do
+    if status.running {
+        tracing::info!("Ollama is already running");
+        return Ok(true);
+    }
+
+    // If not installed, can't start it
+    if !status.installed {
+        tracing::warn!("Ollama is not installed, cannot auto-start");
+        return Ok(false);
+    }
+
+    tracing::info!("Ollama is installed but not running, attempting to start...");
+
+    // Platform-specific start logic
+    #[cfg(target_os = "macos")]
+    {
+        // On macOS, try to launch Ollama.app which manages the service
+        let ollama_app = "/Applications/Ollama.app";
+        if std::path::Path::new(ollama_app).exists() {
+            tracing::info!("Launching Ollama.app...");
+            let result = std::process::Command::new("open").arg(ollama_app).spawn();
+
+            match result {
+                Ok(_) => {
+                    // Wait a few seconds for Ollama to start
+                    tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
+
+                    // Check if it's now running
+                    let new_status = check_ollama().await?;
+                    if new_status.running {
+                        tracing::info!("Ollama started successfully via Ollama.app");
+                        return Ok(true);
+                    } else {
+                        tracing::warn!("Ollama.app launched but service not responding yet");
+                        return Ok(false);
+                    }
+                }
+                Err(e) => {
+                    tracing::error!("Failed to launch Ollama.app: {}", e);
+                }
+            }
+        }
+
+        // Fallback: try direct ollama serve with full path
+        if let Some(ollama_bin) = find_ollama_binary() {
+            tracing::info!(
+                "Attempting to start ollama serve directly at {:?}...",
+                ollama_bin
+            );
+            let result = std::process::Command::new(&ollama_bin)
+                .arg("serve")
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .spawn();
+
+            match result {
+                Ok(_) => {
+                    // Wait for service to become available
+                    tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+                    let new_status = check_ollama().await?;
+                    Ok(new_status.running)
+                }
+                Err(e) => {
+                    tracing::error!("Failed to start ollama serve: {}", e);
+                    Ok(false)
+                }
+            }
+        } else {
+            tracing::error!("Ollama binary not found in PATH or common locations");
+            Ok(false)
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        // On Linux, start ollama serve in background using full path
+        if let Some(ollama_bin) = find_ollama_binary() {
+            tracing::info!("Starting ollama serve at {:?}...", ollama_bin);
+            let result = std::process::Command::new(&ollama_bin)
+                .arg("serve")
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .spawn();
+
+            match result {
+                Ok(_) => {
+                    tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+                    let new_status = check_ollama().await?;
+                    if new_status.running {
+                        tracing::info!("Ollama started successfully");
+                        Ok(true)
+                    } else {
+                        tracing::warn!("ollama serve started but not responding yet");
+                        Ok(false)
+                    }
+                }
+                Err(e) => {
+                    tracing::error!("Failed to start ollama serve: {}", e);
+                    Ok(false)
+                }
+            }
+        } else {
+            tracing::error!("Ollama binary not found");
+            Ok(false)
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        // On Windows, Ollama runs as a service, check if we can start it
+        tracing::info!("Attempting to start Ollama on Windows...");
+        if let Some(ollama_bin) = find_ollama_binary() {
+            let result = std::process::Command::new(&ollama_bin)
+                .arg("serve")
+                .spawn();
+
+            match result {
+                Ok(_) => {
+                    tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+                    let new_status = check_ollama().await?;
+                    Ok(new_status.running)
+                }
+                Err(e) => {
+                    tracing::error!("Failed to start Ollama: {}", e);
+                    Ok(false)
+                }
+            }
+        } else {
+            tracing::error!("Ollama binary not found");
+            Ok(false)
+        }
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+    {
+        tracing::warn!("Auto-start not supported on this platform");
+        Ok(false)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
