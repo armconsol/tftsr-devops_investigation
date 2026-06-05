@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use tokio::sync::Mutex as TokioMutex;
+use tokio::sync::{oneshot, Mutex as TokioMutex};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProviderConfig {
@@ -68,6 +68,13 @@ impl Default for AppSettings {
     }
 }
 
+/// Response for shell command approval requests
+#[derive(Debug, Clone)]
+pub struct ApprovalResponse {
+    pub approved: bool,
+    pub decision: String, // "deny", "allow_once", "allow_session"
+}
+
 pub struct AppState {
     pub db: Arc<Mutex<rusqlite::Connection>>,
     pub settings: Arc<Mutex<AppSettings>>,
@@ -77,6 +84,8 @@ pub struct AppState {
     /// Live MCP server connections: server_id -> connection
     pub mcp_connections:
         Arc<TokioMutex<HashMap<String, Arc<TokioMutex<crate::mcp::client::McpConnection>>>>>,
+    /// Pending shell command approval requests: approval_id -> response channel
+    pub pending_approvals: Arc<TokioMutex<HashMap<String, oneshot::Sender<ApprovalResponse>>>>,
 }
 
 /// Determine the application data directory.
