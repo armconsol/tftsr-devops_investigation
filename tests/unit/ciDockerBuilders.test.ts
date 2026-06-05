@@ -100,10 +100,10 @@ describe("Dockerfile.linux-arm64", () => {
 // ─── build-images.yml workflow ───────────────────────────────────────────────
 
 describe("build-images.yml workflow", () => {
-  const wf = readFile(".gitea/workflows/build-images.yml");
+  const wf = readFile(".github/workflows/build-images.yml");
 
-  it("triggers on changes to .docker/ files on master", () => {
-    expect(wf).toContain("- master");
+  it("triggers on changes to .docker/ files on main", () => {
+    expect(wf).toContain("- main");
     expect(wf).toContain("- '.docker/**'");
   });
 
@@ -111,38 +111,28 @@ describe("build-images.yml workflow", () => {
     expect(wf).toContain("workflow_dispatch:");
   });
 
-  it("does not explicitly mount the Docker socket (act_runner mounts it automatically)", () => {
-    // act_runner already mounts /var/run/docker.sock; an explicit options: mount
-    // causes a 'Duplicate mount point' error and must not be present.
-    expect(wf).not.toContain("-v /var/run/docker.sock:/var/run/docker.sock");
-  });
-
-  it("authenticates to the local Gitea registry before pushing", () => {
-    expect(wf).toContain("docker login");
+  it("authenticates to ghcr.io before pushing", () => {
+    expect(wf).toContain("docker login ghcr.io");
     expect(wf).toContain("--password-stdin");
-    expect(wf).toContain("172.0.0.29:3000");
+    expect(wf).toContain("ghcr.io");
   });
 
-  it("builds and pushes all three platform images", () => {
-    expect(wf).toContain("trcaa-linux-amd64:rust1.88-node22");
-    expect(wf).toContain("trcaa-windows-cross:rust1.88-node22");
-    expect(wf).toContain("trcaa-linux-arm64:rust1.88-node22");
+  it("builds and pushes all three platform images to ghcr.io", () => {
+    expect(wf).toContain("ghcr.io/tftsr/trcaa-linux-amd64:rust1.88-node22");
+    expect(wf).toContain("ghcr.io/tftsr/trcaa-windows-cross:rust1.88-node22");
+    expect(wf).toContain("ghcr.io/tftsr/trcaa-linux-arm64:rust1.88-node22");
   });
 
-  it("uses alpine:latest with docker-cli (not docker:24-cli which triggers duplicate socket mount in act_runner)", () => {
-    // act_runner v0.3.1 special-cases docker:* images and adds the socket bind;
-    // combined with its global socket bind this causes a 'Duplicate mount point' error.
-    expect(wf).toContain("alpine:latest");
-    expect(wf).toContain("docker-cli");
-    expect(wf).not.toContain("docker:24-cli");
-  });
-
-  it("runs all three build jobs on linux-amd64 runner", () => {
-    const matches = wf.match(/runs-on: linux-amd64/g) ?? [];
+  it("runs all three build jobs on ubuntu-latest runner", () => {
+    const matches = wf.match(/runs-on: ubuntu-latest/g) ?? [];
     expect(matches.length).toBeGreaterThanOrEqual(3);
   });
 
-  it("uses RELEASE_TOKEN secret for registry auth", () => {
-    expect(wf).toContain("secrets.RELEASE_TOKEN");
+  it("uses GITHUB_TOKEN for registry auth", () => {
+    expect(wf).toContain("secrets.GITHUB_TOKEN");
+  });
+
+  it("grants packages write permission", () => {
+    expect(wf).toContain("packages: write");
   });
 });

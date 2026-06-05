@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/schema/acl-schema.json",
   "identifier": "default",
-  "description": "Default capabilities for TFTSR — least-privilege",
+  "description": "Default capabilities for TRCAA — least-privilege",
   "windows": ["main"],
   "permissions": [
     "core:path:default",

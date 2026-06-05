@@ -4,7 +4,7 @@ import path from "node:path";
 
 const autoTagWorkflowPath = path.resolve(
   process.cwd(),
-  ".gitea/workflows/auto-tag.yml",
+  ".github/workflows/release.yml",
 );
 
 describe("auto-tag release macOS bundle path", () => {

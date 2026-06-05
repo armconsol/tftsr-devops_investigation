@@ -24,11 +24,11 @@ pub struct PatCredential {
 
 /// Generate a PKCE code verifier and challenge for OAuth flows.
 pub fn generate_pkce() -> PkceChallenge {
-    use rand::{thread_rng, RngCore};
+    use rand::RngCore;
 
     // Generate a random 32-byte verifier
     let mut verifier_bytes = [0u8; 32];
-    thread_rng().fill_bytes(&mut verifier_bytes);
+    rand::rng().fill_bytes(&mut verifier_bytes);
 
     let code_verifier = base64_url_encode(&verifier_bytes);
     let challenge_hash = Sha256::digest(code_verifier.as_bytes());
@@ -169,8 +169,15 @@ fn urlencoding_encode(s: &str) -> String {
 }
 
 fn get_encryption_key_material() -> Result<String, String> {
+    // Support both TRCAA_ENCRYPTION_KEY (new) and TFTSR_ENCRYPTION_KEY (legacy) for backwards compatibility
+    if let Ok(key) = std::env::var("TRCAA_ENCRYPTION_KEY") {
+        if !key.trim().is_empty() {
+            return Ok(key);
+        }
+    }
     if let Ok(key) = std::env::var("TFTSR_ENCRYPTION_KEY") {
         if !key.trim().is_empty() {
+            tracing::warn!("TFTSR_ENCRYPTION_KEY is deprecated, use TRCAA_ENCRYPTION_KEY instead");
             return Ok(key);
         }
     }
@@ -197,7 +204,7 @@ fn get_encryption_key_material() -> Result<String, String> {
         // Generate and store new key
         use rand::RngCore;
         let mut bytes = [0u8; 32];
-        rand::rngs::OsRng.fill_bytes(&mut bytes);
+        rand::rng().fill_bytes(&mut bytes);
         let key = hex::encode(bytes);
 
         // Ensure directory exists
@@ -244,14 +251,14 @@ fn derive_aes_key() -> Result<[u8; 32], String> {
 }
 
 /// Encrypt a token using AES-256-GCM.
-/// Key is derived from TFTSR_ENCRYPTION_KEY env var or a default dev key.
+/// Key is derived from TRCAA_ENCRYPTION_KEY env var (or legacy TFTSR_ENCRYPTION_KEY) or a default dev key.
 /// Returns base64-encoded ciphertext with nonce prepended.
 pub fn encrypt_token(token: &str) -> Result<String, String> {
     use aes_gcm::{
         aead::{Aead, KeyInit},
         Aes256Gcm, Nonce,
     };
-    use rand::{thread_rng, RngCore};
+    use rand::RngCore;
 
     let key_bytes = derive_aes_key()?;
 
@@ -259,7 +266,7 @@ pub fn encrypt_token(token: &str) -> Result<String, String> {
 
     // Generate random nonce
     let mut nonce_bytes = [0u8; 12];
-    thread_rng().fill_bytes(&mut nonce_bytes);
+    rand::rng().fill_bytes(&mut nonce_bytes);
     let nonce = Nonce::from_slice(&nonce_bytes);
 
     // Encrypt
@@ -550,14 +557,14 @@ mod tests {
     fn test_decrypt_wrong_key_fails() {
         // Encrypt with one key
         std::env::set_var(
-            "TFTSR_ENCRYPTION_KEY",
+            "TRCAA_ENCRYPTION_KEY",
             "key-1-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
         );
         let encrypted = encrypt_token("secret").unwrap();
 
         // Try to decrypt with different key
         std::env::set_var(
-            "TFTSR_ENCRYPTION_KEY",
+            "TRCAA_ENCRYPTION_KEY",
             "key-2-yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy",
         );
         let result = decrypt_token(&encrypted);
@@ -566,7 +573,7 @@ mod tests {
         assert!(result.unwrap_err().contains("Decryption failed"));
 
         // Reset env var
-        std::env::remove_var("TFTSR_ENCRYPTION_KEY");
+        std::env::remove_var("TRCAA_ENCRYPTION_KEY");
     }
 
     #[test]
@@ -650,14 +657,14 @@ mod tests {
             aead::{Aead, KeyInit},
             Aes256Gcm, Nonce,
         };
-        use rand::{thread_rng, RngCore};
+        use rand::RngCore;
 
         let cipher = Aes256Gcm::new_from_slice(key_bytes)
             .map_err(|e| format!("Failed to create cipher: {e}"))?;
 
         // Generate random nonce
         let mut nonce_bytes = [0u8; 12];
-        thread_rng().fill_bytes(&mut nonce_bytes);
+        rand::rng().fill_bytes(&mut nonce_bytes);
         let nonce = Nonce::from_slice(&nonce_bytes);
 
         // Encrypt

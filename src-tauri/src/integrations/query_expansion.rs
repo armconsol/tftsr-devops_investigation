@@ -14,10 +14,10 @@ fn get_product_synonyms(query: &str) -> Vec<String> {
     if query.to_lowercase().contains("vesta") || query.to_lowercase().contains("vnxt") {
         synonyms.extend(vec![
             "VESTA NXT".to_string(),
-            "Vesta NXT".to_string(),
-            "VNXT".to_string(),
+            "DevOps Platform NXT".to_string(),
+            "DevOps Tool".to_string(),
             "vnxt".to_string(),
-            "Vesta".to_string(),
+            "DevOps Platform".to_string(),
             "vesta".to_string(),
             "VNX".to_string(),
             "vnx".to_string(),
@@ -67,7 +67,7 @@ fn get_product_synonyms(query: &str) -> Vec<String> {
 /// Expand a search query with related terms for better search coverage
 ///
 /// This function takes a user query and expands it with:
-/// - Product name synonyms (e.g., "VNXT" -> "VESTA NXT", "Vesta NXT")
+/// - Product name synonyms (e.g., "DevOps Tool" -> "VESTA NXT", "DevOps Platform NXT")
 /// - Version number variations
 /// - Related terms based on query content
 ///
@@ -276,10 +276,10 @@ mod tests {
     fn test_product_synonyms() {
         let synonyms = get_product_synonyms("vesta nxt upgrade");
 
-        // Should contain VNXT synonym
+        // Should contain DevOps Tool synonym
         assert!(synonyms
             .iter()
-            .any(|s| s.contains("VNXT") || s.contains("vnxt")));
+            .any(|s| s.contains("DevOps Tool") || s.contains("vnxt")));
     }
 
     #[test]

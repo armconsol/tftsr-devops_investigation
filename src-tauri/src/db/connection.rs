@@ -4,7 +4,7 @@ use std::path::Path;
 fn generate_key() -> String {
     use rand::RngCore;
     let mut bytes = [0u8; 32];
-    rand::rngs::OsRng.fill_bytes(&mut bytes);
+    rand::rng().fill_bytes(&mut bytes);
     hex::encode(bytes)
 }
 
@@ -29,8 +29,15 @@ fn write_key_file(path: &Path, key: &str) -> anyhow::Result<()> {
 }
 
 fn get_db_key(data_dir: &Path) -> anyhow::Result<String> {
+    // Support both TRCAA_DB_KEY (new) and TFTSR_DB_KEY (legacy) for backwards compatibility
+    if let Ok(key) = std::env::var("TRCAA_DB_KEY") {
+        if !key.trim().is_empty() {
+            return Ok(key);
+        }
+    }
     if let Ok(key) = std::env::var("TFTSR_DB_KEY") {
         if !key.trim().is_empty() {
+            tracing::warn!("TFTSR_DB_KEY is deprecated, use TRCAA_DB_KEY instead");
             return Ok(key);
         }
     }
@@ -173,7 +180,7 @@ mod tests {
             .duration_since(SystemTime::UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let dir = std::env::temp_dir().join(format!("tftsr-test-{}-{}", name, timestamp));
+        let dir = std::env::temp_dir().join(format!("trcaa-test-{}-{}", name, timestamp));
         // Clean up if it exists
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
@@ -183,23 +190,23 @@ mod tests {
     #[test]
     fn test_get_db_key_uses_env_var_when_present() {
         // Remove any existing env var first
-        std::env::remove_var("TFTSR_DB_KEY");
+        std::env::remove_var("TRCAA_DB_KEY");
         let dir = temp_dir("env-var");
-        std::env::set_var("TFTSR_DB_KEY", "test-db-key");
+        std::env::set_var("TRCAA_DB_KEY", "test-db-key");
         let key = get_db_key(&dir).unwrap();
         assert_eq!(key, "test-db-key");
-        std::env::remove_var("TFTSR_DB_KEY");
+        std::env::remove_var("TRCAA_DB_KEY");
     }
 
     #[test]
     fn test_get_db_key_debug_fallback_for_empty_env() {
         // Remove any existing env var first
-        std::env::remove_var("TFTSR_DB_KEY");
+        std::env::remove_var("TRCAA_DB_KEY");
         let dir = temp_dir("empty-env");
-        std::env::set_var("TFTSR_DB_KEY", "   ");
+        std::env::set_var("TRCAA_DB_KEY", "   ");
         let key = get_db_key(&dir).unwrap();
         assert_eq!(key, "dev-key-change-in-prod");
-        std::env::remove_var("TFTSR_DB_KEY");
+        std::env::remove_var("TRCAA_DB_KEY");
     }
 
     #[test]

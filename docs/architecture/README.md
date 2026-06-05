@@ -90,6 +90,335 @@ C4Container
 
 ## Component Architecture
 
+### Shell Execution System (v1.0.0+)
+
+**Status**: Production-ready agentic shell command execution with three-tier safety classification.
+
+**Architecture**: Three-tier safety system with automatic classification, approval gates, and audit logging.
+
+```mermaid
+graph TB
+    subgraph "Shell Execution Architecture"
+        AI[AI Agent] -->|tool_call| ToolRegistry[Tool Registry]
+        ToolRegistry -->|execute_shell_command| Classifier[Command Classifier]
+        
+        Classifier -->|analyze| Parser[Command Parser]
+        Parser -->|components| RiskAnalyzer[Risk Analyzer]
+        
+        RiskAnalyzer -->|Tier 1| AutoExec[Auto Execute]
+        RiskAnalyzer -->|Tier 2| ApprovalGate[Approval Gate]
+        RiskAnalyzer -->|Tier 3| Deny[Always Deny]
+        
+        ApprovalGate -->|user decision| ApprovalModal[Approval Modal UI]
+        ApprovalModal -->|allow| Executor[Command Executor]
+        ApprovalModal -->|deny| AuditLog[Audit Log]
+        
+        AutoExec --> Executor
+        Deny --> AuditLog
+        
+        Executor -->|kubectl| KubectlBinary[kubectl Binary v1.30.0]
+        Executor -->|shell| SystemShell[System Shell]
+        
+        Executor --> ExecutionRecord[Execution Record]
+        ExecutionRecord --> AuditLog
+        ExecutionRecord --> Database[(Database)]
+        
+        Database --> ExecutionHistory[Execution History UI]
+    end
+    
+    style Classifier fill:#e1f5ff
+    style ApprovalGate fill:#fff4e6
+    style Deny fill:#ffe6e6
+    style AutoExec fill:#e6f7e6
+    style KubectlBinary fill:#f0e6ff
+```
+
+**Three-Tier Safety Classification**:
+
+- **Tier 1 (Auto-execute)**: Read-only operations with no side effects
+  - Examples: `kubectl get`, `kubectl describe`, `kubectl logs`, `cat`, `grep`, `ls`, `pvecm status`
+  - Executes immediately without user interaction
+
+- **Tier 2 (User approval required)**: Potentially mutating operations
+  - Examples: `kubectl apply`, `kubectl delete`, `kubectl scale`, `chmod`, `systemctl restart`, `ssh`
+  - Shows real-time approval modal with command details
+  - Supports "Allow Once", "Allow for Session", and "Deny"
+
+- **Tier 3 (Always deny)**: Destructive operations
+  - Examples: `rm -rf`, `shutdown`, `mkfs`, `dd`, `:(){:|:&};:`
+  - Automatically rejected with explanation to user
+
+**Key Modules**:
+
+| Module | Responsibility | Key Features |
+|--------|---------------|--------------|
+| `shell/classifier.rs` | Command safety classification | 19 unit tests, pipe/chain analysis, command substitution detection |
+| `shell/executor.rs` | Execution flow with approval gates | Timeout handling, kubeconfig injection, exit code capture |
+| `shell/kubectl.rs` | kubectl binary management | Cross-platform binary bundling, version v1.30.0 |
+| `shell/kubeconfig.rs` | Kubeconfig parsing and encryption | AES-256-GCM encryption, context extraction, cluster URL parsing |
+| `commands/shell.rs` | 7 Tauri IPC commands | kubeconfig CRUD, execution, history retrieval |
+| `ai/tools.rs` | Tool registration | `execute_shell_command` tool definition with parameters |
+
+**Database Schema** (Migrations 024-027):
+
+```sql
+-- Pre-defined command templates with tier definitions
+CREATE TABLE shell_commands (
+    id TEXT PRIMARY KEY,
+    command_template TEXT NOT NULL,
+    tier INTEGER NOT NULL CHECK(tier IN (1, 2, 3)),
+    description TEXT,
+    category TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+
+-- Encrypted kubeconfig storage
+CREATE TABLE kubeconfig_files (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    encrypted_content TEXT NOT NULL,
+    context TEXT NOT NULL,
+    cluster_url TEXT,
+    is_active INTEGER NOT NULL DEFAULT 0,
+    uploaded_at TEXT NOT NULL
+);
+
+-- Full audit trail for all executions
+CREATE TABLE command_executions (
+    id TEXT PRIMARY KEY,
+    issue_id TEXT,
+    command TEXT NOT NULL,
+    tier INTEGER NOT NULL,
+    approval_status TEXT NOT NULL,
+    kubeconfig_id TEXT,
+    exit_code INTEGER,
+    stdout TEXT,
+    stderr TEXT,
+    execution_time_ms INTEGER,
+    executed_at TEXT NOT NULL
+);
+
+-- Session-based approval preferences
+CREATE TABLE approval_decisions (
+    id TEXT PRIMARY KEY,
+    command_pattern TEXT NOT NULL,
+    decision TEXT NOT NULL CHECK(decision IN ('allow_once', 'allow_session', 'deny')),
+    session_id TEXT,
+    decided_at TEXT NOT NULL,
+    expires_at TEXT
+);
+```
+
+**Security Features**:
+- AES-256-GCM encryption for kubeconfig files
+- Command tier escalation for pipes and command substitution
+- Full audit logging of all commands (approved, denied, executed)
+- Session-based approval memory with expiration
+- kubectl binary bundled and verified (no system dependency)
+
+**Frontend Components**:
+- `ShellApprovalModal.tsx`: Real-time approval UI with command preview
+- `Settings/ShellExecution.tsx`: Settings and execution history viewer
+- `Settings/KubeconfigManager.tsx`: Multi-cluster kubeconfig management
+
+**Documentation**: `docs/wiki/Shell-Execution.md`
+
+---
+
+### MCP Server Integration (v1.0.0+)
+
+**Status**: Production-ready Model Context Protocol integration for external tool protocols.
+
+**Architecture**: Client-server protocol adapter for stdio and HTTP transports.
+
+```mermaid
+graph TB
+    subgraph "MCP Integration Architecture"
+        AI[AI Agent] -->|needs tools| Adapter[MCP Adapter]
+        
+        Adapter -->|fetch tools| Store[MCP Store]
+        Store -->|load servers| Database[(Database)]
+        
+        Adapter -->|for each enabled server| Discovery[Discovery Service]
+        Discovery -->|connect| Client[MCP Client]
+        
+        Client -->|stdio| StdioTransport[Stdio Transport]
+        Client -->|http| HttpTransport[HTTP Transport]
+        
+        StdioTransport -->|spawn process| ExternalServer1[MCP Server Process]
+        HttpTransport -->|HTTP POST| ExternalServer2[MCP HTTP Server]
+        
+        Client -->|list_tools| ServerCapabilities[Server Capabilities]
+        ServerCapabilities -->|return tools| ToolRegistry[Tool Registry]
+        
+        AI -->|call tool| ToolExecutor[Tool Executor]
+        ToolExecutor -->|invoke| Client
+        Client -->|call_tool| ExternalServer1
+        ExternalServer1 -->|result| Client
+        Client -->|30s timeout| ToolExecutor
+        
+        Discovery -->|update status| Database
+    end
+    
+    style Discovery fill:#e1f5ff
+    style Client fill:#fff4e6
+    style Database fill:#e6f7e6
+```
+
+**Key Modules**:
+
+| Module | Responsibility | Key Features |
+|--------|---------------|--------------|
+| `mcp/client.rs` | Connect to MCP servers | Stdio/HTTP transports, 30s tool call timeout |
+| `mcp/adapter.rs` | Tool registry integration | Fetch tools from all enabled servers, merge with static tools |
+| `mcp/discovery.rs` | Server health checks | Connection status updates, error tracking |
+| `mcp/store.rs` | Database CRUD | Server config, tool/resource persistence |
+| `mcp/models.rs` | Data models | McpServer, McpTool, McpResource types |
+| `mcp/transport/stdio.rs` | Stdio transport | Process spawning, environment variables |
+| `mcp/transport/http.rs` | HTTP transport | Custom headers, auth support |
+| `mcp/commands.rs` | 7 Tauri IPC commands | Server CRUD, discovery, tool/resource listing |
+
+**Database Schema** (Migration 018):
+
+```sql
+CREATE TABLE mcp_servers (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    url TEXT NOT NULL,
+    transport_type TEXT NOT NULL CHECK(transport_type IN ('stdio', 'http')),
+    transport_config TEXT NOT NULL DEFAULT '{}',
+    auth_type TEXT NOT NULL CHECK(auth_type IN ('none', 'api_key', 'bearer', 'oauth2')),
+    auth_value TEXT,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    last_discovered_at TEXT,
+    discovery_status TEXT NOT NULL DEFAULT 'pending'
+        CHECK(discovery_status IN ('pending','connected','unreachable','error')),
+    discovery_error TEXT,
+    env_config TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE mcp_tools (
+    id TEXT PRIMARY KEY,
+    server_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    tool_key TEXT NOT NULL,
+    description TEXT,
+    parameters TEXT NOT NULL DEFAULT '{}',
+    FOREIGN KEY(server_id) REFERENCES mcp_servers(id) ON DELETE CASCADE
+);
+
+CREATE TABLE mcp_resources (
+    id TEXT PRIMARY KEY,
+    server_id TEXT NOT NULL,
+    uri TEXT NOT NULL,
+    name TEXT,
+    description TEXT,
+    FOREIGN KEY(server_id) REFERENCES mcp_servers(id) ON DELETE CASCADE
+);
+```
+
+**Tool Calling Flow**:
+1. AI agent requests available tools
+2. Adapter fetches static tools (`ai/tools.rs::get_available_tools()`)
+3. Adapter fetches MCP tools from all enabled servers
+4. Tools merged and returned to AI agent
+5. AI agent calls tool by name (e.g., `server_name.tool_name`)
+6. Adapter routes to correct MCP client
+7. Client invokes tool with 30-second timeout
+8. Result returned to AI agent
+
+**Security**:
+- Auth credentials stored with AES-256-GCM encryption
+- Environment variables isolated per server process
+- 30-second hard timeout prevents indefinite hangs
+- Server connection status tracked and displayed
+
+**Frontend Components**:
+- `Settings/MCPServers.tsx`: Server configuration and discovery UI
+- `Settings/MCPTools.tsx`: Tool browser and tester
+
+---
+
+### AI Tool Calling & Auto-Detection (v1.0.8+)
+
+**Status**: Production-ready automatic tool calling support detection.
+
+**Architecture**: Test-based detection with graceful degradation.
+
+```mermaid
+graph TB
+    subgraph "Tool Calling Detection"
+        User[User] -->|clicks detect| UI[Auto-Detect Button]
+        UI -->|invoke| Command[detect_tool_calling_support]
+        
+        Command -->|create test tool| TestTool[test_tool definition]
+        Command -->|override config| DetectionConfig[Detection Config]
+        
+        DetectionConfig -->|max_tokens: 100| Optimization1[Cost Optimization]
+        DetectionConfig -->|temperature: 0.0| Optimization2[Deterministic]
+        
+        Command -->|send test call| Provider[AI Provider]
+        Provider -->|response| Parser[Response Parser]
+        
+        Parser -->|has tool_calls array?| Decision{Supports Tools?}
+        Decision -->|yes, contains test_tool| Success[Return true]
+        Decision -->|no tool_calls| NotSupported[Return false]
+        Decision -->|503 / tool error| Blocked[Return false]
+        Decision -->|connection error| Error[Throw error]
+        
+        Success -->|update UI| Checkbox[Enable Checkbox]
+        NotSupported -->|update UI| DisableCheckbox[Disable Checkbox]
+        Blocked -->|update UI| DisableCheckbox
+        Error -->|display| ErrorMessage[Error Message]
+    end
+    
+    style Success fill:#e6f7e6
+    style NotSupported fill:#fff4e6
+    style Blocked fill:#ffe6e6
+    style Error fill:#ffe6e6
+```
+
+**Test Tool Definition**:
+
+```rust
+Tool {
+    name: "test_tool".to_string(),
+    description: "A test tool that returns 'success'. Call this tool with no arguments.".to_string(),
+    parameters: ToolParameters {
+        param_type: "object".to_string(),
+        properties: HashMap::new(),
+        required: vec![],
+    },
+}
+```
+
+**Detection Criteria**:
+
+| Scenario | Result | Action |
+|----------|--------|--------|
+| Provider returns `tool_calls` array with `test_tool` | ✅ Supported | Enable checkbox, show success message |
+| Provider responds without `tool_calls` | ⚠️ Not supported | Disable checkbox, show warning |
+| Gateway returns 503 / "tool" error (e.g., TFTSR GenAI) | ⚠️ Blocked | Disable checkbox, show warning |
+| Connection/auth/timeout error | ❌ Error | Show error message, don't change checkbox |
+
+**Optimizations**:
+- `max_tokens: 100` (reduces cost for detection test)
+- `temperature: 0.0` (deterministic responses)
+- Error pattern matching for gateway-level blocks
+
+**Key Files**:
+- `commands/ai.rs::detect_tool_calling_support()`: Backend detection logic (5 unit tests)
+- `pages/Settings/AIProviders.tsx::handleAutoDetectToolCalling()`: Frontend UI (7 unit tests)
+- `lib/tauriCommands.ts::detectToolCallingSupportCmd()`: TypeScript wrapper
+
+**Database**: Uses `ai_providers.supports_tool_calling` column (Migration 028)
+
+**Documentation**: `docs/wiki/AI-Providers.md` section "Tool Calling Auto-Detection"
+
+---
+
 ### Backend Components
 
 ```mermaid
@@ -100,18 +429,24 @@ graph TD
 
     subgraph "Command Handlers (commands/)"
         CMD_DB[db.rs\nIssue CRUD\nTimeline Events\n5-Whys Entries]
-        CMD_AI[ai.rs\nChat Message\nLog Analysis\nProvider Test]
+        CMD_AI[ai.rs\nChat Message\nLog Analysis\nProvider Test\nTool Calling Detection]
         CMD_ANALYSIS[analysis.rs\nLog Upload\nPII Detection\nRedaction Apply]
         CMD_DOCS[docs.rs\nRCA Generation\nPostmortem Gen\nDocument Export]
         CMD_INTEGRATIONS[integrations.rs\nConfluence\nServiceNow\nAzure DevOps\nOAuth Flow]
         CMD_SYSTEM[system.rs\nSettings CRUD\nOllama Mgmt\nAI Provider Mgmt\nAudit Log]
+        CMD_SHELL[shell.rs\nKubeconfig CRUD\nCommand Execution\nExecution History]
+        CMD_MCP[mcp/commands.rs\nMCP Server CRUD\nDiscovery\nTool/Resource Listing]
     end
 
     subgraph "Domain Services"
         AI[AI Layer\nai/provider.rs\nTrait + Factory]
+        TOOLS[AI Tools\nai/tools.rs\nStatic Tools Registry]
+        AGENTS[AI Agents\nai/agents.rs\nAgent Registry]
         PII[PII Engine\npii/detector.rs\n12 Pattern Detectors]
         AUDIT[Audit Logger\naudit/log.rs\nHash-chained entries]
         DOCS_GEN[Doc Generator\ndocs/rca.rs\ndocs/postmortem.rs]
+        SHELL[Shell System\nshell/classifier.rs\nshell/executor.rs\nshell/kubectl.rs]
+        MCP[MCP Integration\nmcp/client.rs\nmcp/adapter.rs\nmcp/discovery.rs]
     end
 
     subgraph "AI Providers (ai/)"
@@ -131,8 +466,8 @@ graph TD
     end
 
     subgraph "Data Layer (db/)"
-        MIGRATIONS[migrations.rs\n14 Schema Versions]
-        MODELS[models.rs\nIssue / LogFile\nAiMessage / Document\nAuditEntry / Credential]
+        MIGRATIONS[migrations.rs\n28 Schema Versions]
+        MODELS[models.rs\nIssue / LogFile\nAiMessage / Document\nAuditEntry / Credential\nShellCommand / KubeconfigFile\nCommandExecution\nMcpServer / McpTool]
         CONNECTION[connection.rs\nSQLCipher Connect\nKey Auto-gen\nPlain→Encrypted Migration]
     end
 
@@ -142,10 +477,15 @@ graph TD
     IPC --> CMD_DOCS
     IPC --> CMD_INTEGRATIONS
     IPC --> CMD_SYSTEM
+    IPC --> CMD_SHELL
+    IPC --> CMD_MCP
 
     CMD_AI --> AI
+    CMD_AI --> TOOLS
     CMD_ANALYSIS --> PII
     CMD_DOCS --> DOCS_GEN
+    CMD_SHELL --> SHELL
+    CMD_MCP --> MCP
     CMD_INTEGRATIONS --> CONFLUENCE
     CMD_INTEGRATIONS --> SERVICENOW
     CMD_INTEGRATIONS --> AZUREDEVOPS
@@ -157,10 +497,15 @@ graph TD
     AI --> OLLAMA
     AI --> GEMINI
     AI --> MISTRAL
+    
+    TOOLS --> SHELL
+    TOOLS --> MCP
+    MCP --> AGENTS
 
     CMD_DB --> MODELS
     CMD_AI --> AUDIT
     CMD_ANALYSIS --> AUDIT
+    CMD_SHELL --> AUDIT
     MODELS --> MIGRATIONS
     MIGRATIONS --> CONNECTION
 
@@ -351,10 +696,73 @@ erDiagram
         TEXT encrypted_api_key
         TEXT model
         TEXT config_json
+        INTEGER supports_tool_calling
     }
     issues_fts {
         TEXT rowid FK
         TEXT title
+        TEXT description
+    }
+    shell_commands {
+        TEXT id PK
+        TEXT command_template
+        INTEGER tier
+        TEXT description
+        TEXT category
+    }
+    kubeconfig_files {
+        TEXT id PK
+        TEXT name
+        TEXT encrypted_content
+        TEXT context
+        TEXT cluster_url
+        INTEGER is_active
+    }
+    command_executions {
+        TEXT id PK
+        TEXT issue_id FK
+        TEXT command
+        INTEGER tier
+        TEXT approval_status
+        TEXT kubeconfig_id FK
+        INTEGER exit_code
+        TEXT stdout
+        TEXT stderr
+        INTEGER execution_time_ms
+        TEXT executed_at
+    }
+    approval_decisions {
+        TEXT id PK
+        TEXT command_pattern
+        TEXT decision
+        TEXT session_id
+        TEXT decided_at
+        TEXT expires_at
+    }
+    mcp_servers {
+        TEXT id PK
+        TEXT name
+        TEXT url
+        TEXT transport_type
+        TEXT auth_type
+        TEXT auth_value
+        INTEGER enabled
+        TEXT discovery_status
+        TEXT env_config
+    }
+    mcp_tools {
+        TEXT id PK
+        TEXT server_id FK
+        TEXT name
+        TEXT tool_key
+        TEXT description
+        TEXT parameters
+    }
+    mcp_resources {
+        TEXT id PK
+        TEXT server_id FK
+        TEXT uri
+        TEXT name
         TEXT description
     }
 
@@ -362,9 +770,13 @@ erDiagram
     issues ||--o{ ai_conversations : "has"
     issues ||--o{ resolution_steps : "has"
     issues ||--o{ documents : "has"
+    issues ||--o{ command_executions : "has"
     issues ||--|| issues_fts : "indexed by"
     log_files ||--o{ pii_spans : "contains"
     ai_conversations ||--o{ ai_messages : "contains"
+    command_executions }o--|| kubeconfig_files : "uses"
+    mcp_servers ||--o{ mcp_tools : "exposes"
+    mcp_servers ||--o{ mcp_resources : "exposes"
 ```
 
 ### Data Flow — Issue Triage Lifecycle
@@ -457,7 +869,7 @@ graph TB
     subgraph "Layer 3: Key Management"
         DB_KEY[.dbkey file\nPer-install random 256-bit key\nMode 0600 — owner only]
         ENC_KEY[.enckey file\nPer-install random 256-bit key\nMode 0600 — owner only]
-        ENV_OVERRIDE[TFTSR_DB_KEY / TFTSR_ENCRYPTION_KEY\nOptional env var override]
+        ENV_OVERRIDE[TRCAA_DB_KEY / TRCAA_ENCRYPTION_KEY\nOptional env var override]
     end
 
     subgraph "Layer 4: PII Protection"
@@ -485,6 +897,76 @@ graph TB
     style PII_DETECT fill:#e67e22,color:#fff
     style USER_APPROVE fill:#27ae60,color:#fff
 ```
+
+### Shell Execution Security (v1.0.0+)
+
+**Three-tier safety classification protects against accidental or malicious command execution.**
+
+```mermaid
+flowchart TD
+    A[AI Agent calls execute_shell_command] --> B[Parse command string]
+    B --> C{Contains pipes or command substitution?}
+    C -->|Yes| D[Parse into components]
+    C -->|No| E[Single command]
+    
+    D --> F[Classify each component]
+    E --> F
+    
+    F --> G{Highest tier?}
+    
+    G -->|Tier 1| H[Read-only operations]
+    G -->|Tier 2| I[Mutating operations]
+    G -->|Tier 3| J[Destructive operations]
+    
+    H --> K[Execute automatically]
+    K --> L[Record to command_executions]
+    L --> M[Return output to AI]
+    
+    I --> N[Show approval modal to user]
+    N --> O{User decision?}
+    O -->|Allow Once| K
+    O -->|Allow for Session| P[Store approval_decision]
+    O -->|Deny| Q[Record denial]
+    P --> K
+    Q --> R[Return error to AI]
+    
+    J --> S[Always reject]
+    S --> Q
+    
+    L --> T[Audit Log]
+    Q --> T
+    
+    style H fill:#e6f7e6
+    style I fill:#fff4e6
+    style J fill:#ffe6e6
+    style S fill:#c0392b,color:#fff
+```
+
+**Tier Classification Rules**:
+
+| Tier | Safety Level | Examples | Action |
+|------|--------------|----------|--------|
+| Tier 1 | Read-only | `kubectl get`, `cat`, `grep`, `ls`, `pvecm status` | Auto-execute |
+| Tier 2 | Mutating | `kubectl apply`, `chmod`, `systemctl restart`, `ssh` | User approval |
+| Tier 3 | Destructive | `rm -rf`, `shutdown`, `mkfs`, `dd`, fork bombs | Always deny |
+
+**Escalation Rules**:
+- Command with pipe (`|`) or chain (`&&`, `||`, `;`) → highest tier wins
+- Command substitution (`` `...` `` or `$(...)`) → escalate Tier 1 to Tier 2
+- Single Tier 3 command in chain → entire command becomes Tier 3
+
+**Kubeconfig Encryption**:
+- All kubeconfig files encrypted with AES-256-GCM before storage
+- Decrypted on-demand for kubectl execution
+- Encryption key from `TRCAA_ENCRYPTION_KEY` env var or `.enckey` file
+
+**Audit Trail**:
+- All commands logged to `command_executions` table
+- Includes: command text, tier, approval status, exit code, stdout, stderr, execution time
+- Linked to issue_id for incident context
+- Session-based approval decisions stored separately with expiration
+
+---
 
 ### Authentication Flow — OAuth2 Integration
 
@@ -685,7 +1167,7 @@ graph LR
 ```mermaid
 graph TB
     subgraph "Source Control"
-        GOGS[Gogs / Gitea\ngogs.tftsr.com\nSarman Repository]
+        GOGS[Gogs / Gitea\ngogs.trcaa.com\nSarman Repository]
     end
 
     subgraph "CI/CD Triggers"
@@ -711,7 +1193,7 @@ graph TB
 
     subgraph "Artifact Storage"
         RELEASE[Gitea Release\nv0.x.x tags\nAll platform assets]
-        REGISTRY[Gitea Container Registry\n172.0.0.29:3000\nCI Docker images]
+        REGISTRY[Gitea Container Registry\ngitea.tftsr.com:3000\nCI Docker images]
     end
 
     GOGS --> PR_TRIGGER
@@ -748,6 +1230,7 @@ graph TB
         MAC_PROC[trcaa process\nMach-O arm64 binary]
         WEBKIT[WKWebView\nSafari WebKit engine]
         MAC_DATA[~/Library/Application Support/trcaa/\n.dbkey mode 0600\n.enckey mode 0600\ntrcaa.db SQLCipher]
+        MAC_KUBECTL[Bundled kubectl v1.30.0\narm64 binary]
         MAC_BUNDLE[Troubleshooting and RCA Assistant.app\n/Applications/]
     end
 
@@ -755,6 +1238,7 @@ graph TB
         LINUX_PROC[trcaa process\nELF amd64/arm64]
         WEBKIT2[WebKitGTK WebView\nwebkit2gtk4.1]
         LINUX_DATA[~/.local/share/trcaa/\n.dbkey .enckey\ntrcaa.db]
+        LINUX_KUBECTL[Bundled kubectl v1.30.0\namd64/arm64 binary]
         LINUX_PKG[.deb / .rpm / .AppImage]
     end
 
@@ -762,20 +1246,24 @@ graph TB
         WIN_PROC[trcaa.exe\nPE amd64]
         WEBVIEW2[Microsoft WebView2\nChromium-based]
         WIN_DATA[%APPDATA%\trcaa\\\n.dbkey .enckey\ntrcaa.db]
+        WIN_KUBECTL[Bundled kubectl.exe v1.30.0\namd64 binary]
         WIN_PKG[NSIS .exe / .msi]
     end
 
     MAC_BUNDLE --> MAC_PROC
     MAC_PROC --> WEBKIT
     MAC_PROC --> MAC_DATA
+    MAC_PROC --> MAC_KUBECTL
 
     LINUX_PKG --> LINUX_PROC
     LINUX_PROC --> WEBKIT2
     LINUX_PROC --> LINUX_DATA
+    LINUX_PROC --> LINUX_KUBECTL
 
     WIN_PKG --> WIN_PROC
     WIN_PROC --> WEBVIEW2
     WIN_PROC --> WIN_DATA
+    WIN_PROC --> WIN_KUBECTL
 ```
 
 ---
@@ -820,7 +1308,7 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    A[App Launch] --> B{TFTSR_DB_KEY env var set?}
+    A[App Launch] --> B{TRCAA_DB_KEY env var set?}
     B -->|Yes| C[Use env var key]
     B -->|No| D{Release build?}
     D -->|Debug| E[Use hardcoded dev key]
@@ -861,3 +1349,6 @@ See the [adrs/](./adrs/) directory for all Architecture Decision Records.
 | [ADR-004](./adrs/ADR-004-pii-regex-aho-corasick.md) | Regex + Aho-Corasick for PII Detection | Accepted |
 | [ADR-005](./adrs/ADR-005-auto-generate-encryption-keys.md) | Auto-generate Encryption Keys at Runtime | Accepted |
 | [ADR-006](./adrs/ADR-006-zustand-state-management.md) | Zustand for Frontend State Management | Accepted |
+| [ADR-007](./adrs/ADR-007-three-tier-shell-safety.md) | Three-Tier Shell Command Safety Classification | Accepted |
+| [ADR-008](./adrs/ADR-008-mcp-protocol-integration.md) | Model Context Protocol for External Tools | Accepted |
+| [ADR-009](./adrs/ADR-009-bundled-kubectl-binary.md) | Bundle kubectl Binary for Cross-Platform Consistency | Accepted |

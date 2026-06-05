@@ -19,9 +19,9 @@ The codebase is generally well-structured with several positive security practic
 
 **Files**:
 - `GenAI API User Guide.md` (entire file)
-- `HANDOFF-MSI-GENAI.md` (entire file)
+- `HANDOFF-TFTSR-GENAI.md` (entire file)
 
-**Issue**: These files contain proprietary Motorola Solutions / MSI internal documentation. `GenAI API User Guide.md` is authored by named MSI employees (Dipjyoti Bisharad, Jahnavi Alike, Sunil Vurandur, Anjali Kamath, Vibin Jacob, Girish Manivel) and documents internal API contracts at `genai-service.stage.commandcentral.com` and `genai-service.commandcentral.com`. `HANDOFF-MSI-GENAI.md` explicitly references "MSI GenAI API" integration details including internal endpoint URLs, header formats, and payload contracts.
+**Issue**: These files contain proprietary TFTSR / TFTSR internal documentation. `GenAI API User Guide.md` is authored by named TFTSR employees (Dipjyoti Bisharad, Jahnavi Alike, Sunil Vurandur, Anjali Kamath, Vibin Jacob, Girish Manivel) and documents internal API contracts at `genai-service.stage.commandcentral.com` and `genai-service.commandcentral.com`. `HANDOFF-TFTSR-GENAI.md` explicitly references "TFTSR GenAI API" integration details including internal endpoint URLs, header formats, and payload contracts.
 
 Publishing these files under MIT license likely violates corporate IP agreements and exposes internal infrastructure details.
 
@@ -40,7 +40,7 @@ https://genai-service.stage.commandcentral.com
 https://genai-service.commandcentral.com
 ```
 
-Additionally, `openai.rs` line 219 sends `X-msi-genai-client: troubleshooting-rca-assistant` as a hardcoded header in the custom REST path, tying the application to an internal MSI service.
+Additionally, `openai.rs` line 219 sends `X-msi-genai-client: troubleshooting-rca-assistant` as a hardcoded header in the custom REST path, tying the application to an internal TFTSR service.
 
 These expose internal service infrastructure to anyone reading the source and indicate the app was designed to interact with corporate systems.
 
@@ -58,7 +58,7 @@ These expose internal service infrastructure to anyone reading the source and in
 - `.gitea/workflows/auto-tag.yml` (lines 31, 52, 79, 95, 97, 141, 162, 227, 252, 313, 338, 401, 464)
 - `.gitea/workflows/build-images.yml` (lines 4, 10, 11, 16-18, 33, 46, 69, 92)
 
-**Issue**: All CI workflow files reference `172.0.0.29:3000` (a private Gogs instance) and `sarman` username. While the IP is RFC1918 private address space, it reveals internal infrastructure topology and the developer's username across dozens of lines. The `build-images.yml` also exposes `REGISTRY_USER: sarman` and container registry details.
+**Issue**: All CI workflow files reference `gitea.tftsr.com:3000` (a private Gogs instance) and `sarman` username. While the IP is RFC1918 private address space, it reveals internal infrastructure topology and the developer's username across dozens of lines. The `build-images.yml` also exposes `REGISTRY_USER: sarman` and container registry details.
 
 **Recommended Fix**: Before open-sourcing, replace all workflow files with GitHub Actions equivalents, or at minimum replace the hardcoded private IP and username with parameterized variables or remove the `.gitea/` directory entirely if moving to GitHub.
 
@@ -315,9 +315,9 @@ The following practices are already well-implemented:
 
 | Priority | Action | Effort |
 |----------|--------|--------|
-| **P0** | Remove `GenAI API User Guide.md` and `HANDOFF-MSI-GENAI.md` from repo and git history | Small |
-| **P0** | Remove `commandcentral.com` URLs from CSP and hardcoded MSI headers from `openai.rs` | Small |
-| **P0** | Replace or parameterize private IP (`172.0.0.29`) and username in all `.gitea/` workflows | Medium |
+| **P0** | Remove `GenAI API User Guide.md` and `HANDOFF-TFTSR-GENAI.md` from repo and git history | Small |
+| **P0** | Remove `commandcentral.com` URLs from CSP and hardcoded TFTSR headers from `openai.rs` | Small |
+| **P0** | Replace or parameterize private IP (`gitea.tftsr.com`) and username in all `.gitea/` workflows | Medium |
 | **P1** | Replace hardcoded dev encryption keys with auto-generated per-install keys | Small |
 | **P1** | Use proper KDF (PBKDF2/HKDF) for AES key derivation in `auth.rs` | Small |
 | **P1** | Auto-generate encryption key for credential storage (mirror `connection.rs` pattern) | Small |

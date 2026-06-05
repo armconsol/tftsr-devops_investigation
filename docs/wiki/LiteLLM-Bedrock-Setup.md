@@ -1,6 +1,6 @@
 # LiteLLM + AWS Bedrock Setup
 
-This guide covers how to use **Claude via AWS Bedrock** with TFTSR through the LiteLLM proxy, providing an OpenAI-compatible API gateway.
+This guide covers how to use **Claude via AWS Bedrock** with TRCAA through the LiteLLM proxy, providing an OpenAI-compatible API gateway.
 
 ## Why LiteLLM + Bedrock?
 
@@ -89,7 +89,7 @@ Expected response:
 }
 ```
 
-### 4. Configure TFTSR
+### 4. Configure TRCAA
 
 In **Settings → AI Providers → Add Provider**:
 
@@ -182,7 +182,7 @@ curl -s http://localhost:8000/v1/chat/completions \
   -d '{"model": "bedrock-business", "messages": [{"role": "user", "content": "test"}]}'
 ```
 
-### 5. Configure in TFTSR
+### 5. Configure in TRCAA
 
 Add both models as separate providers:
 
@@ -232,7 +232,7 @@ model_list:
       aws_profile_name: ClaudeCodeLP  # Same as Claude Code
 ```
 
-Now both Claude Code and TFTSR use the same Bedrock account without duplicate credential management.
+Now both Claude Code and TRCAA use the same Bedrock account without duplicate credential management.
 
 ---
 
@@ -263,7 +263,7 @@ lsof -i :8000
 litellm --config ~/.litellm/config.yaml --port 8080
 ```
 
-Update the Base URL in TFTSR to match: `http://localhost:8080/v1`
+Update the Base URL in TRCAA to match: `http://localhost:8080/v1`
 
 ### AWS Credentials Not Found
 
@@ -385,7 +385,7 @@ Pricing is identical, but Bedrock provides:
 1. **Master Key** — The `master_key` in config is required but doesn't need to be complex since LiteLLM runs locally
 2. **AWS Credentials** — Never commit `.aws/credentials` or credential process scripts to git
 3. **Local Only** — LiteLLM proxy should only bind to `127.0.0.1` (localhost) — never expose to network
-4. **Audit Logs** — TFTSR logs all AI requests with SHA-256 hashes in the audit table
+4. **Audit Logs** — TRCAA logs all AI requests with SHA-256 hashes in the audit table
 
 ---
 

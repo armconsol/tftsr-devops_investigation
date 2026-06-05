@@ -9,7 +9,7 @@
 
 ## Context
 
-TFTSR DevOps Investigation v1.0.0 introduced agentic shell command execution, allowing AI agents to execute kubectl, Proxmox, and general shell commands during troubleshooting conversations. This capability creates a significant security risk: malicious or hallucinated commands could cause data loss, service disruption, or unauthorized system access.
+TRCAA v1.0.0 introduced agentic shell command execution, allowing AI agents to execute kubectl, Proxmox, and general shell commands during troubleshooting conversations. This capability creates a significant security risk: malicious or hallucinated commands could cause data loss, service disruption, or unauthorized system access.
 
 **Requirements**:
 - AI agents need shell access for diagnostics (kubectl, pvecm, qm, etc.)

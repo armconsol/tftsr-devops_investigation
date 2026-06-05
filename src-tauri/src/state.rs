@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use tokio::sync::{oneshot, Mutex as TokioMutex};
+use tokio::sync::Mutex as TokioMutex;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProviderConfig {
@@ -43,6 +43,10 @@ pub struct ProviderConfig {
     /// Optional: When true, file uploads go to GenAI datastore instead of prompt
     #[serde(skip_serializing_if = "Option::is_none")]
     pub use_datastore_upload: Option<bool>,
+    /// Optional: Whether this provider supports tool/function calling
+    /// If None, defaults to false (provider can only be used for chat)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub supports_tool_calling: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -68,7 +72,7 @@ impl Default for AppSettings {
     }
 }
 
-/// Response for shell command approval requests
+/// Approval response for shell command execution
 #[derive(Debug, Clone)]
 pub struct ApprovalResponse {
     pub approved: bool,
@@ -84,8 +88,9 @@ pub struct AppState {
     /// Live MCP server connections: server_id -> connection
     pub mcp_connections:
         Arc<TokioMutex<HashMap<String, Arc<TokioMutex<crate::mcp::client::McpConnection>>>>>,
-    /// Pending shell command approval requests: approval_id -> response channel
-    pub pending_approvals: Arc<TokioMutex<HashMap<String, oneshot::Sender<ApprovalResponse>>>>,
+    /// Pending shell command approvals: approval_id -> response channel
+    pub pending_approvals:
+        Arc<TokioMutex<HashMap<String, tokio::sync::oneshot::Sender<ApprovalResponse>>>>,
 }
 
 /// Determine the application data directory.

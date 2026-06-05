@@ -1,6 +1,22 @@
 import { vi, beforeAll, afterAll } from "vitest";
 import "@testing-library/jest-dom/vitest";
 
+// Node 25 ships a native localStorage stub that lacks .clear() unless --localstorage-file is set.
+// Replace it with a real in-memory implementation so tests relying on localStorage work correctly.
+function makeStorage() {
+  let store: Record<string, string> = {};
+  return {
+    get length() { return Object.keys(store).length; },
+    key(i: number) { return Object.keys(store)[i] ?? null; },
+    getItem(k: string) { return store[k] ?? null; },
+    setItem(k: string, v: string) { store[k] = String(v); },
+    removeItem(k: string) { delete store[k]; },
+    clear() { store = {}; },
+  };
+}
+Object.defineProperty(globalThis, "localStorage", { value: makeStorage(), writable: true });
+Object.defineProperty(globalThis, "sessionStorage", { value: makeStorage(), writable: true });
+
 // Mock Tauri core API
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),

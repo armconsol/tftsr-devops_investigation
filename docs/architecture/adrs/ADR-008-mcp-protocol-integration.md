@@ -9,7 +9,7 @@
 
 ## Context
 
-TFTSR DevOps Investigation v1.0.0 introduced agentic shell execution with statically-defined tools (`execute_shell_command`, `add_ado_comment`). As the application grows, we need a way to integrate external tools and services without hardcoding every integration into the Rust backend.
+TRCAA v1.0.0 introduced agentic shell execution with statically-defined tools (`execute_shell_command`, `add_ado_comment`). As the application grows, we need a way to integrate external tools and services without hardcoding every integration into the Rust backend.
 
 **Requirements**:
 - AI agents need access to third-party tools (GitHub, Slack, monitoring systems, etc.)
@@ -106,7 +106,7 @@ CREATE TABLE mcp_tools (
 **Tool Calling Flow**:
 
 1. User configures MCP server in Settings (name, URL/command, transport type, auth)
-2. Application connects and calls `list_tools()` to discover available tools
+2. TRCAA connects and calls `list_tools()` to discover available tools
 3. Tools stored in `mcp_tools` table with namespaced key (`server_name.tool_name`)
 4. AI agent requests tools via `get_enabled_mcp_tools()`
 5. MCP tools merged with static tools (`execute_shell_command`, `add_ado_comment`)
@@ -141,7 +141,7 @@ CREATE TABLE mcp_tools (
 - **Protocol churn risk**: MCP is new (May 2024), spec may evolve
 - **Dependency**: Relies on `rmcp` crate maintenance
 - **Stdio complexity**: Process spawning platform-dependent (Windows cmd.exe vs Unix bash)
-- **Debugging**: Tool call failures require inspecting both application logs and MCP server logs
+- **Debugging**: Tool call failures require inspecting both TRCAA logs and MCP server logs
 
 ### Trade-offs
 
@@ -162,7 +162,7 @@ Args: @modelcontextprotocol/server-github
 Env: GITHUB_TOKEN=ghp_...
 ```
 
-Application spawns process, sends JSON-RPC 2.0 requests over stdin/stdout:
+TRCAA spawns process, sends JSON-RPC 2.0 requests over stdin/stdout:
 
 ```json
 {"jsonrpc":"2.0","method":"tools/list","id":1}
@@ -194,7 +194,7 @@ Auth Type: bearer
 Auth Value: eyJ...
 ```
 
-Application sends HTTP POST to `/mcp` with `Authorization: Bearer eyJ...` header.
+TRCAA sends HTTP POST to `/mcp` with `Authorization: Bearer eyJ...` header.
 
 ---
 

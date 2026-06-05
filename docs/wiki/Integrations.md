@@ -83,7 +83,7 @@ Password:         (encrypted with AES-256-GCM)
 ### Implementation Details
 - **API**: ServiceNow Table API (`/api/now/table/incident`)
 - **Auth**: HTTP Basic authentication
-- **Severity mapping**: TFTSR P1-P4 → ServiceNow urgency/impact (1-3)
+- **Severity mapping**: TRCAA P1-P4 → ServiceNow urgency/impact (1-3)
 - **Incident lookup**: Supports both sys_id (UUID) and incident number (INC0010001)
 - **TDD Tests**: 7 tests with mockito HTTP mocking
 
@@ -152,7 +152,7 @@ All integrations using OAuth2 (Confluence, Azure DevOps) follow the same flow:
 
 **Security:**
 - Tokens encrypted at rest with AES-256-GCM (256-bit key)
-- Key derived from environment variable `TFTSR_DB_KEY`
+- Key derived from environment variable `TRCAA_DB_KEY` (or legacy `TRCAA_DB_KEY`)
 - PKCE prevents authorization code interception
 - Callback server only accepts from `localhost`
 

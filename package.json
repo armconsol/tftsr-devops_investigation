@@ -1,5 +1,5 @@
 {
-  "name": "tftsr",
+  "name": "trcaa",
   "private": true,
   "version": "1.0.8",
   "type": "module",
@@ -16,7 +16,7 @@
   },
   "dependencies": {
     "@tauri-apps/api": "^2",
-    "@tauri-apps/plugin-dialog": "^2",
+    "@tauri-apps/plugin-dialog": "^2.7.1",
     "@tauri-apps/plugin-fs": "^2",
     "@tauri-apps/plugin-stronghold": "^2",
     "class-variance-authority": "^0.7",
@@ -37,13 +37,13 @@
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16",
     "@testing-library/user-event": "^14",
+    "@types/node": "^25.9.1",
     "@types/react": "^18",
     "@types/react-dom": "^18",
-    "@types/testing-library__react": "^10",
     "@typescript-eslint/eslint-plugin": "^8.58.1",
     "@typescript-eslint/parser": "^8.58.1",
-    "@vitejs/plugin-react": "^4",
-    "@vitest/coverage-v8": "^2",
+    "@vitejs/plugin-react": "^4.7.0",
+    "@vitest/coverage-v8": "^4",
     "@wdio/cli": "^9",
     "@wdio/mocha-framework": "^9",
     "autoprefixer": "^10",
@@ -54,7 +54,7 @@
     "postcss": "^8",
     "typescript": "^5",
     "vite": "^6",
-    "vitest": "^2",
+    "vitest": "^4",
     "webdriverio": "^9"
   }
 }

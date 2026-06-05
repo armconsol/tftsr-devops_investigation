@@ -1,10 +1,12 @@
+![TRCAA Banner](new_banner.png)
+
 # Troubleshooting and RCA Assistant
 
 A structured, AI-backed desktop tool for IT incident triage, 5-Whys root cause analysis, RCA document generation, and blameless post-mortems. Runs fully offline via Ollama local models, or connects to cloud AI providers.
 
 Built with **Tauri 2** (Rust + WebView), **React 18**, **TypeScript**, and **SQLCipher AES-256** encrypted storage.
 
-**CI status:** ![CI](http://172.0.0.29:3000/sarman/tftsr-devops_investigation/actions/workflows/test.yml/badge.svg) — all checks green (rustfmt · clippy · 64 Rust tests · tsc · vitest)
+**CI status:** ![CI](http://gitea.tftsr.com:3000/sarman/trcaa-devops_investigation/actions/workflows/test.yml/badge.svg) — all checks green (rustfmt · clippy · 64 Rust tests · tsc · vitest)
 
 ---
 
@@ -90,8 +92,8 @@ node --version    # 22+
 
 ```bash
 # Clone
-git clone https://gogs.tftsr.com/sarman/tftsr-devops_investigation.git
-cd tftsr-devops_investigation
+git clone https://gogs.trcaa.com/sarman/trcaa-devops_investigation.git
+cd trcaa-devops_investigation
 npm install --legacy-peer-deps
 
 # Development mode (hot reload)
@@ -107,7 +109,7 @@ cargo tauri build
 
 ## Releases
 
-Pre-built installers are attached to each [tagged release](https://gogs.tftsr.com/sarman/tftsr-devops_investigation/releases):
+Pre-built installers are attached to each [tagged release](https://gogs.trcaa.com/sarman/trcaa-devops_investigation/releases):
 
 | Platform | Format | Notes |
 |---|---|---|
@@ -173,7 +175,7 @@ To use Claude via AWS Bedrock (ideal for enterprise environments with existing A
    - API Key: `sk-your-secure-key` (from config)
    - Model: `bedrock-claude`
 
-For detailed setup including multiple AWS accounts and Claude Code integration, see the [LiteLLM + Bedrock wiki page](https://gogs.tftsr.com/sarman/tftsr-devops_investigation/wiki/LiteLLM-Bedrock-Setup).
+For detailed setup including multiple AWS accounts and Claude Code integration, see the [LiteLLM + Bedrock wiki page](https://gogs.trcaa.com/sarman/trcaa-devops_investigation/wiki/LiteLLM-Bedrock-Setup).
 
 ---
 
@@ -193,7 +195,7 @@ For detailed setup including multiple AWS accounts and Claude Code integration, 
 ## Project Structure
 
 ```
-tftsr/
+trcaa/
 ├── src-tauri/src/
 │   ├── ai/           # AI provider clients (OpenAI, Anthropic, Gemini, Mistral, Ollama)
 │   ├── pii/          # PII detection + redaction engine
@@ -240,14 +242,14 @@ cargo check --manifest-path src-tauri/Cargo.toml
 cargo test --manifest-path src-tauri/Cargo.toml
 
 # E2E tests (requires compiled app binary)
-TAURI_BINARY_PATH=./src-tauri/target/release/tftsr npm run test:e2e
+TAURI_BINARY_PATH=./src-tauri/target/release/trcaa npm run test:e2e
 ```
 
 ---
 
 ## CI/CD — Gitea Actions
 
-The project uses **Gitea Actions** (act_runner v0.3.1) connected to the Gitea instance at `gogs.tftsr.com`.
+The project uses **Gitea Actions** (act_runner v0.3.1) connected to the Gitea instance at `gogs.trcaa.com`.
 
 | Workflow | Trigger | Jobs |
 |---|---|---|
@@ -258,12 +260,12 @@ The project uses **Gitea Actions** (act_runner v0.3.1) connected to the Gitea in
 
 | Runner | Platform | Host | Purpose |
 |---|---|---|---|
-| `amd64-docker-runner` | linux/amd64 | 172.0.0.29 (Docker) | Test pipeline + amd64/windows release builds |
+| `amd64-docker-runner` | linux/amd64 | gitea.tftsr.com (Docker) | Test pipeline + amd64/windows release builds |
 | `arm64-native-runner` | linux/arm64 | Local arm64 machine | Native arm64 release builds |
 
 **Branch protection:** master requires a PR approved by `sarman`, with all 5 CI checks passing before merge.
 
-> See [CI/CD Pipeline wiki](https://gogs.tftsr.com/sarman/tftsr-devops_investigation/wiki/CICD-Pipeline) for full infrastructure docs.
+> See [CI/CD Pipeline wiki](https://gogs.trcaa.com/sarman/trcaa-devops_investigation/wiki/CICD-Pipeline) for full infrastructure docs.
 
 ---
 
@@ -288,11 +290,11 @@ All data is stored locally in a SQLCipher-encrypted database at:
 
 | OS | Path |
 |---|---|
-| Linux | `~/.local/share/tftsr/tftsr.db` |
-| macOS | `~/Library/Application Support/tftsr/tftsr.db` |
-| Windows | `%APPDATA%\tftsr\tftsr.db` |
+| Linux | `~/.local/share/trcaa/trcaa.db` |
+| macOS | `~/Library/Application Support/trcaa/trcaa.db` |
+| Windows | `%APPDATA%\trcaa\trcaa.db` |
 
-Override with the `TFTSR_DATA_DIR` environment variable.
+Override with the `TRCAA_DATA_DIR` (or legacy `TRCAA_DATA_DIR`) environment variable.
 
 ---
 
@@ -300,9 +302,9 @@ Override with the `TFTSR_DATA_DIR` environment variable.
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `TFTSR_DATA_DIR` | Platform data dir | Override database location |
-| `TFTSR_DB_KEY` | _(none)_ | Database encryption key (required in release builds) |
-| `TFTSR_ENCRYPTION_KEY` | _(none)_ | Credential encryption key (required in release builds) |
+| `TRCAA_DATA_DIR` (or legacy `TRCAA_DATA_DIR`) | Platform data dir | Override database location |
+| `TRCAA_DB_KEY` (or legacy `TRCAA_DB_KEY`) | _(none)_ | Database encryption key (required in release builds) |
+| `TRCAA_ENCRYPTION_KEY` (or legacy `TRCAA_ENCRYPTION_KEY`) | _(none)_ | Credential encryption key (required in release builds) |
 | `RUST_LOG` | `info` | Tracing log level (`debug`, `info`, `warn`, `error`) |
 
 ---

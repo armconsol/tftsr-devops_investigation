@@ -50,7 +50,7 @@ describe("Settings Store", () => {
 
   it("does not persist API keys to localStorage", () => {
     useSettingsStore.getState().addProvider(mockProvider);
-    const raw = localStorage.getItem("tftsr-settings");
+    const raw = localStorage.getItem("trcaa-settings");
     expect(raw).toBeTruthy();
     expect(raw).not.toContain("sk-test-key");
   });
@@ -97,7 +97,7 @@ describe("Settings Store — PII patterns", () => {
 
   it("pii_enabled_patterns is persisted to localStorage", () => {
     useSettingsStore.getState().setPiiPattern("api_key", false);
-    const raw = localStorage.getItem("tftsr-settings");
+    const raw = localStorage.getItem("trcaa-settings");
     expect(raw).toBeTruthy();
     // Zustand persist wraps state in { state: {...}, version: ... }
     const parsed = JSON.parse(raw!);

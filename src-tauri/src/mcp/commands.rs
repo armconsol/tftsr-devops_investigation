@@ -236,7 +236,7 @@ pub async fn initiate_mcp_oauth(
     let state_nonce = {
         use rand::RngCore;
         let mut bytes = [0u8; 16];
-        rand::rngs::OsRng.fill_bytes(&mut bytes);
+        rand::rng().fill_bytes(&mut bytes);
         hex::encode(bytes)
     };
     let auth_url = format!(

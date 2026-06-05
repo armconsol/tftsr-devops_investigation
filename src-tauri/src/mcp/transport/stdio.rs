@@ -25,6 +25,10 @@ pub fn build_stdio_transport(
         "DYLD_LIBRARY_PATH",
         "DYLD_FRAMEWORK_PATH",
         "DYLD_FALLBACK_LIBRARY_PATH",
+        "PYTHONPATH",
+        "RUBYLIB",
+        "NODE_PATH",
+        "PERL5LIB",
     ];
 
     for key in env.keys() {
@@ -98,6 +102,52 @@ mod tests {
         if let Err(err) = result {
             assert!(err.contains("Dangerous environment variable"));
         }
+    }
+
+    #[test]
+    fn test_rejects_interpreter_path_hijack_vars() {
+        let hijack_vars = vec![
+            ("PYTHONPATH", "/tmp/evil"),
+            ("RUBYLIB", "/tmp/evil"),
+            ("NODE_PATH", "/tmp/evil"),
+            ("PERL5LIB", "/tmp/evil"),
+        ];
+
+        for (key, value) in hijack_vars {
+            let mut env = HashMap::new();
+            env.insert(key.to_string(), value.to_string());
+
+            let result = build_stdio_transport("/usr/bin/test", &[], env);
+            assert!(result.is_err(), "Should reject {}", key);
+            if let Err(err) = result {
+                assert!(
+                    err.contains("Dangerous environment variable"),
+                    "Error for '{}' should mention dangerous variable, got: {}",
+                    key,
+                    err
+                );
+                assert!(
+                    err.contains(key),
+                    "Error should include the offending variable name '{}', got: {}",
+                    key,
+                    err
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_error_message_includes_variable_name() {
+        let mut env = HashMap::new();
+        env.insert("LD_PRELOAD".to_string(), "malicious.so".to_string());
+
+        let Err(err) = build_stdio_transport("/usr/bin/test", &[], env) else {
+            panic!("Expected error");
+        };
+        assert!(
+            err.contains("LD_PRELOAD"),
+            "Error must name the rejected variable so the user knows what to fix, got: {err}"
+        );
     }
 
     #[test]

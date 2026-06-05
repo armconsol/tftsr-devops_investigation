@@ -53,7 +53,7 @@ The `cipher_page_size = 16384` is specifically tuned for Apple Silicon (M-series
 Per ADR-005, encryption keys are auto-generated at runtime:
 - **Release builds**: Random 256-bit key generated at first launch, stored in `.dbkey` (mode 0600)
 - **Debug builds**: Hardcoded dev key (`dev-key-change-in-prod`)
-- **Override**: `TFTSR_DB_KEY` environment variable
+- **Override**: `TRCAA_DB_KEY` (or legacy `TRCAA_DB_KEY`) environment variable
 
 ---
 

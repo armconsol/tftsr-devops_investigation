@@ -28,35 +28,21 @@ Node **v22** required. Install via nvm or system package manager.
 npm install --legacy-peer-deps
 ```
 
-### kubectl Binary (for Shell Execution)
-
-kubectl v1.30.0 is bundled with the application. To download binaries for development:
-
-```bash
-./scripts/download-kubectl.sh linux amd64
-./scripts/download-kubectl.sh linux arm64
-./scripts/download-kubectl.sh darwin arm64
-./scripts/download-kubectl.sh darwin amd64
-./scripts/download-kubectl.sh windows amd64
-```
-
-Binaries are placed in `binaries/kubectl-{os}-{arch}` and bundled via `tauri.conf.json` resources. See [[Shell-Execution]] for runtime usage details.
-
 ---
 
 ## Environment Variables
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `TFTSR_DATA_DIR` | Platform data dir | Override DB location |
-| `TFTSR_DB_KEY` | _(none)_ | DB encryption key (required in release builds) |
-| `TFTSR_ENCRYPTION_KEY` | _(none)_ | Credential encryption key (required in release builds) |
+| `TRCAA_DATA_DIR` (or legacy `TRCAA_DATA_DIR`) | Platform data dir | Override DB location |
+| `TRCAA_DB_KEY` (or legacy `TRCAA_DB_KEY`) | _(none)_ | DB encryption key (required in release builds) |
+| `TRCAA_ENCRYPTION_KEY` (or legacy `TRCAA_ENCRYPTION_KEY`) | _(none)_ | Credential encryption key (required in release builds) |
 | `RUST_LOG` | `info` | Tracing verbosity: `debug`, `info`, `warn`, `error` |
 
 Application data is stored at:
-- **Linux:** `~/.local/share/tftsr/`
-- **macOS:** `~/Library/Application Support/tftsr/`
-- **Windows:** `%APPDATA%\tftsr\`
+- **Linux:** `~/.local/share/trcaa/`
+- **macOS:** `~/Library/Application Support/trcaa/`
+- **Windows:** `%APPDATA%\trcaa\`
 
 ---
 
@@ -135,7 +121,7 @@ cargo tauri build
 # Outputs: .deb, .rpm, .AppImage (Linux)
 ```
 
-Release builds enforce secure key configuration. Set both `TFTSR_DB_KEY` and `TFTSR_ENCRYPTION_KEY` before building.
+Release builds enforce secure key configuration. Set both `TRCAA_DB_KEY` (or legacy `TRCAA_DB_KEY`) and `TRCAA_ENCRYPTION_KEY` (or legacy `TRCAA_ENCRYPTION_KEY`) before building.
 
 ---
 

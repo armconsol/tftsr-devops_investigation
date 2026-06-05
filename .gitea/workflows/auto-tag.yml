@@ -30,11 +30,11 @@ jobs:
           set -eu
           apk add --no-cache curl jq git
 
-          API="http://172.0.0.29:3000/api/v1/repos/$GITHUB_REPOSITORY"
+          API="http://gitea.tftsr.com:3000/api/v1/repos/$GITHUB_REPOSITORY"
 
           # Checkout the source so we can read Cargo.toml
           git init
-          git remote add origin "http://oauth2:${RELEASE_TOKEN}@172.0.0.29:3000/${GITHUB_REPOSITORY}.git"
+          git remote add origin "http://oauth2:${RELEASE_TOKEN}@gitea.tftsr.com:3000/${GITHUB_REPOSITORY}.git"
           git fetch --depth=1 origin "$GITHUB_SHA"
           git checkout FETCH_HEAD
           git config user.name "gitea-actions[bot]"
@@ -104,7 +104,7 @@ jobs:
           set -eu
           git init
           git remote add origin \
-            "http://oauth2:${RELEASE_TOKEN}@172.0.0.29:3000/${GITHUB_REPOSITORY}.git"
+            "http://oauth2:${RELEASE_TOKEN}@gitea.tftsr.com:3000/${GITHUB_REPOSITORY}.git"
           git fetch --unshallow origin || git fetch --depth=2147483647 origin || true
           git fetch --tags origin
           git checkout "$GITHUB_SHA" 2>/dev/null || git checkout FETCH_HEAD
@@ -153,7 +153,7 @@ jobs:
         run: |
           set -eu
           TAG="${RELEASE_TAG}"
-          API="http://172.0.0.29:3000/api/v1/repos/$GITHUB_REPOSITORY"
+          API="http://gitea.tftsr.com:3000/api/v1/repos/$GITHUB_REPOSITORY"
 
           # Try to find an existing release for this tag
           RELEASE_ID=$(curl -s "$API/releases/tags/$TAG" \
@@ -220,7 +220,7 @@ jobs:
         run: |
           set -eu
           TAG="${RELEASE_TAG}"
-          API="http://172.0.0.29:3000/api/v1/repos/$GITHUB_REPOSITORY"
+          API="http://gitea.tftsr.com:3000/api/v1/repos/$GITHUB_REPOSITORY"
           RELEASE_ID=$(curl -sf "$API/releases/tags/$TAG" \
             -H "Authorization: token $RELEASE_TOKEN" | jq -r '.id')
           if [ -z "$RELEASE_ID" ] || [ "$RELEASE_ID" = "null" ]; then
@@ -251,7 +251,7 @@ jobs:
       - name: Checkout main repository
         run: |
           git init
-          git remote add origin http://172.0.0.29:3000/sarman/tftsr-devops_investigation.git
+          git remote add origin http://gitea.tftsr.com:3000/sarman/tftsr-devops_investigation.git
           git fetch --depth=1 origin $GITHUB_SHA
           git checkout FETCH_HEAD
 
@@ -267,9 +267,9 @@ jobs:
         run: |
           cd /tmp
           if [ -n "$WIKI_TOKEN" ]; then
-            WIKI_URL="http://${WIKI_TOKEN}@172.0.0.29:3000/sarman/tftsr-devops_investigation.wiki.git"
+            WIKI_URL="http://${WIKI_TOKEN}@gitea.tftsr.com:3000/sarman/tftsr-devops_investigation.wiki.git"
           else
-            WIKI_URL="http://172.0.0.29:3000/sarman/tftsr-devops_investigation.wiki.git"
+            WIKI_URL="http://gitea.tftsr.com:3000/sarman/tftsr-devops_investigation.wiki.git"
           fi
 
           if ! git clone "$WIKI_URL" wiki 2>/dev/null; then
@@ -307,12 +307,12 @@ jobs:
     needs: autotag
     runs-on: linux-amd64
     container:
-      image: 172.0.0.29:3000/sarman/trcaa-linux-amd64:rust1.88-node22
+      image: gitea.tftsr.com:3000/sarman/trcaa-linux-amd64:rust1.88-node22
     steps:
       - name: Checkout
         run: |
           git init
-          git remote add origin http://172.0.0.29:3000/sarman/tftsr-devops_investigation.git
+          git remote add origin http://gitea.tftsr.com:3000/sarman/tftsr-devops_investigation.git
           git fetch --depth=1 origin "$GITHUB_SHA"
           git checkout FETCH_HEAD
       - name: Cache cargo registry
@@ -343,7 +343,7 @@ jobs:
           RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
         run: |
           set -eu
-          API="http://172.0.0.29:3000/api/v1/repos/$GITHUB_REPOSITORY"
+          API="http://gitea.tftsr.com:3000/api/v1/repos/$GITHUB_REPOSITORY"
           TAG=$(curl -s "$API/tags?limit=50" \
             -H "Authorization: token $RELEASE_TOKEN" | \
             jq -r '.[].name' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | \
@@ -402,12 +402,12 @@ jobs:
     needs: autotag
     runs-on: linux-amd64
     container:
-      image: 172.0.0.29:3000/sarman/trcaa-windows-cross:rust1.88-node22
+      image: gitea.tftsr.com:3000/sarman/trcaa-windows-cross:rust1.88-node22
     steps:
       - name: Checkout
         run: |
           git init
-          git remote add origin http://172.0.0.29:3000/sarman/tftsr-devops_investigation.git
+          git remote add origin http://gitea.tftsr.com:3000/sarman/tftsr-devops_investigation.git
           git fetch --depth=1 origin "$GITHUB_SHA"
           git checkout FETCH_HEAD
       - name: Cache cargo registry
@@ -443,7 +443,7 @@ jobs:
           RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
         run: |
           set -eu
-          API="http://172.0.0.29:3000/api/v1/repos/$GITHUB_REPOSITORY"
+          API="http://gitea.tftsr.com:3000/api/v1/repos/$GITHUB_REPOSITORY"
           TAG=$(curl -s "$API/tags?limit=50" \
             -H "Authorization: token $RELEASE_TOKEN" | \
             jq -r '.[].name' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | \
@@ -504,7 +504,7 @@ jobs:
       - name: Checkout
         run: |
           git init
-          git remote add origin http://172.0.0.29:3000/sarman/tftsr-devops_investigation.git
+          git remote add origin http://gitea.tftsr.com:3000/sarman/tftsr-devops_investigation.git
           git fetch --depth=1 origin "$GITHUB_SHA"
           git checkout FETCH_HEAD
       - name: Build
@@ -529,7 +529,7 @@ jobs:
           RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
         run: |
           set -eu
-          API="http://172.0.0.29:3000/api/v1/repos/$GITHUB_REPOSITORY"
+          API="http://gitea.tftsr.com:3000/api/v1/repos/$GITHUB_REPOSITORY"
           TAG=$(curl -s "$API/tags?limit=50" \
             -H "Authorization: token $RELEASE_TOKEN" | \
             jq -r '.[].name' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | \
@@ -586,12 +586,12 @@ jobs:
     needs: autotag
     runs-on: linux-amd64
     container:
-      image: 172.0.0.29:3000/sarman/trcaa-linux-arm64:rust1.88-node22
+      image: gitea.tftsr.com:3000/sarman/trcaa-linux-arm64:rust1.88-node22
     steps:
       - name: Checkout
         run: |
           git init
-          git remote add origin http://172.0.0.29:3000/sarman/tftsr-devops_investigation.git
+          git remote add origin http://gitea.tftsr.com:3000/sarman/tftsr-devops_investigation.git
           git fetch --depth=1 origin "$GITHUB_SHA"
           git checkout FETCH_HEAD
       - name: Cache cargo registry
@@ -631,7 +631,7 @@ jobs:
           RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
         run: |
           set -eu
-          API="http://172.0.0.29:3000/api/v1/repos/$GITHUB_REPOSITORY"
+          API="http://gitea.tftsr.com:3000/api/v1/repos/$GITHUB_REPOSITORY"
           TAG=$(curl -s "$API/tags?limit=50" \
             -H "Authorization: token $RELEASE_TOKEN" | \
             jq -r '.[].name' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | \

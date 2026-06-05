@@ -2,7 +2,7 @@
 
 ## Overview
 
-**Model Context Protocol (MCP)** is an open standard that allows AI models to invoke external tools and access external resources through a standardised JSON-RPC interface. TFTSR integrates MCP as a first-class feature, enabling the AI triage assistant to call tools exposed by any compliant MCP server — file search, database queries, monitoring APIs, runbook automation, and more.
+**Model Context Protocol (MCP)** is an open standard that allows AI models to invoke external tools and access external resources through a standardised JSON-RPC interface. TRCAA integrates MCP as a first-class feature, enabling the AI triage assistant to call tools exposed by any compliant MCP server — file search, database queries, monitoring APIs, runbook automation, and more.
 
 MCP support extends the AI's capabilities beyond conversation: during incident triage, the model can autonomously invoke registered tools to gather diagnostic data, check system status, or execute remediation steps — all within the app's security and audit framework.
 
@@ -12,7 +12,7 @@ MCP support extends the AI's capabilities beyond conversation: during incident t
 
 ```
 ┌──────────────────────────────────────────────┐
-│  TFTSR App                                   │
+│  TRCAA App                                   │
 │                                              │
 │  ┌────────┐   ┌──────────┐   ┌───────────┐  │
 │  │Frontend│──▶│ Commands │──▶│  Store    │  │
@@ -127,7 +127,7 @@ The process is spawned via Tokio and wrapped with `rmcp::transport::TokioChildPr
 
 #### Important: PATH for npx/node-based servers
 
-When TFTSR spawns a stdio process from a macOS `.app` bundle, it runs in a **stripped environment** — the system `PATH` is not inherited. Any server that relies on `node`, `npx`, `python`, or other tools found via `PATH` must have it explicitly set.
+When TRCAA spawns a stdio process from a macOS `.app` bundle, it runs in a **stripped environment** — the system `PATH` is not inherited. Any server that relies on `node`, `npx`, `python`, or other tools found via `PATH` must have it explicitly set.
 
 In the **Environment Variables (Plaintext)** field, add:
 
@@ -208,7 +208,7 @@ Navigate to **Settings > MCP Servers** (`/settings/mcp`) to manage servers.
    - **Auth Value** — The token/key (will be encrypted on save). Leave blank for `none`.
    - **Environment Variables (Plaintext)** (stdio only) — Space-separated `KEY=value` pairs for non-sensitive values. **Always include `PATH=...` for `npx`/node/python-based servers** — the app bundle does not inherit the system PATH.
    - **Secure Environment Variables (Encrypted)** (stdio only) — Space-separated `KEY=value` pairs for sensitive values (API keys, tokens). Stored AES-256-GCM encrypted. Leave blank when editing to preserve existing values.
-   - **Custom Headers** (HTTP only) — Space-separated `KEY:value` pairs for custom HTTP headers.
+   - **Custom Headers** (HTTP only) — Not yet supported by the backend transport (currently ignored); do not use for secrets yet.
    - **Enabled** — Toggle on/off.
 3. Click **Save**. The server record is persisted.
 4. Click **Discover** to connect and enumerate available tools and resources.
@@ -293,7 +293,7 @@ See [IPC Commands](IPC-Commands#mcp-servers) for full type signatures.
 
 ## Security
 
-- **Encrypted auth values** — AES-256-GCM, same key derivation as integration credentials (`TFTSR_ENCRYPTION_KEY`)
+- **Encrypted auth values** — AES-256-GCM, same key derivation as integration credentials (`TRCAA_ENCRYPTION_KEY` (or legacy `TRCAA_ENCRYPTION_KEY`))
 - **Server-side scrubbing** — `auth_value` set to `None` before any response to the frontend
 - **Audit logging** — `write_audit_event` called before every MCP tool execution
 - **PII scan** — Tool call arguments are scanned for PII patterns (non-blocking warning to user)

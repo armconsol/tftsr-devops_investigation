@@ -7,7 +7,7 @@ on each job invocation: `apt-get update`, Tauri system libs, Node.js via nodesou
 the arm64 job — a full `rustup` install. This was the primary cause of slow builds.
 
 The repository already contains pre-baked builder Docker images (`.docker/Dockerfile.*`) and a
-`build-images.yml` workflow to push them to the local Gitea registry at `172.0.0.29:3000`.
+`build-images.yml` workflow to push them to the local Gitea registry at `gitea.tftsr.com:3000`.
 These images were never referenced by the actual CI jobs — a critical gap. This work closes
 that gap and adds `actions/cache@v3` for Cargo and npm.
 
@@ -15,7 +15,7 @@ that gap and adds `actions/cache@v3` for Cargo and npm.
 
 - [ ] `Dockerfile.linux-amd64` includes `rustfmt` and `clippy` components
 - [ ] `Dockerfile.linux-arm64` includes `rustfmt` and `clippy` components
-- [ ] `test.yml` Rust jobs use `172.0.0.29:3000/sarman/trcaa-linux-amd64:rust1.88-node22`
+- [ ] `test.yml` Rust jobs use `gitea.tftsr.com:3000/sarman/trcaa-linux-amd64:rust1.88-node22`
 - [ ] `test.yml` Rust jobs have no inline `apt-get` or `rustup component add` steps
 - [ ] `test.yml` Rust jobs include `actions/cache@v3` for `~/.cargo/registry`
 - [ ] `test.yml` frontend jobs include `actions/cache@v3` for `~/.npm`
@@ -40,7 +40,7 @@ existing `rustup` installation RUN command (chained with `&&` to keep it one lay
 
 ### `.gitea/workflows/test.yml`
 - **rust-fmt-check**, **rust-clippy**, **rust-tests**: switched container image from
-  `rust:1.88-slim` → `172.0.0.29:3000/sarman/trcaa-linux-amd64:rust1.88-node22`.
+  `rust:1.88-slim` → `gitea.tftsr.com:3000/sarman/trcaa-linux-amd64:rust1.88-node22`.
   Removed `apt-get install git` from Checkout steps (git is pre-installed in image).
   Removed `apt-get install libwebkit2gtk-...` steps.
   Removed `rustup component add rustfmt` and `rustup component add clippy` steps.
@@ -67,7 +67,7 @@ existing `rustup` installation RUN command (chained with `&&` to keep it one lay
 Added two new sections before the Test Pipeline section:
 - **Pre-baked Builder Images**: table of all three images and their contents, rebuild
   triggers, how-to-rebuild instructions, and the insecure-registries Docker daemon
-  prerequisite for 172.0.0.29.
+  prerequisite for gitea.tftsr.com.
 - **Cargo and npm Caching**: documents the `actions/cache@v3` key patterns in use,
   including the per-platform cache key suffixes for cross-compile jobs.
 Updated the Test Pipeline section to reference the correct pre-baked image name.
@@ -78,8 +78,8 @@ Updated the Release Pipeline job table to show which image each build job uses.
 1. **Pre-build images** (prerequisite): Trigger `build-images.yml` via `workflow_dispatch`
    on Gitea Actions UI. Confirm all 3 images are pushed and visible in the registry.
 
-2. **Server prerequisite**: Confirm `/etc/docker/daemon.json` on `172.0.0.29` contains
-   `{"insecure-registries":["172.0.0.29:3000"]}` and Docker was restarted after.
+2. **Server prerequisite**: Confirm `/etc/docker/daemon.json` on `gitea.tftsr.com` contains
+   `{"insecure-registries":["gitea.tftsr.com:3000"]}` and Docker was restarted after.
 
 3. **PR test suite**: Open a PR with these changes. Verify:
    - All 5 test jobs pass (`rust-fmt-check`, `rust-clippy`, `rust-tests`,

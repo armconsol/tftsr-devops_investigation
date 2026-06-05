@@ -2,7 +2,7 @@
 
 ## Overview
 
-TFTSR uses a Tauri 2.x architecture: a Rust backend runs natively, and a React/TypeScript frontend runs in an embedded WebView. Communication between them happens exclusively via typed IPC (`invoke()`).
+TRCAA uses a Tauri 2.x architecture: a Rust backend runs natively, and a React/TypeScript frontend runs in an embedded WebView. Communication between them happens exclusively via typed IPC (`invoke()`).
 
 ```
 ┌─────────────────────────────────────────┐
@@ -29,7 +29,7 @@ TFTSR uses a Tauri 2.x architecture: a Rust backend runs natively, and a React/T
 pub struct AppState {
     pub db: Arc<Mutex<rusqlite::Connection>>,
     pub settings: Arc<Mutex<AppSettings>>,
-    pub app_data_dir: PathBuf,   // ~/.local/share/tftsr on Linux
+    pub app_data_dir: PathBuf,   // ~/.local/share/trcaa on Linux
 }
 ```
 
@@ -111,7 +111,7 @@ src-tauri/src/
 | Store | Persistence | Contents |
 |-------|------------|----------|
 | `sessionStore.ts` | Not persisted (ephemeral) | currentIssue, messages, piiSpans, approvedRedactions, whyLevel (0–5), loading state |
-| `settingsStore.ts` | `localStorage` as `"tftsr-settings"` | AI providers, theme, Ollama URL, active provider |
+| `settingsStore.ts` | `localStorage` as `"trcaa-settings"` | AI providers, theme, Ollama URL, active provider |
 | `historyStore.ts` | Not persisted (cache) | Past issues list, search query |
 
 ### Page Flow
@@ -229,7 +229,7 @@ Timeline events are stored in the `timeline_events` table (indexed by issue_id a
 
 ```
 1. Initialize tracing (RUST_LOG controls level)
-2. Determine data directory (~/.local/share/tftsr or TFTSR_DATA_DIR)
+2. Determine data directory (~/.local/share/trcaa or TRCAA_DATA_DIR)
 3. Open / create SQLite database (run migrations)
 4. Create AppState (db + settings + app_data_dir)
 5. Register Tauri plugins (stronghold, dialog, fs, shell, http, cli, updater)

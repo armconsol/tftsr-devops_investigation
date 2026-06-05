@@ -35,7 +35,7 @@ impl Provider for OpenAiProvider {
         config: &ProviderConfig,
         tools: Option<Vec<crate::ai::Tool>>,
     ) -> anyhow::Result<ChatResponse> {
-        // Check if using custom REST format
+        // Check if using TFTSR GenAI format (or legacy custom_rest)
         let api_format = config.api_format.as_deref().unwrap_or("openai");
 
         if is_msi_genai_format(Some(api_format)) {
@@ -69,7 +69,7 @@ mod tests {
 
     #[test]
     fn parse_msigenai_chatgpt_tool_calls_from_json_text() {
-        // MSIGenAI ChatGPT format: returns tool calls as JSON object in msg
+        // TFTSRGenAI ChatGPT format: returns tool calls as JSON object in msg
         let content = r#"{"tool_calls":[{"id":"call_1","type":"function","function":{"name":"execute_shell_command","arguments":{"command":"kubectl get namespaces"}}}]}"#;
 
         let result = OpenAiProvider::parse_tool_calls_from_text(content);
@@ -84,7 +84,7 @@ mod tests {
 
     #[test]
     fn parse_msigenai_claude_tool_calls_from_xml_wrapper() {
-        // MSIGenAI Claude format: XML wrapper around JSON array
+        // TFTSRGenAI Claude format: XML wrapper around JSON array
         let content = r#"<tool_calls>
 [{"id":"call_1","type":"function","function":{"name":"execute_shell_command","arguments":{"command":"kubectl get pods"}}}]
 </tool_calls>"#;
@@ -294,9 +294,9 @@ impl OpenAiProvider {
         })
     }
 
-    /// MSI GenAI format (non-OpenAI payload contract)
+    /// TFTSR GenAI format (non-OpenAI payload contract)
     ///
-    /// MSI GenAI uses a custom API format with 'prompt' field instead of 'messages',
+    /// TFTSR GenAI uses a custom API format with 'prompt' field instead of 'messages',
     /// and has a known bug where tool calls are returned as JSON text in the 'msg'
     /// field instead of structured 'tool_calls' array. This implementation includes
     /// workaround parsing to extract tool calls from text.
@@ -381,7 +381,7 @@ impl OpenAiProvider {
             body["tools"] = serde_json::Value::from(formatted_tools);
             body["tool_choice"] = serde_json::Value::from("auto");
 
-            tracing::info!("MSI GenAI: Sending {} tools in request", tool_count);
+            tracing::info!("TFTSR GenAI: Sending {} tools in request", tool_count);
         }
 
         // Use custom auth header and prefix (no default prefix for custom REST)
@@ -403,13 +403,13 @@ impl OpenAiProvider {
         if !resp.status().is_success() {
             let status = resp.status();
             let text = resp.text().await?;
-            anyhow::bail!("MSI GenAI API error {status}: {text}");
+            anyhow::bail!("TFTSR GenAI API error {status}: {text}");
         }
 
         let json: serde_json::Value = resp.json().await?;
 
         tracing::debug!(
-            "MSI GenAI response: {}",
+            "TFTSR GenAI response: {}",
             serde_json::to_string_pretty(&json).unwrap_or_else(|_| "invalid JSON".to_string())
         );
 
@@ -438,7 +438,7 @@ impl OpenAiProvider {
                                     .and_then(|n| n.as_str())
                                     .or_else(|| call.get("name").and_then(|n| n.as_str())),
                             ) {
-                                // Accept arguments as either string or object (MSI GenAI returns both)
+                                // Accept arguments as either string or object (TFTSR GenAI returns both)
                                 let arguments = call
                                     .get("function")
                                     .and_then(|f| f.get("arguments"))
@@ -454,7 +454,7 @@ impl OpenAiProvider {
 
                                 if let Some(args) = arguments {
                                     tracing::info!(
-                                        "MSI GenAI: Parsed tool call: {} ({})",
+                                        "TFTSR GenAI: Parsed tool call: {} ({})",
                                         name,
                                         id
                                     );
@@ -486,7 +486,7 @@ impl OpenAiProvider {
                                         .map(|s| s.to_string())
                                         .unwrap_or_else(|| format!("tool_call_{index}"));
                                     tracing::info!(
-                                        "MSI GenAI: Parsed tool call (simple format): {} ({})",
+                                        "TFTSR GenAI: Parsed tool call (simple format): {} ({})",
                                         name,
                                         id
                                     );
@@ -498,14 +498,14 @@ impl OpenAiProvider {
                                 }
                             }
 
-                            tracing::warn!("MSI GenAI: Failed to parse tool call: {:?}", call);
+                            tracing::warn!("TFTSR GenAI: Failed to parse tool call: {:?}", call);
                             None
                         })
                         .collect();
                     if calls.is_empty() {
                         None
                     } else {
-                        tracing::info!("MSI GenAI: Found {} tool calls", calls.len());
+                        tracing::info!("TFTSR GenAI: Found {} tool calls", calls.len());
                         Some(calls)
                     }
                 } else {
@@ -513,14 +513,14 @@ impl OpenAiProvider {
                 }
             });
 
-        // WORKAROUND: MSIGenAI gateway bug - tool calls returned as JSON text in 'msg' field
+        // WORKAROUND: TFTSRGenAI gateway bug - tool calls returned as JSON text in 'msg' field
         // Expected: {"tool_calls": [...]}
         // Actual: {"msg": '{"tool_calls":[...]}'}  or  {"msg": '<tool_calls>[...]</tool_calls>'}
         if tool_calls.is_none() {
-            // Try parsing tool calls from msg content (MSIGenAI workaround)
+            // Try parsing tool calls from msg content (TFTSRGenAI workaround)
             if let Some(parsed_calls) = Self::parse_tool_calls_from_text(&content) {
                 tracing::warn!(
-                    "MSI GenAI: MSIGenAI workaround - parsed {} tool calls from msg text (gateway should return structured tool_calls field)",
+                    "TFTSR GenAI: TFTSRGenAI workaround - parsed {} tool calls from msg text (gateway should return structured tool_calls field)",
                     parsed_calls.len()
                 );
                 tool_calls = Some(parsed_calls);
@@ -541,9 +541,9 @@ impl OpenAiProvider {
         })
     }
 
-    /// Parse tool calls from text content (MSIGenAI gateway workaround)
+    /// Parse tool calls from text content (TFTSRGenAI gateway workaround)
     ///
-    /// MSIGenAI returns tool calls as JSON text in the 'msg' field instead of structured data:
+    /// TFTSRGenAI returns tool calls as JSON text in the 'msg' field instead of structured data:
     /// - ChatGPT models: `{"tool_calls":[...]}`
     /// - Claude models: `<tool_calls>[...]</tool_calls>`
     fn parse_tool_calls_from_text(content: &str) -> Option<Vec<crate::ai::ToolCall>> {

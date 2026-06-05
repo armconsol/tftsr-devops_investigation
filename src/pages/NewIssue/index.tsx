@@ -64,19 +64,19 @@ export default function NewIssue() {
   const [showDisclaimer, setShowDisclaimer] = useState(false);
 
   useEffect(() => {
-    const hasAcceptedDisclaimer = localStorage.getItem("tftsr-ai-disclaimer-accepted");
+    const hasAcceptedDisclaimer = localStorage.getItem("trcaa-ai-disclaimer-accepted");
     if (!hasAcceptedDisclaimer) {
-      localStorage.setItem("tftsr-ai-disclaimer-accepted", "true");
+      localStorage.setItem("trcaa-ai-disclaimer-accepted", "true");
     }
   }, []);
 
   const handleAcceptDisclaimer = () => {
-    localStorage.setItem("tftsr-ai-disclaimer-accepted", "true");
+    localStorage.setItem("trcaa-ai-disclaimer-accepted", "true");
     setShowDisclaimer(false);
   };
 
   const handleStartTriage = async () => {
-    const hasAcceptedDisclaimer = localStorage.getItem("tftsr-ai-disclaimer-accepted");
+    const hasAcceptedDisclaimer = localStorage.getItem("trcaa-ai-disclaimer-accepted");
     if (!hasAcceptedDisclaimer) {
       setShowDisclaimer(true);
       return;

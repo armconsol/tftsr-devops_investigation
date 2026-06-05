@@ -1,10 +1,10 @@
-# TFTSR — IT Triage & Root-Cause Analysis Desktop Application
+# TRCAA — IT Triage & Root-Cause Analysis Desktop Application
 
 ## Implementation Plan
 
 ### Overview
 
-TFTSR is a **desktop-first, offline-capable** application that helps IT teams
+TRCAA is a **desktop-first, offline-capable** application that helps IT teams
 perform structured incident triage using the *5-Whys* methodology, backed by
 pluggable AI providers (Ollama local, OpenAI, Anthropic, Mistral, Gemini).
 It automates PII redaction, guides engineers through root-cause analysis, and
@@ -24,7 +24,7 @@ produces post-mortem documents (Markdown / PDF / DOCX).
 | AI providers | Ollama (local), OpenAI, Anthropic, Mistral, Gemini | User choice; local-first with cloud fallback |
 | Unit tests (frontend) | **Vitest** | Fast, Vite-native, first-class TS support |
 | E2E tests | **WebdriverIO + tauri-driver** | Official Tauri E2E path, cross-platform |
-| CI/CD | **Woodpecker CI** (Gogs at `172.0.0.29:3000`) | Self-hosted, Docker-native, YAML pipelines |
+| CI/CD | **Woodpecker CI** (Gogs at `gitea.tftsr.com:3000`) | Self-hosted, Docker-native, YAML pipelines |
 | Bundling | Vite 6 | Dev server + production build, used by Tauri CLI |
 
 ---
@@ -32,7 +32,7 @@ produces post-mortem documents (Markdown / PDF / DOCX).
 ## Directory Structure
 
 ```
-tftsr/
+trcaa/
 ├── .woodpecker/
 │   ├── test.yml              # lint + unit tests on push / PR
 │   └── release.yml           # multi-platform build on tag
@@ -123,7 +123,7 @@ tftsr/
 
 ## Database Schema (SQLCipher)
 
-All tables live in a single encrypted `tftsr.db` file under the Tauri
+All tables live in a single encrypted `trcaa.db` file under the Tauri
 app-data directory.
 
 ### 1. `issues`
@@ -277,7 +277,7 @@ All frontend ↔ backend communication goes through Tauri's `invoke()`.
 ## CI/CD Approach
 
 ### Infrastructure
-- **Git server**: Gogs at `http://172.0.0.29:3000`
+- **Git server**: Gogs at `http://gitea.tftsr.com:3000`
 - **CI runner**: Woodpecker CI with Docker executor
 - **Artifacts**: Uploaded to Gogs releases via API
 
@@ -322,7 +322,7 @@ All frontend ↔ backend communication goes through Tauri's `invoke()`.
 - [x] Write initial unit tests (PII, sessionStore, settingsStore) — 13/13 passing
 - [x] Write E2E scaffolding (wdio config, helpers, skeleton specs)
 - [x] Create CLI stub (`cli/`)
-- [x] Push to Gogs at http://172.0.0.29:3000/sarman/tftsr-devops_investigation
+- [x] Push to Gogs at http://gitea.tftsr.com:3000/sarman/trcaa-devops_investigation
 - [x] Write README.md
 - [x] Deploy Woodpecker CI v0.15.4 (server + agent + nginx proxy)
 - [ ] **BLOCKED**: Verify CI green on push (Woodpecker hook auth issue — see below)
@@ -380,7 +380,7 @@ All frontend ↔ backend communication goes through Tauri's `invoke()`.
 - [x] Integrations page (v0.2 stubs)
 
 ### Phase 11 — Woodpecker CI Integration ✅ COMPLETE
-- [x] Woodpecker CI v0.15.4 deployed at http://172.0.0.29:8084
+- [x] Woodpecker CI v0.15.4 deployed at http://gitea.tftsr.com:8084
 - [x] Webhook delivery: Gogs pushes trigger Woodpecker via `?access_token=<JWT>`
 - [x] Repo activated (DB direct): `repo_active=1`, `repo_trusted=1`, `repo_config_path=.woodpecker/test.yml`
 - [x] Clone override: `CI_REPO_CLONE_URL` + `network_mode: gogs_default` for step containers

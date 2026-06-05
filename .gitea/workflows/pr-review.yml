@@ -141,7 +141,7 @@ jobs:
         if: steps.context.outputs.diff_size != '0'
         shell: bash
         env:
-          LITELLM_URL: http://172.0.0.29:11434/v1
+          LITELLM_URL: http://gitea.tftsr.com:11434/v1
           LITELLM_API_KEY: ${{ secrets.OLLAMA_API_KEY }}
           PR_TITLE: ${{ github.event.pull_request.title }}
           PR_NUMBER: ${{ github.event.pull_request.number }}

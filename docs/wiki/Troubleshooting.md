@@ -6,14 +6,14 @@
 
 **Check:**
 1. Verify the workflow file exists in `.gitea/workflows/` on the pushed branch
-2. Check the Actions tab at `http://172.0.0.29:3000/sarman/tftsr-devops_investigation/actions`
+2. Check the Actions tab at `http://gitea.tftsr.com:3000/sarman/trcaa-devops_investigation/actions`
 3. Confirm the act_runner is online: `docker logs gitea_act_runner_amd64 --since 5m`
 
 ---
 
-### Job Container Can't Reach Gitea (`172.0.0.29:3000` blocked)
+### Job Container Can't Reach Gitea (`gitea.tftsr.com:3000` blocked)
 
-**Cause:** act_runner creates an isolated Docker network per job (when `container:` is specified). Traffic from the job container to `172.0.0.29:3000` is blocked by the host firewall.
+**Cause:** act_runner creates an isolated Docker network per job (when `container:` is specified). Traffic from the job container to `gitea.tftsr.com:3000` is blocked by the host firewall.
 
 **Fix:** Ensure `container.network: host` is set in the act_runner config AND that `CONFIG_FILE=/data/config.yaml` is in the container's environment:
 
@@ -50,7 +50,7 @@ Restart runner: `docker restart gitea_act_runner_amd64`
   run: |
     apt-get update -qq && apt-get install -y -qq git
     git init
-    git remote add origin http://172.0.0.29:3000/sarman/tftsr-devops_investigation.git
+    git remote add origin http://gitea.tftsr.com:3000/sarman/trcaa-devops_investigation.git
     git fetch --depth=1 origin $GITHUB_SHA
     git checkout FETCH_HEAD
 ```
@@ -175,9 +175,9 @@ sudo apt-get install -y libwebkit2gtk-4.1-dev libssl-dev libgtk-3-dev \
 
 **Symptom:** App fails to start with SQLCipher error.
 
-1. `TFTSR_DB_KEY` env var is set
+1. `TRCAA_DB_KEY` (or legacy `TRCAA_DB_KEY`) env var is set
 2. Key matches what was used when DB was created
-3. File isn't corrupted: `file tftsr.db` should say `SQLite 3.x database`
+3. File isn't corrupted: `file trcaa.db` should say `SQLite 3.x database`
 
 ---
 
@@ -228,7 +228,7 @@ Common causes:
 ### API Token Authentication
 
 ```bash
-curl -H "Authorization: token <token_value>" http://172.0.0.29:3000/api/v1/user
+curl -H "Authorization: token <token_value>" http://gitea.tftsr.com:3000/api/v1/user
 ```
 
 Create tokens in Gitea Settings > Applications > Access Tokens, or via admin CLI:

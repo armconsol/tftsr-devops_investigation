@@ -4,18 +4,17 @@
 
 | Component | URL | Notes |
 |-----------|-----|-------|
-| Gitea | `https://gogs.tftsr.com` / `http://172.0.0.29:3000` | Git server (migrated from Gogs 0.14) |
-| Gitea Actions | Built into Gitea | Native GitHub Actions-compatible CI/CD |
+| Gitea | `https://gogs.trcaa.com` / `http://gitea.tftsr.com:3000` | Git server (migrated from Gogs 0.14) |
+| Woodpecker CI (direct) | `http://gitea.tftsr.com:8084` | v2.x |
+| Woodpecker CI (proxy) | `http://gitea.tftsr.com:8085` | nginx reverse proxy |
 | PostgreSQL (Gitea DB) | Container: `gogs_postgres_db` | DB: `gogsdb`, User: `gogs` |
-
-**CI/CD System:** Gitea Actions (v1.22+) with native GitHub Actions API compatibility. Uses `.gitea/workflows/*.yml` for workflow definitions.
 
 ### CI Agents
 
 | Agent | Platform | Host | Purpose |
 |-------|----------|------|---------|
-| `gitea_act_runner_amd64` (Docker) | `linux-amd64` | 172.0.0.29 | Native x86_64 — test builds + amd64/windows release |
-| `act_runner` (systemd) | `linux-arm64` | 172.0.0.29 | Native aarch64 — arm64 release builds |
+| `gitea_act_runner_amd64` (Docker) | `linux-amd64` | gitea.tftsr.com | Native x86_64 — test builds + amd64/windows release |
+| `act_runner` (systemd) | `linux-arm64` | gitea.tftsr.com | Native aarch64 — arm64 release builds |
 | `act_runner` (launchd) | `macos-arm64` | sarman's local Mac | Native Apple Silicon — macOS `.dmg` release builds |
 
 Agent labels configured in `~/.config/act_runner/config.yaml`:
@@ -31,25 +30,25 @@ macOS runner runs jobs **directly on the host** (no Docker container) — macOS 
 ## Pre-baked Builder Images
 
 CI build and test jobs use pre-baked Docker images pushed to the local Gitea registry
-at `172.0.0.29:3000`. These images bake in all system dependencies (Tauri libs, Node.js,
+at `gitea.tftsr.com:3000`. These images bake in all system dependencies (Tauri libs, Node.js,
 Rust toolchain, cross-compilers) so that CI jobs skip package installation entirely.
 
 | Image | Used by jobs | Contents |
 |-------|-------------|----------|
-| `172.0.0.29:3000/sarman/tftsr-linux-amd64:rust1.88-node22` | `rust-fmt-check`, `rust-clippy`, `rust-tests`, `build-linux-amd64` | Rust 1.88 + rustfmt + clippy + Tauri amd64 libs + Node.js 22 |
-| `172.0.0.29:3000/sarman/tftsr-windows-cross:rust1.88-node22` | `build-windows-amd64` | Rust 1.88 + mingw-w64 + NSIS + Node.js 22 |
-| `172.0.0.29:3000/sarman/tftsr-linux-arm64:rust1.88-node22` | `build-linux-arm64` | Rust 1.88 + aarch64 cross-toolchain + arm64 multiarch libs + Node.js 22 |
+| `gitea.tftsr.com:3000/sarman/trcaa-linux-amd64:rust1.88-node22` | `rust-fmt-check`, `rust-clippy`, `rust-tests`, `build-linux-amd64` | Rust 1.88 + rustfmt + clippy + Tauri amd64 libs + Node.js 22 |
+| `gitea.tftsr.com:3000/sarman/trcaa-windows-cross:rust1.88-node22` | `build-windows-amd64` | Rust 1.88 + mingw-w64 + NSIS + Node.js 22 |
+| `gitea.tftsr.com:3000/sarman/trcaa-linux-arm64:rust1.88-node22` | `build-linux-arm64` | Rust 1.88 + aarch64 cross-toolchain + arm64 multiarch libs + Node.js 22 |
 
 **Rebuild triggers:** Rust toolchain version bump, webkit2gtk/gtk major version change, Node.js major version change.
 
 **How to rebuild images:**
 1. Trigger `build-images.yml` via `workflow_dispatch` in the Gitea Actions UI
-2. Confirm all 3 images appear in the Gitea package/container registry at `172.0.0.29:3000`
+2. Confirm all 3 images appear in the Gitea package/container registry at `gitea.tftsr.com:3000`
 3. Only then merge workflow changes that depend on the new image contents
 
-**Server prerequisite — insecure registry** (one-time, on 172.0.0.29):
+**Server prerequisite — insecure registry** (one-time, on gitea.tftsr.com):
 ```sh
-echo '{"insecure-registries":["172.0.0.29:3000"]}' | sudo tee /etc/docker/daemon.json
+echo '{"insecure-registries":["gitea.tftsr.com:3000"]}' | sudo tee /etc/docker/daemon.json
 sudo systemctl restart docker
 ```
 This must be configured on every machine running an act_runner for the runner's Docker
@@ -107,7 +106,7 @@ Pipeline jobs (run in parallel):
 ```
 
 **Docker images used:**
-- `172.0.0.29:3000/sarman/tftsr-linux-amd64:rust1.88-node22` — Rust steps (replaces `rust:1.88-slim`)
+- `gitea.tftsr.com:3000/sarman/trcaa-linux-amd64:rust1.88-node22` — Rust steps (replaces `rust:1.88-slim`)
 - `node:22-alpine` — Frontend steps
 
 ---
@@ -121,22 +120,22 @@ Release jobs are executed in the same workflow and depend on `autotag` completio
 
 ```
 Jobs (run in parallel after autotag):
-  build-linux-amd64   → image: tftsr-linux-amd64:rust1.88-node22
+  build-linux-amd64   → image: trcaa-linux-amd64:rust1.88-node22
                          → cargo tauri build (x86_64-unknown-linux-gnu)
                          → {.deb, .rpm, .AppImage} uploaded to Gitea release
                          → fails fast if no Linux artifacts are produced
-  build-windows-amd64 → image: tftsr-windows-cross:rust1.88-node22
+  build-windows-amd64 → image: trcaa-windows-cross:rust1.88-node22
                          → cargo tauri build (x86_64-pc-windows-gnu) via mingw-w64
                          → {.exe, .msi} uploaded to Gitea release
                          → fails fast if no Windows artifacts are produced
-  build-linux-arm64   → image: tftsr-linux-arm64:rust1.88-node22 (ubuntu:22.04-based)
+  build-linux-arm64   → image: trcaa-linux-arm64:rust1.88-node22 (ubuntu:22.04-based)
                          → cargo tauri build (aarch64-unknown-linux-gnu)
                          → {.deb, .rpm, .AppImage} uploaded to Gitea release
                          → fails fast if no Linux artifacts are produced
   build-macos-arm64   → cargo tauri build (aarch64-apple-darwin) — runs on local Mac
                          → {.dmg} uploaded to Gitea release
                          → existing same-name assets are deleted before upload (rerun-safe)
-                         → unsigned; after install run: xattr -cr /Applications/TFTSR.app
+                         → unsigned; after install run: xattr -cr /Applications/TRCAA.app
 ```
 
 **Per-step agent routing (Woodpecker 2.x labels):**
@@ -145,7 +144,7 @@ Jobs (run in parallel after autotag):
 steps:
   - name: build-linux-amd64
     labels:
-      platform: linux/amd64   # → woodpecker_agent on 172.0.0.29
+      platform: linux/amd64   # → woodpecker_agent on gitea.tftsr.com
 
   - name: build-linux-arm64
     labels:
@@ -155,7 +154,7 @@ steps:
 **Multi-agent workspace isolation:**
 
 Steps routed to different agents do **not** share a workspace. The arm64 step clones
-the repo directly within its commands (using `http://172.0.0.29:3000`, accessible from
+the repo directly within its commands (using `http://gitea.tftsr.com:3000`, accessible from
 the local machine) and uploads its artifacts inline. The `upload-release` step (amd64)
 handles amd64 + windows artifacts only.
 
@@ -168,7 +167,7 @@ clone:
     network_mode: gogs_default
     commands:
       - git init -b master
-      - git remote add origin http://gitea_app:3000/sarman/tftsr-devops_investigation.git
+      - git remote add origin http://gitea_app:3000/sarman/trcaa-devops_investigation.git
       - git fetch --depth=1 origin +refs/tags/${CI_COMMIT_TAG}:refs/tags/${CI_COMMIT_TAG}
       - git checkout ${CI_COMMIT_TAG}
 ```
@@ -203,14 +202,14 @@ migration. The secret name stays `GOGS_TOKEN` for pipeline compatibility.
 **Gitea Release API (replaces Gogs API — same endpoints, different container name):**
 ```bash
 # Create release
-POST http://gitea_app:3000/api/v1/repos/sarman/tftsr-devops_investigation/releases
+POST http://gitea_app:3000/api/v1/repos/sarman/trcaa-devops_investigation/releases
 Authorization: token $GOGS_TOKEN
 
 # Upload artifact
-POST http://gitea_app:3000/api/v1/repos/sarman/tftsr-devops_investigation/releases/{id}/assets
+POST http://gitea_app:3000/api/v1/repos/sarman/trcaa-devops_investigation/releases/{id}/assets
 ```
 
-From the arm64 agent (local machine), use `http://172.0.0.29:3000/api/v1` instead.
+From the arm64 agent (local machine), use `http://gitea.tftsr.com:3000/api/v1` instead.
 
 ---
 
@@ -235,8 +234,8 @@ No DB config path switching needed (unlike Woodpecker 0.15.4).
 After migration, Woodpecker 2.x registers webhooks automatically when a repo is
 activated via the UI. No manual JWT-signed webhook setup required.
 
-1. Log in at `http://172.0.0.29:8085` via Gitea OAuth2
-2. Add repo `sarman/tftsr-devops_investigation`
+1. Log in at `http://gitea.tftsr.com:8085` via Gitea OAuth2
+2. Add repo `sarman/trcaa-devops_investigation`
 3. Woodpecker creates webhook in Gitea automatically
 
 ---
@@ -319,7 +318,7 @@ There are no cross-arch index overlaps and the dependency resolver succeeds. Rus
 installed manually via `rustup` since it is not pre-installed in the Ubuntu base image.
 
 ### Step Containers Cannot Reach `gitea_app`
-Default Docker bridge containers cannot resolve `gitea_app` or reach `172.0.0.29:3000`
+Default Docker bridge containers cannot resolve `gitea_app` or reach `gitea.tftsr.com:3000`
 (host firewall). Fix: use `network_mode: gogs_default` in any step that needs Gitea
 access. Requires `repo_trusted=1`.
 
