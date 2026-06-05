@@ -453,11 +453,7 @@ impl OpenAiProvider {
                                     });
 
                                 if let Some(args) = arguments {
-                                    tracing::info!(
-                                        "GenAI: Parsed tool call: {} ({})",
-                                        name,
-                                        id
-                                    );
+                                    tracing::info!("GenAI: Parsed tool call: {} ({})", name, id);
                                     return Some(crate::ai::ToolCall {
                                         id: id.to_string(),
                                         name: name.to_string(),

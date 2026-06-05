@@ -35,16 +35,6 @@ jobs:
           apt-get update && apt-get install -y curl
           curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
           apt-get install -y nodejs
-      - name: Cache cargo registry
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry/index
-            ~/.cargo/registry/cache
-            ~/.cargo/git/db
-          key: ${{ runner.os }}-cargo-linux-amd64-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-linux-amd64-
       - name: Install dependencies
         run: npm install --legacy-peer-deps
       - name: Update version from Git
@@ -75,16 +65,6 @@ jobs:
             echo "Fetched fallback ref: master"
           fi
           git checkout FETCH_HEAD
-      - name: Cache cargo registry
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry/index
-            ~/.cargo/registry/cache
-            ~/.cargo/git/db
-          key: ${{ runner.os }}-cargo-linux-amd64-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-linux-amd64-
       - run: cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
 
   rust-tests:
@@ -110,16 +90,6 @@ jobs:
             echo "Fetched fallback ref: master"
           fi
           git checkout FETCH_HEAD
-      - name: Cache cargo registry
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry/index
-            ~/.cargo/registry/cache
-            ~/.cargo/git/db
-          key: ${{ runner.os }}-cargo-linux-amd64-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-linux-amd64-
       - run: cargo test --manifest-path src-tauri/Cargo.toml -- --test-threads=1
 
       - name: Run shell module tests
