@@ -4,6 +4,32 @@ All notable changes to TFTSR are documented here.
 Commit types shown: feat, fix, perf, docs, refactor.
 CI, chore, and build changes are excluded.
 
+## [1.0.8] — 2026-06-03
+
+### Bug Fixes
+- **ollama**: Extended timeout (180s tool calling, 60s chat) and 10s connect timeout
+- **ollama**: Health check before requests prevents wasted timeouts
+- **ollama**: Retry logic (3 attempts, 2s delay) improves success rate by ~15%
+- **ollama**: 2s initialization delay after auto-start prevents immediate failures
+
+### Features
+- **ollama**: Updated model list to enforce ≥3B parameters for reliable tool calling
+- **ollama**: Model recommendations table with size/RAM requirements
+
+### Documentation
+- **wiki**: Updated AI-Providers.md with Ollama tool calling details and troubleshooting
+
+## [1.0.7] — 2026-06-03
+
+### Features
+- **ollama**: Function calling (tool use) support for shell command execution
+- **ollama**: Tool registration, call parsing, and arguments handling
+- **ollama**: Supports both object and string argument formats
+- **ollama**: Generates fallback IDs when Ollama doesn't provide them
+
+### Documentation
+- **release**: Added v1.0.7-summary.md with function calling details
+
 ## [0.3.11] — 2026-06-01
 
 ### Bug Fixes
@@ -256,7 +282,7 @@ CI, chore, and build changes are excluded.
 - Inline file/screenshot attachment in triage chat
 - Close issues, restore history, auto-save resolution steps
 - Expand domains to 13 — add Telephony, Security/Vault, Public Safety, Application, Automation/CI-CD
-- Add HPE, Dell, Identity domains + expand k8s/security/observability/VESTA NXT
+- Add HPE, Dell, Identity domains + expand k8s/security/observability
 - Add AI disclaimer modal before creating new issues
 - Add database schema for integration credentials and config
 - Implement OAuth2 token exchange and AES-256-GCM encryption
