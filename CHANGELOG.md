@@ -4,6 +4,12 @@ All notable changes to TRCAA are documented here.
 Commit types shown: feat, fix, perf, docs, refactor.
 CI, chore, and build changes are excluded.
 
+## [Unreleased]
+
+### Bug Fixes
+- Align Tauri npm packages with Rust crate versions
+- Pin plugin-stronghold npm version to match Rust crate (2.3.1)
+
 ## [0.3.12] — 2026-06-05
 
 ### Bug Fixes
