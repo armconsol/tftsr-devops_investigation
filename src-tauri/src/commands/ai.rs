@@ -553,6 +553,79 @@ pub async fn test_provider_connection(
 }
 
 #[tauri::command]
+pub async fn detect_tool_calling_support(provider_config: ProviderConfig) -> Result<bool, String> {
+    use crate::ai::{Tool, ToolParameters};
+    use std::collections::HashMap;
+    use tracing::info;
+
+    // Create a simple test tool
+    let test_tool = Tool {
+        name: "test_tool".to_string(),
+        description: "A test tool that returns 'success'. Call this tool with no arguments."
+            .to_string(),
+        parameters: ToolParameters {
+            param_type: "object".to_string(),
+            properties: HashMap::new(),
+            required: vec![],
+        },
+    };
+
+    // Override config with detection-optimized settings
+    let mut detection_config = provider_config.clone();
+    detection_config.max_tokens = Some(100); // Small budget for capability check
+    detection_config.temperature = Some(0.0); // Deterministic for reliability
+
+    let provider = create_provider(&detection_config);
+    let messages = vec![Message {
+        role: "user".into(),
+        content: "Please call the test_tool function.".into(),
+        tool_call_id: None,
+        tool_calls: None,
+    }];
+
+    match provider
+        .chat(messages, &detection_config, Some(vec![test_tool]))
+        .await
+    {
+        Ok(response) => {
+            // Check if response contains tool_calls
+            if let Some(tool_calls) = response.tool_calls {
+                if tool_calls.iter().any(|tc| tc.name == "test_tool") {
+                    info!(
+                        "Tool calling support detected for provider {}",
+                        provider_config.name
+                    );
+                    return Ok(true);
+                }
+            }
+            // Provider responded but didn't use tool calls
+            info!(
+                "Provider {} responded but did not call tool",
+                provider_config.name
+            );
+            Ok(false)
+        }
+        Err(e) => {
+            // Check if error indicates tool calling is not supported
+            let error_msg = e.to_string().to_lowercase();
+            if error_msg.contains("tool")
+                || error_msg.contains("function")
+                || error_msg.contains("503")
+            {
+                info!(
+                    "Tool calling not supported for provider {}: {}",
+                    provider_config.name, e
+                );
+                Ok(false)
+            } else {
+                // Connection or other error
+                Err(format!("Failed to test tool calling support: {e}"))
+            }
+        }
+    }
+}
+
+#[tauri::command]
 pub async fn list_providers() -> Result<Vec<ProviderInfo>, String> {
     Ok(vec![
         ProviderInfo {

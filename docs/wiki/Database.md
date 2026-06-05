@@ -389,6 +389,96 @@ CREATE VIEW IF NOT EXISTS v_image_attachments_with_issue AS
 
 Used by `list_all_log_files` and `list_all_image_attachments` to power the cross-incident Attachments tab in the History page. Explicitly selects named columns (not `SELECT *`) to avoid including the BLOB data in list queries.
 
+### 023 — MCP Resources table (MCP Integration v0.3.0+)
+
+```sql
+CREATE TABLE IF NOT EXISTS mcp_resources (
+    id TEXT PRIMARY KEY,
+    server_id TEXT NOT NULL,
+    uri TEXT NOT NULL,
+    name TEXT NOT NULL,
+    description TEXT,
+    mime_type TEXT,
+    discovered_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY(server_id) REFERENCES mcp_servers(id) ON DELETE CASCADE
+);
+CREATE INDEX idx_mcp_resources_server ON mcp_resources(server_id);
+```
+
+Stores resources (files, data sources) exposed by MCP servers for AI agent access.
+
+### 024 — shell_commands table (Shell Execution v1.0.0+)
+
+```sql
+CREATE TABLE IF NOT EXISTS shell_commands (
+    id TEXT PRIMARY KEY,
+    command_template TEXT NOT NULL,
+    tier INTEGER NOT NULL CHECK(tier IN (1, 2, 3)),
+    description TEXT,
+    category TEXT NOT NULL,  -- 'kubectl', 'proxmox', 'general'
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+```
+
+Pre-defined command templates with tier classification for the three-tier safety system. See [[Shell-Execution]] for details.
+
+### 025 — kubeconfig_files table (Shell Execution v1.0.0+)
+
+```sql
+CREATE TABLE IF NOT EXISTS kubeconfig_files (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    encrypted_content TEXT NOT NULL,
+    context TEXT NOT NULL,
+    cluster_url TEXT,
+    is_active INTEGER NOT NULL DEFAULT 0,
+    uploaded_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX idx_kubeconfig_active ON kubeconfig_files(is_active);
+```
+
+Encrypted storage for kubectl configuration files. Content encrypted with AES-256-GCM. Only one config can be active at a time.
+
+### 026 — command_executions table (Shell Execution v1.0.0+)
+
+```sql
+CREATE TABLE IF NOT EXISTS command_executions (
+    id TEXT PRIMARY KEY,
+    issue_id TEXT,
+    command TEXT NOT NULL,
+    tier INTEGER NOT NULL,
+    approval_status TEXT NOT NULL,  -- 'auto', 'approved', 'denied'
+    kubeconfig_id TEXT,
+    exit_code INTEGER,
+    stdout TEXT,
+    stderr TEXT,
+    execution_time_ms INTEGER,
+    executed_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (issue_id) REFERENCES issues(id) ON DELETE CASCADE,
+    FOREIGN KEY (kubeconfig_id) REFERENCES kubeconfig_files(id) ON DELETE SET NULL
+);
+CREATE INDEX idx_command_executions_issue ON command_executions(issue_id);
+CREATE INDEX idx_command_executions_executed ON command_executions(executed_at);
+```
+
+Complete audit trail of all shell command executions with exit codes, stdout/stderr capture, and execution timing.
+
+### 027 — approval_decisions table (Shell Execution v1.0.0+)
+
+```sql
+CREATE TABLE IF NOT EXISTS approval_decisions (
+    id TEXT PRIMARY KEY,
+    command_pattern TEXT NOT NULL,
+    decision TEXT NOT NULL CHECK(decision IN ('allow_once', 'allow_session', 'deny')),
+    session_id TEXT,
+    decided_at TEXT NOT NULL DEFAULT (datetime('now')),
+    expires_at TEXT
+);
+CREATE INDEX idx_approval_decisions_session ON approval_decisions(session_id);
+```
+
+Session-based approval preferences for Tier 2 commands. Allows users to approve similar commands for the duration of a session.
+
 ---
 
 ## Key Design Notes

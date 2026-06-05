@@ -28,6 +28,20 @@ Node **v22** required. Install via nvm or system package manager.
 npm install --legacy-peer-deps
 ```
 
+### kubectl Binary (for Shell Execution)
+
+kubectl v1.30.0 is bundled with the application. To download binaries for development:
+
+```bash
+./scripts/download-kubectl.sh linux amd64
+./scripts/download-kubectl.sh linux arm64
+./scripts/download-kubectl.sh darwin arm64
+./scripts/download-kubectl.sh darwin amd64
+./scripts/download-kubectl.sh windows amd64
+```
+
+Binaries are placed in `binaries/kubectl-{os}-{arch}` and bundled via `tauri.conf.json` resources. See [[Shell-Execution]] for runtime usage details.
+
 ---
 
 ## Environment Variables
