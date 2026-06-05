@@ -117,6 +117,9 @@ jobs:
             ${{ runner.os }}-cargo-linux-amd64-
       - run: cargo test --manifest-path src-tauri/Cargo.toml -- --test-threads=1
 
+      - name: Run shell module tests
+        run: cargo test --manifest-path src-tauri/Cargo.toml shell:: -- --test-threads=1
+
   frontend-typecheck:
     runs-on: ubuntu-latest
     container:
