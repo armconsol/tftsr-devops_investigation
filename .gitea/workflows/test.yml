@@ -10,7 +10,7 @@ jobs:
   rust-fmt-check:
     runs-on: ubuntu-latest
     container:
-      image: gitea.tftsr.com:3000/sarman/trcaa-linux-amd64:rust1.88-node22
+      image: rust:1.82-bookworm
     steps:
       - name: Checkout
         run: |
@@ -40,6 +40,11 @@ jobs:
           key: ${{ runner.os }}-cargo-linux-amd64-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-linux-amd64-
+      - name: Install Node.js
+        run: |
+          apt-get update && apt-get install -y curl
+          curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+          apt-get install -y nodejs
       - name: Install dependencies
         run: npm install --legacy-peer-deps
       - name: Update version from Git
@@ -50,7 +55,7 @@ jobs:
   rust-clippy:
     runs-on: ubuntu-latest
     container:
-      image: gitea.tftsr.com:3000/sarman/trcaa-linux-amd64:rust1.88-node22
+      image: rust:1.82-bookworm
     steps:
       - name: Checkout
         run: |
@@ -85,7 +90,7 @@ jobs:
   rust-tests:
     runs-on: ubuntu-latest
     container:
-      image: gitea.tftsr.com:3000/sarman/trcaa-linux-amd64:rust1.88-node22
+      image: rust:1.82-bookworm
     steps:
       - name: Checkout
         run: |
