@@ -333,7 +333,9 @@ pub async fn initiate_oauth(
                 app_data_dir,
                 integration_webviews,
                 mcp_connections,
-                pending_approvals: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
+                pending_approvals: Arc::new(tokio::sync::Mutex::new(
+                    std::collections::HashMap::new(),
+                )),
             };
             while let Some(callback) = callback_rx.recv().await {
                 tracing::info!("Received OAuth callback for state: {}", callback.state);

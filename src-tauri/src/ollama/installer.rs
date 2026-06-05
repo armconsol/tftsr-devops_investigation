@@ -250,9 +250,7 @@ pub async fn start_ollama_service() -> anyhow::Result<bool> {
         // On Windows, Ollama runs as a service, check if we can start it
         tracing::info!("Attempting to start Ollama on Windows...");
         if let Some(ollama_bin) = find_ollama_binary() {
-            let result = std::process::Command::new(&ollama_bin)
-                .arg("serve")
-                .spawn();
+            let result = std::process::Command::new(&ollama_bin).arg("serve").spawn();
 
             match result {
                 Ok(_) => {
