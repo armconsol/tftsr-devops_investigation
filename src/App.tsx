@@ -30,6 +30,9 @@ import Ollama from "@/pages/Settings/Ollama";
 import Integrations from "@/pages/Settings/Integrations";
 import MCPServers from "@/pages/Settings/MCPServers";
 import Security from "@/pages/Settings/Security";
+import ShellExecution from "@/pages/Settings/ShellExecution";
+import KubeconfigManager from "@/pages/Settings/KubeconfigManager";
+import { ShellApprovalModal } from "@/components/ShellApprovalModal";
 
 const navItems = [
   { to: "/", icon: Home, label: "Dashboard" },
@@ -177,9 +180,12 @@ export default function App() {
             <Route path="/settings/integrations" element={<Integrations />} />
             <Route path="/settings/mcp" element={<MCPServers />} />
             <Route path="/settings/security" element={<Security />} />
+            <Route path="/settings/shell-execution" element={<ShellExecution />} />
+            <Route path="/settings/kubeconfig" element={<KubeconfigManager />} />
           </Routes>
         </main>
       </div>
+      <ShellApprovalModal />
     </div>
   );
 }
