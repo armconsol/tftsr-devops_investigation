@@ -100,7 +100,7 @@ describe("Dockerfile.linux-arm64", () => {
 // ─── build-images.yml workflow ───────────────────────────────────────────────
 
 describe("build-images.yml workflow", () => {
-  const wf = readFile(".github/workflows/build-images.yml");
+  const wf = readFile(".gitea/workflows/build-images.yml");
 
   it("triggers on changes to .docker/ files on main", () => {
     expect(wf).toContain("- main");
