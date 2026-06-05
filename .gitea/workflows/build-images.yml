@@ -1,21 +1,21 @@
 name: Build CI Docker Images
 
 # Rebuilds the pre-baked builder images and pushes them to the local Gitea
-# container registry (gitea.tftsr.com:3000).
+# container registry (172.0.0.29:3000).
 #
 # WHEN TO RUN:
 #   - Automatically: whenever a Dockerfile under .docker/ changes on master.
 #   - Manually: via workflow_dispatch (e.g. first-time setup, forced rebuild).
 #
 # ONE-TIME SERVER PREREQUISITE (run once on gitea.tftsr.com before first use):
-#   echo '{"insecure-registries":["gitea.tftsr.com:3000"]}' \
+#   echo '{"insecure-registries":["172.0.0.29:3000"]}' \
 #     | sudo tee /etc/docker/daemon.json
 #   sudo systemctl restart docker
 #
 # Images produced:
-#   gitea.tftsr.com:3000/sarman/trcaa-linux-amd64:rust1.88-node22
-#   gitea.tftsr.com:3000/sarman/trcaa-windows-cross:rust1.88-node22
-#   gitea.tftsr.com:3000/sarman/trcaa-linux-arm64:rust1.88-node22
+#   172.0.0.29:3000/sarman/trcaa-linux-amd64:rust1.88-node22
+#   172.0.0.29:3000/sarman/trcaa-windows-cross:rust1.88-node22
+#   172.0.0.29:3000/sarman/trcaa-linux-arm64:rust1.88-node22
 
 on:
   push:
@@ -30,7 +30,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  REGISTRY: gitea.tftsr.com:3000
+  REGISTRY: 172.0.0.29:3000
   REGISTRY_USER: sarman
 
 jobs:
@@ -43,7 +43,7 @@ jobs:
         run: |
           apk add --no-cache git docker-cli
           git init
-          git remote add origin http://gitea.tftsr.com:3000/sarman/tftsr-devops_investigation.git
+          git remote add origin http://172.0.0.29:3000/sarman/tftsr-devops_investigation.git
           git fetch --depth=1 origin "$GITHUB_SHA"
           git checkout FETCH_HEAD
       - name: Build and push linux-amd64 builder
@@ -66,7 +66,7 @@ jobs:
         run: |
           apk add --no-cache git docker-cli
           git init
-          git remote add origin http://gitea.tftsr.com:3000/sarman/tftsr-devops_investigation.git
+          git remote add origin http://172.0.0.29:3000/sarman/tftsr-devops_investigation.git
           git fetch --depth=1 origin "$GITHUB_SHA"
           git checkout FETCH_HEAD
       - name: Build and push windows-cross builder
@@ -89,7 +89,7 @@ jobs:
         run: |
           apk add --no-cache git docker-cli
           git init
-          git remote add origin http://gitea.tftsr.com:3000/sarman/tftsr-devops_investigation.git
+          git remote add origin http://172.0.0.29:3000/sarman/tftsr-devops_investigation.git
           git fetch --depth=1 origin "$GITHUB_SHA"
           git checkout FETCH_HEAD
       - name: Build and push linux-arm64 builder
