@@ -35,7 +35,7 @@ impl Provider for OpenAiProvider {
         config: &ProviderConfig,
         tools: Option<Vec<crate::ai::Tool>>,
     ) -> anyhow::Result<ChatResponse> {
-        // Check if using TFTSR GenAI format (or legacy custom_rest)
+        // Check if using GenAI format (or legacy custom_rest)
         let api_format = config.api_format.as_deref().unwrap_or("openai");
 
         if is_msi_genai_format(Some(api_format)) {
@@ -294,9 +294,9 @@ impl OpenAiProvider {
         })
     }
 
-    /// TFTSR GenAI format (non-OpenAI payload contract)
+    /// GenAI format (non-OpenAI payload contract)
     ///
-    /// TFTSR GenAI uses a custom API format with 'prompt' field instead of 'messages',
+    /// GenAI uses a custom API format with 'prompt' field instead of 'messages',
     /// and has a known bug where tool calls are returned as JSON text in the 'msg'
     /// field instead of structured 'tool_calls' array. This implementation includes
     /// workaround parsing to extract tool calls from text.
@@ -381,7 +381,7 @@ impl OpenAiProvider {
             body["tools"] = serde_json::Value::from(formatted_tools);
             body["tool_choice"] = serde_json::Value::from("auto");
 
-            tracing::info!("TFTSR GenAI: Sending {} tools in request", tool_count);
+            tracing::info!("GenAI: Sending {} tools in request", tool_count);
         }
 
         // Use custom auth header and prefix (no default prefix for custom REST)
@@ -403,13 +403,13 @@ impl OpenAiProvider {
         if !resp.status().is_success() {
             let status = resp.status();
             let text = resp.text().await?;
-            anyhow::bail!("TFTSR GenAI API error {status}: {text}");
+            anyhow::bail!("GenAI API error {status}: {text}");
         }
 
         let json: serde_json::Value = resp.json().await?;
 
         tracing::debug!(
-            "TFTSR GenAI response: {}",
+            "GenAI response: {}",
             serde_json::to_string_pretty(&json).unwrap_or_else(|_| "invalid JSON".to_string())
         );
 
@@ -438,7 +438,7 @@ impl OpenAiProvider {
                                     .and_then(|n| n.as_str())
                                     .or_else(|| call.get("name").and_then(|n| n.as_str())),
                             ) {
-                                // Accept arguments as either string or object (TFTSR GenAI returns both)
+                                // Accept arguments as either string or object (GenAI returns both)
                                 let arguments = call
                                     .get("function")
                                     .and_then(|f| f.get("arguments"))
@@ -454,7 +454,7 @@ impl OpenAiProvider {
 
                                 if let Some(args) = arguments {
                                     tracing::info!(
-                                        "TFTSR GenAI: Parsed tool call: {} ({})",
+                                        "GenAI: Parsed tool call: {} ({})",
                                         name,
                                         id
                                     );
@@ -486,7 +486,7 @@ impl OpenAiProvider {
                                         .map(|s| s.to_string())
                                         .unwrap_or_else(|| format!("tool_call_{index}"));
                                     tracing::info!(
-                                        "TFTSR GenAI: Parsed tool call (simple format): {} ({})",
+                                        "GenAI: Parsed tool call (simple format): {} ({})",
                                         name,
                                         id
                                     );
@@ -498,14 +498,14 @@ impl OpenAiProvider {
                                 }
                             }
 
-                            tracing::warn!("TFTSR GenAI: Failed to parse tool call: {:?}", call);
+                            tracing::warn!("GenAI: Failed to parse tool call: {:?}", call);
                             None
                         })
                         .collect();
                     if calls.is_empty() {
                         None
                     } else {
-                        tracing::info!("TFTSR GenAI: Found {} tool calls", calls.len());
+                        tracing::info!("GenAI: Found {} tool calls", calls.len());
                         Some(calls)
                     }
                 } else {
@@ -520,7 +520,7 @@ impl OpenAiProvider {
             // Try parsing tool calls from msg content (GenAI workaround)
             if let Some(parsed_calls) = Self::parse_tool_calls_from_text(&content) {
                 tracing::warn!(
-                    "TFTSR GenAI: GenAI workaround - parsed {} tool calls from msg text (gateway should return structured tool_calls field)",
+                    "GenAI: GenAI workaround - parsed {} tool calls from msg text (gateway should return structured tool_calls field)",
                     parsed_calls.len()
                 );
                 tool_calls = Some(parsed_calls);

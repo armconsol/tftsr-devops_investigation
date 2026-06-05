@@ -40,7 +40,7 @@ Use **Zustand** for all three state categories, with selective persistence via `
 - Session is per-issue; loading a different issue should reset all session state
 - `reset()` method called on navigation away from triage
 
-**`settingsStore`** — Persisted to localStorage as `"tftsr-settings"`:
+**`settingsStore`** — Persisted to localStorage as `"trcaa-settings"`:
 - Theme, active provider, PII pattern toggles — user preference, should survive restart
 - AI providers themselves are NOT persisted here — only `active_provider` string
 - Actual `ProviderConfig` (with encrypted API keys) lives in the backend DB, loaded via `load_ai_providers()`
@@ -59,7 +59,7 @@ The settings store persists to localStorage:
 persist(
   (set, get) => ({ ...storeImpl }),
   {
-    name: 'tftsr-settings',
+    name: 'trcaa-settings',
     partialize: (state) => ({
       theme: state.theme,
       active_provider: state.active_provider,

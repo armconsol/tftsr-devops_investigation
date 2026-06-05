@@ -5,8 +5,8 @@
 | Component | URL | Notes |
 |-----------|-----|-------|
 | Gitea | `https://gogs.tftsr.com` / `http://172.0.0.29:3000` | Git server (migrated from Gogs 0.14) |
-| Woodpecker CI (direct) | `http://gitea.tftsr.com:8084` | v2.x |
-| Woodpecker CI (proxy) | `http://gitea.tftsr.com:8085` | nginx reverse proxy |
+| Gitea Actions (direct) | `http://gitea.tftsr.com:8084` | v2.x |
+| Gitea Actions (proxy) | `http://gitea.tftsr.com:8085` | nginx reverse proxy |
 | PostgreSQL (Gitea DB) | Container: `gogs_postgres_db` | DB: `gogsdb`, User: `gogs` |
 
 ### CI Agents
@@ -59,7 +59,7 @@ daemon to pull from the local HTTP registry.
 ## Cargo and npm Caching
 
 All Rust and build jobs use `actions/cache@v3` to cache downloaded package artifacts.
-Gitea 1.22 implements the GitHub Actions cache API natively.
+Gitea 1.22 implements the Gitea Actions cache API natively.
 
 **Cargo cache** (Rust jobs):
 ```yaml

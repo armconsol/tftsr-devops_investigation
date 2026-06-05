@@ -111,16 +111,16 @@ describe("build-images.yml workflow", () => {
     expect(wf).toContain("workflow_dispatch:");
   });
 
-  it("authenticates to ghcr.io before pushing", () => {
-    expect(wf).toContain("docker login ghcr.io");
+  it("authenticates to 172.0.0.29:3000 before pushing", () => {
+    expect(wf).toContain("docker login 172.0.0.29:3000");
     expect(wf).toContain("--password-stdin");
-    expect(wf).toContain("ghcr.io");
+    expect(wf).toContain("172.0.0.29:3000");
   });
 
-  it("builds and pushes all three platform images to ghcr.io", () => {
-    expect(wf).toContain("ghcr.io/tftsr/trcaa-linux-amd64:rust1.88-node22");
-    expect(wf).toContain("ghcr.io/tftsr/trcaa-windows-cross:rust1.88-node22");
-    expect(wf).toContain("ghcr.io/tftsr/trcaa-linux-arm64:rust1.88-node22");
+  it("builds and pushes all three platform images to 172.0.0.29:3000", () => {
+    expect(wf).toContain("172.0.0.29:3000/tftsr/trcaa-linux-amd64:rust1.88-node22");
+    expect(wf).toContain("172.0.0.29:3000/tftsr/trcaa-windows-cross:rust1.88-node22");
+    expect(wf).toContain("172.0.0.29:3000/tftsr/trcaa-linux-arm64:rust1.88-node22");
   });
 
   it("runs all three build jobs on ubuntu-latest runner", () => {

@@ -1,4 +1,4 @@
-GOGS_REPO    := msicie/apollo_nxt-tftsr
+GOGS_REPO    := sarman/tftsr-devops_investigation
 TAG        ?= v0.1.0-alpha
 TARGET     := aarch64-unknown-linux-gnu
 

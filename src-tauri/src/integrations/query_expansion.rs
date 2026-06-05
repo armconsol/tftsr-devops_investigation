@@ -11,12 +11,12 @@ fn get_product_synonyms(query: &str) -> Vec<String> {
     let mut synonyms = Vec::new();
 
     // VESTA NXT related synonyms
-    if query.to_lowercase().contains("vesta") || query.to_lowercase().contains("vnxt") {
+    if query.to_lowercase().contains("vesta") || query.to_lowercase().contains("product") {
         synonyms.extend(vec![
             "VESTA NXT".to_string(),
             "DevOps Platform NXT".to_string(),
             "DevOps Tool".to_string(),
-            "vnxt".to_string(),
+            "product".to_string(),
             "DevOps Platform".to_string(),
             "vesta".to_string(),
             "VNX".to_string(),
@@ -248,7 +248,7 @@ mod tests {
         // Should contain product synonyms
         assert!(expanded
             .iter()
-            .any(|s| s.contains("vnxt") || s.contains("vnxt")));
+            .any(|s| s.contains("product") || s.contains("product")));
     }
 
     #[test]
@@ -279,7 +279,7 @@ mod tests {
         // Should contain DevOps Tool synonym
         assert!(synonyms
             .iter()
-            .any(|s| s.contains("DevOps Tool") || s.contains("vnxt")));
+            .any(|s| s.contains("DevOps Tool") || s.contains("product")));
     }
 
     #[test]
