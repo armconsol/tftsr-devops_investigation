@@ -105,7 +105,7 @@ pub fn activate_kubeconfig(id: String, state: State<'_, AppState>) -> Result<(),
         .map_err(|e| format!("Failed to activate config: {e}"))?;
 
     if rows_updated == 0 {
-        return Err(format!("Kubeconfig with id '{}' not found", id));
+        return Err(format!("Kubeconfig with id '{id}' not found"));
     }
 
     Ok(())
