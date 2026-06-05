@@ -39,9 +39,7 @@
       "icons/icon.ico"
     ],
     "resources": [],
-    "externalBin": [
-      "binaries/kubectl"
-    ],
+    "externalBin": [],
     "copyright": "Troubleshooting and RCA Assistant Contributors",
     "category": "Utility",
     "shortDescription": "Troubleshooting and RCA Assistant",
