@@ -97,11 +97,16 @@ pub fn activate_kubeconfig(id: String, state: State<'_, AppState>) -> Result<(),
         .map_err(|e| format!("Failed to deactivate configs: {e}"))?;
 
     // Activate the specified config
-    db.execute(
-        "UPDATE kubeconfig_files SET is_active = 1 WHERE id = ?1",
-        params![&id],
-    )
-    .map_err(|e| format!("Failed to activate config: {e}"))?;
+    let rows_updated = db
+        .execute(
+            "UPDATE kubeconfig_files SET is_active = 1 WHERE id = ?1",
+            params![&id],
+        )
+        .map_err(|e| format!("Failed to activate config: {e}"))?;
+
+    if rows_updated == 0 {
+        return Err(format!("Kubeconfig with id '{}' not found", id));
+    }
 
     Ok(())
 }
