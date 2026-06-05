@@ -104,6 +104,7 @@ pub fn run() {
             commands::ai::analyze_logs,
             commands::ai::chat_message,
             commands::ai::test_provider_connection,
+            commands::ai::detect_tool_calling_support,
             commands::ai::list_providers,
             commands::system::save_ai_provider,
             commands::system::load_ai_providers,
