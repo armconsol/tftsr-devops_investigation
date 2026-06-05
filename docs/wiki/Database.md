@@ -4,7 +4,7 @@
 
 TRCAA uses **SQLite** via `rusqlite` with the `bundled-sqlcipher` feature for AES-256 encryption in production. 22 versioned migrations are tracked in the `_migrations` table.
 
-**DB file location:** `{app_data_dir}/trcaa.db`
+**DB file location:** `{app_data_dir}/tftsr.db`
 
 ---
 

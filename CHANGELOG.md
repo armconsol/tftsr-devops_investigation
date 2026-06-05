@@ -168,10 +168,10 @@ CI, chore, and build changes are excluded.
 - Use bash shell and remove bash-only substring expansion in pr-review
 - Restore migration 014, bump version to 0.2.50, harden pr-review workflow
 - Harden pr-review workflow and sync versions to 0.2.50
-- Configure container DNS to resolve ollama-ui.trcaa.com
+- Configure container DNS to resolve ollama-ui.tftsr.com
 - Harden pr-review workflow — URLs, DNS, correctness and reliability
 - Resolve AI review false positives and address high/medium issues
-- Replace github.server_url with hardcoded gogs.trcaa.com for container access
+- Replace github.server_url with hardcoded gogs.tftsr.com for container access
 - Revert to two-dot diff — three-dot requires merge base unavailable in shallow clone
 - Harden pr-review workflow — secret redaction, log safety, auth header
 - **ci**: Address AI review — rustup idempotency and cargo --locked
@@ -251,7 +251,7 @@ CI, chore, and build changes are excluded.
 - Add multi-mode authentication for integrations (v0.2.10)
 - Complete webview cookie extraction implementation
 - Add custom_rest provider mode and rebrand application name
-- **rebrand**: Rename binary to trcaa and auto-generate DB key
+- **rebrand**: Rename binary to tftsr and auto-generate DB key
 - **ui**: Fix model dropdown, auth prefill, PII persistence, theme toggle, and Ollama bundle
 - **ci**: Add persistent pre-baked Docker builder images
 - **ai**: Add tool-calling and integration search as AI data source

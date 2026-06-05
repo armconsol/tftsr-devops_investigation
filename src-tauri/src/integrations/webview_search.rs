@@ -110,7 +110,7 @@ async fn search_confluence_from_webview<R: tauri::Runtime>(
     );
 
     // Execute JavaScript and store result in localStorage for retrieval
-    let storage_key = format!("__trcaa_search_{}__", uuid::Uuid::now_v7());
+    let storage_key = format!("__tftsr_search_{}__", uuid::Uuid::now_v7());
     let callback_script = format!(
         r#"
         {}

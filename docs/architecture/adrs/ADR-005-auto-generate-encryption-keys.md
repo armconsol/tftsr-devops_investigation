@@ -33,9 +33,9 @@ Auto-generate cryptographically secure 256-bit keys at first launch and persist 
 | Credentials | `.enckey` | `0600` (owner r/w only) | `$TRCAA_DATA_DIR/` |
 
 **Platform data directories:**
-- macOS: `~/Library/Application Support/trcaa/`
-- Linux: `~/.local/share/trcaa/`
-- Windows: `%APPDATA%\trcaa\`
+- macOS: `~/Library/Application Support/tftsr/`
+- Linux: `~/.local/share/tftsr/`
+- Windows: `%APPDATA%\tftsr\`
 
 ---
 

@@ -2,7 +2,7 @@
 
 **Troubleshooting and RCA Assistant** is a secure desktop application for guided IT incident triage, root cause analysis (RCA), and post-mortem documentation. Built with Tauri 2.x (Rust + WebView) and React 18.
 
-**CI:** ![build](http://gitea.tftsr.com:3000/sarman/trcaa-devops_investigation/actions/workflows/test.yml/badge.svg) — rustfmt · clippy · 64 Rust tests · tsc · vitest — all green
+**CI:** ![build](http://172.0.0.29:3000/sarman/tftsr-devops_investigation/actions/workflows/test.yml/badge.svg) — rustfmt · clippy · 64 Rust tests · tsc · vitest — all green
 
 ## Quick Navigation
 
@@ -45,7 +45,7 @@
 
 **Platforms:** linux/amd64 · linux/arm64 · windows/amd64 (.deb, .rpm, .AppImage, .exe, .msi)
 
-Download from [Releases](https://gogs.trcaa.com/sarman/trcaa-devops_investigation/releases). All builds are produced natively (no QEMU emulation).
+Download from [Releases](https://gogs.tftsr.com/sarman/tftsr-devops_investigation/releases). All builds are produced natively (no QEMU emulation).
 
 ## Project Status
 

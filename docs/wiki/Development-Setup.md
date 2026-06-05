@@ -40,9 +40,9 @@ npm install --legacy-peer-deps
 | `RUST_LOG` | `info` | Tracing verbosity: `debug`, `info`, `warn`, `error` |
 
 Application data is stored at:
-- **Linux:** `~/.local/share/trcaa/`
-- **macOS:** `~/Library/Application Support/trcaa/`
-- **Windows:** `%APPDATA%\trcaa\`
+- **Linux:** `~/.local/share/tftsr/`
+- **macOS:** `~/Library/Application Support/tftsr/`
+- **Windows:** `%APPDATA%\tftsr\`
 
 ---
 

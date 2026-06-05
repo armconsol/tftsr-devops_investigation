@@ -900,23 +900,23 @@ GitHub Copilot performed automated code review across 3 rounds with 10 findings 
 - **Parent Feature**: #744142
 
 ### GitHub
-- **Repository**: https://github.com/tftsr/apollo_nxt-trcaa
-- **PR #27**: https://github.com/tftsr/apollo_nxt-trcaa/pull/27 (v1.0.0 - Initial hackathon)
-- **PR #28**: https://github.com/tftsr/apollo_nxt-trcaa/pull/28 (v1.0.0 - Copilot fixes)
-- **PR #29**: https://github.com/tftsr/apollo_nxt-trcaa/pull/29 (v1.0.1 - Security updates)
-- **PR #31**: https://github.com/tftsr/apollo_nxt-trcaa/pull/31 (v1.0.2 - LiteLLM + bug fixes)
-- **PR #37**: https://github.com/tftsr/apollo_nxt-trcaa/pull/37 (v1.0.3 - Query classification)
-- **PR #38**: https://github.com/tftsr/apollo_nxt-trcaa/pull/38 (v1.0.4 - Graceful exit + TFTSR GenAI)
-- **PR #39**: https://github.com/tftsr/apollo_nxt-trcaa/pull/39 (v1.0.5 - Agent output + provider docs)
-- **PR #40**: https://github.com/tftsr/apollo_nxt-trcaa/pull/40 (v1.0.6 - JSON example removal)
-- **PR #41**: https://github.com/tftsr/apollo_nxt-trcaa/pull/41 (v1.0.7 - Ollama function calling)
+- **Repository**: https://github.com/tftsr/apollo_nxt-tftsr
+- **PR #27**: https://github.com/tftsr/apollo_nxt-tftsr/pull/27 (v1.0.0 - Initial hackathon)
+- **PR #28**: https://github.com/tftsr/apollo_nxt-tftsr/pull/28 (v1.0.0 - Copilot fixes)
+- **PR #29**: https://github.com/tftsr/apollo_nxt-tftsr/pull/29 (v1.0.1 - Security updates)
+- **PR #31**: https://github.com/tftsr/apollo_nxt-tftsr/pull/31 (v1.0.2 - LiteLLM + bug fixes)
+- **PR #37**: https://github.com/tftsr/apollo_nxt-tftsr/pull/37 (v1.0.3 - Query classification)
+- **PR #38**: https://github.com/tftsr/apollo_nxt-tftsr/pull/38 (v1.0.4 - Graceful exit + TFTSR GenAI)
+- **PR #39**: https://github.com/tftsr/apollo_nxt-tftsr/pull/39 (v1.0.5 - Agent output + provider docs)
+- **PR #40**: https://github.com/tftsr/apollo_nxt-tftsr/pull/40 (v1.0.6 - JSON example removal)
+- **PR #41**: https://github.com/tftsr/apollo_nxt-tftsr/pull/41 (v1.0.7 - Ollama function calling)
 - **Releases**: 
-  - v1.0.0: https://github.com/tftsr/apollo_nxt-trcaa/releases/tag/v1.0.0
+  - v1.0.0: https://github.com/tftsr/apollo_nxt-tftsr/releases/tag/v1.0.0
   - v1.0.1-v1.0.6: Merged, pending release build
   - v1.0.7: In review (PR #41)
 
 ### Documentation
-- **Wiki**: https://github.com/tftsr/apollo_nxt-trcaa/wiki/Shell-Execution
+- **Wiki**: https://github.com/tftsr/apollo_nxt-tftsr/wiki/Shell-Execution
 - **Architecture**: docs/architecture/
 - **CLAUDE.md**: Repository root
 - **TFTSR GenAI Bug Report**: /tmp/TFTSRGenAI-ToolCalling-Bug-Report.md

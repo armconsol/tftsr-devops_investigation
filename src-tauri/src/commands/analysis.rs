@@ -719,7 +719,7 @@ mod tests {
     #[test]
     fn test_validate_log_file_path_accepts_small_file() {
         let file_path =
-            std::env::temp_dir().join(format!("trcaa-analysis-test-{}.log", uuid::Uuid::now_v7()));
+            std::env::temp_dir().join(format!("tftsr-analysis-test-{}.log", uuid::Uuid::now_v7()));
         std::fs::write(&file_path, "hello").unwrap();
         let result = validate_log_file_path(file_path.to_string_lossy().as_ref());
         assert!(result.is_ok());
@@ -775,7 +775,7 @@ mod tests {
     #[test]
     fn test_extract_text_plain_file() {
         let dir = std::env::temp_dir();
-        let path = dir.join(format!("trcaa-test-extract-{}.txt", uuid::Uuid::now_v7()));
+        let path = dir.join(format!("tftsr-test-extract-{}.txt", uuid::Uuid::now_v7()));
         std::fs::write(&path, "hello world").unwrap();
         let result = extract_text_content(&path);
         assert!(result.is_ok());

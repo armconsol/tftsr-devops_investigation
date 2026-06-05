@@ -77,7 +77,7 @@ TypeScript mirrors this shape exactly in `tauriCommands.ts`.
 
 ### State Persistence
 - `sessionStore`: ephemeral triage session (issue, messages, PII spans, why-level 0–5, loading) — **not persisted**
-- `settingsStore`: persisted to `localStorage` as `"trcaa-settings"`
+- `settingsStore`: persisted to `localStorage` as `"tftsr-settings"`
 
 ---
 
@@ -91,9 +91,9 @@ TypeScript mirrors this shape exactly in `tauriCommands.ts`.
 **Artifacts**: `src-tauri/target/{target}/release/bundle/`
 
 **Environments**:
-- Test CI images at `gitea.tftsr.com:3000` (pull `trcaa-*:rust1.88-node22`)
-- Gitea instance: `http://gitea.tftsr.com:3000`
-- Wiki: sync from `docs/wiki/*.md` → `https://gogs.trcaa.com/sarman/trcaa-devops_investigation/wiki`
+- Test CI images at `172.0.0.29:3000` (pull `tftsr-*:rust1.88-node22`)
+- Gitea instance: `http://172.0.0.29:3000`
+- Wiki: sync from `docs/wiki/*.md` → `https://gogs.tftsr.com/sarman/tftsr-devops_investigation/wiki`
 
 ---
 
@@ -107,9 +107,9 @@ TypeScript mirrors this shape exactly in `tauriCommands.ts`.
 | `RUST_LOG` | `info` | Tracing level (`debug`, `info`, `warn`, `error`) |
 
 **Database path**:
-- Linux: `~/.local/share/trcaa/trcaa.db`
-- macOS: `~/Library/Application Support/trcaa/trcaa.db`
-- Windows: `%APPDATA%\trcaa\trcaa.db`
+- Linux: `~/.local/share/tftsr/tftsr.db`
+- macOS: `~/Library/Application Support/tftsr/tftsr.db`
+- Windows: `%APPDATA%\tftsr\tftsr.db`
 
 ---
 
@@ -141,7 +141,7 @@ TypeScript mirrors this shape exactly in `tauriCommands.ts`.
 | Rust | `cargo test --manifest-path src-tauri/Cargo.toml` | 64 tests, runs in `rust:1.88-slim` container |
 | TypeScript | `npm run test:run` | Vitest, 13 tests |
 | Type check | `npx tsc --noEmit` | `skipLibCheck: true` |
-| E2E | `TAURI_BINARY_PATH=./src-tauri/target/release/trcaa npm run test:e2e` | WebdriverIO, requires compiled binary |
+| E2E | `TAURI_BINARY_PATH=./src-tauri/target/release/tftsr npm run test:e2e` | WebdriverIO, requires compiled binary |
 
 **Frontend coverage**: `npm run test:coverage` → `tests/unit/` coverage report
 
@@ -154,4 +154,4 @@ TypeScript mirrors this shape exactly in `tauriCommands.ts`.
 3. **PII before AI**: Always redact and record hash before external send
 4. **Port 1420**: Vite dev server is hard-coded to 1420, not 3000
 5. **Build order**: Rust fmt → clippy → test → TS check → JS test
-6. **CI images**: Use `gitea.tftsr.com:3000` registry for pre-baked builder images
+6. **CI images**: Use `172.0.0.29:3000` registry for pre-baked builder images

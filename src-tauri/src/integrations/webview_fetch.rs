@@ -45,7 +45,7 @@ pub async fn fetch_from_webview<R: tauri::Runtime>(
                 }});
 
                 if (!response.ok) {{
-                    window.location.hash = '#trcaa-error-' + requestId + '-' + encodeURIComponent(JSON.stringify({{
+                    window.location.hash = '#tftsr-error-' + requestId + '-' + encodeURIComponent(JSON.stringify({{
                         error: `HTTP ${{response.status}}: ${{response.statusText}}`
                     }}));
                     return;
@@ -53,9 +53,9 @@ pub async fn fetch_from_webview<R: tauri::Runtime>(
 
                 const data = await response.json();
                 // Store in hash - we'll poll for this
-                window.location.hash = '#trcaa-success-' + requestId + '-' + encodeURIComponent(JSON.stringify(data));
+                window.location.hash = '#tftsr-success-' + requestId + '-' + encodeURIComponent(JSON.stringify(data));
             }} catch (error) {{
-                window.location.hash = '#trcaa-error-' + requestId + '-' + encodeURIComponent(JSON.stringify({{
+                window.location.hash = '#tftsr-error-' + requestId + '-' + encodeURIComponent(JSON.stringify({{
                     error: error.message
                 }}));
             }}
@@ -77,7 +77,7 @@ pub async fn fetch_from_webview<R: tauri::Runtime>(
             let url_string = url_str.to_string();
 
             // Check for success
-            let success_marker = format!("#trcaa-success-{request_id}-");
+            let success_marker = format!("#tftsr-success-{request_id}-");
             if url_string.contains(&success_marker) {
                 // Extract the JSON from the hash
                 if let Some(json_start) = url_string.find(&success_marker) {
@@ -96,7 +96,7 @@ pub async fn fetch_from_webview<R: tauri::Runtime>(
             }
 
             // Check for error
-            let error_marker = format!("#trcaa-error-{request_id}-");
+            let error_marker = format!("#tftsr-error-{request_id}-");
             if url_string.contains(&error_marker) {
                 if let Some(json_start) = url_string.find(&error_marker) {
                     let json_encoded = &url_string[json_start + error_marker.len()..];

@@ -42,7 +42,7 @@ pub fn run() {
         pending_approvals: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
     };
     let stronghold_salt = format!(
-        "trcaa-stronghold-salt-v1-{:x}",
+        "tftsr-stronghold-salt-v1-{:x}",
         Sha256::digest(data_dir.to_string_lossy().as_bytes())
     );
 
@@ -190,13 +190,13 @@ fn dirs_data_dir() -> std::path::PathBuf {
     #[cfg(target_os = "linux")]
     {
         if let Ok(xdg) = std::env::var("XDG_DATA_HOME") {
-            return std::path::PathBuf::from(xdg).join("trcaa");
+            return std::path::PathBuf::from(xdg).join("tftsr");
         }
         if let Ok(home) = std::env::var("HOME") {
             return std::path::PathBuf::from(home)
                 .join(".local")
                 .join("share")
-                .join("trcaa");
+                .join("tftsr");
         }
     }
 
@@ -206,17 +206,17 @@ fn dirs_data_dir() -> std::path::PathBuf {
             return std::path::PathBuf::from(home)
                 .join("Library")
                 .join("Application Support")
-                .join("trcaa");
+                .join("tftsr");
         }
     }
 
     #[cfg(target_os = "windows")]
     {
         if let Ok(appdata) = std::env::var("APPDATA") {
-            return std::path::PathBuf::from(appdata).join("trcaa");
+            return std::path::PathBuf::from(appdata).join("tftsr");
         }
     }
 
     // Fallback
-    std::path::PathBuf::from("./trcaa-data")
+    std::path::PathBuf::from("./tftsr-data")
 }

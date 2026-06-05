@@ -78,8 +78,8 @@ cargo tauri build  # Outputs to src-tauri/target/release/bundle/
 ### CI/CD
 
 - **Test pipeline**: `.github/workflows/test.yml` — runs on every push/PR targeting `main`
-- **Release pipeline**: `.github/workflows/release.yml` — runs on every push to `main`, auto-tags, produces multi-platform bundles (Linux amd64+arm64, Windows, macOS arm64+Intel), uploads to GitHub Releases at `https://github.com/tftsr/apollo_nxt-trcaa/releases`
-- **Docker builder images**: `.github/workflows/build-images.yml` — rebuilds `ghcr.io/tftsr/trcaa-*` images when `.docker/**` changes on `main`
+- **Release pipeline**: `.github/workflows/release.yml` — runs on every push to `main`, auto-tags, produces multi-platform bundles (Linux amd64+arm64, Windows, macOS arm64+Intel), uploads to GitHub Releases at `https://gogs.tftsr.com/sarman/apollo_nxt-tftsr/releases`
+- **Docker builder images**: `.github/workflows/build-images.yml` — rebuilds `ghcr.io/tftsr/tftsr-*` images when `.docker/**` changes on `main`
 
 ---
 
@@ -94,7 +94,7 @@ cargo tauri build  # Outputs to src-tauri/target/release/bundle/
 pub struct AppState {
     pub db: Arc<Mutex<rusqlite::Connection>>,
     pub settings: Arc<Mutex<AppSettings>>,
-    pub app_data_dir: PathBuf,  // ~/.local/share/trcaa on Linux
+    pub app_data_dir: PathBuf,  // ~/.local/share/tftsr on Linux
 }
 ```
 
@@ -128,7 +128,7 @@ All command handlers receive `State<'_, AppState>` as a Tauri-injected parameter
 
 **Stores** (Zustand):
 - `sessionStore.ts` — ephemeral triage session: current issue, chat messages, PII spans, why-level (0–5), loading state. **Not persisted.**
-- `settingsStore.ts` — AI providers, theme, Ollama URL. **Persisted** to `localStorage` as `"trcaa-settings"`.
+- `settingsStore.ts` — AI providers, theme, Ollama URL. **Persisted** to `localStorage` as `"tftsr-settings"`.
 - `historyStore.ts` — read-only cache of past issues for the History page.
 
 **Page flow**:
@@ -203,7 +203,7 @@ Before any text is sent to an AI provider, `apply_redactions` must be called and
 
 ### GitHub Actions CI
 
-All pipelines run on GitHub Actions at `https://github.com/tftsr/apollo_nxt-trcaa/actions`.
+All pipelines run on GitHub Actions at `https://gogs.tftsr.com/sarman/apollo_nxt-tftsr/actions`.
 
 - `GITHUB_TOKEN` is the only credential needed — no external secrets required
 - Builder images are hosted on `ghcr.io/tftsr/` (GitHub Container Registry)
@@ -214,7 +214,7 @@ All pipelines run on GitHub Actions at `https://github.com/tftsr/apollo_nxt-trca
 
 ## Wiki Maintenance
 
-The project wiki lives at `https://github.com/tftsr/apollo_nxt-trcaa/wiki`.
+The project wiki lives at `https://gogs.tftsr.com/sarman/apollo_nxt-tftsr/wiki`.
 
 **Source of truth**: `docs/wiki/*.md` in this repo. The `wiki-sync` job (in `.github/workflows/release.yml`) automatically pushes any changes to the GitHub wiki on every push to `main`.
 

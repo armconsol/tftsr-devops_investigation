@@ -69,7 +69,7 @@ mod tests {
 
     #[test]
     fn parse_msigenai_chatgpt_tool_calls_from_json_text() {
-        // TFTSRGenAI ChatGPT format: returns tool calls as JSON object in msg
+        // GenAI ChatGPT format: returns tool calls as JSON object in msg
         let content = r#"{"tool_calls":[{"id":"call_1","type":"function","function":{"name":"execute_shell_command","arguments":{"command":"kubectl get namespaces"}}}]}"#;
 
         let result = OpenAiProvider::parse_tool_calls_from_text(content);
@@ -84,7 +84,7 @@ mod tests {
 
     #[test]
     fn parse_msigenai_claude_tool_calls_from_xml_wrapper() {
-        // TFTSRGenAI Claude format: XML wrapper around JSON array
+        // GenAI Claude format: XML wrapper around JSON array
         let content = r#"<tool_calls>
 [{"id":"call_1","type":"function","function":{"name":"execute_shell_command","arguments":{"command":"kubectl get pods"}}}]
 </tool_calls>"#;
@@ -513,14 +513,14 @@ impl OpenAiProvider {
                 }
             });
 
-        // WORKAROUND: TFTSRGenAI gateway bug - tool calls returned as JSON text in 'msg' field
+        // WORKAROUND: GenAI gateway bug - tool calls returned as JSON text in 'msg' field
         // Expected: {"tool_calls": [...]}
         // Actual: {"msg": '{"tool_calls":[...]}'}  or  {"msg": '<tool_calls>[...]</tool_calls>'}
         if tool_calls.is_none() {
-            // Try parsing tool calls from msg content (TFTSRGenAI workaround)
+            // Try parsing tool calls from msg content (GenAI workaround)
             if let Some(parsed_calls) = Self::parse_tool_calls_from_text(&content) {
                 tracing::warn!(
-                    "TFTSR GenAI: TFTSRGenAI workaround - parsed {} tool calls from msg text (gateway should return structured tool_calls field)",
+                    "TFTSR GenAI: GenAI workaround - parsed {} tool calls from msg text (gateway should return structured tool_calls field)",
                     parsed_calls.len()
                 );
                 tool_calls = Some(parsed_calls);
@@ -541,9 +541,9 @@ impl OpenAiProvider {
         })
     }
 
-    /// Parse tool calls from text content (TFTSRGenAI gateway workaround)
+    /// Parse tool calls from text content (GenAI gateway workaround)
     ///
-    /// TFTSRGenAI returns tool calls as JSON text in the 'msg' field instead of structured data:
+    /// GenAI returns tool calls as JSON text in the 'msg' field instead of structured data:
     /// - ChatGPT models: `{"tool_calls":[...]}`
     /// - Claude models: `<tool_calls>[...]</tool_calls>`
     fn parse_tool_calls_from_text(content: &str) -> Option<Vec<crate::ai::ToolCall>> {

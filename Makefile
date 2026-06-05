@@ -1,4 +1,4 @@
-GH_REPO    := msicie/apollo_nxt-trcaa
+GOGS_REPO    := msicie/apollo_nxt-tftsr
 TAG        ?= v0.1.0-alpha
 TARGET     := aarch64-unknown-linux-gnu
 
@@ -34,11 +34,11 @@ build-arm64:
 
 .PHONY: upload-arm64
 upload-arm64:
-	@test -n "$(GH_TOKEN)" || (echo "ERROR: set GH_TOKEN env var"; exit 1)
+	@test -n "$(GOGS_TOKEN)" || (echo "ERROR: set GOGS_TOKEN env var"; exit 1)
 	@for f in artifacts/linux-arm64/*; do \
 		[ -f "$$f" ] || continue; \
 		NAME="linux-arm64-$$(basename $$f)"; \
 		echo "Uploading $$NAME..."; \
-		GH_TOKEN=$(GH_TOKEN) gh release upload $(TAG) "$$f#$$NAME" \
-			--repo $(GH_REPO) && echo "OK" || echo "FAIL: $$f"; \
+		GOGS_TOKEN=$(GOGS_TOKEN) # gh release upload $(TAG) "$$f#$$NAME" \
+			--repo $(GOGS_REPO) && echo "OK" || echo "FAIL: $$f"; \
 	done

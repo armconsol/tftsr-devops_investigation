@@ -29,7 +29,7 @@ C4Context
 
     Person(it_eng, "IT Engineer", "Diagnoses incidents and conducts root cause analysis")
 
-    System(trcaa, "TRCAA Desktop App", "Structured AI-backed assistant for IT troubleshooting, 5-whys RCA, and post-mortem documentation")
+    System(tftsr, "TRCAA Desktop App", "Structured AI-backed assistant for IT troubleshooting, 5-whys RCA, and post-mortem documentation")
 
     System_Ext(ollama, "Ollama (Local)", "Runs open-source LLMs locally (llama3, mistral, phi3)")
     System_Ext(openai, "OpenAI API", "GPT-4o, GPT-4o-mini for cloud AI inference")
@@ -41,15 +41,15 @@ C4Context
     System_Ext(servicenow, "ServiceNow", "ITSM platform — create incident tickets")
     System_Ext(ado, "Azure DevOps", "Work item tracking and collaboration")
 
-    Rel(it_eng, trcaa, "Uses", "Desktop app (Tauri WebView)")
-    Rel(trcaa, ollama, "AI inference", "HTTP/JSON (local)")
-    Rel(trcaa, openai, "AI inference", "HTTPS/REST")
-    Rel(trcaa, anthropic, "AI inference", "HTTPS/REST")
-    Rel(trcaa, gemini, "AI inference", "HTTPS/REST")
-    Rel(trcaa, custom_rest, "AI inference", "HTTPS/REST")
-    Rel(trcaa, confluence, "Publish RCA docs", "HTTPS/REST + OAuth2")
-    Rel(trcaa, servicenow, "Create incidents", "HTTPS/REST + OAuth2")
-    Rel(trcaa, ado, "Create work items", "HTTPS/REST + OAuth2")
+    Rel(it_eng, tftsr, "Uses", "Desktop app (Tauri WebView)")
+    Rel(tftsr, ollama, "AI inference", "HTTP/JSON (local)")
+    Rel(tftsr, openai, "AI inference", "HTTPS/REST")
+    Rel(tftsr, anthropic, "AI inference", "HTTPS/REST")
+    Rel(tftsr, gemini, "AI inference", "HTTPS/REST")
+    Rel(tftsr, custom_rest, "AI inference", "HTTPS/REST")
+    Rel(tftsr, confluence, "Publish RCA docs", "HTTPS/REST + OAuth2")
+    Rel(tftsr, servicenow, "Create incidents", "HTTPS/REST + OAuth2")
+    Rel(tftsr, ado, "Create work items", "HTTPS/REST + OAuth2")
 ```
 
 ---
@@ -64,7 +64,7 @@ C4Container
 
     Person(user, "IT Engineer")
 
-    System_Boundary(trcaa, "TRCAA Desktop Process") {
+    System_Boundary(tftsr, "TRCAA Desktop Process") {
         Container(webview, "React Frontend", "React 18 + TypeScript + Vite", "Renders UI via OS WebView (WebKit/WebView2). Manages ephemeral session state and persisted settings.")
         Container(tauri_core, "Tauri Core / IPC Bridge", "Rust / Tauri 2", "Routes invoke() calls between WebView and backend command handlers. Enforces capability ACL.")
         Container(rust_backend, "Rust Backend", "Rust / Tokio async", "Command handlers, AI provider clients, PII engine, document generation, integration clients, audit logging.")
@@ -1167,7 +1167,7 @@ graph LR
 ```mermaid
 graph TB
     subgraph "Source Control"
-        GOGS[Gogs / Gitea\ngogs.trcaa.com\nSarman Repository]
+        GOGS[Gogs / Gitea\ngogs.tftsr.com\nSarman Repository]
     end
 
     subgraph "CI/CD Triggers"
@@ -1185,15 +1185,15 @@ graph TB
     end
 
     subgraph "Release Builders (Parallel)"
-        AMD64[linux/amd64\nDocker: trcaa-linux-amd64\n.deb .rpm .AppImage]
-        WINDOWS[windows/amd64\nDocker: trcaa-windows-cross\n.exe .msi]
+        AMD64[linux/amd64\nDocker: tftsr-linux-amd64\n.deb .rpm .AppImage]
+        WINDOWS[windows/amd64\nDocker: tftsr-windows-cross\n.exe .msi]
         ARM64[linux/arm64\narm64 native runner\n.deb .rpm .AppImage]
         MACOS[macOS arm64\nnative macOS runner\n.app .dmg]
     end
 
     subgraph "Artifact Storage"
         RELEASE[Gitea Release\nv0.x.x tags\nAll platform assets]
-        REGISTRY[Gitea Container Registry\ngitea.tftsr.com:3000\nCI Docker images]
+        REGISTRY[Gitea Container Registry\n172.0.0.29:3000\nCI Docker images]
     end
 
     GOGS --> PR_TRIGGER
@@ -1227,25 +1227,25 @@ graph TB
 ```mermaid
 graph TB
     subgraph "macOS Runtime"
-        MAC_PROC[trcaa process\nMach-O arm64 binary]
+        MAC_PROC[tftsr process\nMach-O arm64 binary]
         WEBKIT[WKWebView\nSafari WebKit engine]
-        MAC_DATA[~/Library/Application Support/trcaa/\n.dbkey mode 0600\n.enckey mode 0600\ntrcaa.db SQLCipher]
+        MAC_DATA[~/Library/Application Support/tftsr/\n.dbkey mode 0600\n.enckey mode 0600\ntftsr.db SQLCipher]
         MAC_KUBECTL[Bundled kubectl v1.30.0\narm64 binary]
         MAC_BUNDLE[Troubleshooting and RCA Assistant.app\n/Applications/]
     end
 
     subgraph "Linux Runtime"
-        LINUX_PROC[trcaa process\nELF amd64/arm64]
+        LINUX_PROC[tftsr process\nELF amd64/arm64]
         WEBKIT2[WebKitGTK WebView\nwebkit2gtk4.1]
-        LINUX_DATA[~/.local/share/trcaa/\n.dbkey .enckey\ntrcaa.db]
+        LINUX_DATA[~/.local/share/tftsr/\n.dbkey .enckey\ntftsr.db]
         LINUX_KUBECTL[Bundled kubectl v1.30.0\namd64/arm64 binary]
         LINUX_PKG[.deb / .rpm / .AppImage]
     end
 
     subgraph "Windows Runtime"
-        WIN_PROC[trcaa.exe\nPE amd64]
+        WIN_PROC[tftsr.exe\nPE amd64]
         WEBVIEW2[Microsoft WebView2\nChromium-based]
-        WIN_DATA[%APPDATA%\trcaa\\\n.dbkey .enckey\ntrcaa.db]
+        WIN_DATA[%APPDATA%\tftsr\\\n.dbkey .enckey\ntftsr.db]
         WIN_KUBECTL[Bundled kubectl.exe v1.30.0\namd64 binary]
         WIN_PKG[NSIS .exe / .msi]
     end

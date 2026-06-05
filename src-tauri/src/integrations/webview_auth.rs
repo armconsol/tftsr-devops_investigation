@@ -175,14 +175,14 @@ pub async fn extract_cookies_via_ipc<R: tauri::Runtime>(
         let check_and_signal_script = r#"
             try {
                 if (typeof window.__TRCAA_ERROR__ !== 'undefined') {
-                    window.localStorage.setItem('trcaa_result', JSON.stringify({ error: window.__TRCAA_ERROR__ }));
+                    window.localStorage.setItem('tftsr_result', JSON.stringify({ error: window.__TRCAA_ERROR__ }));
                 } else if (typeof window.__TRCAA_COOKIES__ !== 'undefined' && window.__TRCAA_COOKIES__.length > 0) {
-                    window.localStorage.setItem('trcaa_result', JSON.stringify({ cookies: window.__TRCAA_COOKIES__ }));
+                    window.localStorage.setItem('tftsr_result', JSON.stringify({ cookies: window.__TRCAA_COOKIES__ }));
                 } else if (typeof window.__TRCAA_COOKIES__ !== 'undefined') {
-                    window.localStorage.setItem('trcaa_result', JSON.stringify({ cookies: [] }));
+                    window.localStorage.setItem('tftsr_result', JSON.stringify({ cookies: [] }));
                 }
             } catch (e) {
-                window.localStorage.setItem('trcaa_result', JSON.stringify({ error: e.message }));
+                window.localStorage.setItem('tftsr_result', JSON.stringify({ error: e.message }));
             }
         "#;
 
@@ -194,9 +194,9 @@ pub async fn extract_cookies_via_ipc<R: tauri::Runtime>(
         // Execute script that sets document.title temporarily
         let read_via_title = r#"
             (function() {
-                const result = window.localStorage.getItem('trcaa_result');
+                const result = window.localStorage.getItem('tftsr_result');
                 if (result) {
-                    window.localStorage.removeItem('trcaa_result');
+                    window.localStorage.removeItem('tftsr_result');
                     // Store in title temporarily for Rust to read
                     window.__TRCAA_ORIGINAL_TITLE__ = document.title;
                     document.title = 'TRCAA_RESULT:' + result;

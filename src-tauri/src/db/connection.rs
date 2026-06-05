@@ -143,7 +143,7 @@ fn is_plain_sqlite(path: &Path) -> bool {
 
 pub fn init_db(data_dir: &Path) -> anyhow::Result<Connection> {
     std::fs::create_dir_all(data_dir)?;
-    let db_path = data_dir.join("trcaa.db");
+    let db_path = data_dir.join("tftsr.db");
 
     let key = get_db_key(data_dir)?;
 
@@ -180,7 +180,7 @@ mod tests {
             .duration_since(SystemTime::UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let dir = std::env::temp_dir().join(format!("trcaa-test-{}-{}", name, timestamp));
+        let dir = std::env::temp_dir().join(format!("tftsr-test-{}-{}", name, timestamp));
         // Clean up if it exists
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
