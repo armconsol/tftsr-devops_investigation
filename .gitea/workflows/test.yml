@@ -30,6 +30,11 @@ jobs:
             echo "Fetched fallback ref: master"
           fi
           git checkout FETCH_HEAD
+      - name: Install Node.js
+        run: |
+          apt-get update && apt-get install -y curl
+          curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+          apt-get install -y nodejs
       - name: Cache cargo registry
         uses: actions/cache@v4
         with:
@@ -40,11 +45,6 @@ jobs:
           key: ${{ runner.os }}-cargo-linux-amd64-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-linux-amd64-
-      - name: Install Node.js
-        run: |
-          apt-get update && apt-get install -y curl
-          curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
-          apt-get install -y nodejs
       - name: Install dependencies
         run: npm install --legacy-peer-deps
       - name: Update version from Git

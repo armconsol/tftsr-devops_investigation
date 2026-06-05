@@ -185,7 +185,7 @@ Standard OpenAI `/chat/completions` endpoint with Bearer authentication.
 | Field | Value |
 |-------|-------|
 | `config.provider_type` | `"custom"` |
-| `config.api_format` | `"msi-genai"` |
+| `config.api_format` | `"generic-genai"` |
 | Status | ⚠️ **Limited compatibility** |
 
 **Known Limitations:**

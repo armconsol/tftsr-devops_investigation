@@ -237,7 +237,7 @@ CI, chore, and build changes are excluded.
 - Inline file/screenshot attachment in triage chat
 - Close issues, restore history, auto-save resolution steps
 - Expand domains to 13 — add Telephony, Security/Vault, Public Safety, Application, Automation/CI-CD
-- Add HPE, Dell, Identity domains + expand k8s/security/observability/VESTA NXT
+- Add HPE, Dell, Identity domains + expand k8s/security/observability/DevOps Platform
 - Add AI disclaimer modal before creating new issues
 - Add database schema for integration credentials and config
 - Implement OAuth2 token exchange and AES-256-GCM encryption

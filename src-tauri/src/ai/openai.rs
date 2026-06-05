@@ -7,8 +7,8 @@ use crate::state::ProviderConfig;
 
 pub struct OpenAiProvider;
 
-fn is_msi_genai_format(api_format: Option<&str>) -> bool {
-    matches!(api_format, Some("msi-genai") | Some("custom_rest")) // custom_rest for backward compatibility
+fn is_generic_genai_format(api_format: Option<&str>) -> bool {
+    matches!(api_format, Some("generic-genai") | Some("custom_rest")) // custom_rest for backward compatibility
 }
 
 #[async_trait]
@@ -38,8 +38,8 @@ impl Provider for OpenAiProvider {
         // Check if using GenAI format (or legacy custom_rest)
         let api_format = config.api_format.as_deref().unwrap_or("openai");
 
-        if is_msi_genai_format(Some(api_format)) {
-            self.chat_msi_genai(messages, config, tools).await
+        if is_generic_genai_format(Some(api_format)) {
+            self.chat_generic_genai(messages, config, tools).await
         } else {
             self.chat_openai(messages, config, tools).await
         }
@@ -48,27 +48,27 @@ impl Provider for OpenAiProvider {
 
 #[cfg(test)]
 mod tests {
-    use super::{is_msi_genai_format, OpenAiProvider};
+    use super::{is_generic_genai_format, OpenAiProvider};
 
     #[test]
-    fn msi_genai_format_is_recognized() {
-        assert!(is_msi_genai_format(Some("msi-genai")));
+    fn generic_genai_format_is_recognized() {
+        assert!(is_generic_genai_format(Some("generic-genai")));
     }
 
     #[test]
     fn custom_rest_format_backward_compatible() {
         // Keep backward compatibility with old format name
-        assert!(is_msi_genai_format(Some("custom_rest")));
+        assert!(is_generic_genai_format(Some("custom_rest")));
     }
 
     #[test]
-    fn openai_format_is_not_msi_genai() {
-        assert!(!is_msi_genai_format(Some("openai")));
-        assert!(!is_msi_genai_format(None));
+    fn openai_format_is_not_generic_genai() {
+        assert!(!is_generic_genai_format(Some("openai")));
+        assert!(!is_generic_genai_format(None));
     }
 
     #[test]
-    fn parse_msigenai_chatgpt_tool_calls_from_json_text() {
+    fn parse_genericai_chatgpt_tool_calls_from_json_text() {
         // GenAI ChatGPT format: returns tool calls as JSON object in msg
         let content = r#"{"tool_calls":[{"id":"call_1","type":"function","function":{"name":"execute_shell_command","arguments":{"command":"kubectl get namespaces"}}}]}"#;
 
@@ -83,7 +83,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_msigenai_claude_tool_calls_from_xml_wrapper() {
+    fn parse_genericai_claude_tool_calls_from_xml_wrapper() {
         // GenAI Claude format: XML wrapper around JSON array
         let content = r#"<tool_calls>
 [{"id":"call_1","type":"function","function":{"name":"execute_shell_command","arguments":{"command":"kubectl get pods"}}}]
@@ -300,7 +300,7 @@ impl OpenAiProvider {
     /// and has a known bug where tool calls are returned as JSON text in the 'msg'
     /// field instead of structured 'tool_calls' array. This implementation includes
     /// workaround parsing to extract tool calls from text.
-    async fn chat_msi_genai(
+    async fn chat_generic_genai(
         &self,
         messages: Vec<Message>,
         config: &ProviderConfig,

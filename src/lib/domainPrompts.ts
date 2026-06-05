@@ -69,7 +69,7 @@ export const DOMAINS: DomainInfo[] = [
   {
     id: "public_safety",
     label: "Public Safety",
-    description: "NENA, NG911, VESTA NXT, CTC, Skipper, i3 services",
+    description: "NENA, NG911, DevOps Platform, CTC, Skipper, i3 services",
     icon: "PhoneCall",
   },
   {
@@ -288,10 +288,10 @@ When analyzing public safety and 911 issues, focus on these key areas:
 - **CAD (Computer-Aided Dispatch) integration**: CAD-to-CAD interoperability failures, NENA Incident Data Exchange (NIEM) message validation errors, CAD interface adapter connectivity, and duplicate incident creation from retry logic.
 - **Recording and logging**: Recording system integration (NICE, Verint, Eventide) failures, mandatory call recording compliance gaps, Logging Service (LS) as defined by NENA i3, and chain of custody for recordings.
 - **Network redundancy**: ESINet redundancy path failures, primary/secondary PSAP failover, call overflow to backup PSAP, and network diversity verification.
-- **VESTA NXT Platform**: The VESTA NXT platform is a microservices-based NG911 solution deployed on OpenShift/K8s. Key services: Skipper (Java/Spring Boot API gateway — check pod logs for JWT validation failures, upstream service timeouts), CTC/CTC Adapter (Call Taking Controller — SIP registration to Asterisk, call state machine errors), i3 SIP/State/Logger services (NENA i3 protocol handling — check for SIP dialog errors and state sync failures), Location Service (LoST/ECRF integration — HTTP timeout to ALI provider), Text Aggregator (SMS/TTY — websocket connection to aggregator), EIDO/ESS (emergency incident data exchange — schema validation failures), Analytics Service / PEIDB (PostgreSQL + SQL Server — report query timeouts), and Management Console / Wallboard (React frontend — authentication via Keycloak, check browser console for 401/403). Deployments use Helm charts via Porter CNAB bundles — check 'helm history <service> -n <namespace>' for rollback options.
+- **DevOps Platform Platform**: The DevOps Platform platform is a microservices-based NG911 solution deployed on OpenShift/K8s. Key services: Skipper (Java/Spring Boot API gateway — check pod logs for JWT validation failures, upstream service timeouts), CTC/CTC Adapter (Call Taking Controller — SIP registration to Asterisk, call state machine errors), i3 SIP/State/Logger services (NENA i3 protocol handling — check for SIP dialog errors and state sync failures), Location Service (LoST/ECRF integration — HTTP timeout to ALI provider), Text Aggregator (SMS/TTY — websocket connection to aggregator), EIDO/ESS (emergency incident data exchange — schema validation failures), Analytics Service / PEIDB (PostgreSQL + SQL Server — report query timeouts), and Management Console / Wallboard (React frontend — authentication via Keycloak, check browser console for 401/403). Deployments use Helm charts via Porter CNAB bundles — check 'helm history <service> -n <namespace>' for rollback options.
 - **Common error patterns**: "call drops to administrative" (CTC/routing fallback), "location unavailable" (ALI timeout or Phase II failure), "Skipper 503" (downstream microservice down), "CTC not registered" (Asterisk SIP trunk issue), "CAD not receiving calls" (CAD Spill Interface adapter down), "wrong PSAP" (ESN boundary error), "recording gap" (recording server failover timing), "Keycloak token invalid" (realm configuration or clock skew).
 
-Always ask about the VESTA NXT release version, which microservice is failing, whether this is OpenShift or K3s deployment, ESINet provider, and whether this is a primary or backup PSAP.`,
+Always ask about the DevOps Platform release version, which microservice is failing, whether this is OpenShift or K3s deployment, ESINet provider, and whether this is a primary or backup PSAP.`,
 
   application: `You are a senior application engineer specializing in incident triage and root cause analysis. Your expertise covers Java applications, JVM internals, Spring Boot, Tomcat, and enterprise application servers.
 
