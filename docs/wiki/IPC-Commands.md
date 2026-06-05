@@ -603,6 +603,86 @@ interface TicketResult {
 
 ---
 
+## Shell Execution Commands
+
+> **Status:** Fully Implemented (v1.0.0+)
+> 
+> See [[Shell-Execution]] for complete documentation of the three-tier safety system.
+
+### `upload_kubeconfig`
+```typescript
+uploadKubeconfigCmd(name: string, content: string) → string
+```
+Upload and encrypt a kubeconfig file. Returns the kubeconfig ID.
+
+### `list_kubeconfigs`
+```typescript
+listKubeconfigsCmd() → KubeconfigInfo[]
+```
+List all uploaded kubeconfig files with metadata.
+```typescript
+interface KubeconfigInfo {
+    id: string;
+    name: string;
+    context: string;
+    cluster_url?: string;
+    is_active: boolean;
+}
+```
+
+### `activate_kubeconfig`
+```typescript
+activateKubeconfigCmd(id: string) → void
+```
+Set a kubeconfig as active for kubectl commands.
+
+### `delete_kubeconfig`
+```typescript
+deleteKubeconfigCmd(id: string) → void
+```
+Delete a kubeconfig file permanently.
+
+### `respond_to_shell_approval`
+```typescript
+respondToShellApprovalCmd(approvalId: string, decision: string) → void
+```
+Respond to a Tier 2 command approval request.
+- `decision`: `"deny"`, `"allow_once"`, or `"allow_session"`
+
+### `list_command_executions`
+```typescript
+listCommandExecutionsCmd(issueId?: string) → CommandExecution[]
+```
+List recent command executions, optionally filtered by issue ID.
+```typescript
+interface CommandExecution {
+    id: string;
+    command: string;
+    tier: number;  // 1, 2, or 3
+    approval_status: string;  // 'auto', 'approved', 'denied'
+    exit_code?: number;
+    stdout?: string;
+    stderr?: string;
+    execution_time_ms?: number;
+    executed_at: string;
+}
+```
+
+### `check_kubectl_installed`
+```typescript
+checkKubectlInstalledCmd() → KubectlStatus
+```
+Check if kubectl is installed and return version info.
+```typescript
+interface KubectlStatus {
+    installed: boolean;
+    path?: string;
+    version?: string;
+}
+```
+
+---
+
 ## Authentication Storage
 
 All integration credentials are stored in the `credentials` table:
