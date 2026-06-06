@@ -2,6 +2,7 @@ use crate::kube::ClusterClient;
 use crate::state::AppState;
 use serde::{Deserialize, Serialize};
 use serde_yaml::Value;
+use std::sync::Arc;
 use tauri::State;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -45,11 +46,13 @@ pub async fn add_cluster(
     let context = extract_context(&kubeconfig_content)?;
     let server_url = extract_server_url(&kubeconfig_content)?;
 
+    let kubeconfig_arc = Arc::new(kubeconfig_content.clone());
     let client = ClusterClient::new(
         id.clone(),
         name.clone(),
         context.clone(),
         server_url.clone(),
+        kubeconfig_arc,
     );
 
     {
@@ -143,9 +146,17 @@ pub async fn start_port_forward(
 ) -> Result<PortForwardResponse, String> {
     let session_id = uuid::Uuid::now_v7().to_string();
 
+    let clusters = state.clusters.lock().await;
+    let cluster = clusters.get(&request.cluster_id)
+        .ok_or_else(|| format!("Cluster {} not found", request.cluster_id))?;
+
+    let cluster_name = cluster.name.clone();
+    let _kubeconfig_content = cluster.kubeconfig_content.clone();
+
     let session = crate::kube::PortForwardSession::new(
         session_id.clone(),
         request.cluster_id.clone(),
+        cluster_name,
         request.namespace.clone(),
         request.pod.clone(),
         None,
