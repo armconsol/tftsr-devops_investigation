@@ -1,7 +1,8 @@
-use crate::kube::portforward::PortForwardSessionConfig;
+use crate::kube::portforward::{PortForwardSession, PortForwardSessionConfig};
 use crate::kube::ClusterClient;
 use crate::shell::kubectl::locate_kubectl;
 use crate::state::AppState;
+use lazy_static::lazy_static;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_yaml::Value;
@@ -9,6 +10,11 @@ use std::sync::Arc;
 use tauri::State;
 use tokio::process::Command;
 use tracing::info;
+
+// Regex pattern for Kubernetes resource names - cached for performance
+lazy_static! {
+    static ref NAME_PATTERN_REGEX: Regex = Regex::new(r"^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$").unwrap();
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ClusterInfo {
@@ -200,6 +206,15 @@ pub async fn test_cluster_connection(
     std::fs::write(&temp_path, kubeconfig_content)
         .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
 
+    // Cleanup temp file on drop
+    struct TempFileCleanup(std::path::PathBuf);
+    impl Drop for TempFileCleanup {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_file(&self.0);
+        }
+    }
+    let _cleanup = TempFileCleanup(temp_path.clone());
+
     // Run kubectl cluster-info
     let kubectl_path = locate_kubectl()?;
 
@@ -372,7 +387,6 @@ fn parse_creation_timestamp(timestamp: &str) -> String {
 // Regex patterns for Kubernetes resource names
 // Must match: ^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$ (DNS subdomain name)
 // Added max length check (253 chars) to prevent ReDoS attacks
-const NAME_PATTERN: &str = r"^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$";
 const MAX_NAME_LENGTH: usize = 253;
 
 /// Validates a Kubernetes resource name against DNS subdomain naming rules.
@@ -409,12 +423,11 @@ pub fn validate_resource_name(name: &str, field_name: &str) -> Result<(), String
         ));
     }
 
-    // Validate against the regex pattern
-    let pattern = Regex::new(NAME_PATTERN).map_err(|e| format!("Invalid regex pattern: {}", e))?;
-    if !pattern.is_match(name) {
+    // Use cached regex pattern
+    if !NAME_PATTERN_REGEX.is_match(name) {
         return Err(format!(
             "{} '{}' does not match pattern {}",
-            field_name, name, NAME_PATTERN
+            field_name, name, r"^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$"
         ));
     }
 
@@ -466,6 +479,15 @@ pub async fn start_port_forward(
     std::fs::write(&temp_path, kubeconfig_content.as_ref())
         .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
 
+    // Cleanup temp file on drop
+    struct TempFileCleanup(std::path::PathBuf);
+    impl Drop for TempFileCleanup {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_file(&self.0);
+        }
+    }
+    let _cleanup = TempFileCleanup(temp_path.clone());
+
     // Build kubectl command
     let kubectl_path = locate_kubectl()?;
     let args = vec![
@@ -490,10 +512,8 @@ pub async fn start_port_forward(
         .spawn()
         .map_err(|e| format!("Failed to spawn kubectl: {e}"))?;
 
-    let child_mutex = Arc::new(std::sync::Mutex::new(child));
-
     // Create session with allocated port
-    let session = crate::kube::PortForwardSession::new(PortForwardSessionConfig {
+    let session = PortForwardSession::new(PortForwardSessionConfig {
         id: session_id.clone(),
         cluster_id: request.cluster_id.clone(),
         cluster_name,
@@ -502,14 +522,15 @@ pub async fn start_port_forward(
         container: None,
         ports: vec![request.container_port],
         local_ports: vec![local_port],
+        temp_kubeconfig_path: Some(temp_path),
     });
 
-    // Store child handle in session
+    // Store child handle in session - spawn background task to wait on child
     {
         let mut port_forwards = state.port_forwards.lock().await;
         port_forwards.insert(session_id.clone(), session);
         let session_mut = port_forwards.get_mut(&session_id).unwrap();
-        session_mut.kubectl_child = Some(child_mutex);
+        session_mut.spawn_child_waiter(child);
     }
 
     info!(
@@ -534,17 +555,8 @@ pub async fn stop_port_forward(id: String, state: State<'_, AppState>) -> Result
     let mut port_forwards = state.port_forwards.lock().await;
 
     if let Some(session) = port_forwards.get_mut(&id) {
-        session.stop();
+        session.stop_async().await;
         info!(session_id = %id, "Port-forward session stopped");
-
-        // Kill the kubectl process to ensure termination
-        if let Some(child_mutex) = &session.kubectl_child {
-            let mut child = child_mutex.lock().unwrap();
-            // Kill the child process - use std::mem::drop to explicitly handle the Future
-            std::mem::drop(child.kill());
-            let _ = child.try_wait();
-        }
-
         Ok(())
     } else {
         Err(format!("Port forward session {id} not found"))
@@ -648,5 +660,34 @@ mod tests {
         assert_eq!(request.pod, parsed.pod);
         assert_eq!(request.container_port, parsed.container_port);
         assert_eq!(request.local_port, parsed.local_port);
+    }
+
+    #[test]
+    fn test_validate_resource_name_valid() {
+        // Valid names
+        assert!(validate_resource_name("my-pod", "pod").is_ok());
+        assert!(validate_resource_name("my-pod-123", "pod").is_ok());
+        assert!(validate_resource_name("a", "pod").is_ok());
+        assert!(validate_resource_name("my.pod.name", "pod").is_ok());
+        assert!(validate_resource_name("123", "pod").is_ok());
+    }
+
+    #[test]
+    fn test_validate_resource_name_invalid() {
+        // Invalid names
+        assert!(validate_resource_name("-mypod", "pod").is_err());
+        assert!(validate_resource_name("mypod-", "pod").is_err());
+        assert!(validate_resource_name(".mypod", "pod").is_err());
+        assert!(validate_resource_name("mypod.", "pod").is_err());
+        assert!(validate_resource_name("MYPOD", "pod").is_err());
+        assert!(validate_resource_name("my_pod", "pod").is_err());
+        assert!(validate_resource_name("", "pod").is_err());
+    }
+
+    #[test]
+    fn test_validate_resource_name_length() {
+        // Too long names
+        let long_name = "a".repeat(254);
+        assert!(validate_resource_name(&long_name, "pod").is_err());
     }
 }
