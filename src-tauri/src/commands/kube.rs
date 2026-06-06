@@ -694,3 +694,19 @@ mod tests {
         assert!(validate_resource_name(&long_name, "pod").is_err());
     }
 }
+
+#[tauri::command]
+pub async fn shutdown_port_forwards(state: State<'_, AppState>) -> Result<(), String> {
+    let mut port_forwards = state.port_forwards.lock().await;
+    
+    // Close all active port forward sessions
+    let session_ids: Vec<String> = port_forwards.keys().cloned().collect();
+    
+    for session_id in session_ids {
+        if let Some(mut session) = port_forwards.remove(&session_id) {
+            session.close().await;
+        }
+    }
+    
+    Ok(())
+}
