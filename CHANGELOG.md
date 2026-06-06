@@ -4,6 +4,67 @@ All notable changes to TRCAA are documented here.
 Commit types shown: feat, fix, perf, docs, refactor.
 CI, chore, and build changes are excluded.
 
+## [Unreleased]
+
+### Bug Fixes
+- **ci**: Use public rust:1.82-bookworm image instead of custom image
+- Revert incorrect sanitization - use 172.0.0.29 for CI runners
+- Remove GitHub-specific files and fix remaining URLs
+- Update tests to use .gitea workflows and disable GitHub-specific tests
+- Comprehensive trcaa→tftsr conversion and URL corrections
+- Remove remaining proprietary references and fix branding
+- Remove ALL remaining proprietary references (MSI/Vesta/VNXT)
+- **ci**: Remove actions/cache steps to fix Node.js requirement
+- **ci**: Install rustfmt and clippy components in workflows
+- **ci**: Upgrade Rust from 1.82 to 1.83 for edition2024 support
+- **ci**: Use Rust nightly for edition2024 dependency support
+- **ci**: Install Tauri system dependencies in nightly containers
+- **ci**: Remove kubectl from externalBin to fix CI build
+- **clippy**: Fix Rust nightly clippy lints
+- Align Tauri npm packages with Rust crate versions
+- Pin plugin-stronghold npm version to match Rust crate (2.3.1)
+
+### Features
+- Full copy from apollo_nxt-trcaa with complete sanitization
+
+## [0.3.12] — 2026-06-05
+
+### Bug Fixes
+- **ci**: Fix YAML syntax error in test.yml
+- Address valid PR review findings
+- Add missing @testing-library/dom dependency and fix clippy warning
+
+### Documentation
+- Add ADRs for shell safety, MCP transport, kubectl bundling
+- Update wiki with shell execution, Ollama function calling, and CI/CD changes
+- Add v1.0.7 and v1.0.8 release notes
+
+### Features
+- Add three-tier shell execution with kubectl support
+- Add shell execution database migrations (migrations #24-28)
+- Add Ollama function calling and tool calling auto-detection
+- Add shell execution and kubeconfig management UI
+- Add kubectl binary bundling for cross-platform support
+
+## [0.3.11] — 2026-06-01
+
+### Bug Fixes
+- **mcp**: Treat missing resources/list as non-fatal for servers that don't implement it
+
+### Documentation
+- **wiki**: Update MCP-Servers.md with env var support, PATH requirement, and new schema column
+
+## [0.3.10] — 2026-06-01
+
+### Bug Fixes
+- **mcp**: Add env encryption to store layer
+- **mcp**: Parse and merge env vars in discovery layer
+- **mcp**: Add environment variable and HTTP header support for MCP servers
+- **mcp**: Improve UX clarity for encrypted env vars during edit
+- **mcp**: Change plaintext env input to type=text
+- **mcp**: Add validation to block dangerous environment variables
+- **mcp**: Fix test_allows_safe_env_vars test failure
+
 ## [0.3.9] — 2026-06-01
 
 ### Bug Fixes
@@ -229,7 +290,7 @@ CI, chore, and build changes are excluded.
 - Update CHANGELOG.md for v0.2.71
 
 ### Features
-- Initial implementation of TRCAA IT Triage & RCA application
+- Initial implementation of TFTSR IT Triage & RCA application
 - Add Windows amd64 cross-compile to release pipeline; add arm64 QEMU agent
 - Add native linux/arm64 release build step
 - Add macOS arm64 act_runner and release build job
@@ -237,7 +298,7 @@ CI, chore, and build changes are excluded.
 - Inline file/screenshot attachment in triage chat
 - Close issues, restore history, auto-save resolution steps
 - Expand domains to 13 — add Telephony, Security/Vault, Public Safety, Application, Automation/CI-CD
-- Add HPE, Dell, Identity domains + expand k8s/security/observability/DevOps Platform
+- Add HPE, Dell, Identity domains + expand k8s/security/observability/VESTA NXT
 - Add AI disclaimer modal before creating new issues
 - Add database schema for integration credentials and config
 - Implement OAuth2 token exchange and AES-256-GCM encryption
@@ -251,7 +312,7 @@ CI, chore, and build changes are excluded.
 - Add multi-mode authentication for integrations (v0.2.10)
 - Complete webview cookie extraction implementation
 - Add custom_rest provider mode and rebrand application name
-- **rebrand**: Rename binary to tftsr and auto-generate DB key
+- **rebrand**: Rename binary to trcaa and auto-generate DB key
 - **ui**: Fix model dropdown, auth prefill, PII persistence, theme toggle, and Ollama bundle
 - **ci**: Add persistent pre-baked Docker builder images
 - **ai**: Add tool-calling and integration search as AI data source
