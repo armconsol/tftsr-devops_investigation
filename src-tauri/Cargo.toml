@@ -66,3 +66,5 @@ mockito = "1.2"
 [profile.release]
 opt-level = "s"
 strip = true
+
+
