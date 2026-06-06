@@ -1,4 +1,3 @@
-use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -12,7 +11,7 @@ pub struct PortForwardSession {
     pub ports: Vec<u16>,
     pub local_ports: Vec<u16>,
     pub status: PortForwardStatus,
-    pub kubectl_child: Option<Arc<std::sync::Mutex<Child>>>,
+    pub kubectl_child: Option<Arc<std::sync::Mutex<std::process::Child>>>,
     pub is_stopped: Arc<AtomicBool>,
 }
 
@@ -22,26 +21,29 @@ pub enum PortForwardStatus {
     Error(String),
 }
 
+#[derive(Debug, Clone)]
+pub struct PortForwardSessionConfig {
+    pub id: String,
+    pub cluster_id: String,
+    pub cluster_name: String,
+    pub namespace: String,
+    pub pod: String,
+    pub container: Option<String>,
+    pub ports: Vec<u16>,
+    pub local_ports: Vec<u16>,
+}
+
 impl PortForwardSession {
-    pub fn new(
-        id: String,
-        cluster_id: String,
-        cluster_name: String,
-        namespace: String,
-        pod: String,
-        container: Option<String>,
-        ports: Vec<u16>,
-        local_ports: Vec<u16>,
-    ) -> Self {
+    pub fn new(config: PortForwardSessionConfig) -> Self {
         Self {
-            id,
-            cluster_id,
-            cluster_name,
-            namespace,
-            pod,
-            container,
-            ports,
-            local_ports,
+            id: config.id,
+            cluster_id: config.cluster_id,
+            cluster_name: config.cluster_name,
+            namespace: config.namespace,
+            pod: config.pod,
+            container: config.container,
+            ports: config.ports,
+            local_ports: config.local_ports,
             status: PortForwardStatus::Active,
             kubectl_child: None,
             is_stopped: Arc::new(AtomicBool::new(false)),

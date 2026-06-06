@@ -1,4 +1,5 @@
 use crate::kube::ClusterClient;
+use crate::kube::portforward::PortForwardSessionConfig;
 use crate::state::AppState;
 use serde::{Deserialize, Serialize};
 use serde_yaml::Value;
@@ -154,16 +155,16 @@ pub async fn start_port_forward(
     let cluster_name = cluster.name.clone();
     let _kubeconfig_content = cluster.kubeconfig_content.clone();
 
-    let session = crate::kube::PortForwardSession::new(
-        session_id.clone(),
-        request.cluster_id.clone(),
+    let session = crate::kube::PortForwardSession::new(PortForwardSessionConfig {
+        id: session_id.clone(),
+        cluster_id: request.cluster_id.clone(),
         cluster_name,
-        request.namespace.clone(),
-        request.pod.clone(),
-        None,
-        vec![request.container_port],
-        vec![0],
-    );
+        namespace: request.namespace.clone(),
+        pod: request.pod.clone(),
+        container: None,
+        ports: vec![request.container_port],
+        local_ports: vec![0],
+    });
 
     {
         let mut port_forwards = state.port_forwards.lock().await;
