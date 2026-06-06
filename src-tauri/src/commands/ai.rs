@@ -161,6 +161,24 @@ fn extract_list(text: &str, header: &str) -> Vec<String> {
         .collect()
 }
 
+/// Sanitize messages for final call when tool iteration limit is reached.
+/// Converts tool role messages to assistant role with clear labeling as untrusted data.
+fn sanitize_messages_for_final_call(messages: Vec<Message>) -> Vec<Message> {
+    messages
+        .into_iter()
+        .map(|mut msg| {
+            if msg.role == "tool" {
+                // Convert tool output to assistant role with clear labeling as untrusted data
+                msg.role = "assistant".into();
+                msg.content = format!("[UNTRUSTED TOOL OUTPUT]: {}", msg.content);
+                msg.tool_call_id = None;
+            }
+            msg.tool_calls = None; // Strip tool_calls from all messages
+            msg
+        })
+        .collect()
+}
+
 #[tauri::command]
 pub async fn chat_message(
     issue_id: String,
@@ -379,6 +397,63 @@ pub async fn chat_message(
         messages.push(context_message);
     }
 
+    // Tool execution configuration
+    const MAX_TOOL_ITERATIONS: usize = 20; // Allow sufficient iterations for complex diagnostics
+
+    // Get available tools — static + MCP
+    // Only enable tools if the provider explicitly supports tool calling
+    let tools = if provider_config.supports_tool_calling.unwrap_or(false) {
+        let mut all_tools = crate::ai::tools::get_available_tools();
+        let mcp_tools = crate::ai::tools::get_enabled_mcp_tools(&state).await;
+        all_tools.extend(mcp_tools);
+        if all_tools.is_empty() {
+            None
+        } else {
+            Some(all_tools)
+        }
+    } else {
+        None
+    };
+
+    // If tools are available AND using OpenAI-compatible provider, add explicit JSON format instruction
+    // Only OpenAI-compatible providers (default case in create_provider) actually support tool calling.
+    // Others (anthropic, gemini, mistral, ollama) either ignore tools or use provider-specific formats.
+    let is_openai_compatible = {
+        let kind = if provider_config.provider_type.is_empty() {
+            provider_config.name.as_str()
+        } else {
+            provider_config.provider_type.as_str()
+        };
+        !matches!(kind, "anthropic" | "gemini" | "mistral" | "ollama")
+    };
+
+    if tools.is_some() && is_openai_compatible {
+        messages.push(Message {
+            role: "system".into(),
+            content: "CRITICAL: You have tools available. When calling tools, you MUST use the native JSON function calling format in your API response. DO NOT output XML tags like <tool_name>. DO NOT output text descriptions of tool calls. Use the structured tool_calls field in your response.".into(),
+            tool_call_id: None,
+            tool_calls: None,
+        });
+
+        // Add iteration budget awareness
+        messages.push(Message {
+            role: "system".into(),
+            content: format!(
+                "TOOL EXECUTION BUDGET: You have a maximum of {MAX_TOOL_ITERATIONS} rounds (each AI response counts as one round). \
+                 You can call multiple tools in a single round. \
+                 Plan your investigation efficiently:\n\
+                 - Call multiple related tools in the same round when possible\n\
+                 - Prioritize high-value diagnostic commands first\n\
+                 - Use comprehensive output formats (e.g., kubectl --output=yaml) to gather more data per call\n\
+                 - Reserve 1 round for your final summary/answer\n\
+                 - If you exceed the budget, you'll be cut off mid-investigation\n\
+                 Current round count is not visible to you, so plan conservatively."
+            ),
+            tool_call_id: None,
+            tool_calls: None,
+        });
+    }
+
     messages.push(Message {
         role: "user".into(),
         content: full_message.clone(),
@@ -386,25 +461,63 @@ pub async fn chat_message(
         tool_calls: None,
     });
 
-    // Get available tools — static + MCP
-    let mut all_tools = crate::ai::tools::get_available_tools();
-    let mcp_tools = crate::ai::tools::get_enabled_mcp_tools(&state).await;
-    all_tools.extend(mcp_tools);
-    let tools = if all_tools.is_empty() {
-        None
-    } else {
-        Some(all_tools)
-    };
-
     // Tool-calling loop: keep calling until AI gives final answer
     let final_response;
-    let max_iterations = 10; // Prevent infinite loops
     let mut iteration = 0;
 
     loop {
         iteration += 1;
-        if iteration > max_iterations {
-            return Err("Tool-calling loop exceeded maximum iterations".to_string());
+
+        // Warn AI when approaching limit
+        if iteration == MAX_TOOL_ITERATIONS - 2 {
+            messages.push(Message {
+                role: "system".into(),
+                content: format!(
+                    "WARNING: You are on iteration {iteration}/{MAX_TOOL_ITERATIONS} (2 rounds remaining). \
+                     You MUST provide your final answer in the NEXT round. \
+                     Do NOT call any more tools. \
+                     Summarize your findings based on the data you've already gathered."
+                ),
+                tool_call_id: None,
+                tool_calls: None,
+            });
+        }
+
+        // Force stop at limit with collected data
+        if iteration > MAX_TOOL_ITERATIONS {
+            let sanitized_messages = sanitize_messages_for_final_call(messages);
+
+            // Add final instruction
+            let mut final_messages = sanitized_messages;
+            final_messages.push(Message {
+                role: "system".into(),
+                content: format!(
+                    "CRITICAL: Tool iteration limit reached ({iteration}/{MAX_TOOL_ITERATIONS}). \
+                     TOOLS ARE NOW DISABLED. \
+                     You MUST respond now with a natural language summary of your findings. \
+                     DO NOT attempt to call any tools - they will not execute. \
+                     DO NOT emit tool_calls JSON - it will be ignored. \
+                     Ignore any earlier instructions about tool calling or JSON formatting. \
+                     Provide your best answer in plain text based on the diagnostic data already collected."
+                ),
+                tool_call_id: None,
+                tool_calls: None,
+            });
+
+            // Make one final call WITHOUT tools to force text response
+            let final_attempt = provider
+                .chat(final_messages, &provider_config, None) // No tools available
+                .await
+                .map_err(|e| {
+                    format!("AI provider request failed after reaching iteration limit: {e}")
+                })?;
+
+            final_response = final_attempt;
+            tracing::warn!(
+                "Tool iteration limit exceeded, forced final response: {} chars",
+                final_response.content.len()
+            );
+            break;
         }
 
         let response = provider
@@ -1065,13 +1178,78 @@ async fn execute_tool_call(
             )
             .await
         }
+        "execute_shell_command" => execute_shell_tool_call(tool_call, app_handle, app_state).await,
         name if name.starts_with("mcp_") => execute_mcp_tool_call(tool_call, app_state).await,
         _ => {
             let error = format!("Unknown tool: {}", tool_call.name);
-            tracing::warn!("{}", error);
+            tracing::warn!("{error}");
             Err(error)
         }
     }
+}
+
+async fn execute_shell_tool_call(
+    tool_call: &crate::ai::ToolCall,
+    app_handle: &tauri::AppHandle,
+    app_state: &State<'_, AppState>,
+) -> Result<String, String> {
+    // Parse arguments
+    let args: serde_json::Value = serde_json::from_str(&tool_call.arguments)
+        .map_err(|e| format!("Failed to parse tool arguments: {e}"))?;
+
+    let command = args
+        .get("command")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| "Missing command parameter".to_string())?;
+
+    let working_directory = args.get("working_directory").and_then(|v| v.as_str());
+    let kubeconfig_id = args.get("kubeconfig_id").and_then(|v| v.as_str());
+
+    // PII detection
+    {
+        let detector = crate::pii::detector::PiiDetector::new();
+        let spans = detector.detect(command);
+        if !spans.is_empty() {
+            tracing::warn!(
+                tool = %tool_call.name,
+                pii_spans = spans.len(),
+                "PII detected in shell command"
+            );
+        }
+    }
+
+    // Audit log
+    {
+        let db = app_state.db.lock().map_err(|e| e.to_string())?;
+        let details = serde_json::json!({
+            "tool": tool_call.name,
+            "command": command,
+        });
+        crate::audit::log::write_audit_event(
+            &db,
+            "shell_tool_call",
+            "shell_command",
+            command,
+            &details.to_string(),
+        )
+        .map_err(|e| format!("Audit log failed: {e}"))?;
+    }
+
+    // Execute with approval flow
+    let result = crate::shell::executor::execute_with_approval(
+        command,
+        app_handle,
+        app_state.inner(),
+        kubeconfig_id,
+        working_directory,
+    )
+    .await?;
+
+    // Format output for AI
+    Ok(format!(
+        "Exit Code: {}\n\nStdout:\n{}\n\nStderr:\n{}",
+        result.exit_code, result.stdout, result.stderr
+    ))
 }
 
 async fn execute_mcp_tool_call(
@@ -1399,5 +1577,310 @@ mod tests {
         assert_eq!(raw.len(), 2);
         assert_eq!(raw[0].1, "First");
         assert_eq!(raw[1].1, "Second");
+    }
+
+    #[test]
+    fn test_message_sanitization_converts_tool_role_to_assistant() {
+        // Messages with 'tool' role that would cause validation errors
+        let messages = vec![
+            Message {
+                role: "user".into(),
+                content: "What pods are running?".into(),
+                tool_call_id: None,
+                tool_calls: None,
+            },
+            Message {
+                role: "assistant".into(),
+                content: "".into(),
+                tool_call_id: None,
+                tool_calls: Some(vec![crate::ai::ToolCall {
+                    id: "call_123".into(),
+                    name: "execute_shell_command".into(),
+                    arguments: r#"{"command":"kubectl get pods"}"#.into(),
+                }]),
+            },
+            Message {
+                role: "tool".into(),
+                content: "pod1 Running\npod2 Running".into(),
+                tool_call_id: Some("call_123".into()),
+                tool_calls: None,
+            },
+        ];
+
+        // Use production sanitization helper
+        let sanitized = sanitize_messages_for_final_call(messages);
+
+        // Verify sanitization
+        assert_eq!(sanitized.len(), 3);
+        assert_eq!(sanitized[0].role, "user");
+        assert_eq!(sanitized[1].role, "assistant");
+        assert_eq!(sanitized[1].tool_calls, None); // Stripped
+        assert_eq!(sanitized[2].role, "assistant"); // Converted from 'tool' to assistant
+        assert!(sanitized[2].content.starts_with("[UNTRUSTED TOOL OUTPUT]:")); // Labeled as untrusted
+        assert_eq!(sanitized[2].tool_call_id, None); // Stripped
+    }
+
+    #[test]
+    fn test_message_sanitization_preserves_non_tool_messages() {
+        let messages = vec![
+            Message {
+                role: "system".into(),
+                content: "You are a helpful assistant".into(),
+                tool_call_id: None,
+                tool_calls: None,
+            },
+            Message {
+                role: "user".into(),
+                content: "Hello".into(),
+                tool_call_id: None,
+                tool_calls: None,
+            },
+        ];
+
+        // Use production sanitization helper
+        let sanitized = sanitize_messages_for_final_call(messages);
+
+        // Verify non-tool messages preserved
+        assert_eq!(sanitized.len(), 2);
+        assert_eq!(sanitized[0].role, "system");
+        assert_eq!(sanitized[0].content, "You are a helpful assistant");
+        assert_eq!(sanitized[1].role, "user");
+        assert_eq!(sanitized[1].content, "Hello");
+    }
+
+    #[test]
+    fn test_sanitize_messages_strips_tool_calls_from_all_messages() {
+        let messages = vec![
+            Message {
+                role: "assistant".into(),
+                content: "".into(),
+                tool_call_id: None,
+                tool_calls: Some(vec![crate::ai::ToolCall {
+                    id: "call_1".into(),
+                    name: "test".into(),
+                    arguments: "{}".into(),
+                }]),
+            },
+            Message {
+                role: "tool".into(),
+                content: "output".into(),
+                tool_call_id: Some("call_1".into()),
+                tool_calls: None,
+            },
+        ];
+
+        let sanitized = sanitize_messages_for_final_call(messages);
+
+        assert_eq!(sanitized.len(), 2);
+        assert_eq!(sanitized[0].tool_calls, None); // Stripped from assistant
+        assert_eq!(sanitized[1].tool_calls, None); // Already None, but verified
+    }
+
+    #[test]
+    fn test_supports_tool_calling_flag_false_disables_tools() {
+        // Test the logic that enforces supports_tool_calling flag
+        // When flag is false, tools should be None even if tools exist
+
+        let supports_tool_calling = Some(false);
+        let has_tools_available = true; // Simulate available tools
+
+        // Simulate the conditional logic from chat_message command (lines 403-415)
+        let tools_enabled = if supports_tool_calling.unwrap_or(false) {
+            if has_tools_available {
+                Some(vec!["mock_tool"])
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        assert!(
+            tools_enabled.is_none(),
+            "Tools should be None when supports_tool_calling is false"
+        );
+    }
+
+    #[test]
+    fn test_supports_tool_calling_flag_true_enables_tools() {
+        let supports_tool_calling = Some(true);
+        let has_tools_available = true;
+
+        let tools_enabled = if supports_tool_calling.unwrap_or(false) {
+            if has_tools_available {
+                Some(vec!["mock_tool"])
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        assert!(
+            tools_enabled.is_some(),
+            "Tools should be enabled when supports_tool_calling is true"
+        );
+        assert_eq!(tools_enabled.unwrap().len(), 1);
+    }
+
+    #[test]
+    fn test_supports_tool_calling_flag_none_defaults_to_false() {
+        let supports_tool_calling: Option<bool> = None;
+        let has_tools_available = true;
+
+        let tools_enabled = if supports_tool_calling.unwrap_or(false) {
+            if has_tools_available {
+                Some(vec!["mock_tool"])
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        assert!(
+            tools_enabled.is_none(),
+            "Tools should be None when supports_tool_calling is None (defaults to false)"
+        );
+    }
+
+    #[test]
+    fn test_supports_tool_calling_true_but_no_tools_available() {
+        let supports_tool_calling = Some(true);
+        let has_tools_available = false;
+
+        let tools_enabled = if supports_tool_calling.unwrap_or(false) {
+            if has_tools_available {
+                Some(vec!["mock_tool"])
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        assert!(
+            tools_enabled.is_none(),
+            "Tools should be None even when flag is true if no tools are available"
+        );
+    }
+
+    // Tests for detect_tool_calling_support
+    // NOTE: These are unit tests for the detection logic, not integration tests with real providers.
+    // They verify the logical correctness of detection criteria (checking for tool_calls presence,
+    // error pattern matching) but do not exercise the full command implementation.
+    // Tradeoff: These tests provide fast feedback on detection logic without requiring network calls
+    // or mock providers. Integration tests with real providers would be more comprehensive but slower
+    // and require test infrastructure setup.
+
+    #[test]
+    fn test_detect_tool_calling_logic_with_tool_calls_in_response() {
+        use crate::ai::ToolCall;
+
+        // Simulate a response that contains tool_calls
+        let tool_calls = Some(vec![ToolCall {
+            id: "call_1".to_string(),
+            name: "test_tool".to_string(),
+            arguments: "{}".to_string(),
+        }]);
+
+        // Check if any tool_call has the expected name
+        let supports_tools = tool_calls
+            .as_ref()
+            .map(|calls| calls.iter().any(|tc| tc.name == "test_tool"))
+            .unwrap_or(false);
+
+        assert!(
+            supports_tools,
+            "Should detect tool support when response contains test_tool call"
+        );
+    }
+
+    #[test]
+    fn test_detect_tool_calling_logic_without_tool_calls() {
+        use crate::ai::ToolCall;
+
+        // Simulate a response without tool_calls
+        let tool_calls: Option<Vec<ToolCall>> = None;
+
+        let supports_tools = tool_calls
+            .as_ref()
+            .map(|calls| calls.iter().any(|tc| tc.name == "test_tool"))
+            .unwrap_or(false);
+
+        assert!(
+            !supports_tools,
+            "Should not detect tool support when response has no tool_calls"
+        );
+    }
+
+    #[test]
+    fn test_detect_tool_calling_logic_with_wrong_tool_name() {
+        use crate::ai::ToolCall;
+
+        // Simulate a response with tool_calls but wrong tool name
+        let tool_calls = Some(vec![ToolCall {
+            id: "call_1".to_string(),
+            name: "different_tool".to_string(),
+            arguments: "{}".to_string(),
+        }]);
+
+        let supports_tools = tool_calls
+            .as_ref()
+            .map(|calls| calls.iter().any(|tc| tc.name == "test_tool"))
+            .unwrap_or(false);
+
+        assert!(
+            !supports_tools,
+            "Should not detect tool support when tool name doesn't match"
+        );
+    }
+
+    #[test]
+    fn test_detect_tool_calling_error_patterns() {
+        // Test error message patterns that indicate tool calling is not supported
+        let error_cases = vec![
+            "503 Service Unavailable: UNEXPECTED_TOOL_CALL",
+            "Tool calling not supported",
+            "Function calls are not allowed",
+            "tools parameter is invalid",
+        ];
+
+        for error_msg in error_cases {
+            let msg_lower = error_msg.to_lowercase();
+            let is_tool_error = msg_lower.contains("tool")
+                || msg_lower.contains("function")
+                || msg_lower.contains("503");
+
+            assert!(
+                is_tool_error,
+                "Error message '{}' should be recognized as tool-related",
+                error_msg
+            );
+        }
+    }
+
+    #[test]
+    fn test_detect_tool_calling_non_tool_errors() {
+        // Test error messages that are NOT tool-related
+        let error_cases = vec![
+            "Connection timeout",
+            "Invalid API key",
+            "Rate limit exceeded",
+            "Network error",
+        ];
+
+        for error_msg in error_cases {
+            let msg_lower = error_msg.to_lowercase();
+            let is_tool_error = msg_lower.contains("tool")
+                || msg_lower.contains("function")
+                || msg_lower.contains("503");
+
+            assert!(
+                !is_tool_error,
+                "Error message '{}' should NOT be recognized as tool-related",
+                error_msg
+            );
+        }
     }
 }

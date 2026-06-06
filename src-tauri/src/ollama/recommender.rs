@@ -7,18 +7,11 @@ pub fn recommend_models(hw: &HardwareInfo) -> Vec<ModelRecommendation> {
 
     let mut models = vec![
         ModelRecommendation {
-            name: "llama3.2:1b".to_string(),
-            size: "1.3 GB".to_string(),
-            min_ram_gb: 4.0,
-            description: "Smallest Llama 3.2 model. Fast, runs on minimal hardware.".to_string(),
-            recommended: ram < 8.0,
-        },
-        ModelRecommendation {
             name: "llama3.2:3b".to_string(),
             size: "2.0 GB".to_string(),
             min_ram_gb: 6.0,
             description: "Balanced Llama 3.2 model. Good for most IT triage tasks.".to_string(),
-            recommended: (8.0..16.0).contains(&ram),
+            recommended: (6.0..16.0).contains(&ram),
         },
         ModelRecommendation {
             name: "phi3.5:3.8b".to_string(),
@@ -75,16 +68,16 @@ mod tests {
     #[test]
     fn test_low_ram_only_small_models() {
         let models = recommend_models(&hw(4.0, None));
-        assert!(models.iter().all(|m| m.min_ram_gb <= 6.0));
-        assert!(models.iter().any(|m| m.name == "llama3.2:1b"));
+        assert!(models.iter().all(|m| m.min_ram_gb <= 8.0));
+        assert!(models.iter().any(|m| m.name == "llama3.2:3b"));
     }
 
     #[test]
-    fn test_low_ram_recommends_1b() {
+    fn test_low_ram_recommends_3b() {
         let models = recommend_models(&hw(6.0, None));
         let rec = models.iter().find(|m| m.recommended);
         assert!(rec.is_some());
-        assert_eq!(rec.unwrap().name, "llama3.2:1b");
+        assert_eq!(rec.unwrap().name, "llama3.2:3b");
     }
 
     #[test]

@@ -1,6 +1,6 @@
 # AI Providers
 
-TFTSR supports 6+ AI providers, including custom providers with flexible authentication and API formats. API keys are stored encrypted with AES-256-GCM.
+TRCAA supports 6+ AI providers, including custom providers with flexible authentication and API formats. API keys are stored encrypted with AES-256-GCM.
 
 ## Provider Factory
 
@@ -154,11 +154,11 @@ The domain prompt is injected as the first `system` role message in every new co
 
 ---
 
-## 6. Custom Provider (Custom REST & Others)
+## 6. Custom Provider (Multiple API Formats)
 
 **Status:** ✅ **Implemented** (v0.2.6)
 
-Custom providers allow integration with non-OpenAI-compatible APIs. The application supports two API formats:
+Custom providers allow integration with non-OpenAI-compatible APIs. The application supports multiple API formats:
 
 ### Format: OpenAI Compatible (Default)
 
@@ -178,9 +178,42 @@ Standard OpenAI `/chat/completions` endpoint with Bearer authentication.
 
 ---
 
-### Format: Custom REST
+### Format: TFTSR GenAI
 
-**Enterprise AI Gateway** — For AI platforms that use a non-OpenAI request/response format with centralized cost tracking and model access.
+**TFTSR GenAI Gateway** — Enterprise AI gateway with model proxying and cost tracking.
+
+| Field | Value |
+|-------|-------|
+| `config.provider_type` | `"custom"` |
+| `config.api_format` | `"generic-genai"` |
+| Status | ⚠️ **Limited compatibility** |
+
+**Known Limitations:**
+- ❌ **Tool calling not supported**: Gateway returns `503 Service Unavailable` with error `"Gemini Filter Triggered: UNEXPECTED_TOOL_CALL"`
+- ❌ **Shell execution unavailable**: Cannot use `execute_shell_command` or other function calling features
+- ✅ **Basic chat works**: Text-only conversations function correctly
+- ✅ **Workaround parser included**: Attempts to extract tool calls from malformed responses (ChatGPT JSON in `msg` field, Claude XML wrapper)
+
+**Recommendation**: Use **LiteLLM + AWS Bedrock** (see [LiteLLM Setup Guide](LiteLLM-Bedrock-Setup)) or **Ollama** for full tool calling support.
+
+**Root Cause**: TFTSR GenAI gateway applies content filtering that blocks structured tool call responses before they reach the client. This is a gateway-level restriction that cannot be worked around from the client side.
+
+**Configuration (if needed for text-only use):**
+```
+Name:             TFTSR GenAI
+Type:             Custom
+API Format:       TFTSR GenAI
+API URL:          https://your-gateway/api/v2/chat
+Model:            your-model-name
+API Key:          (your API key)
+User ID:          user@example.com (optional, for cost tracking)
+```
+
+---
+
+### Format: Custom REST (Generic)
+
+**Generic Enterprise AI Gateway** — For AI platforms that use a non-OpenAI request/response format with centralized cost tracking and model access.
 
 | Field | Value |
 |-------|-------|
@@ -259,9 +292,64 @@ All providers support the following optional configuration fields (v0.2.6+):
 | `api_format` | `Option<String>` | API format (`openai` or `custom_rest`) | `openai` |
 | `session_id` | `Option<String>` | Session ID for stateful APIs | None |
 | `user_id` | `Option<String>` | User ID for cost tracking (Custom REST gateways) | None |
+| `supports_tool_calling` | `Option<bool>` | Enable function/tool calling | `true` for built-in providers, `false` for custom |
 
 **Backward Compatibility:**
 All fields are optional and default to OpenAI-compatible behavior. Existing provider configurations are unaffected.
+
+---
+
+## Tool Calling Auto-Detection
+
+**Status:** ✅ **Implemented** (v1.0.9+)
+
+TRCAA can automatically detect whether a custom AI provider supports tool calling (function calling) by sending a test tool call and analyzing the response.
+
+### How It Works
+
+1. Navigate to **Settings → AI Providers** → Add/Edit Custom Provider
+2. Configure your provider (API URL, key, model)
+3. Click **"Auto-Detect Tool Calling Support"** button
+4. System sends a simple test tool call to the provider
+5. Checkbox automatically enabled/disabled based on result
+6. Success/warning message displayed
+
+### Detection Criteria
+
+| Scenario | Result | Explanation |
+|----------|--------|-------------|
+| Provider returns `tool_calls` array with test tool | ✅ Tool calling supported | Checkbox enabled automatically |
+| Provider responds without tool_calls | ⚠️ Not supported | Checkbox disabled automatically |
+| Gateway returns 503 / "tool" error | ⚠️ Blocked at gateway level | Checkbox disabled (e.g., TFTSR GenAI) |
+| Connection/auth/timeout error | ❌ Error displayed | User must fix connection issue |
+
+### Test Tool
+
+The auto-detection sends this minimal tool:
+
+```rust
+{
+  "name": "test_tool",
+  "description": "A test tool that returns 'success'. Call this tool with no arguments.",
+  "parameters": {
+    "type": "object",
+    "properties": {},
+    "required": []
+  }
+}
+```
+
+### Known Limitations
+
+- **TFTSR GenAI**: Gateway blocks tool calls with `503 UNEXPECTED_TOOL_CALL` before they reach the model. Auto-detect correctly identifies this as "not supported."
+- **Small Models**: Models <3B parameters (e.g., `llama3.2:1b`) may respond but describe tools instead of calling them. Auto-detect may return `true` (model capability) but runtime behavior will fail.
+- **Timeout**: Detection uses same timeout as regular chat (60-180s depending on provider). Slow providers may timeout during detection.
+
+### Manual Override
+
+You can always manually toggle the `supports_tool_calling` checkbox:
+- ✅ Enable: For providers you know support tool calling
+- ❌ Disable: For text-only chat without shell execution or integrations
 
 ---
 

@@ -9,7 +9,7 @@
 
 ## Context
 
-TFTSR DevOps Investigation v1.0.0 introduced `execute_shell_command` tool for AI agents, with kubectl as a primary use case (diagnosing Kubernetes pod failures, checking deployments, viewing logs). kubectl is a critical tool for IT troubleshooting but has several challenges:
+TRCAA v1.0.0 introduced `execute_shell_command` tool for AI agents, with kubectl as a primary use case (diagnosing Kubernetes pod failures, checking deployments, viewing logs). kubectl is a critical tool for IT troubleshooting but has several challenges:
 
 **Problems with system kubectl**:
 - Version skew: User's kubectl may be v1.25 while cluster is v1.30 (API changes)
@@ -187,7 +187,7 @@ pub async fn execute_kubectl(command: &str, kubeconfig_id: Option<String>) -> Re
 ### Negative
 
 - **Installer size**: Increases by ~50MB per platform (150MB total for all platforms)
-- **Update lag**: kubectl version frozen until release
+- **Update lag**: kubectl version frozen until TRCAA release
 - **Disk usage**: Each install includes kubectl binary (no sharing across users)
 - **Maintenance**: Need to periodically update kubectl version
 

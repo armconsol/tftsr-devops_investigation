@@ -10,15 +10,15 @@ use std::collections::HashSet;
 fn get_product_synonyms(query: &str) -> Vec<String> {
     let mut synonyms = Vec::new();
 
-    // VESTA NXT related synonyms
-    if query.to_lowercase().contains("vesta") || query.to_lowercase().contains("vnxt") {
+    // DevOps Platform related synonyms
+    if query.to_lowercase().contains("platform") || query.to_lowercase().contains("product") {
         synonyms.extend(vec![
-            "VESTA NXT".to_string(),
-            "Vesta NXT".to_string(),
-            "VNXT".to_string(),
-            "vnxt".to_string(),
-            "Vesta".to_string(),
-            "vesta".to_string(),
+            "DevOps Platform".to_string(),
+            "DevOps Platform NXT".to_string(),
+            "DevOps Tool".to_string(),
+            "product".to_string(),
+            "DevOps Platform".to_string(),
+            "platform".to_string(),
             "VNX".to_string(),
             "vnx".to_string(),
         ]);
@@ -67,7 +67,7 @@ fn get_product_synonyms(query: &str) -> Vec<String> {
 /// Expand a search query with related terms for better search coverage
 ///
 /// This function takes a user query and expands it with:
-/// - Product name synonyms (e.g., "VNXT" -> "VESTA NXT", "Vesta NXT")
+/// - Product name synonyms (e.g., "DevOps Tool" -> "DevOps Platform", "DevOps Platform NXT")
 /// - Version number variations
 /// - Related terms based on query content
 ///
@@ -239,7 +239,7 @@ mod tests {
 
     #[test]
     fn test_expand_query_with_product_synonyms() {
-        let query = "upgrade vesta nxt to 1.1.9";
+        let query = "upgrade devops platform to 1.1.9";
         let expanded = expand_query(query);
 
         // Should contain original query
@@ -248,7 +248,7 @@ mod tests {
         // Should contain product synonyms
         assert!(expanded
             .iter()
-            .any(|s| s.contains("vnxt") || s.contains("vnxt")));
+            .any(|s| s.contains("product") || s.contains("product")));
     }
 
     #[test]
@@ -262,24 +262,24 @@ mod tests {
 
     #[test]
     fn test_extract_keywords() {
-        let query = "How do I upgrade VESTA NXT from 1.0.12 to 1.1.9?";
+        let query = "How do I upgrade DevOps Platform from 1.0.12 to 1.1.9?";
         let keywords = extract_keywords(query);
 
         assert!(keywords.contains(&"upgrade".to_string()));
-        assert!(keywords.contains(&"vesta".to_string()));
-        assert!(keywords.contains(&"nxt".to_string()));
+        assert!(keywords.contains(&"platform".to_string()));
+        assert!(keywords.contains(&"devops".to_string()));
         assert!(keywords.contains(&"1.0.12".to_string()));
         assert!(keywords.contains(&"1.1.9".to_string()));
     }
 
     #[test]
     fn test_product_synonyms() {
-        let synonyms = get_product_synonyms("vesta nxt upgrade");
+        let synonyms = get_product_synonyms("devops platform upgrade");
 
-        // Should contain VNXT synonym
+        // Should contain DevOps Tool synonym
         assert!(synonyms
             .iter()
-            .any(|s| s.contains("VNXT") || s.contains("vnxt")));
+            .any(|s| s.contains("DevOps Tool") || s.contains("product")));
     }
 
     #[test]

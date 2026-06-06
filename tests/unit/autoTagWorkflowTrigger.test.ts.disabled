@@ -4,11 +4,11 @@ import path from "node:path";
 
 const autoTagWorkflowPath = path.resolve(
   process.cwd(),
-  ".gitea/workflows/auto-tag.yml",
+  ".gitea/workflows/release.yml",
 );
 
 describe("auto-tag workflow release triggering", () => {
-  it("creates tags via git push instead of Gitea tag API", () => {
+  it("creates tags via git push instead of API call", () => {
     const workflow = readFileSync(autoTagWorkflowPath, "utf-8");
 
     expect(workflow).toContain("git push origin \"refs/tags/$NEXT\"");
@@ -23,7 +23,13 @@ describe("auto-tag workflow release triggering", () => {
     expect(workflow).toContain("build-macos-arm64:");
     expect(workflow).toContain("build-linux-arm64:");
     expect(workflow).toContain("needs: autotag");
-    expect(workflow).toContain("TAG=$(curl -s \"$API/tags?limit=50\"");
-    expect(workflow).toContain("ERROR: Could not resolve release tag from repository tags.");
+    expect(workflow).toContain("git tag --sort=-version:refname");
+  });
+
+  it("uses --clobber for artifact uploads to handle re-runs cleanly", () => {
+    const workflow = readFileSync(autoTagWorkflowPath, "utf-8");
+
+    const clobberCount = (workflow.match(/--clobber/g) ?? []).length;
+    expect(clobberCount).toBeGreaterThanOrEqual(4);
   });
 });

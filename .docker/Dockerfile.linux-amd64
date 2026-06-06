@@ -24,5 +24,9 @@ RUN apt-get update -qq \
     && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/*
 
+# tea (Gitea CLI) can be installed if needed:
+# RUN curl -sL https://dl.gitea.com/tea/master/tea-master-linux-amd64 -o /usr/local/bin/tea \
+#     && chmod +x /usr/local/bin/tea
+
 RUN rustup target add x86_64-unknown-linux-gnu \
     && rustup component add rustfmt clippy

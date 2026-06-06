@@ -91,7 +91,7 @@ TypeScript mirrors this shape exactly in `tauriCommands.ts`.
 **Artifacts**: `src-tauri/target/{target}/release/bundle/`
 
 **Environments**:
-- Test CI images at `172.0.0.29:3000` (pull `trcaa-*:rust1.88-node22`)
+- Test CI images at `172.0.0.29:3000` (pull `tftsr-*:rust1.88-node22`)
 - Gitea instance: `http://172.0.0.29:3000`
 - Wiki: sync from `docs/wiki/*.md` → `https://gogs.tftsr.com/sarman/tftsr-devops_investigation/wiki`
 
@@ -101,15 +101,15 @@ TypeScript mirrors this shape exactly in `tauriCommands.ts`.
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `TFTSR_DATA_DIR` | Platform data dir | Override database location |
-| `TFTSR_DB_KEY` | Auto-generated | SQLCipher encryption key override |
-| `TFTSR_ENCRYPTION_KEY` | Auto-generated | Credential encryption key override |
+| `TRCAA_DATA_DIR` (or legacy `TRCAA_DATA_DIR`) | Platform data dir | Override database location |
+| `TRCAA_DB_KEY` (or legacy `TRCAA_DB_KEY`) | Auto-generated | SQLCipher encryption key override |
+| `TRCAA_ENCRYPTION_KEY` (or legacy `TRCAA_ENCRYPTION_KEY`) | Auto-generated | Credential encryption key override |
 | `RUST_LOG` | `info` | Tracing level (`debug`, `info`, `warn`, `error`) |
 
 **Database path**:
-- Linux: `~/.local/share/trcaa/trcaa.db`
-- macOS: `~/Library/Application Support/trcaa/trcaa.db`
-- Windows: `%APPDATA%\trcaa\trcaa.db`
+- Linux: `~/.local/share/tftsr/tftsr.db`
+- macOS: `~/Library/Application Support/tftsr/tftsr.db`
+- Windows: `%APPDATA%\tftsr\tftsr.db`
 
 ---
 
@@ -128,7 +128,7 @@ TypeScript mirrors this shape exactly in `tauriCommands.ts`.
 
 ### Security
 - **Database encryption**: AES-256 (SQLCipher in release builds)
-- **Credential encryption**: AES-256-GCM, keys stored in `TFTSR_ENCRYPTION_KEY` or auto-generated `.enckey` (mode 0600)
+- **Credential encryption**: AES-256-GCM, keys stored in `TRCAA_ENCRYPTION_KEY` (or legacy `TRCAA_ENCRYPTION_KEY`) or auto-generated `.enckey` (mode 0600)
 - **Audit trail**: Hash-chained entries (`prev_hash` + `entry_hash`) for tamper evidence
 - **PII protection**: 12-pattern detector → user approval gate → hash-chained audit entry
 

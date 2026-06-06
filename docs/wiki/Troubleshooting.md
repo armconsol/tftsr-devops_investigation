@@ -175,7 +175,7 @@ sudo apt-get install -y libwebkit2gtk-4.1-dev libssl-dev libgtk-3-dev \
 
 **Symptom:** App fails to start with SQLCipher error.
 
-1. `TFTSR_DB_KEY` env var is set
+1. `TRCAA_DB_KEY` (or legacy `TRCAA_DB_KEY`) env var is set
 2. Key matches what was used when DB was created
 3. File isn't corrupted: `file tftsr.db` should say `SQLite 3.x database`
 

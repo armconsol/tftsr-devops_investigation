@@ -128,7 +128,7 @@ pub async fn search_confluence(
         }
     }
 
-    all_results.sort_by(|a, b| canonicalize_url(&a.url).cmp(&canonicalize_url(&b.url)));
+    all_results.sort_by_key(|a| canonicalize_url(&a.url));
     all_results.dedup_by(|a, b| canonicalize_url(&a.url) == canonicalize_url(&b.url));
 
     Ok(all_results)

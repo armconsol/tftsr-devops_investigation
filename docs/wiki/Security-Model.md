@@ -2,7 +2,7 @@
 
 ## Threat Model Summary
 
-TFTSR handles sensitive IT incident data including log files that may contain credentials, PII, and internal infrastructure details. The security model addresses:
+TRCAA handles sensitive IT incident data including log files that may contain credentials, PII, and internal infrastructure details. The security model addresses:
 
 1. **Data at rest** — Database encryption
 2. **Data in transit** — PII redaction before AI send, TLS for all outbound requests
@@ -19,22 +19,22 @@ Production builds use SQLCipher:
 - **KDF:** PBKDF2-HMAC-SHA512, 256,000 iterations
 - **HMAC:** HMAC-SHA512
 - **Page size:** 16384 bytes
-- **Key source:** `TFTSR_DB_KEY` environment variable
+- **Key source:** `TRCAA_DB_KEY` (or legacy `TRCAA_DB_KEY`) environment variable
 
 Debug builds use plain SQLite (no encryption) for developer convenience.
 
-Release builds now fail startup if `TFTSR_DB_KEY` is missing or empty.
+Release builds now fail startup if `TRCAA_DB_KEY` (or legacy `TRCAA_DB_KEY`) is missing or empty.
 
 ---
 
 ## Credential Encryption
 
 Integration tokens are encrypted with AES-256-GCM before persistence:
-- **Key source:** `TFTSR_ENCRYPTION_KEY` (required in release builds)
+- **Key source:** `TRCAA_ENCRYPTION_KEY` (or legacy `TRCAA_ENCRYPTION_KEY`) (required in release builds)
 - **Key derivation:** SHA-256 hash of key material to a fixed 32-byte AES key
 - **Nonce:** Cryptographically secure random nonce per encryption
 
-Release builds fail secure operations if `TFTSR_ENCRYPTION_KEY` is unset or empty.
+Release builds fail secure operations if `TRCAA_ENCRYPTION_KEY` (or legacy `TRCAA_ENCRYPTION_KEY`) is unset or empty.
 
 The Stronghold plugin remains enabled and now uses a per-installation salt derived from the app data directory path hash instead of a fixed static salt.
 
@@ -136,7 +136,7 @@ MCP server support introduces external tool execution capabilities. The followin
 ### Auth Value Storage
 
 - Auth tokens (API keys, bearer tokens, OAuth2 access tokens) are encrypted with **AES-256-GCM** before persistence in `mcp_servers.auth_value`.
-- Encryption uses the same key derivation as integration credentials (`TFTSR_ENCRYPTION_KEY` → SHA-256 → 32-byte AES key).
+- Encryption uses the same key derivation as integration credentials (`TRCAA_ENCRYPTION_KEY` (or legacy `TRCAA_ENCRYPTION_KEY`) → SHA-256 → 32-byte AES key).
 - Random 96-bit nonce per encryption operation.
 - Format: `base64(nonce || ciphertext || tag)`.
 

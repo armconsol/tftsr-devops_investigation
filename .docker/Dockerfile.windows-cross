@@ -20,4 +20,24 @@ RUN apt-get update -qq \
     && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/*
 
+# tea (Gitea CLI) can be installed if needed:
+# RUN curl -sL https://dl.gitea.com/tea/master/tea-master-linux-amd64 -o /usr/local/bin/tea \
+#     && chmod +x /usr/local/bin/tea
+
+# Pre-build libsodium for x86_64-pc-windows-gnu so libsodium-sys-stable
+# does not attempt a network download at cargo build time (no DNS in CI containers).
+RUN set -eu \
+    && SODIUM_VER="1.0.20" \
+    && curl -fsSL "https://download.libsodium.org/libsodium/releases/libsodium-${SODIUM_VER}.tar.gz" \
+       | tar -xz -C /tmp \
+    && cd "/tmp/libsodium-${SODIUM_VER}" \
+    && ./configure \
+         --host=x86_64-w64-mingw32 \
+         --prefix=/usr/x86_64-w64-mingw32 \
+         --disable-shared \
+         --enable-static \
+    && make -j"$(nproc)" \
+    && make install \
+    && rm -rf "/tmp/libsodium-${SODIUM_VER}"
+
 RUN rustup target add x86_64-pc-windows-gnu

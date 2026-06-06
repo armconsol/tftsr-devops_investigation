@@ -63,11 +63,19 @@ pub fn run() {
         .manage(app_state)
         .setup(|app| {
             let handle = app.handle().clone();
+
+            // Initialize MCP servers
             tauri::async_runtime::spawn(async move {
                 if let Err(e) = crate::mcp::discovery::init_all_servers(&handle).await {
                     tracing::warn!("MCP startup discovery error: {e}");
                 }
             });
+
+            // Auto-detect kubeconfig
+            // Note: Kubeconfig auto-detection is implemented in shell::kubeconfig::auto_detect_kubeconfig
+            // but not called at startup because it requires database access which may not be initialized yet.
+            // Users can manually upload kubeconfig files via the frontend UI.
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -169,7 +177,12 @@ pub fn run() {
 
 /// Determine the application data directory.
 fn dirs_data_dir() -> std::path::PathBuf {
+    // Support both TRCAA_DATA_DIR (new) and TFTSR_DATA_DIR (legacy) for backwards compatibility
+    if let Ok(dir) = std::env::var("TRCAA_DATA_DIR") {
+        return std::path::PathBuf::from(dir);
+    }
     if let Ok(dir) = std::env::var("TFTSR_DATA_DIR") {
+        tracing::warn!("TFTSR_DATA_DIR is deprecated, use TRCAA_DATA_DIR instead");
         return std::path::PathBuf::from(dir);
     }
 
@@ -177,13 +190,13 @@ fn dirs_data_dir() -> std::path::PathBuf {
     #[cfg(target_os = "linux")]
     {
         if let Ok(xdg) = std::env::var("XDG_DATA_HOME") {
-            return std::path::PathBuf::from(xdg).join("trcaa");
+            return std::path::PathBuf::from(xdg).join("tftsr");
         }
         if let Ok(home) = std::env::var("HOME") {
             return std::path::PathBuf::from(home)
                 .join(".local")
                 .join("share")
-                .join("trcaa");
+                .join("tftsr");
         }
     }
 
@@ -193,17 +206,17 @@ fn dirs_data_dir() -> std::path::PathBuf {
             return std::path::PathBuf::from(home)
                 .join("Library")
                 .join("Application Support")
-                .join("trcaa");
+                .join("tftsr");
         }
     }
 
     #[cfg(target_os = "windows")]
     {
         if let Ok(appdata) = std::env::var("APPDATA") {
-            return std::path::PathBuf::from(appdata).join("trcaa");
+            return std::path::PathBuf::from(appdata).join("tftsr");
         }
     }
 
     // Fallback
-    std::path::PathBuf::from("./trcaa-data")
+    std::path::PathBuf::from("./tftsr-data")
 }

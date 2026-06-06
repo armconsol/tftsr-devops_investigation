@@ -13,9 +13,9 @@ name: Build CI Docker Images
 #   sudo systemctl restart docker
 #
 # Images produced:
-#   172.0.0.29:3000/sarman/trcaa-linux-amd64:rust1.88-node22
-#   172.0.0.29:3000/sarman/trcaa-windows-cross:rust1.88-node22
-#   172.0.0.29:3000/sarman/trcaa-linux-arm64:rust1.88-node22
+#   172.0.0.29:3000/sarman/tftsr-linux-amd64:rust1.88-node22
+#   172.0.0.29:3000/sarman/tftsr-windows-cross:rust1.88-node22
+#   172.0.0.29:3000/sarman/tftsr-linux-arm64:rust1.88-node22
 
 on:
   push:
@@ -52,10 +52,10 @@ jobs:
         run: |
           echo "$RELEASE_TOKEN" | docker login $REGISTRY -u $REGISTRY_USER --password-stdin
           docker build \
-            -t $REGISTRY/$REGISTRY_USER/trcaa-linux-amd64:rust1.88-node22 \
+            -t $REGISTRY/$REGISTRY_USER/tftsr-linux-amd64:rust1.88-node22 \
             -f .docker/Dockerfile.linux-amd64 .
-          docker push $REGISTRY/$REGISTRY_USER/trcaa-linux-amd64:rust1.88-node22
-          echo "✓ Pushed $REGISTRY/$REGISTRY_USER/trcaa-linux-amd64:rust1.88-node22"
+          docker push $REGISTRY/$REGISTRY_USER/tftsr-linux-amd64:rust1.88-node22
+          echo "✓ Pushed $REGISTRY/$REGISTRY_USER/tftsr-linux-amd64:rust1.88-node22"
 
   windows-cross:
     runs-on: linux-amd64
@@ -75,10 +75,10 @@ jobs:
         run: |
           echo "$RELEASE_TOKEN" | docker login $REGISTRY -u $REGISTRY_USER --password-stdin
           docker build \
-            -t $REGISTRY/$REGISTRY_USER/trcaa-windows-cross:rust1.88-node22 \
+            -t $REGISTRY/$REGISTRY_USER/tftsr-windows-cross:rust1.88-node22 \
             -f .docker/Dockerfile.windows-cross .
-          docker push $REGISTRY/$REGISTRY_USER/trcaa-windows-cross:rust1.88-node22
-          echo "✓ Pushed $REGISTRY/$REGISTRY_USER/trcaa-windows-cross:rust1.88-node22"
+          docker push $REGISTRY/$REGISTRY_USER/tftsr-windows-cross:rust1.88-node22
+          echo "✓ Pushed $REGISTRY/$REGISTRY_USER/tftsr-windows-cross:rust1.88-node22"
 
   linux-arm64:
     runs-on: linux-amd64
@@ -98,7 +98,7 @@ jobs:
         run: |
           echo "$RELEASE_TOKEN" | docker login $REGISTRY -u $REGISTRY_USER --password-stdin
           docker build \
-            -t $REGISTRY/$REGISTRY_USER/trcaa-linux-arm64:rust1.88-node22 \
+            -t $REGISTRY/$REGISTRY_USER/tftsr-linux-arm64:rust1.88-node22 \
             -f .docker/Dockerfile.linux-arm64 .
-          docker push $REGISTRY/$REGISTRY_USER/trcaa-linux-arm64:rust1.88-node22
-          echo "✓ Pushed $REGISTRY/$REGISTRY_USER/trcaa-linux-arm64:rust1.88-node22"
+          docker push $REGISTRY/$REGISTRY_USER/tftsr-linux-arm64:rust1.88-node22
+          echo "✓ Pushed $REGISTRY/$REGISTRY_USER/tftsr-linux-arm64:rust1.88-node22"

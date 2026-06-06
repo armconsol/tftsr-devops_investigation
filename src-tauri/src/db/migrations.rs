@@ -380,7 +380,6 @@ pub fn run_migrations(conn: &Connection) -> anyhow::Result<()> {
                 || name.ends_with("_add_log_content_compressed")
                 || name.ends_with("_add_image_data")
                 || name.ends_with("_add_supports_tool_calling")
-                || name.ends_with("_add_mcp_env_config")
             {
                 // Use execute for ALTER TABLE (SQLite only allows one statement per command)
                 // Skip error if column already exists (SQLITE_ERROR with "duplicate column name")

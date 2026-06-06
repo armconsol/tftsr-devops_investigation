@@ -77,8 +77,9 @@ cargo tauri build  # Outputs to src-tauri/target/release/bundle/
 
 ### CI/CD
 
-- **Test pipeline**: `.woodpecker/test.yml` — runs on every push/PR
-- **Release pipeline**: `.woodpecker/release.yml` — runs on `v*` tags, produces Linux amd64+arm64 bundles, uploads to Gogs release at `http://172.0.0.29:3000/api/v1`
+- **Test pipeline**: `.github/workflows/test.yml` — runs on every push/PR targeting `main`
+- **Release pipeline**: `.github/workflows/release.yml` — runs on every push to `main`, auto-tags, produces multi-platform bundles (Linux amd64+arm64, Windows, macOS arm64+Intel), uploads to GitHub Releases at `https://gogs.tftsr.com/sarman/apollo_nxt-tftsr/releases`
+- **Docker builder images**: `.github/workflows/build-images.yml` — rebuilds `ghcr.io/tftsr/tftsr-*` images when `.docker/**` changes on `main`
 
 ---
 
@@ -117,9 +118,9 @@ All command handlers receive `State<'_, AppState>` as a Tauri-injected parameter
 
 **AI provider factory**: `ai/provider.rs::create_provider(config)` dispatches on `config.name` to the matching struct. Adding a provider means implementing the `Provider` trait and adding a match arm.
 
-**Database encryption**: `cfg!(debug_assertions)` → plain SQLite; release → SQLCipher AES-256. Key from `TFTSR_DB_KEY` env var (defaults to a dev placeholder). DB path from `TFTSR_DATA_DIR` or platform data dir.
+**Database encryption**: `cfg!(debug_assertions)` → plain SQLite; release → SQLCipher AES-256. Key from `TRCAA_DB_KEY` (or legacy `TRCAA_DB_KEY`) env var (defaults to a dev placeholder). DB path from `TRCAA_DATA_DIR` (or legacy `TRCAA_DATA_DIR`) or platform data dir.
 
-**Credential encryption**: API keys stored in `AppSettings` are encrypted using AES-256-GCM via the `aes-gcm` crate. The encryption key is derived from `TFTSR_ENCRYPTION_KEY` env var. Credentials are encrypted on save and decrypted on load. See `commands/system.rs::save_settings()` for implementation.
+**Credential encryption**: API keys stored in `AppSettings` are encrypted using AES-256-GCM via the `aes-gcm` crate. The encryption key is derived from `TRCAA_ENCRYPTION_KEY` (or legacy `TRCAA_ENCRYPTION_KEY`) env var. Credentials are encrypted on save and decrypted on load. See `commands/system.rs::save_settings()` for implementation.
 
 ### Frontend (React / TypeScript)
 
@@ -162,24 +163,60 @@ On the TypeScript side, `tauriCommands.ts` mirrors this shape exactly.
 
 Before any text is sent to an AI provider, `apply_redactions` must be called and the resulting SHA-256 hash recorded via `audit::log::write_audit_event`.
 
-### Woodpecker CI + Gogs Compatibility
+### Shell Command Execution (v1.0.0)
 
-**Status**: Woodpecker CI v0.15.4 is deployed at `http://172.0.0.29:8084` (direct) and `http://172.0.0.29:8085` (nginx proxy). Webhook delivery from Gogs works, but CI builds are not yet triggering due to hook authentication issues. See `PLAN.md § Phase 11` for full details.
+**Status**: Production-ready agentic shell execution with three-tier safety classification.
 
-Known issues with Woodpecker 0.15.4 + Gogs 0.14:
-- `token.ParseRequest()` does not read `?token=` URL params (only `Authorization` header and `user_sess` cookie)
-- The SPA login form uses `login=` field; Gogs backend reads `username=` — a custom login page is served by nginx at `/login` and `/login/form`
-- Gogs 0.14 has no OAuth2 provider support, blocking upgrade to Woodpecker 2.x
+**Features**:
+- kubectl commands with bundled binary (v1.30.0)
+- Proxmox tools (pvecm, pvesh, qm)
+- General shell diagnostics
+- Real-time approval modal for Tier 2 commands
+- Multiple kubeconfig support with AES-256 encrypted storage
+- Pipe/chain command analysis with tier escalation
+- Command execution history and audit logging
 
-Gogs token quirk: the `sha1` value returned by `POST /api/v1/users/{user}/tokens` is the **actual bearer token**. The `sha1` and `sha256` columns in the Gogs DB are hashes of that token, not the token itself.
+**Three-Tier Safety System**:
+- **Tier 1** (Auto-execute): `kubectl get|describe|logs`, `cat|grep|ls`
+- **Tier 2** (User approval): `kubectl apply|delete|scale`, `ssh`, `systemctl restart`
+- **Tier 3** (Always deny): `rm -rf`, `shutdown`, `mkfs`
+
+**Key Files**:
+- `src-tauri/src/shell/classifier.rs`: Command safety classification (19 tests, 100% coverage)
+- `src-tauri/src/shell/executor.rs`: Execution flow with approval gates
+- `src-tauri/src/shell/kubectl.rs`: kubectl binary management
+- `src-tauri/src/shell/kubeconfig.rs`: Kubeconfig parsing and encryption
+- `src-tauri/src/commands/shell.rs`: 7 Tauri commands for kubeconfig and execution management
+- `src-tauri/src/ai/tools.rs`: `execute_shell_command` tool registration
+- `src/components/ShellApprovalModal.tsx`: Real-time approval UI
+- `src/pages/Settings/ShellExecution.tsx`: Settings and history view
+- `src/pages/Settings/KubeconfigManager.tsx`: Multi-cluster management UI
+- `scripts/download-kubectl.sh`: Binary download for all platforms
+
+**Database Tables** (Migrations 024-027):
+- `shell_commands`: Pre-defined command templates with tier definitions
+- `kubeconfig_files`: Encrypted kubeconfig storage
+- `command_executions`: Full audit trail (command, tier, status, exit code, stdout, stderr, timing)
+- `approval_decisions`: Session-based approval preferences
+
+**Documentation**: `docs/wiki/Shell-Execution.md`
+
+### GitHub Actions CI
+
+All pipelines run on GitHub Actions at `https://gogs.tftsr.com/sarman/apollo_nxt-tftsr/actions`.
+
+- `GITHUB_TOKEN` is the only credential needed — no external secrets required
+- Builder images are hosted on `ghcr.io/tftsr/` (GitHub Container Registry)
+- Branch protection on `main` requires `rust-test` and `frontend-test` checks to pass, plus Copilot code review, before merging
+- kubectl binaries downloaded during build via `scripts/download-kubectl.sh` for all platforms
 
 ---
 
 ## Wiki Maintenance
 
-The project wiki lives at `https://gogs.tftsr.com/sarman/tftsr-devops_investigation/wiki`.
+The project wiki lives at `https://gogs.tftsr.com/sarman/apollo_nxt-tftsr/wiki`.
 
-**Source of truth**: `docs/wiki/*.md` in this repo. The `wiki-sync` CI step (in `.woodpecker/test.yml`) automatically pushes any changes to the Gogs wiki on every push to master.
+**Source of truth**: `docs/wiki/*.md` in this repo. The `wiki-sync` job (in `.github/workflows/release.yml`) automatically pushes any changes to the GitHub wiki on every push to `main`.
 
 **When making code changes, update the corresponding wiki file in `docs/wiki/` before committing:**
 
@@ -189,16 +226,17 @@ The project wiki lives at `https://gogs.tftsr.com/sarman/tftsr-devops_investigat
 | DB schema or migrations (`db/migrations.rs`, `db/models.rs`) | `docs/wiki/Database.md` |
 | New/changed AI provider (`ai/*.rs`) | `docs/wiki/AI-Providers.md` |
 | PII patterns or detection logic (`pii/`) | `docs/wiki/PII-Detection.md` |
-| CI/CD pipeline changes (`.woodpecker/*.yml`) | `docs/wiki/CICD-Pipeline.md` |
+| CI/CD pipeline changes (`.github/workflows/*.yml`) | `docs/wiki/CICD-Pipeline.md` |
 | Rust architecture or module layout (`lib.rs`, `state.rs`) | `docs/wiki/Architecture.md` |
 | Security-relevant changes (capabilities, audit, Stronghold) | `docs/wiki/Security-Model.md` |
 | Dev setup, prerequisites, build commands | `docs/wiki/Development-Setup.md` |
 | Integration stubs or v0.2 progress (`integrations/`) | `docs/wiki/Integrations.md` |
 | Recurring bugs and fixes | `docs/wiki/Troubleshooting.md` |
+| Shell execution, kubectl, kubeconfig management (`shell/`) | `docs/wiki/Shell-Execution.md` |
 
 To manually push wiki changes without waiting for CI:
 ```bash
-cd /tmp/tftsr-wiki   # local clone of the wiki git repo
+cd /tmp/apollo-wiki   # local clone of the wiki git repo
 # edit *.md files, then:
 git add -A && git commit -m "docs: ..." && git push
 ```

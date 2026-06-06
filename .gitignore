@@ -10,6 +10,9 @@ artifacts/
 *.png
 /screenshots/
 
+# kubectl binaries (downloaded during build)
+src-tauri/binaries/
+
 SECURITY_AUDIT.md
 
 # Internal / private documents — never commit
@@ -20,3 +23,5 @@ TICKET_*.md
 BUGFIX_SUMMARY.md
 PR_DESCRIPTION.md
 docs/images/user-guide/
+*.bak
+.DS_Store

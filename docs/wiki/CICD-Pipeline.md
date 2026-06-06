@@ -5,17 +5,16 @@
 | Component | URL | Notes |
 |-----------|-----|-------|
 | Gitea | `https://gogs.tftsr.com` / `http://172.0.0.29:3000` | Git server (migrated from Gogs 0.14) |
-| Gitea Actions | Built into Gitea | Native GitHub Actions-compatible CI/CD |
+| Gitea Actions (direct) | `http://gitea.tftsr.com:8084` | v2.x |
+| Gitea Actions (proxy) | `http://gitea.tftsr.com:8085` | nginx reverse proxy |
 | PostgreSQL (Gitea DB) | Container: `gogs_postgres_db` | DB: `gogsdb`, User: `gogs` |
-
-**CI/CD System:** Gitea Actions (v1.22+) with native GitHub Actions API compatibility. Uses `.gitea/workflows/*.yml` for workflow definitions.
 
 ### CI Agents
 
 | Agent | Platform | Host | Purpose |
 |-------|----------|------|---------|
-| `gitea_act_runner_amd64` (Docker) | `linux-amd64` | 172.0.0.29 | Native x86_64 — test builds + amd64/windows release |
-| `act_runner` (systemd) | `linux-arm64` | 172.0.0.29 | Native aarch64 — arm64 release builds |
+| `gitea_act_runner_amd64` (Docker) | `linux-amd64` | gitea.tftsr.com | Native x86_64 — test builds + amd64/windows release |
+| `act_runner` (systemd) | `linux-arm64` | gitea.tftsr.com | Native aarch64 — arm64 release builds |
 | `act_runner` (launchd) | `macos-arm64` | sarman's local Mac | Native Apple Silicon — macOS `.dmg` release builds |
 
 Agent labels configured in `~/.config/act_runner/config.yaml`:
@@ -47,7 +46,7 @@ Rust toolchain, cross-compilers) so that CI jobs skip package installation entir
 2. Confirm all 3 images appear in the Gitea package/container registry at `172.0.0.29:3000`
 3. Only then merge workflow changes that depend on the new image contents
 
-**Server prerequisite — insecure registry** (one-time, on 172.0.0.29):
+**Server prerequisite — insecure registry** (one-time, on gitea.tftsr.com):
 ```sh
 echo '{"insecure-registries":["172.0.0.29:3000"]}' | sudo tee /etc/docker/daemon.json
 sudo systemctl restart docker
@@ -60,7 +59,7 @@ daemon to pull from the local HTTP registry.
 ## Cargo and npm Caching
 
 All Rust and build jobs use `actions/cache@v3` to cache downloaded package artifacts.
-Gitea 1.22 implements the GitHub Actions cache API natively.
+Gitea 1.22 implements the Gitea Actions cache API natively.
 
 **Cargo cache** (Rust jobs):
 ```yaml
@@ -136,7 +135,7 @@ Jobs (run in parallel after autotag):
   build-macos-arm64   → cargo tauri build (aarch64-apple-darwin) — runs on local Mac
                          → {.dmg} uploaded to Gitea release
                          → existing same-name assets are deleted before upload (rerun-safe)
-                         → unsigned; after install run: xattr -cr /Applications/TFTSR.app
+                         → unsigned; after install run: xattr -cr /Applications/TRCAA.app
 ```
 
 **Per-step agent routing (Woodpecker 2.x labels):**
@@ -145,7 +144,7 @@ Jobs (run in parallel after autotag):
 steps:
   - name: build-linux-amd64
     labels:
-      platform: linux/amd64   # → woodpecker_agent on 172.0.0.29
+      platform: linux/amd64   # → woodpecker_agent on gitea.tftsr.com
 
   - name: build-linux-arm64
     labels:
@@ -235,7 +234,7 @@ No DB config path switching needed (unlike Woodpecker 0.15.4).
 After migration, Woodpecker 2.x registers webhooks automatically when a repo is
 activated via the UI. No manual JWT-signed webhook setup required.
 
-1. Log in at `http://172.0.0.29:8085` via Gitea OAuth2
+1. Log in at `http://gitea.tftsr.com:8085` via Gitea OAuth2
 2. Add repo `sarman/tftsr-devops_investigation`
 3. Woodpecker creates webhook in Gitea automatically
 

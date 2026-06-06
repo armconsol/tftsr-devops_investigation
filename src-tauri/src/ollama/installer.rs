@@ -51,86 +51,41 @@ pub async fn check_ollama() -> anyhow::Result<OllamaStatus> {
     })
 }
 
-pub fn get_install_instructions(platform: &str) -> InstallGuide {
-    let url = "https://ollama.com/download".to_string();
-    match platform {
-        "linux" => InstallGuide {
-            platform: "Linux".to_string(),
-            steps: vec![
-                "Open a terminal".to_string(),
-                "Run: curl -fsSL https://ollama.com/install.sh | sh".to_string(),
-                "Start Ollama: ollama serve".to_string(),
-                "Pull a model: ollama pull llama3.2:3b".to_string(),
-            ],
-            url,
-        },
-        "macos" => InstallGuide {
-            platform: "macOS".to_string(),
-            steps: vec![
-                "Download the macOS installer from ollama.com/download".to_string(),
-                "Open the downloaded .dmg file".to_string(),
-                "Drag Ollama to Applications".to_string(),
-                "Launch Ollama from Applications".to_string(),
-                "Pull a model: ollama pull llama3.2:3b".to_string(),
-            ],
-            url,
-        },
-        "windows" => InstallGuide {
-            platform: "Windows".to_string(),
-            steps: vec![
-                "Download OllamaSetup.exe from ollama.com/download".to_string(),
-                "Run the installer and follow the prompts".to_string(),
-                "Ollama will start automatically in the system tray".to_string(),
-                "Pull a model: ollama pull llama3.2:3b".to_string(),
-            ],
-            url,
-        },
-        _ => InstallGuide {
-            platform: platform.to_string(),
-            steps: vec![
-                "Visit https://ollama.com/download for installation instructions".to_string(),
-            ],
-            url,
-        },
-    }
-}
-
-/// Helper to find Ollama binary in common locations
+/// Find the full path to the ollama binary
 fn find_ollama_binary() -> Option<std::path::PathBuf> {
-    let common_paths = [
-        "/usr/local/bin/ollama",
-        "/opt/homebrew/bin/ollama",
-        "/usr/bin/ollama",
-        "/home/linuxbrew/.linuxbrew/bin/ollama",
-    ];
-
-    for path in &common_paths {
-        let p = std::path::Path::new(path);
-        if p.exists() {
-            return Some(p.to_path_buf());
-        }
-    }
-
-    // Fallback to which/where command
+    // Try which/where command first
     let which_cmd = if cfg!(target_os = "windows") {
         "where"
     } else {
         "which"
     };
 
-    std::process::Command::new(which_cmd)
-        .arg("ollama")
-        .output()
-        .ok()
-        .and_then(|output| {
-            if output.status.success() {
-                String::from_utf8(output.stdout)
-                    .ok()
-                    .map(|s| std::path::PathBuf::from(s.trim()))
-            } else {
-                None
+    if let Ok(output) = std::process::Command::new(which_cmd).arg("ollama").output() {
+        if output.status.success() {
+            if let Ok(path_str) = String::from_utf8(output.stdout) {
+                let path = path_str.trim();
+                if !path.is_empty() {
+                    return Some(std::path::PathBuf::from(path));
+                }
             }
-        })
+        }
+    }
+
+    // Fallback: check common install paths
+    let common_paths = [
+        "/usr/local/bin/ollama",
+        "/opt/homebrew/bin/ollama",
+        "/usr/bin/ollama",
+    ];
+
+    for path in &common_paths {
+        let pb = std::path::PathBuf::from(path);
+        if pb.exists() {
+            return Some(pb);
+        }
+    }
+
+    None
 }
 
 /// Attempt to start Ollama service if installed but not running
@@ -240,39 +195,61 @@ pub async fn start_ollama_service() -> anyhow::Result<bool> {
                 }
             }
         } else {
-            tracing::error!("Ollama binary not found");
+            tracing::error!("Ollama binary not found in PATH or common locations");
             Ok(false)
         }
     }
 
     #[cfg(target_os = "windows")]
     {
-        // On Windows, Ollama runs as a service, check if we can start it
-        tracing::info!("Attempting to start Ollama on Windows...");
-        if let Some(ollama_bin) = find_ollama_binary() {
-            let result = std::process::Command::new(&ollama_bin).arg("serve").spawn();
-
-            match result {
-                Ok(_) => {
-                    tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
-                    let new_status = check_ollama().await?;
-                    Ok(new_status.running)
-                }
-                Err(e) => {
-                    tracing::error!("Failed to start Ollama: {}", e);
-                    Ok(false)
-                }
-            }
-        } else {
-            tracing::error!("Ollama binary not found");
-            Ok(false)
-        }
-    }
-
-    #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
-    {
-        tracing::warn!("Auto-start not supported on this platform");
+        // On Windows, Ollama should be running as a system service
+        // If it's not, user needs to start it manually or reinstall
+        tracing::warn!("Ollama is installed but not running on Windows - user should start it from system tray");
         Ok(false)
+    }
+}
+
+pub fn get_install_instructions(platform: &str) -> InstallGuide {
+    let url = "https://ollama.com/download".to_string();
+    match platform {
+        "linux" => InstallGuide {
+            platform: "Linux".to_string(),
+            steps: vec![
+                "Open a terminal".to_string(),
+                "Run: curl -fsSL https://ollama.com/install.sh | sh".to_string(),
+                "Start Ollama: ollama serve".to_string(),
+                "Pull a model: ollama pull llama3.2:3b".to_string(),
+            ],
+            url,
+        },
+        "macos" => InstallGuide {
+            platform: "macOS".to_string(),
+            steps: vec![
+                "Download the macOS installer from ollama.com/download".to_string(),
+                "Open the downloaded .dmg file".to_string(),
+                "Drag Ollama to Applications".to_string(),
+                "Launch Ollama from Applications".to_string(),
+                "Pull a model: ollama pull llama3.2:3b".to_string(),
+            ],
+            url,
+        },
+        "windows" => InstallGuide {
+            platform: "Windows".to_string(),
+            steps: vec![
+                "Download OllamaSetup.exe from ollama.com/download".to_string(),
+                "Run the installer and follow the prompts".to_string(),
+                "Ollama will start automatically in the system tray".to_string(),
+                "Pull a model: ollama pull llama3.2:3b".to_string(),
+            ],
+            url,
+        },
+        _ => InstallGuide {
+            platform: platform.to_string(),
+            steps: vec![
+                "Visit https://ollama.com/download for installation instructions".to_string(),
+            ],
+            url,
+        },
     }
 }
 

@@ -35,7 +35,7 @@ const buttonVariants = cva(
       variant: {
         default: "bg-primary text-primary-foreground hover:bg-primary/90",
         destructive: "bg-destructive text-destructive-foreground hover:bg-destructive/90",
-        outline: "border border-input bg-background hover:bg-accent hover:text-accent-foreground",
+        outline: "border border-input bg-background text-foreground hover:bg-accent hover:text-accent-foreground",
         secondary: "bg-secondary text-secondary-foreground hover:bg-secondary/80",
         ghost: "hover:bg-accent hover:text-accent-foreground",
         link: "text-primary underline-offset-4 hover:underline",
@@ -253,11 +253,31 @@ export function SelectContent({
   className?: string;
 }) {
   const ctx = React.useContext(SelectContext)!;
+  const contentRef = React.useRef<HTMLDivElement>(null);
+  const [flipUpward, setFlipUpward] = React.useState(false);
+
+  React.useEffect(() => {
+    if (!ctx.open || !contentRef.current) return;
+
+    const rect = contentRef.current.getBoundingClientRect();
+    const viewportHeight = window.innerHeight;
+    const spaceBelow = viewportHeight - rect.bottom;
+
+    // If dropdown extends below viewport (less than 20px space), flip upward
+    if (spaceBelow < 20) {
+      setFlipUpward(true);
+    } else {
+      setFlipUpward(false);
+    }
+  }, [ctx.open]);
+
   if (!ctx.open) return null;
   return (
     <div
+      ref={contentRef}
       className={cn(
-        "absolute z-50 mt-1 max-h-60 w-full overflow-auto rounded-md border bg-card p-1 shadow-md",
+        "absolute z-50 max-h-60 w-full overflow-auto rounded-md border bg-card p-1 shadow-md",
+        flipUpward ? "bottom-full mb-1" : "top-full mt-1",
         className
       )}
     >

@@ -142,13 +142,13 @@ pub async fn extract_cookies_via_ipc<R: tauri::Runtime>(
                 }
 
                 // Store in a global variable that Rust can read
-                window.__TFTSR_COOKIES__ = cookies;
-                console.log('[TFTSR] Extracted', cookies.length, 'cookies');
+                window.__TRCAA_COOKIES__ = cookies;
+                console.log('[TRCAA] Extracted', cookies.length, 'cookies');
                 return cookies.length;
             } catch (e) {
-                console.error('[TFTSR] Cookie extraction failed:', e);
-                window.__TFTSR_COOKIES__ = [];
-                window.__TFTSR_ERROR__ = e.message;
+                console.error('[TRCAA] Cookie extraction failed:', e);
+                window.__TRCAA_COOKIES__ = [];
+                window.__TRCAA_ERROR__ = e.message;
                 return -1;
             }
         })();
@@ -174,11 +174,11 @@ pub async fn extract_cookies_via_ipc<R: tauri::Runtime>(
         // Store result in localStorage, then copy to document.title for Rust to read
         let check_and_signal_script = r#"
             try {
-                if (typeof window.__TFTSR_ERROR__ !== 'undefined') {
-                    window.localStorage.setItem('tftsr_result', JSON.stringify({ error: window.__TFTSR_ERROR__ }));
-                } else if (typeof window.__TFTSR_COOKIES__ !== 'undefined' && window.__TFTSR_COOKIES__.length > 0) {
-                    window.localStorage.setItem('tftsr_result', JSON.stringify({ cookies: window.__TFTSR_COOKIES__ }));
-                } else if (typeof window.__TFTSR_COOKIES__ !== 'undefined') {
+                if (typeof window.__TRCAA_ERROR__ !== 'undefined') {
+                    window.localStorage.setItem('tftsr_result', JSON.stringify({ error: window.__TRCAA_ERROR__ }));
+                } else if (typeof window.__TRCAA_COOKIES__ !== 'undefined' && window.__TRCAA_COOKIES__.length > 0) {
+                    window.localStorage.setItem('tftsr_result', JSON.stringify({ cookies: window.__TRCAA_COOKIES__ }));
+                } else if (typeof window.__TRCAA_COOKIES__ !== 'undefined') {
                     window.localStorage.setItem('tftsr_result', JSON.stringify({ cookies: [] }));
                 }
             } catch (e) {
@@ -198,8 +198,8 @@ pub async fn extract_cookies_via_ipc<R: tauri::Runtime>(
                 if (result) {
                     window.localStorage.removeItem('tftsr_result');
                     // Store in title temporarily for Rust to read
-                    window.__TFTSR_ORIGINAL_TITLE__ = document.title;
-                    document.title = 'TFTSR_RESULT:' + result;
+                    window.__TRCAA_ORIGINAL_TITLE__ = document.title;
+                    document.title = 'TRCAA_RESULT:' + result;
                 }
             })();
         "#;
@@ -209,11 +209,11 @@ pub async fn extract_cookies_via_ipc<R: tauri::Runtime>(
 
         // Read the title
         if let Ok(title) = webview_window.title() {
-            if let Some(json_str) = title.strip_prefix("TFTSR_RESULT:") {
+            if let Some(json_str) = title.strip_prefix("TRCAA_RESULT:") {
                 // Restore original title
                 let restore_title = r#"
-                    if (typeof window.__TFTSR_ORIGINAL_TITLE__ !== 'undefined') {
-                        document.title = window.__TFTSR_ORIGINAL_TITLE__;
+                    if (typeof window.__TRCAA_ORIGINAL_TITLE__ !== 'undefined') {
+                        document.title = window.__TRCAA_ORIGINAL_TITLE__;
                     }
                 "#;
                 webview_window.eval(restore_title).ok();
