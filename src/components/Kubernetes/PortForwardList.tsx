@@ -25,7 +25,11 @@ export function PortForwardList({ portForwards, onStart, onStop, onDelete }: Por
   };
 
   const getStatusColor = (status: string) => {
-    switch (status.toLowerCase()) {
+    const statusLower = status.toLowerCase().trim();
+    if (statusLower === "") {
+      return "bg-muted text-muted-foreground";
+    }
+    switch (statusLower) {
       case "active":
         return "bg-green-500/15 text-green-600 dark:text-green-400 border-green-500/20";
       case "stopped":

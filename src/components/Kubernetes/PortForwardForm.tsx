@@ -46,6 +46,11 @@ export function PortForwardForm({ isOpen, onClose, onStart }: PortForwardFormPro
       return;
     }
 
+    if (containerPort.trim() === "") {
+      setError("Container port is required");
+      return;
+    }
+
     const port = parseInt(containerPort, 10);
     if (isNaN(port) || port < 1 || port > 65535) {
       setError("Container port must be a valid port number (1-65535)");
