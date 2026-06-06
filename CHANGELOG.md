@@ -8,6 +8,9 @@ CI, chore, and build changes are excluded.
 
 ### Bug Fixes
 - **lint**: Resolve ESLint errors
+- **changelog**: Only include current tag commits in release body
+- **workflow**: Remove duplicate else block in changelog generation
+- **fmt**: Format code with cargo fmt
 
 ## [1.1.0] — 2026-06-06
 
