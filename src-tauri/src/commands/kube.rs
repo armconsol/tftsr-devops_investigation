@@ -159,6 +159,17 @@ pub async fn list_port_forwards(
     Ok(forwards)
 }
 
+#[tauri::command]
+pub async fn delete_port_forward(id: String, state: State<'_, AppState>) -> Result<(), String> {
+    let mut port_forwards = state.port_forwards.lock().await;
+
+    if port_forwards.remove(&id).is_none() {
+        return Err(format!("Port forward session {id} not found"));
+    }
+
+    Ok(())
+}
+
 fn extract_context(_content: &str) -> Result<String, String> {
     Ok("default".to_string())
 }
