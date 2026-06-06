@@ -1,6 +1,6 @@
 use std::collections::HashMap;
-use tokio::sync::RwLock;
 use std::sync::Arc;
+use tokio::sync::RwLock;
 
 pub struct RefreshRegistry {
     domains: HashMap<String, Domain>,
