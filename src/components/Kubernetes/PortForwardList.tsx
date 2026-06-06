@@ -7,13 +7,20 @@ import { stopPortForwardCmd } from "@/lib/tauriCommands";
 interface PortForwardListProps {
   portForwards: PortForwardResponse[];
   onStart: () => void;
-  onStop: (session_id: string) => Promise<void>;
+  onStop: (id: string) => Promise<void>;
+  onDelete: (id: string) => Promise<void>;
 }
 
-export function PortForwardList({ portForwards, onStart, onStop }: PortForwardListProps) {
+export function PortForwardList({ portForwards, onStart, onStop, onDelete }: PortForwardListProps) {
   const handleStop = async (id: string) => {
     if (window.confirm("Are you sure you want to stop this port forward?")) {
       await onStop(id);
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (window.confirm("Are you sure you want to delete this port forward? This cannot be undone.")) {
+      await onDelete(id);
     }
   };
 
@@ -102,7 +109,7 @@ export function PortForwardList({ portForwards, onStart, onStop }: PortForwardLi
                   <Button
                     variant="destructive"
                     size="sm"
-                    onClick={() => handleStop(pf.id)}
+                    onClick={() => handleDelete(pf.id)}
                   >
                     <Trash2 className="w-4 h-4" />
                   </Button>

@@ -41,7 +41,7 @@ export function PortForwardForm({ isOpen, onClose, onStart }: PortForwardFormPro
     e.preventDefault();
     setError("");
 
-    if (!clusterId || !pod || !containerPort) {
+    if (!clusterId || !namespace || !pod || !containerPort) {
       setError("All fields are required");
       return;
     }

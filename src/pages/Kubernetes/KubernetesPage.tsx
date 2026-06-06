@@ -12,6 +12,10 @@ import {
   stopPortForwardCmd,
 } from "@/lib/tauriCommands";
 
+const deletePortForwardCmd = async (id: string): Promise<void> => {
+  await stopPortForwardCmd(id);
+};
+
 export function KubernetesPage() {
   const [clusters, setClusters] = useState<ClusterInfo[]>([]);
   const [portForwards, setPortForwards] = useState<PortForwardResponse[]>([]);
@@ -59,6 +63,16 @@ export function KubernetesPage() {
     }
   };
 
+  const handleDeletePortForward = async (id: string) => {
+    try {
+      await stopPortForwardCmd(id);
+      setPortForwards((prev) => prev.filter((pf) => pf.id !== id));
+    } catch (err) {
+      console.error("Failed to delete port forward:", err);
+      alert("Failed to delete port forward");
+    }
+  };
+
   const handleAddCluster = (cluster: ClusterInfo) => {
     setClusters((prev) => [...prev, cluster]);
   };
@@ -98,6 +112,7 @@ export function KubernetesPage() {
           portForwards={portForwards}
           onStart={() => setIsStartPortForwardOpen(true)}
           onStop={handleStopPortForward}
+          onDelete={handleDeletePortForward}
         />
       </div>
 
