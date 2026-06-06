@@ -17,6 +17,7 @@ export interface ProviderConfig {
   session_id?: string;
   user_id?: string;
   use_datastore_upload?: boolean;
+  supports_tool_calling?: boolean;
 }
 
 export interface Message {
@@ -332,6 +333,9 @@ export const applyRedactionsCmd = (logFileId: string, approvedSpanIds: string[])
 
 export const testProviderConnectionCmd = (providerConfig: ProviderConfig) =>
   invoke<ChatResponse>("test_provider_connection", { providerConfig });
+
+export const detectToolCallingSupportCmd = (providerConfig: ProviderConfig) =>
+  invoke<boolean>("detect_tool_calling_support", { providerConfig });
 
 export const createIssueCmd = (newIssue: NewIssue) =>
   invoke<Issue>("create_issue", {
@@ -683,3 +687,54 @@ export const listAllImageAttachmentsCmd = (search?: string, issueId?: string) =>
     search: search ?? null,
     issueId: issueId ?? null,
   });
+
+// ─── Shell Execution Commands ────────────────────────────────────────────────
+
+export interface KubeconfigInfo {
+  id: string;
+  name: string;
+  context: string;
+  cluster_url?: string;
+  is_active: boolean;
+}
+
+export interface CommandExecution {
+  id: string;
+  command: string;
+  tier: number;
+  approval_status: string;
+  exit_code: number | null;
+  stdout: string | null;
+  stderr: string | null;
+  execution_time_ms: number | null;
+  executed_at: string;
+}
+
+export interface KubectlStatus {
+  installed: boolean;
+  path?: string;
+  version?: string;
+}
+
+export const uploadKubeconfigCmd = (name: string, content: string) =>
+  invoke<string>("upload_kubeconfig", { name, content });
+
+export const listKubeconfigsCmd = () =>
+  invoke<KubeconfigInfo[]>("list_kubeconfigs");
+
+export const activateKubeconfigCmd = (id: string) =>
+  invoke<void>("activate_kubeconfig", { id });
+
+export const deleteKubeconfigCmd = (id: string) =>
+  invoke<void>("delete_kubeconfig", { id });
+
+export const respondToShellApprovalCmd = (approvalId: string, decision: string) =>
+  invoke<void>("respond_to_shell_approval", { approvalId, decision });
+
+export const listCommandExecutionsCmd = (issueId?: string) =>
+  invoke<CommandExecution[]>("list_command_executions", {
+    issueId: issueId ?? null,
+  });
+
+export const checkKubectlInstalledCmd = () =>
+  invoke<KubectlStatus>("check_kubectl_installed");

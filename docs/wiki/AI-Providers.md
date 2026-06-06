@@ -90,15 +90,48 @@ Uses OpenAI-compatible request/response format.
 | Field | Value |
 |-------|-------|
 | `config.name` | `"ollama"` |
-| Default URL | `http://localhost:11434/api/chat` |
+| Default URL | `http://localhost:11434` |
 | Auth | None |
 | Max tokens | No limit enforced |
+| **Tool Calling** | ✅ **Fully Supported** (v1.0.7+) |
+| Timeout | 180s (tool calling), 60s (regular chat) |
+| Retry Logic | 3 attempts with 2s delay |
 
-**Models:** Any model pulled locally — `llama3.1`, `llama3`, `mistral`, `codellama`, `phi3`, etc.
+**Recommended Models (≥3B parameters):**
 
-Fully offline. Responses include `eval_count` / `prompt_eval_count` token stats.
+| Model | Size | Min RAM | Notes |
+|-------|------|---------|-------|
+| `llama3.2:3b` | 2.0 GB | 6 GB | Balanced performance |
+| `phi3.5:3.8b` | 2.2 GB | 6 GB | Excellent reasoning |
+| `llama3.1:8b` | 4.7 GB | 10 GB | **RECOMMENDED** - Strong IT analysis |
+| `qwen2.5:14b` | 9.0 GB | 16 GB | Best for complex log analysis |
+| `gemma2:9b` | 5.5 GB | 12 GB | Google's efficient model |
+
+**⚠️ Important:** Models with <3B parameters (e.g., `llama3.2:1b`) cannot reliably follow tool calling instructions. They will describe tools instead of invoking them.
+
+**Features:**
+- ✅ **Function Calling Support** (v1.0.7): Executes shell commands, kubectl operations
+- ✅ **Multi-turn Tool Conversations**: Preserves `tool_call_id` for correlation
+- ✅ **Resilient Parsing**: Skips malformed tool calls with warnings
+- ✅ **Connection Reliability** (v1.0.8): Health checks, retry logic, extended timeouts
+- ✅ **Auto-Start**: Automatically starts Ollama service if not running
+- ✅ **Fully Offline**: No internet required, complete privacy
 
 **Custom URL:** Change the Ollama URL in Settings → AI Providers → Ollama (stored in `settingsStore.ollama_url`).
+
+**Troubleshooting:**
+
+| Error | Cause | Solution |
+|-------|-------|----------|
+| "Cannot connect to Ollama" | Service not running | Run `ollama serve` or check auto-start |
+| Timeout after 60s (chat) / 180s (tool calling) | Model too slow / tool calling needs more time | Use a smaller model, reduce tool usage, or wait for the higher tool-calling timeout to elapse |
+| Tool calls described but not executed | Model too small (<3B) | Use `llama3.2:3b` or larger |
+| Model not loaded | First request loads model | Wait 5-10s for model to load into VRAM |
+
+**Performance Tips:**
+- Use quantized models (Q4_K_M or Q4_0) for faster responses
+- Keep model loaded with `ollama run <model>` in background
+- Monitor VRAM usage - models stay loaded for 5 minutes by default
 
 ---
 

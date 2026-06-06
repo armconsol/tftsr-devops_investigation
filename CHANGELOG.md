@@ -1,8 +1,33 @@
 # Changelog
 
-All notable changes to TFTSR are documented here.
+All notable changes to TRCAA are documented here.
 Commit types shown: feat, fix, perf, docs, refactor.
 CI, chore, and build changes are excluded.
+
+## [Unreleased]
+
+### Bug Fixes
+- Align Tauri npm packages with Rust crate versions
+- Pin plugin-stronghold npm version to match Rust crate (2.3.1)
+
+## [0.3.12] — 2026-06-05
+
+### Bug Fixes
+- **ci**: Fix YAML syntax error in test.yml
+- Address valid PR review findings
+- Add missing @testing-library/dom dependency and fix clippy warning
+
+### Documentation
+- Add ADRs for shell safety, MCP transport, kubectl bundling
+- Update wiki with shell execution, Ollama function calling, and CI/CD changes
+- Add v1.0.7 and v1.0.8 release notes
+
+### Features
+- Add three-tier shell execution with kubectl support
+- Add shell execution database migrations (migrations #24-28)
+- Add Ollama function calling and tool calling auto-detection
+- Add shell execution and kubeconfig management UI
+- Add kubectl binary bundling for cross-platform support
 
 ## [0.3.11] — 2026-06-01
 

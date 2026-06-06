@@ -5,9 +5,10 @@
 | Component | URL | Notes |
 |-----------|-----|-------|
 | Gitea | `https://gogs.tftsr.com` / `http://172.0.0.29:3000` | Git server (migrated from Gogs 0.14) |
-| Woodpecker CI (direct) | `http://172.0.0.29:8084` | v2.x |
-| Woodpecker CI (proxy) | `http://172.0.0.29:8085` | nginx reverse proxy |
+| Gitea Actions | Built into Gitea | Native GitHub Actions-compatible CI/CD |
 | PostgreSQL (Gitea DB) | Container: `gogs_postgres_db` | DB: `gogsdb`, User: `gogs` |
+
+**CI/CD System:** Gitea Actions (v1.22+) with native GitHub Actions API compatibility. Uses `.gitea/workflows/*.yml` for workflow definitions.
 
 ### CI Agents
 
@@ -35,9 +36,9 @@ Rust toolchain, cross-compilers) so that CI jobs skip package installation entir
 
 | Image | Used by jobs | Contents |
 |-------|-------------|----------|
-| `172.0.0.29:3000/sarman/trcaa-linux-amd64:rust1.88-node22` | `rust-fmt-check`, `rust-clippy`, `rust-tests`, `build-linux-amd64` | Rust 1.88 + rustfmt + clippy + Tauri amd64 libs + Node.js 22 |
-| `172.0.0.29:3000/sarman/trcaa-windows-cross:rust1.88-node22` | `build-windows-amd64` | Rust 1.88 + mingw-w64 + NSIS + Node.js 22 |
-| `172.0.0.29:3000/sarman/trcaa-linux-arm64:rust1.88-node22` | `build-linux-arm64` | Rust 1.88 + aarch64 cross-toolchain + arm64 multiarch libs + Node.js 22 |
+| `172.0.0.29:3000/sarman/tftsr-linux-amd64:rust1.88-node22` | `rust-fmt-check`, `rust-clippy`, `rust-tests`, `build-linux-amd64` | Rust 1.88 + rustfmt + clippy + Tauri amd64 libs + Node.js 22 |
+| `172.0.0.29:3000/sarman/tftsr-windows-cross:rust1.88-node22` | `build-windows-amd64` | Rust 1.88 + mingw-w64 + NSIS + Node.js 22 |
+| `172.0.0.29:3000/sarman/tftsr-linux-arm64:rust1.88-node22` | `build-linux-arm64` | Rust 1.88 + aarch64 cross-toolchain + arm64 multiarch libs + Node.js 22 |
 
 **Rebuild triggers:** Rust toolchain version bump, webkit2gtk/gtk major version change, Node.js major version change.
 
@@ -106,7 +107,7 @@ Pipeline jobs (run in parallel):
 ```
 
 **Docker images used:**
-- `172.0.0.29:3000/sarman/trcaa-linux-amd64:rust1.88-node22` — Rust steps (replaces `rust:1.88-slim`)
+- `172.0.0.29:3000/sarman/tftsr-linux-amd64:rust1.88-node22` — Rust steps (replaces `rust:1.88-slim`)
 - `node:22-alpine` — Frontend steps
 
 ---
@@ -120,15 +121,15 @@ Release jobs are executed in the same workflow and depend on `autotag` completio
 
 ```
 Jobs (run in parallel after autotag):
-  build-linux-amd64   → image: trcaa-linux-amd64:rust1.88-node22
+  build-linux-amd64   → image: tftsr-linux-amd64:rust1.88-node22
                          → cargo tauri build (x86_64-unknown-linux-gnu)
                          → {.deb, .rpm, .AppImage} uploaded to Gitea release
                          → fails fast if no Linux artifacts are produced
-  build-windows-amd64 → image: trcaa-windows-cross:rust1.88-node22
+  build-windows-amd64 → image: tftsr-windows-cross:rust1.88-node22
                          → cargo tauri build (x86_64-pc-windows-gnu) via mingw-w64
                          → {.exe, .msi} uploaded to Gitea release
                          → fails fast if no Windows artifacts are produced
-  build-linux-arm64   → image: trcaa-linux-arm64:rust1.88-node22 (ubuntu:22.04-based)
+  build-linux-arm64   → image: tftsr-linux-arm64:rust1.88-node22 (ubuntu:22.04-based)
                          → cargo tauri build (aarch64-unknown-linux-gnu)
                          → {.deb, .rpm, .AppImage} uploaded to Gitea release
                          → fails fast if no Linux artifacts are produced

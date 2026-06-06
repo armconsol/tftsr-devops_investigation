@@ -19,10 +19,13 @@ import {
 import { useSettingsStore } from "@/stores/settingsStore";
 import {
   testProviderConnectionCmd,
+  detectToolCallingSupportCmd,
   saveAiProviderCmd,
   loadAiProvidersCmd,
   deleteAiProviderCmd,
+  listOllamaModelsCmd,
   type ProviderConfig,
+  type OllamaModel,
 } from "@/lib/tauriCommands";
 
 export const CUSTOM_REST_MODELS = [
@@ -64,6 +67,7 @@ const emptyProvider: ProviderConfig = {
   api_format: undefined,
   session_id: undefined,
   user_id: undefined,
+  supports_tool_calling: false,
 };
 
 export default function AIProviders() {
@@ -81,9 +85,11 @@ export default function AIProviders() {
   const [isAdding, setIsAdding] = useState(false);
   const [form, setForm] = useState<ProviderConfig>({ ...emptyProvider });
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
-  const [isTesting, setIsTesting] = useState(false);
+  const [isTestingConnection, setIsTestingConnection] = useState(false);
+  const [isDetectingToolCalling, setIsDetectingToolCalling] = useState(false);
   const [isCustomModel, setIsCustomModel] = useState(false);
   const [customModelInput, setCustomModelInput] = useState("");
+  const [ollamaModels, setOllamaModels] = useState<OllamaModel[]>([]);
 
   // Load providers from database on mount
   // Note: Auto-testing of active provider is handled in App.tsx on startup
@@ -98,6 +104,22 @@ export default function AIProviders() {
     };
     loadProviders();
   }, [setProviders]);
+
+  // Load Ollama models when form provider type changes to ollama
+  useEffect(() => {
+    if (form.provider_type === "ollama") {
+      const loadOllamaModels = async () => {
+        try {
+          const models = await listOllamaModelsCmd();
+          setOllamaModels(models);
+        } catch (err) {
+          console.error("Failed to load Ollama models:", err);
+          setOllamaModels([]);
+        }
+      };
+      loadOllamaModels();
+    }
+  }, [form.provider_type]);
 
   const startAdd = () => {
     setForm({ ...emptyProvider });
@@ -172,7 +194,7 @@ export default function AIProviders() {
   };
 
   const handleTest = async () => {
-    setIsTesting(true);
+    setIsTestingConnection(true);
     setTestResult(null);
     try {
       const response = await testProviderConnectionCmd(form);
@@ -180,7 +202,27 @@ export default function AIProviders() {
     } catch (err) {
       setTestResult({ success: false, message: String(err) });
     } finally {
-      setIsTesting(false);
+      setIsTestingConnection(false);
+    }
+  };
+
+  const handleAutoDetectToolCalling = async () => {
+    setIsDetectingToolCalling(true);
+    setTestResult(null);
+    try {
+      const supportsTools = await detectToolCallingSupportCmd(form);
+      // Use functional update to avoid stale closure
+      setForm((prev) => ({ ...prev, supports_tool_calling: supportsTools }));
+      setTestResult({
+        success: supportsTools, // Align success with actual outcome
+        message: supportsTools
+          ? "✅ Tool calling supported! Checkbox enabled automatically."
+          : "⚠️ Tool calling not supported. Checkbox disabled automatically.",
+      });
+    } catch (err) {
+      setTestResult({ success: false, message: `Auto-detect failed: ${String(err)}` });
+    } finally {
+      setIsDetectingToolCalling(false);
     }
   };
 
@@ -289,12 +331,14 @@ export default function AIProviders() {
                     const type = v as ProviderConfig["provider_type"];
                     const defaults: Partial<ProviderConfig> =
                       type === "ollama"
-                        ? { api_url: "http://localhost:11434", api_key: "", model: "llama3.2:3b" }
+                        ? { api_url: "http://localhost:11434", api_key: "", model: "llama3.2:3b", supports_tool_calling: true }
                         : type === "openai"
-                        ? { api_url: "https://api.openai.com/v1" }
+                        ? { api_url: "https://api.openai.com/v1", supports_tool_calling: true }
                         : type === "anthropic"
-                        ? { api_url: "https://api.anthropic.com" }
-                        : {};
+                        ? { api_url: "https://api.anthropic.com", supports_tool_calling: true }
+                        : type === "azure"
+                        ? { supports_tool_calling: true }
+                        : { supports_tool_calling: false }; // Custom providers default to false
                     setForm({ ...form, provider_type: type, ...defaults });
                   }}
                 >
@@ -332,11 +376,35 @@ export default function AIProviders() {
               {!(form.provider_type === "custom" && form.api_format === CUSTOM_REST_FORMAT) && (
                 <div className="space-y-2">
                   <Label>Model</Label>
-                  <Input
-                    value={form.model}
-                    onChange={(e) => setForm({ ...form, model: e.target.value })}
-                    placeholder="gpt-4o"
-                  />
+                  {form.provider_type === "ollama" ? (
+                    <Select
+                      value={form.model}
+                      onValueChange={(v) => setForm({ ...form, model: v })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select installed model..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {ollamaModels.length > 0 ? (
+                          ollamaModels.map((model) => (
+                            <SelectItem key={model.name} value={model.name}>
+                              {model.name}
+                            </SelectItem>
+                          ))
+                        ) : (
+                          <div className="px-2 py-1.5 text-sm text-muted-foreground">
+                            No models installed. Go to Settings → Ollama to pull models.
+                          </div>
+                        )}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <Input
+                      value={form.model}
+                      onChange={(e) => setForm({ ...form, model: e.target.value })}
+                      placeholder="gpt-4o"
+                    />
+                  )}
                 </div>
               )}
             </div>
@@ -506,6 +574,37 @@ export default function AIProviders() {
                       )}
                     </div>
                   )}
+
+                  {/* Tool Calling Support Toggle */}
+                  <div className="space-y-2 pt-4 border-t">
+                    <div className="flex items-center justify-between">
+                      <div className="space-y-0.5">
+                        <Label htmlFor="supports-tool-calling" className="text-base">Tool Calling Support</Label>
+                        <p className="text-xs text-muted-foreground">
+                          Enable if this provider supports function/tool calling for shell execution and integrations
+                        </p>
+                      </div>
+                      <input
+                        id="supports-tool-calling"
+                        type="checkbox"
+                        checked={form.supports_tool_calling ?? false}
+                        onChange={(e) =>
+                          setForm({ ...form, supports_tool_calling: e.target.checked })
+                        }
+                        className="h-5 w-5 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer"
+                      />
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleAutoDetectToolCalling}
+                      disabled={isTestingConnection || isDetectingToolCalling}
+                      className="w-full"
+                    >
+                      <Zap className="w-4 h-4 mr-2" />
+                      {isDetectingToolCalling ? "Detecting..." : "Auto-Detect Tool Calling Support"}
+                    </Button>
+                  </div>
                 </div>
               </>
             )}
@@ -532,8 +631,8 @@ export default function AIProviders() {
 
             <div className="flex items-center gap-2">
               <Button onClick={handleSave}>Save</Button>
-              <Button variant="outline" onClick={handleTest} disabled={isTesting}>
-                {isTesting ? "Testing..." : "Test Connection"}
+              <Button variant="outline" onClick={handleTest} disabled={isTestingConnection || isDetectingToolCalling}>
+                {isTestingConnection ? "Testing..." : "Test Connection"}
               </Button>
               <Button variant="ghost" onClick={handleCancel}>
                 Cancel
