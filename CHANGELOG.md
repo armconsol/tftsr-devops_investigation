@@ -4,7 +4,7 @@ All notable changes to TRCAA are documented here.
 Commit types shown: feat, fix, perf, docs, refactor.
 CI, chore, and build changes are excluded.
 
-## [Unreleased]
+## [1.1.0] — 2026-06-06
 
 ### Bug Fixes
 - **ci**: Use public rust:1.82-bookworm image instead of custom image
@@ -26,6 +26,7 @@ CI, chore, and build changes are excluded.
 
 ### Features
 - Full copy from apollo_nxt-trcaa with complete sanitization
+- **kube**: Add Kubernetes management support
 
 ## [0.3.12] — 2026-06-05
 
