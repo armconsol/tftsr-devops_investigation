@@ -167,7 +167,7 @@ jobs:
               --arg tag "$TAG" \
               --arg name "TFTSR $TAG" \
               --rawfile body /tmp/release_body.md \
-              '{tag_name: $tag, name: $name, body: $body, draft: false}' \
+              '{tag_name: $tag, name: $name, body: $body, draft: true}' \
               | curl -sf -X POST "$API/releases" \
                   -H "Authorization: token $RELEASE_TOKEN" \
                   -H "Content-Type: application/json" \

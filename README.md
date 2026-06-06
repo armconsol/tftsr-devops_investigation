@@ -327,3 +327,15 @@ Override with the `TRCAA_DATA_DIR` (or legacy `TRCAA_DATA_DIR`) environment vari
 | 12 | Release Packaging | ✅ linux/amd64 · linux/arm64 (native) · windows/amd64 |
 
 ---
+
+## Support the Project
+
+If you find this project helpful, consider buying me a coffee:
+
+[![Buy Me A Coffee](https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png)](https://buymeacoffee.com/tftsr)
+
+---
+
+## License
+
+MIT License — see [LICENSE](LICENSE) for details.

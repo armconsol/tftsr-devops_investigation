@@ -4,6 +4,7 @@ pub mod commands;
 pub mod db;
 pub mod docs;
 pub mod integrations;
+pub mod kube;
 pub mod mcp;
 pub mod ollama;
 pub mod pii;
@@ -40,6 +41,9 @@ pub fn run() {
         integration_webviews: Arc::new(Mutex::new(std::collections::HashMap::new())),
         mcp_connections: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
         pending_approvals: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
+        clusters: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
+        port_forwards: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
+        refresh_registry: Arc::new(tokio::sync::Mutex::new(crate::kube::RefreshRegistry::new())),
     };
     let stronghold_salt = format!(
         "tftsr-stronghold-salt-v1-{:x}",
@@ -170,6 +174,13 @@ pub fn run() {
             commands::shell::respond_to_shell_approval,
             commands::shell::list_command_executions,
             commands::shell::check_kubectl_installed,
+            // Kubernetes Management
+            commands::kube::add_cluster,
+            commands::kube::remove_cluster,
+            commands::kube::list_clusters,
+            commands::kube::start_port_forward,
+            commands::kube::stop_port_forward,
+            commands::kube::list_port_forwards,
         ])
         .run(tauri::generate_context!())
         .expect("Error running Troubleshooting and RCA Assistant application");

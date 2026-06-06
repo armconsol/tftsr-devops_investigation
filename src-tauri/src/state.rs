@@ -91,6 +91,12 @@ pub struct AppState {
     /// Pending shell command approvals: approval_id -> response channel
     pub pending_approvals:
         Arc<TokioMutex<HashMap<String, tokio::sync::oneshot::Sender<ApprovalResponse>>>>,
+    /// Kubernetes cluster clients: cluster_id -> client
+    pub clusters: Arc<TokioMutex<HashMap<String, crate::kube::ClusterClient>>>,
+    /// Port forwarding sessions: session_id -> session
+    pub port_forwards: Arc<TokioMutex<HashMap<String, crate::kube::PortForwardSession>>>,
+    /// Refresh registry for domain-based data fetching
+    pub refresh_registry: Arc<TokioMutex<crate::kube::RefreshRegistry>>,
 }
 
 /// Determine the application data directory.
