@@ -471,14 +471,14 @@ pub struct ImageAttachmentSummary {
 // ─── Kubernetes Cluster ─────────────────────────────────────────────────────
 
 /// Represents a Kubernetes cluster configuration stored in the database.
-/// The kubeconfig_content is encrypted before storage.
+/// The kubeconfig is referenced by kubeconfig_id (foreign key to kubeconfig_files table).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Cluster {
     pub id: String,
     pub name: String,
     pub context: String,
-    pub server_url: String,
-    pub kubeconfig_content: String,
+    pub server_url: Option<String>,
+    pub kubeconfig_id: String,
     pub created_at: i64,
     pub updated_at: i64,
 }
@@ -487,8 +487,8 @@ impl Cluster {
     pub fn new(
         name: String,
         context: String,
-        server_url: String,
-        kubeconfig_content: String,
+        server_url: Option<String>,
+        kubeconfig_id: String,
     ) -> Self {
         let now = chrono::Utc::now().timestamp();
         Cluster {
@@ -496,7 +496,7 @@ impl Cluster {
             name,
             context,
             server_url,
-            kubeconfig_content,
+            kubeconfig_id,
             created_at: now,
             updated_at: now,
         }

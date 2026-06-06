@@ -70,7 +70,7 @@ users:
     assert_eq!(response.cluster_id, "cluster-1");
     assert_eq!(response.namespace, "default");
     assert_eq!(response.pod, "nginx-pod-abc123");
-    assert_eq!(response.container_port, 80);
+    assert_eq!(response.container_ports, vec![80]);
     assert_eq!(response.status, "Active");
 }
 

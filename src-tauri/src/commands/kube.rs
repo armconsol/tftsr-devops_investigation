@@ -247,7 +247,16 @@ pub async fn discover_pods(
     std::fs::write(&temp_path, kubeconfig_content)
         .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
 
-    // Run kubectl get pods
+    // Cleanup temp file on drop
+    struct TempFileCleanup(std::path::PathBuf);
+    impl Drop for TempFileCleanup {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_file(&self.0);
+        }
+    }
+    let _cleanup = TempFileCleanup(temp_path.clone());
+
+    // Run kubectl get pods with full JSON output
     let kubectl_path = locate_kubectl()?;
 
     let output = Command::new(kubectl_path)
@@ -256,7 +265,7 @@ pub async fn discover_pods(
         .arg("-n")
         .arg(&namespace)
         .arg("-o")
-        .arg("jsonpath={.items[*].metadata.name}")
+        .arg("json")
         .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
         .env("KUBERNETES_CONTEXT", context)
         .output()
@@ -268,26 +277,149 @@ pub async fn discover_pods(
         return Err(format!("Failed to list pods: {}", stderr));
     }
 
+    // Parse actual JSON output to get real pod information
     let stdout = String::from_utf8_lossy(&output.stdout);
-    let pod_names: Vec<&str> = stdout.split_whitespace().collect();
-
-    // For now, return basic pod info - in production, parse full JSON output
-    let pods: Vec<PodInfo> = pod_names
-        .into_iter()
-        .map(|name| PodInfo {
-            name: name.to_string(),
-            status: "Unknown".to_string(),
-            ready: "N/A".to_string(),
-            age: "N/A".to_string(),
-        })
-        .collect();
+    let pods = parse_pods_json(&stdout)?;
 
     Ok(pods)
 }
 
+/// Parses the JSON output from `kubectl get pods -o json`
+/// and extracts pod information including real status, ready state, and age.
+fn parse_pods_json(json_str: &str) -> Result<Vec<PodInfo>, String> {
+    let value: serde_json::Value = serde_json::from_str(json_str)
+        .map_err(|e| format!("Failed to parse kubectl JSON output: {}", e))?;
+
+    let items = value
+        .get("items")
+        .and_then(|v| v.as_array())
+        .ok_or("Missing 'items' array in kubectl JSON output")?;
+
+    let mut pods = Vec::new();
+
+    for item in items {
+        let metadata = item
+            .get("metadata")
+            .ok_or("Missing 'metadata' in pod item")?;
+        let status = item.get("status").ok_or("Missing 'status' in pod item")?;
+
+        let name = metadata
+            .get("name")
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown")
+            .to_string();
+
+        let phase = status
+            .get("phase")
+            .and_then(|v| v.as_str())
+            .unwrap_or("Unknown")
+            .to_string();
+
+        let mut ready = "N/A".to_string();
+        let mut age = "N/A".to_string();
+
+        // Parse ready state from container statuses
+        if let Some(container_statuses) = status.get("containerStatuses").and_then(|v| v.as_array())
+        {
+            let total = container_statuses.len();
+            let ready_count = container_statuses
+                .iter()
+                .filter(|c| c.get("ready").and_then(|v| v.as_bool()).unwrap_or(false))
+                .count();
+            ready = format!("{}/{}", ready_count, total);
+        }
+
+        // Parse age from creation timestamp
+        if let Some(creation_timestamp) = metadata.get("creationTimestamp").and_then(|v| v.as_str())
+        {
+            age = parse_creation_timestamp(creation_timestamp);
+        }
+
+        pods.push(PodInfo {
+            name,
+            status: phase,
+            ready,
+            age,
+        });
+    }
+
+    Ok(pods)
+}
+
+/// Parses a Kubernetes creation timestamp and returns a human-readable age.
+fn parse_creation_timestamp(timestamp: &str) -> String {
+    use chrono::{DateTime, Utc};
+
+    // Try parsing as RFC3339 format (e.g., "2024-01-15T10:30:00Z")
+    if let Ok(dt) = timestamp.parse::<DateTime<Utc>>() {
+        let elapsed = Utc::now() - dt;
+        let seconds = elapsed.num_seconds();
+
+        if seconds < 60 {
+            return format!("{}s", seconds);
+        } else if seconds < 3600 {
+            return format!("{}m", seconds / 60);
+        } else if seconds < 86400 {
+            return format!("{}h", seconds / 3600);
+        } else {
+            return format!("{}d", seconds / 86400);
+        }
+    }
+
+    "N/A".to_string()
+}
+
 // Regex patterns for Kubernetes resource names
 // Must match: ^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$ (DNS subdomain name)
+// Added max length check (253 chars) to prevent ReDoS attacks
 const NAME_PATTERN: &str = r"^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$";
+const MAX_NAME_LENGTH: usize = 253;
+
+/// Validates a Kubernetes resource name against DNS subdomain naming rules.
+///
+/// # Arguments
+/// * `name` - The name to validate
+/// * `field_name` - The field name for error messages
+///
+/// # Returns
+/// * `Ok(())` if the name is valid
+/// * `Err(String)` with an error message if the name is invalid
+pub fn validate_resource_name(name: &str, field_name: &str) -> Result<(), String> {
+    // Check max length to prevent ReDoS attacks
+    if name.len() > MAX_NAME_LENGTH {
+        return Err(format!(
+            "{} '{}' exceeds maximum length of {} characters",
+            field_name, name, MAX_NAME_LENGTH
+        ));
+    }
+
+    // Reject names starting with hyphens or dots
+    if name.starts_with('-') || name.starts_with('.') {
+        return Err(format!(
+            "{} '{}' cannot start with a hyphen or dot",
+            field_name, name
+        ));
+    }
+
+    // Reject names ending with hyphens or dots
+    if name.ends_with('-') || name.ends_with('.') {
+        return Err(format!(
+            "{} '{}' cannot end with a hyphen or dot",
+            field_name, name
+        ));
+    }
+
+    // Validate against the regex pattern
+    let pattern = Regex::new(NAME_PATTERN).map_err(|e| format!("Invalid regex pattern: {}", e))?;
+    if !pattern.is_match(name) {
+        return Err(format!(
+            "{} '{}' does not match pattern {}",
+            field_name, name, NAME_PATTERN
+        ));
+    }
+
+    Ok(())
+}
 
 #[tauri::command]
 pub async fn start_port_forward(
@@ -297,22 +429,9 @@ pub async fn start_port_forward(
     let session_id = uuid::Uuid::now_v7().to_string();
 
     // Validate namespace and pod names to prevent command injection
-    let namespace_pattern = Regex::new(NAME_PATTERN).map_err(|e| format!("Invalid regex: {e}"))?;
-    let pod_pattern = Regex::new(NAME_PATTERN).map_err(|e| format!("Invalid regex: {e}"))?;
-
-    if !namespace_pattern.is_match(&request.namespace) {
-        return Err(format!(
-            "Invalid namespace name '{}': must match pattern {}",
-            request.namespace, NAME_PATTERN
-        ));
-    }
-
-    if !pod_pattern.is_match(&request.pod) {
-        return Err(format!(
-            "Invalid pod name '{}': must match pattern {}",
-            request.pod, NAME_PATTERN
-        ));
-    }
+    // Using validate_resource_name() which includes ReDoS protection
+    validate_resource_name(&request.namespace, "namespace")?;
+    validate_resource_name(&request.pod, "pod")?;
 
     let clusters = state.clusters.lock().await;
     let cluster = clusters
@@ -418,10 +537,11 @@ pub async fn stop_port_forward(id: String, state: State<'_, AppState>) -> Result
         session.stop();
         info!(session_id = %id, "Port-forward session stopped");
 
-        // Wait for the kubectl process to terminate
+        // Kill the kubectl process to ensure termination
         if let Some(child_mutex) = &session.kubectl_child {
             let mut child = child_mutex.lock().unwrap();
-            // Try to wait for the process to exit
+            // Kill the child process - use std::mem::drop to explicitly handle the Future
+            std::mem::drop(child.kill());
             let _ = child.try_wait();
         }
 
