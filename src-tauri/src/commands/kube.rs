@@ -69,8 +69,8 @@ pub async fn add_cluster(
 }
 
 fn extract_context(content: &str) -> Result<String, String> {
-    let value: Value = serde_yaml::from_str(content)
-        .map_err(|e| format!("Invalid kubeconfig YAML: {}", e))?;
+    let value: Value =
+        serde_yaml::from_str(content).map_err(|e| format!("Invalid kubeconfig YAML: {}", e))?;
 
     let contexts = value
         .get("contexts")
@@ -88,8 +88,8 @@ fn extract_context(content: &str) -> Result<String, String> {
 }
 
 fn extract_server_url(content: &str) -> Result<String, String> {
-    let value: Value = serde_yaml::from_str(content)
-        .map_err(|e| format!("Invalid kubeconfig YAML: {}", e))?;
+    let value: Value =
+        serde_yaml::from_str(content).map_err(|e| format!("Invalid kubeconfig YAML: {}", e))?;
 
     let clusters = value
         .get("clusters")
@@ -147,7 +147,8 @@ pub async fn start_port_forward(
     let session_id = uuid::Uuid::now_v7().to_string();
 
     let clusters = state.clusters.lock().await;
-    let cluster = clusters.get(&request.cluster_id)
+    let cluster = clusters
+        .get(&request.cluster_id)
         .ok_or_else(|| format!("Cluster {} not found", request.cluster_id))?;
 
     let cluster_name = cluster.name.clone();

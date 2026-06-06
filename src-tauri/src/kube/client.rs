@@ -9,7 +9,13 @@ pub struct ClusterClient {
 }
 
 impl ClusterClient {
-    pub fn new(id: String, name: String, context: String, server_url: String, kubeconfig_content: Arc<String>) -> Self {
+    pub fn new(
+        id: String,
+        name: String,
+        context: String,
+        server_url: String,
+        kubeconfig_content: Arc<String>,
+    ) -> Self {
         Self {
             id,
             name,
