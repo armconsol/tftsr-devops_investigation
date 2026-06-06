@@ -6,12 +6,7 @@ pub struct ClusterClient {
 }
 
 impl ClusterClient {
-    pub fn new(
-        id: String,
-        name: String,
-        context: String,
-        server_url: String,
-    ) -> Self {
+    pub fn new(id: String, name: String, context: String, server_url: String) -> Self {
         Self {
             id,
             name,

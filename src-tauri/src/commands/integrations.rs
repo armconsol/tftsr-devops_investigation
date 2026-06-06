@@ -337,7 +337,9 @@ pub async fn initiate_oauth(
                 pending_approvals,
                 clusters: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
                 port_forwards: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
-                refresh_registry: Arc::new(tokio::sync::Mutex::new(crate::kube::RefreshRegistry::new())),
+                refresh_registry: Arc::new(tokio::sync::Mutex::new(
+                    crate::kube::RefreshRegistry::new(),
+                )),
             };
             while let Some(callback) = callback_rx.recv().await {
                 tracing::info!("Received OAuth callback for state: {}", callback.state);

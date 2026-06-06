@@ -61,12 +61,9 @@ pub async fn add_cluster(
 }
 
 #[tauri::command]
-pub async fn remove_cluster(
-    id: String,
-    state: State<'_, AppState>,
-) -> Result<(), String> {
+pub async fn remove_cluster(id: String, state: State<'_, AppState>) -> Result<(), String> {
     let mut clusters = state.clusters.lock().await;
-    
+
     if clusters.remove(&id).is_none() {
         return Err(format!("Cluster {id} not found"));
     }
@@ -75,11 +72,9 @@ pub async fn remove_cluster(
 }
 
 #[tauri::command]
-pub async fn list_clusters(
-    state: State<'_, AppState>,
-) -> Result<Vec<ClusterInfo>, String> {
+pub async fn list_clusters(state: State<'_, AppState>) -> Result<Vec<ClusterInfo>, String> {
     let clusters = state.clusters.lock().await;
-    
+
     let cluster_list: Vec<ClusterInfo> = clusters
         .values()
         .map(|c| ClusterInfo {
@@ -99,7 +94,7 @@ pub async fn start_port_forward(
     state: State<'_, AppState>,
 ) -> Result<PortForwardResponse, String> {
     let session_id = uuid::Uuid::now_v7().to_string();
-    
+
     let session = crate::kube::PortForwardSession::new(
         session_id.clone(),
         request.cluster_id.clone(),
@@ -127,12 +122,9 @@ pub async fn start_port_forward(
 }
 
 #[tauri::command]
-pub async fn stop_port_forward(
-    id: String,
-    state: State<'_, AppState>,
-) -> Result<(), String> {
+pub async fn stop_port_forward(id: String, state: State<'_, AppState>) -> Result<(), String> {
     let mut port_forwards = state.port_forwards.lock().await;
-    
+
     if let Some(session) = port_forwards.get_mut(&id) {
         session.stop();
         Ok(())
@@ -146,7 +138,7 @@ pub async fn list_port_forwards(
     state: State<'_, AppState>,
 ) -> Result<Vec<PortForwardResponse>, String> {
     let port_forwards = state.port_forwards.lock().await;
-    
+
     let forwards: Vec<PortForwardResponse> = port_forwards
         .values()
         .map(|s| PortForwardResponse {
