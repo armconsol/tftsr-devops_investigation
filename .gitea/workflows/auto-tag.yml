@@ -134,11 +134,18 @@ jobs:
             exit 1
           fi
 
-          git-cliff --config cliff.toml --output CHANGELOG.md
+          # Generate changelog for current tag only
           PREV_TAG=$(git tag --sort=-version:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' \
             | grep -v "^${CURRENT_TAG}$" | head -1 || echo "")
           if [ -n "$PREV_TAG" ]; then
             git-cliff --config cliff.toml --tag "$CURRENT_TAG" --strip all > /tmp/release_body.md || true
+            # Generate full CHANGELOG.md from all tags
+            git-cliff --config cliff.toml --output CHANGELOG.md
+          else
+            echo "No previous tag found, generating from git commits"
+            git log --pretty=format:"- %s" > /tmp/release_body.md || true
+            git-cliff --config cliff.toml --output CHANGELOG.md
+          fi
           else
             echo "No previous tag found, generating from git commits"
             git log --pretty=format:"- %s" > /tmp/release_body.md || true
