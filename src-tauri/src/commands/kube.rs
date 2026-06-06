@@ -199,14 +199,11 @@ pub async fn test_cluster_connection(
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
 
-    // Write kubeconfig to temp file
+    // Write kubeconfig to temp file and ensure cleanup even on panic
     let temp_dir = std::env::temp_dir();
     let temp_path = temp_dir.join(format!("kubeconfig-{}.yaml", cluster_id));
-
-    std::fs::write(&temp_path, kubeconfig_content)
-        .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
-
-    // Cleanup temp file on drop
+    
+    // Create cleanup struct BEFORE writing - ensures cleanup happens even on panic
     struct TempFileCleanup(std::path::PathBuf);
     impl Drop for TempFileCleanup {
         fn drop(&mut self) {
@@ -214,6 +211,9 @@ pub async fn test_cluster_connection(
         }
     }
     let _cleanup = TempFileCleanup(temp_path.clone());
+
+    std::fs::write(&temp_path, kubeconfig_content)
+        .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
 
     // Run kubectl cluster-info
     let kubectl_path = locate_kubectl()?;
@@ -255,14 +255,11 @@ pub async fn discover_pods(
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
 
-    // Write kubeconfig to temp file
+    // Write kubeconfig to temp file and ensure cleanup even on panic
     let temp_dir = std::env::temp_dir();
     let temp_path = temp_dir.join(format!("kubeconfig-{}-pods.yaml", cluster_id));
-
-    std::fs::write(&temp_path, kubeconfig_content)
-        .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
-
-    // Cleanup temp file on drop
+    
+    // Create cleanup struct BEFORE writing - ensures cleanup happens even on panic
     struct TempFileCleanup(std::path::PathBuf);
     impl Drop for TempFileCleanup {
         fn drop(&mut self) {
@@ -270,6 +267,9 @@ pub async fn discover_pods(
         }
     }
     let _cleanup = TempFileCleanup(temp_path.clone());
+
+    std::fs::write(&temp_path, kubeconfig_content)
+        .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
 
     // Run kubectl get pods with full JSON output
     let kubectl_path = locate_kubectl()?;
@@ -472,14 +472,11 @@ pub async fn start_port_forward(
         "Allocating local port for port-forward"
     );
 
-    // Write kubeconfig to temp file
+    // Write kubeconfig to temp file and ensure cleanup even on panic
     let temp_dir = std::env::temp_dir();
     let temp_path = temp_dir.join(format!("kubeconfig-{}.yaml", request.cluster_id));
-
-    std::fs::write(&temp_path, kubeconfig_content.as_ref())
-        .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
-
-    // Cleanup temp file on drop
+    
+    // Create cleanup struct BEFORE writing - ensures cleanup happens even on panic
     struct TempFileCleanup(std::path::PathBuf);
     impl Drop for TempFileCleanup {
         fn drop(&mut self) {
@@ -487,6 +484,9 @@ pub async fn start_port_forward(
         }
     }
     let _cleanup = TempFileCleanup(temp_path.clone());
+
+    std::fs::write(&temp_path, kubeconfig_content.as_ref())
+        .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
 
     // Build kubectl command
     let kubectl_path = locate_kubectl()?;
@@ -593,7 +593,10 @@ pub async fn list_port_forwards(
 pub async fn delete_port_forward(id: String, state: State<'_, AppState>) -> Result<(), String> {
     let mut port_forwards = state.port_forwards.lock().await;
 
-    if port_forwards.remove(&id).is_none() {
+    if let Some(mut session) = port_forwards.remove(&id) {
+        // Close the session to kill the child and clean up temp files
+        session.close().await;
+    } else {
         return Err(format!("Port forward session {id} not found"));
     }
 

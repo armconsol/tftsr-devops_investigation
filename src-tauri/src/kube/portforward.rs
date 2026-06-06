@@ -140,6 +140,22 @@ impl PortForwardSession {
         }
     }
 
+    pub async fn close(&mut self) {
+        // Kill the child process if it exists
+        if let Some(ref child_wait_handle) = self.child_wait_handle {
+            let guard = child_wait_handle.lock().await;
+            let child_opt = guard.child.lock().await.take();
+            if let Some(mut child) = child_opt {
+                let _ = child.kill().await;
+            }
+        }
+
+        // Clean up temp kubeconfig file if it exists
+        if let Some(path) = &self.temp_kubeconfig_path {
+            let _ = std::fs::remove_file(path);
+        }
+    }
+
     pub fn set_error(&mut self, error: String) {
         self.status = PortForwardStatus::Error(error.clone());
         self.error_message = Some(error);
