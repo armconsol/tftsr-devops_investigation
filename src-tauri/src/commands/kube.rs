@@ -1,10 +1,13 @@
 use crate::kube::portforward::PortForwardSessionConfig;
 use crate::kube::ClusterClient;
+use crate::shell::kubectl::locate_kubectl;
 use crate::state::AppState;
 use serde::{Deserialize, Serialize};
 use serde_yaml::Value;
+use std::net::TcpListener;
 use std::sync::Arc;
 use tauri::State;
+use tokio::process::Command;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ClusterInfo {
@@ -31,6 +34,27 @@ pub struct PortForwardResponse {
     pub container_port: u16,
     pub local_port: u16,
     pub status: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PodInfo {
+    pub name: String,
+    pub status: String,
+    pub ready: String,
+    pub age: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ClusterConnectionStatus {
+    pub status: ClusterConnectionState,
+    pub context: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type")]
+pub enum ClusterConnectionState {
+    Connected,
+    Disconnected { error: String },
 }
 
 #[tauri::command]
@@ -141,6 +165,111 @@ pub async fn list_clusters(state: State<'_, AppState>) -> Result<Vec<ClusterInfo
 }
 
 #[tauri::command]
+pub async fn test_cluster_connection(
+    cluster_id: String,
+    state: State<'_, AppState>,
+) -> Result<ClusterConnectionStatus, String> {
+    let clusters = state.clusters.lock().await;
+    let cluster = clusters
+        .get(&cluster_id)
+        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+
+    let kubeconfig_content = cluster.kubeconfig_content.as_ref();
+    let context = &cluster.context;
+
+    // Write kubeconfig to temp file
+    let temp_dir = std::env::temp_dir();
+    let temp_path = temp_dir.join(format!("kubeconfig-{}.yaml", cluster_id));
+
+    std::fs::write(&temp_path, kubeconfig_content)
+        .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
+
+    // Run kubectl cluster-info
+    let kubectl_path = locate_kubectl()?;
+
+    let output = Command::new(kubectl_path)
+        .arg("cluster-info")
+        .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
+        .env("KUBERNETES_CONTEXT", context)
+        .output()
+        .await
+        .map_err(|e| format!("Failed to execute kubectl: {e}"))?;
+
+    let status = if output.status.success() {
+        ClusterConnectionState::Connected
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        ClusterConnectionState::Disconnected {
+            error: stderr.to_string(),
+        }
+    };
+
+    Ok(ClusterConnectionStatus {
+        status,
+        context: context.clone(),
+    })
+}
+
+#[tauri::command]
+pub async fn discover_pods(
+    cluster_id: String,
+    namespace: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<PodInfo>, String> {
+    let clusters = state.clusters.lock().await;
+    let cluster = clusters
+        .get(&cluster_id)
+        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+
+    let kubeconfig_content = cluster.kubeconfig_content.as_ref();
+    let context = &cluster.context;
+
+    // Write kubeconfig to temp file
+    let temp_dir = std::env::temp_dir();
+    let temp_path = temp_dir.join(format!("kubeconfig-{}-pods.yaml", cluster_id));
+
+    std::fs::write(&temp_path, kubeconfig_content)
+        .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
+
+    // Run kubectl get pods
+    let kubectl_path = locate_kubectl()?;
+
+    let output = Command::new(kubectl_path)
+        .arg("get")
+        .arg("pods")
+        .arg("-n")
+        .arg(&namespace)
+        .arg("-o")
+        .arg("jsonpath={.items[*].metadata.name}")
+        .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
+        .env("KUBERNETES_CONTEXT", context)
+        .output()
+        .await
+        .map_err(|e| format!("Failed to execute kubectl: {e}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("Failed to list pods: {}", stderr));
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let pod_names: Vec<&str> = stdout.split_whitespace().collect();
+
+    // For now, return basic pod info - in production, parse full JSON output
+    let pods: Vec<PodInfo> = pod_names
+        .into_iter()
+        .map(|name| PodInfo {
+            name: name.to_string(),
+            status: "Unknown".to_string(),
+            ready: "N/A".to_string(),
+            age: "N/A".to_string(),
+        })
+        .collect();
+
+    Ok(pods)
+}
+
+#[tauri::command]
 pub async fn start_port_forward(
     request: PortForwardRequest,
     state: State<'_, AppState>,
@@ -153,9 +282,64 @@ pub async fn start_port_forward(
         .ok_or_else(|| format!("Cluster {} not found", request.cluster_id))?;
 
     let cluster_name = cluster.name.clone();
-    let _kubeconfig_content = cluster.kubeconfig_content.clone();
+    let kubeconfig_content = cluster.kubeconfig_content.clone();
 
-    let session = crate::kube::PortForwardSession::new(PortForwardSessionConfig {
+    // Allocate local port using TcpListener::bind("127.0.0.1:0")
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .map_err(|e| format!("Failed to allocate local port: {e}"))?;
+    let local_port = listener
+        .local_addr()
+        .map_err(|e| format!("Failed to get local port address: {e}"))?
+        .port();
+
+    // Drop the listener - the port is now reserved for kubectl
+    drop(listener);
+
+    tracing::info!(
+        session_id = %session_id,
+        cluster_id = %request.cluster_id,
+        namespace = %request.namespace,
+        pod = %request.pod,
+        container_port = request.container_port,
+        local_port,
+        "Allocating local port for port-forward"
+    );
+
+    // Write kubeconfig to temp file
+    let temp_dir = std::env::temp_dir();
+    let temp_path = temp_dir.join(format!("kubeconfig-{}.yaml", request.cluster_id));
+
+    std::fs::write(&temp_path, kubeconfig_content.as_ref())
+        .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
+
+    // Build kubectl command
+    let kubectl_path = locate_kubectl()?;
+    let args = vec![
+        "port-forward".to_string(),
+        format!("pod/{}", request.pod),
+        format!("{}:{}", local_port, request.container_port),
+        "-n".to_string(),
+        request.namespace.clone(),
+    ];
+
+    tracing::info!(
+        session_id = %session_id,
+        command = ?args,
+        "Spawning kubectl port-forward subprocess"
+    );
+
+    // Spawn kubectl subprocess
+    let child = Command::new(kubectl_path)
+        .args(&args)
+        .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
+        .env("KUBERNETES_CONTEXT", &cluster.context)
+        .spawn()
+        .map_err(|e| format!("Failed to spawn kubectl: {e}"))?;
+
+    let child_mutex = Arc::new(std::sync::Mutex::new(child));
+
+    // Create session with allocated port
+    let _session = crate::kube::PortForwardSession::new(PortForwardSessionConfig {
         id: session_id.clone(),
         cluster_id: request.cluster_id.clone(),
         cluster_name,
@@ -163,13 +347,21 @@ pub async fn start_port_forward(
         pod: request.pod.clone(),
         container: None,
         ports: vec![request.container_port],
-        local_ports: vec![0],
+        local_ports: vec![local_port],
     });
 
+    // Store child handle in session
     {
         let mut port_forwards = state.port_forwards.lock().await;
-        port_forwards.insert(session_id.clone(), session);
+        let session_mut = port_forwards.get_mut(&session_id).unwrap();
+        session_mut.kubectl_child = Some(child_mutex);
     }
+
+    tracing::info!(
+        session_id = %session_id,
+        local_port,
+        "Port-forward session started"
+    );
 
     Ok(PortForwardResponse {
         id: session_id,
@@ -177,7 +369,7 @@ pub async fn start_port_forward(
         namespace: request.namespace,
         pod: request.pod,
         container_port: request.container_port,
-        local_port: 0,
+        local_port,
         status: "Active".to_string(),
     })
 }
@@ -188,6 +380,7 @@ pub async fn stop_port_forward(id: String, state: State<'_, AppState>) -> Result
 
     if let Some(session) = port_forwards.get_mut(&id) {
         session.stop();
+        tracing::info!(session_id = %id, "Port-forward session stopped");
         Ok(())
     } else {
         Err(format!("Port forward session {id} not found"))
@@ -229,4 +422,65 @@ pub async fn delete_port_forward(id: String, state: State<'_, AppState>) -> Resu
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_cluster_info_serialization() {
+        let info = ClusterInfo {
+            id: "cluster-1".to_string(),
+            name: "Production".to_string(),
+            context: "prod-context".to_string(),
+            cluster_url: "https://k8s.example.com".to_string(),
+        };
+
+        let json = serde_json::to_string(&info).unwrap();
+        let parsed: ClusterInfo = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(info.id, parsed.id);
+        assert_eq!(info.name, parsed.name);
+        assert_eq!(info.context, parsed.context);
+        assert_eq!(info.cluster_url, parsed.cluster_url);
+    }
+
+    #[test]
+    fn test_cluster_connection_state_serialization() {
+        let connected = ClusterConnectionState::Connected;
+        let json = serde_json::to_string(&connected).unwrap();
+        let parsed: ClusterConnectionState = serde_json::from_str(&json).unwrap();
+
+        assert!(matches!(parsed, ClusterConnectionState::Connected));
+
+        let disconnected = ClusterConnectionState::Disconnected {
+            error: "connection refused".to_string(),
+        };
+        let json = serde_json::to_string(&disconnected).unwrap();
+        let parsed: ClusterConnectionState = serde_json::from_str(&json).unwrap();
+
+        assert!(matches!(
+            parsed,
+            ClusterConnectionState::Disconnected { .. }
+        ));
+    }
+
+    #[test]
+    fn test_port_forward_request_serialization() {
+        let request = PortForwardRequest {
+            cluster_id: "cluster-1".to_string(),
+            namespace: "default".to_string(),
+            pod: "my-pod-abc123".to_string(),
+            container_port: 8080,
+        };
+
+        let json = serde_json::to_string(&request).unwrap();
+        let parsed: PortForwardRequest = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(request.cluster_id, parsed.cluster_id);
+        assert_eq!(request.namespace, parsed.namespace);
+        assert_eq!(request.pod, parsed.pod);
+        assert_eq!(request.container_port, parsed.container_port);
+    }
 }
