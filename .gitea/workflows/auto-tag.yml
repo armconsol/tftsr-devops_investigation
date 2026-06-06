@@ -146,10 +146,6 @@ jobs:
             git log --pretty=format:"- %s" > /tmp/release_body.md || true
             git-cliff --config cliff.toml --output CHANGELOG.md
           fi
-          else
-            echo "No previous tag found, generating from git commits"
-            git log --pretty=format:"- %s" > /tmp/release_body.md || true
-          fi
           echo "=== Release body preview ==="
           cat /tmp/release_body.md
 
