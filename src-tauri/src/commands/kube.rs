@@ -1,6 +1,9 @@
+use crate::kube::portforward::PortForwardSessionConfig;
 use crate::kube::ClusterClient;
 use crate::state::AppState;
 use serde::{Deserialize, Serialize};
+use serde_yaml::Value;
+use std::sync::Arc;
 use tauri::State;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -37,14 +40,20 @@ pub async fn add_cluster(
     kubeconfig_content: String,
     state: State<'_, AppState>,
 ) -> Result<ClusterInfo, String> {
+    if kubeconfig_content.trim().is_empty() {
+        return Err("Kubeconfig content cannot be empty".to_string());
+    }
+
     let context = extract_context(&kubeconfig_content)?;
     let server_url = extract_server_url(&kubeconfig_content)?;
 
+    let kubeconfig_arc = Arc::new(kubeconfig_content.clone());
     let client = ClusterClient::new(
         id.clone(),
         name.clone(),
         context.clone(),
         server_url.clone(),
+        kubeconfig_arc,
     );
 
     {
@@ -58,6 +67,49 @@ pub async fn add_cluster(
         context,
         cluster_url: server_url,
     })
+}
+
+fn extract_context(content: &str) -> Result<String, String> {
+    let value: Value =
+        serde_yaml::from_str(content).map_err(|e| format!("Invalid kubeconfig YAML: {}", e))?;
+
+    let contexts = value
+        .get("contexts")
+        .and_then(|c| c.as_sequence())
+        .ok_or("Missing 'contexts' field in kubeconfig")?;
+
+    if contexts.is_empty() {
+        return Err("No contexts found in kubeconfig".to_string());
+    }
+
+    let first_context = contexts[0].get("name").and_then(|n| n.as_str());
+    first_context
+        .map(|s| s.to_string())
+        .ok_or_else(|| "Context name not found".to_string())
+}
+
+fn extract_server_url(content: &str) -> Result<String, String> {
+    let value: Value =
+        serde_yaml::from_str(content).map_err(|e| format!("Invalid kubeconfig YAML: {}", e))?;
+
+    let clusters = value
+        .get("clusters")
+        .and_then(|c| c.as_sequence())
+        .ok_or("Missing 'clusters' field in kubeconfig")?;
+
+    if clusters.is_empty() {
+        return Err("No clusters found in kubeconfig".to_string());
+    }
+
+    let cluster = &clusters[0];
+    let server = cluster
+        .get("cluster")
+        .and_then(|c| c.get("server"))
+        .and_then(|s| s.as_str());
+
+    server
+        .map(|s| s.to_string())
+        .ok_or_else(|| "Server URL not found in cluster".to_string())
 }
 
 #[tauri::command]
@@ -95,15 +147,24 @@ pub async fn start_port_forward(
 ) -> Result<PortForwardResponse, String> {
     let session_id = uuid::Uuid::now_v7().to_string();
 
-    let session = crate::kube::PortForwardSession::new(
-        session_id.clone(),
-        request.cluster_id.clone(),
-        request.namespace.clone(),
-        request.pod.clone(),
-        None,
-        vec![request.container_port],
-        vec![0],
-    );
+    let clusters = state.clusters.lock().await;
+    let cluster = clusters
+        .get(&request.cluster_id)
+        .ok_or_else(|| format!("Cluster {} not found", request.cluster_id))?;
+
+    let cluster_name = cluster.name.clone();
+    let _kubeconfig_content = cluster.kubeconfig_content.clone();
+
+    let session = crate::kube::PortForwardSession::new(PortForwardSessionConfig {
+        id: session_id.clone(),
+        cluster_id: request.cluster_id.clone(),
+        cluster_name,
+        namespace: request.namespace.clone(),
+        pod: request.pod.clone(),
+        container: None,
+        ports: vec![request.container_port],
+        local_ports: vec![0],
+    });
 
     {
         let mut port_forwards = state.port_forwards.lock().await;
@@ -159,10 +220,13 @@ pub async fn list_port_forwards(
     Ok(forwards)
 }
 
-fn extract_context(_content: &str) -> Result<String, String> {
-    Ok("default".to_string())
-}
+#[tauri::command]
+pub async fn delete_port_forward(id: String, state: State<'_, AppState>) -> Result<(), String> {
+    let mut port_forwards = state.port_forwards.lock().await;
 
-fn extract_server_url(_content: &str) -> Result<String, String> {
-    Ok("unknown".to_string())
+    if port_forwards.remove(&id).is_none() {
+        return Err(format!("Port forward session {id} not found"));
+    }
+
+    Ok(())
 }

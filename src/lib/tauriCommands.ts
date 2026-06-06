@@ -738,3 +738,52 @@ export const listCommandExecutionsCmd = (issueId?: string) =>
 
 export const checkKubectlInstalledCmd = () =>
   invoke<KubectlStatus>("check_kubectl_installed");
+
+// ─── Kubernetes Management Types ──────────────────────────────────────────────
+
+export interface ClusterInfo {
+  id: string;
+  name: string;
+  context: string;
+  cluster_url: string;
+}
+
+export interface PortForwardRequest {
+  cluster_id: string;
+  namespace: string;
+  pod: string;
+  container_port: number;
+}
+
+export interface PortForwardResponse {
+  id: string;
+  cluster_id: string;
+  namespace: string;
+  pod: string;
+  container_port: number;
+  local_port: number;
+  status: string;
+}
+
+// ─── Kubernetes Management Commands ───────────────────────────────────────────
+
+export const addClusterCmd = (id: string, name: string, kubeconfigContent: string) =>
+  invoke<ClusterInfo>("add_cluster", { id, name, kubeconfig_content: kubeconfigContent });
+
+export const removeClusterCmd = (id: string) =>
+  invoke<void>("remove_cluster", { id });
+
+export const listClustersCmd = () =>
+  invoke<ClusterInfo[]>("list_clusters");
+
+export const startPortForwardCmd = (request: PortForwardRequest) =>
+  invoke<PortForwardResponse>("start_port_forward", { request });
+
+export const stopPortForwardCmd = (id: string) =>
+  invoke<void>("stop_port_forward", { id });
+
+export const deletePortForwardCmd = (id: string) =>
+  invoke<void>("delete_port_forward", { id });
+
+export const listPortForwardsCmd = () =>
+  invoke<PortForwardResponse[]>("list_port_forwards");
