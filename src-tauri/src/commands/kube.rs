@@ -1,6 +1,7 @@
 use crate::kube::ClusterClient;
 use crate::state::AppState;
 use serde::{Deserialize, Serialize};
+use serde_yaml::Value;
 use tauri::State;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -37,6 +38,10 @@ pub async fn add_cluster(
     kubeconfig_content: String,
     state: State<'_, AppState>,
 ) -> Result<ClusterInfo, String> {
+    if kubeconfig_content.trim().is_empty() {
+        return Err("Kubeconfig content cannot be empty".to_string());
+    }
+
     let context = extract_context(&kubeconfig_content)?;
     let server_url = extract_server_url(&kubeconfig_content)?;
 
@@ -58,6 +63,49 @@ pub async fn add_cluster(
         context,
         cluster_url: server_url,
     })
+}
+
+fn extract_context(content: &str) -> Result<String, String> {
+    let value: Value = serde_yaml::from_str(content)
+        .map_err(|e| format!("Invalid kubeconfig YAML: {}", e))?;
+
+    let contexts = value
+        .get("contexts")
+        .and_then(|c| c.as_sequence())
+        .ok_or("Missing 'contexts' field in kubeconfig")?;
+
+    if contexts.is_empty() {
+        return Err("No contexts found in kubeconfig".to_string());
+    }
+
+    let first_context = contexts[0].get("name").and_then(|n| n.as_str());
+    first_context
+        .map(|s| s.to_string())
+        .ok_or_else(|| "Context name not found".to_string())
+}
+
+fn extract_server_url(content: &str) -> Result<String, String> {
+    let value: Value = serde_yaml::from_str(content)
+        .map_err(|e| format!("Invalid kubeconfig YAML: {}", e))?;
+
+    let clusters = value
+        .get("clusters")
+        .and_then(|c| c.as_sequence())
+        .ok_or("Missing 'clusters' field in kubeconfig")?;
+
+    if clusters.is_empty() {
+        return Err("No clusters found in kubeconfig".to_string());
+    }
+
+    let cluster = &clusters[0];
+    let server = cluster
+        .get("cluster")
+        .and_then(|c| c.get("server"))
+        .and_then(|s| s.as_str());
+
+    server
+        .map(|s| s.to_string())
+        .ok_or_else(|| "Server URL not found in cluster".to_string())
 }
 
 #[tauri::command]
@@ -168,12 +216,4 @@ pub async fn delete_port_forward(id: String, state: State<'_, AppState>) -> Resu
     }
 
     Ok(())
-}
-
-fn extract_context(_content: &str) -> Result<String, String> {
-    Ok("default".to_string())
-}
-
-fn extract_server_url(_content: &str) -> Result<String, String> {
-    Ok("unknown".to_string())
 }
