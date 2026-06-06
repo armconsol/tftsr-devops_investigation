@@ -45,7 +45,7 @@ export default [
     },
   },
   {
-    files: ["tests/unit/**/*.test.{ts,tsx}"],
+    files: ["tests/unit/**/*.test.{ts,tsx}", "tests/unit/setup.ts"],
     languageOptions: {
       ecmaVersion: "latest",
       sourceType: "module",

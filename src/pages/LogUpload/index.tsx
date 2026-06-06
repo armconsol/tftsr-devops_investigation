@@ -125,6 +125,7 @@ export default function LogUpload() {
     }
   };
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const handlePaste = useCallback(
     async (e: React.ClipboardEvent) => {
       void e.clipboardData?.items;

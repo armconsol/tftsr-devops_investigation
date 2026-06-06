@@ -17,7 +17,7 @@ interface AttachmentState {
   setSearchQuery(q: string): void;
 }
 
-export const useAttachmentStore = create<AttachmentState>((set, get) => ({
+export const useAttachmentStore = create<AttachmentState>((set) => ({
   logFiles: [],
   images: [],
   isLoading: false,
