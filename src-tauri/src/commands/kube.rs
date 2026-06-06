@@ -2,12 +2,13 @@ use crate::kube::portforward::PortForwardSessionConfig;
 use crate::kube::ClusterClient;
 use crate::shell::kubectl::locate_kubectl;
 use crate::state::AppState;
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_yaml::Value;
-use std::net::TcpListener;
 use std::sync::Arc;
 use tauri::State;
 use tokio::process::Command;
+use tracing::info;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ClusterInfo {
@@ -23,6 +24,9 @@ pub struct PortForwardRequest {
     pub namespace: String,
     pub pod: String,
     pub container_port: u16,
+    /// Optional: Local port to bind to. If 0, kubectl will allocate dynamically.
+    #[serde(default)]
+    pub local_port: u16,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -31,8 +35,8 @@ pub struct PortForwardResponse {
     pub cluster_id: String,
     pub namespace: String,
     pub pod: String,
-    pub container_port: u16,
-    pub local_port: u16,
+    pub container_ports: Vec<u16>,
+    pub local_ports: Vec<u16>,
     pub status: String,
 }
 
@@ -142,6 +146,18 @@ pub async fn remove_cluster(id: String, state: State<'_, AppState>) -> Result<()
 
     if clusters.remove(&id).is_none() {
         return Err(format!("Cluster {id} not found"));
+    }
+
+    // Cascade delete: remove all port forwards for this cluster
+    let mut port_forwards = state.port_forwards.lock().await;
+    let session_ids_to_remove: Vec<String> = port_forwards
+        .iter()
+        .filter(|(_, session)| session.cluster_id == id)
+        .map(|(id, _)| id.clone())
+        .collect();
+
+    for session_id in session_ids_to_remove {
+        port_forwards.remove(&session_id);
     }
 
     Ok(())
@@ -269,12 +285,34 @@ pub async fn discover_pods(
     Ok(pods)
 }
 
+// Regex patterns for Kubernetes resource names
+// Must match: ^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$ (DNS subdomain name)
+const NAME_PATTERN: &str = r"^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$";
+
 #[tauri::command]
 pub async fn start_port_forward(
     request: PortForwardRequest,
     state: State<'_, AppState>,
 ) -> Result<PortForwardResponse, String> {
     let session_id = uuid::Uuid::now_v7().to_string();
+
+    // Validate namespace and pod names to prevent command injection
+    let namespace_pattern = Regex::new(NAME_PATTERN).map_err(|e| format!("Invalid regex: {e}"))?;
+    let pod_pattern = Regex::new(NAME_PATTERN).map_err(|e| format!("Invalid regex: {e}"))?;
+
+    if !namespace_pattern.is_match(&request.namespace) {
+        return Err(format!(
+            "Invalid namespace name '{}': must match pattern {}",
+            request.namespace, NAME_PATTERN
+        ));
+    }
+
+    if !pod_pattern.is_match(&request.pod) {
+        return Err(format!(
+            "Invalid pod name '{}': must match pattern {}",
+            request.pod, NAME_PATTERN
+        ));
+    }
 
     let clusters = state.clusters.lock().await;
     let cluster = clusters
@@ -284,18 +322,15 @@ pub async fn start_port_forward(
     let cluster_name = cluster.name.clone();
     let kubeconfig_content = cluster.kubeconfig_content.clone();
 
-    // Allocate local port using TcpListener::bind("127.0.0.1:0")
-    let listener = TcpListener::bind("127.0.0.1:0")
-        .map_err(|e| format!("Failed to allocate local port: {e}"))?;
-    let local_port = listener
-        .local_addr()
-        .map_err(|e| format!("Failed to get local port address: {e}"))?
-        .port();
+    // Use kubectl's dynamic port binding by specifying 0 as local port
+    // This avoids race condition with port allocation
+    let local_port = if request.local_port > 0 {
+        request.local_port
+    } else {
+        0 // Let kubectl allocate dynamically
+    };
 
-    // Drop the listener - the port is now reserved for kubectl
-    drop(listener);
-
-    tracing::info!(
+    info!(
         session_id = %session_id,
         cluster_id = %request.cluster_id,
         namespace = %request.namespace,
@@ -322,7 +357,7 @@ pub async fn start_port_forward(
         request.namespace.clone(),
     ];
 
-    tracing::info!(
+    info!(
         session_id = %session_id,
         command = ?args,
         "Spawning kubectl port-forward subprocess"
@@ -339,7 +374,7 @@ pub async fn start_port_forward(
     let child_mutex = Arc::new(std::sync::Mutex::new(child));
 
     // Create session with allocated port
-    let _session = crate::kube::PortForwardSession::new(PortForwardSessionConfig {
+    let session = crate::kube::PortForwardSession::new(PortForwardSessionConfig {
         id: session_id.clone(),
         cluster_id: request.cluster_id.clone(),
         cluster_name,
@@ -353,11 +388,12 @@ pub async fn start_port_forward(
     // Store child handle in session
     {
         let mut port_forwards = state.port_forwards.lock().await;
+        port_forwards.insert(session_id.clone(), session);
         let session_mut = port_forwards.get_mut(&session_id).unwrap();
         session_mut.kubectl_child = Some(child_mutex);
     }
 
-    tracing::info!(
+    info!(
         session_id = %session_id,
         local_port,
         "Port-forward session started"
@@ -368,8 +404,8 @@ pub async fn start_port_forward(
         cluster_id: request.cluster_id,
         namespace: request.namespace,
         pod: request.pod,
-        container_port: request.container_port,
-        local_port,
+        container_ports: vec![request.container_port],
+        local_ports: vec![local_port],
         status: "Active".to_string(),
     })
 }
@@ -380,7 +416,15 @@ pub async fn stop_port_forward(id: String, state: State<'_, AppState>) -> Result
 
     if let Some(session) = port_forwards.get_mut(&id) {
         session.stop();
-        tracing::info!(session_id = %id, "Port-forward session stopped");
+        info!(session_id = %id, "Port-forward session stopped");
+
+        // Wait for the kubectl process to terminate
+        if let Some(child_mutex) = &session.kubectl_child {
+            let mut child = child_mutex.lock().unwrap();
+            // Try to wait for the process to exit
+            let _ = child.try_wait();
+        }
+
         Ok(())
     } else {
         Err(format!("Port forward session {id} not found"))
@@ -400,8 +444,8 @@ pub async fn list_port_forwards(
             cluster_id: s.cluster_id.clone(),
             namespace: s.namespace.clone(),
             pod: s.pod.clone(),
-            container_port: s.ports.first().copied().unwrap_or(0),
-            local_port: s.local_ports.first().copied().unwrap_or(0),
+            container_ports: s.ports.clone(),
+            local_ports: s.local_ports.clone(),
             status: match s.status {
                 crate::kube::PortForwardStatus::Active => "Active".to_string(),
                 crate::kube::PortForwardStatus::Stopped => "Stopped".to_string(),
@@ -473,6 +517,7 @@ mod tests {
             namespace: "default".to_string(),
             pod: "my-pod-abc123".to_string(),
             container_port: 8080,
+            local_port: 0,
         };
 
         let json = serde_json::to_string(&request).unwrap();
@@ -482,5 +527,6 @@ mod tests {
         assert_eq!(request.namespace, parsed.namespace);
         assert_eq!(request.pod, parsed.pod);
         assert_eq!(request.container_port, parsed.container_port);
+        assert_eq!(request.local_port, parsed.local_port);
     }
 }

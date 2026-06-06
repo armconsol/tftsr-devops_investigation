@@ -95,9 +95,9 @@ export function PortForwardList({ portForwards, onStart, onStop, onDelete }: Por
                     Pod: {pf.pod}
                   </p>
                   <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <span>Container Port: {pf.container_port}</span>
+                    <span>Container Ports: {pf.container_ports.join(", ")}</span>
                     <span className="text-gray-300 dark:text-gray-600">|</span>
-                    <span>Local Port: {pf.local_port > 0 ? pf.local_port : "pending"}</span>
+                    <span>Local Ports: {pf.local_ports.some(p => p > 0) ? pf.local_ports.join(", ") : "pending"}</span>
                   </div>
                 </div>
                 <div className="flex items-center gap-2">

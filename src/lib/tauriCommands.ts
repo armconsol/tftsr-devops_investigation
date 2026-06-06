@@ -753,6 +753,7 @@ export interface PortForwardRequest {
   namespace: string;
   pod: string;
   container_port: number;
+  local_port?: number;
 }
 
 export interface PortForwardResponse {
@@ -760,8 +761,8 @@ export interface PortForwardResponse {
   cluster_id: string;
   namespace: string;
   pod: string;
-  container_port: number;
-  local_port: number;
+  container_ports: number[];
+  local_ports: number[];
   status: string;
 }
 

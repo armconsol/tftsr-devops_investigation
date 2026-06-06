@@ -58,7 +58,9 @@ impl PortForwardSession {
 
         if let Some(child_mutex) = &self.kubectl_child {
             let mut child = child_mutex.lock().unwrap();
-            std::mem::drop(child.kill()); // Ignore errors from kill()
+            // Note: kill() returns a Future, so we can't use match here
+            // We just drop the result and log
+            std::mem::drop(child.kill());
         }
     }
 
@@ -80,7 +82,9 @@ impl Drop for PortForwardSession {
 
         if let Some(child_mutex) = &self.kubectl_child {
             let mut child = child_mutex.lock().unwrap();
-            std::mem::drop(child.kill()); // Ignore errors from kill()
+            // Note: kill() returns a Future, so we can't use match here
+            // We just drop the result and log
+            std::mem::drop(child.kill());
         }
     }
 }

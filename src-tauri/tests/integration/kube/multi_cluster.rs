@@ -252,6 +252,12 @@ users:
     let cluster_ids: Vec<&str> = forwards.iter().map(|f| f.cluster_id.as_str()).collect();
     assert!(cluster_ids.contains(&"cluster-1"));
     assert!(cluster_ids.contains(&"cluster-2"));
+    
+    // Verify container_ports and local_ports are arrays
+    for f in &forwards {
+        assert!(!f.container_ports.is_empty());
+        assert!(!f.local_ports.is_empty());
+    }
 }
 
 #[tokio::test]
