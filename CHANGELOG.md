@@ -11,6 +11,17 @@ CI, chore, and build changes are excluded.
 - **changelog**: Only include current tag commits in release body
 - **workflow**: Remove duplicate else block in changelog generation
 - **fmt**: Format code with cargo fmt
+- Address PR review findings
+- Address PR review findings
+- Implement proper kubeconfig parsing and validation
+- Implement kubeconfig parsing and add kubeconfig storage
+- **fmt**: Format code with cargo fmt
+- Address clippy warnings
+- **fmt**: Format code with cargo fmt
+
+### Features
+- **kube**: Add Kubernetes management GUI components
+- **kube**: Implement delete_port_forward command
 
 ## [1.1.0] — 2026-06-06
 
