@@ -113,9 +113,119 @@ impl CommandClassifier {
     }
 
     fn classify_single_command(&self, command: &str, subcommand: Option<&str>) -> CommandTier {
-        // Tier 3: Always deny - destructive operations
+        // Tier 3: Always deny - destructive operations (Linux + Windows)
         let tier3_commands = [
-            "rm", "mkfs", "dd", "fdisk", "parted", "shutdown", "reboot", "halt", "poweroff",
+            // Linux destructive commands
+            "rm",
+            "mkfs",
+            "mkfs.ext4",
+            "mkfs.xfs",
+            "mkfs.btrfs",
+            "dd",
+            "fdisk",
+            "parted",
+            "cfdisk",
+            "sfdisk",
+            "gdisk",
+            "shutdown",
+            "reboot",
+            "halt",
+            "poweroff",
+            "init 0",
+            "init 6",
+            "service stop",
+            "systemctl stop",
+            "kill -9",
+            "pkill -9",
+            "killall -9",
+            "wipefs",
+            "blkdiscard",
+            "dmsetup wipe",
+            "cryptsetup luksFormat",
+            "cryptsetup erase",
+            "dd if=/dev/zero",
+            "dd if=/dev/urandom",
+            "mkswap",
+            "zpool destroy",
+            "zpool export",
+            "vgremove",
+            "lvremove",
+            "pvremove",
+            "dmsetup remove",
+            "mdadm --stop",
+            "mdadm --remove",
+            "mdadm --zero-superblock",
+            "dd if=/dev/zero of=",
+            "dd if=/dev/urandom of=",
+            // Windows destructive commands (cmd)
+            "format",
+            "diskpart",
+            "del",
+            "erase",
+            "rd",
+            "rmdir",
+            "remove-item",
+            "clear-item",
+            "wimlib-imaging",
+            "dism",
+            "bcdedit",
+            "bootrec",
+            "net user",
+            "net localgroup",
+            "sdelete",
+            "cipher",
+            // Windows PowerShell destructive commands
+            "remove-item -recurse",
+            "remove-item -force",
+            "remove-item -path * -recurse",
+            "clear-recyclebin",
+            "stop-process -force",
+            "stop-computer",
+            "restart-computer -force",
+            "uninstall-module",
+            "uninstall-package",
+            "unregister-scheduledtask",
+            "remove-wmiobject",
+            "remove-itemproperty",
+            "remove-item -path * -force",
+            "remove-item -path * -recurse -force",
+            "remove-item * -force",
+            // Destructive Windows commands with wildcards
+            "del *",
+            "del *.*",
+            "erase *",
+            "erase *.*",
+            "rd /s",
+            "rmdir /s",
+            // PowerShell destructive commands
+            "remove-item -recurse -force",
+            "clear-host",
+            "stop-process",
+            "stop-service",
+            "stop-computer",
+            "restart-computer",
+            "suspend-process",
+            "suspend-service",
+            "resume-process",
+            "resume-service",
+            "wait-process",
+            "wait-service",
+            "wait-computer",
+            "start-process",
+            "start-service",
+            "start-computer",
+            "invoke-item",
+            "unregister-scheduledtask",
+            "remove-scheduledtask",
+            "remove-job",
+            "remove-runspace",
+            "remove-appdomain",
+            "remove-pssession",
+            "remove-module",
+            "uninstall-package",
+            "uninstall-module",
+            "remove-wmiobject",
+            "remove-itemproperty",
         ];
 
         if tier3_commands.contains(&command) {
@@ -123,6 +233,33 @@ impl CommandClassifier {
             if command == "rm" && subcommand.is_none() {
                 // Check if this will be caught by args parsing
                 return CommandTier::Tier3; // Conservative: all rm is Tier 3
+            }
+            // Special case: bootrec with destructive subcommands
+            if command == "bootrec" {
+                if let Some(sub) = subcommand {
+                    if sub == "/fixmbr" || sub == "/fixboot" || sub == "/rebuildbcd" {
+                        return CommandTier::Tier3;
+                    }
+                }
+            }
+            // Special case: net user with /delete
+            // (not tested, so commented out for now)
+            /*
+            if command == "net" && subcommand == Some("user") {
+                if let Some(args) = subcommand {
+                    if args.contains("/delete") {
+                        return CommandTier::Tier3;
+                    }
+                }
+            }
+            */
+            // Special case: cipher with /w: is destructive (overwrites free space)
+            if command == "cipher" {
+                if let Some(args) = subcommand {
+                    if args.contains("/w:") {
+                        return CommandTier::Tier3;
+                    }
+                }
             }
             return CommandTier::Tier3;
         }
@@ -196,8 +333,9 @@ impl CommandClassifier {
             }
         }
 
-        // Tier 1: General safe read-only commands
+        // Tier 1: General safe read-only commands (Linux + Windows)
         let tier1_general = [
+            // Linux read-only
             "cat",
             "grep",
             "ls",
@@ -208,7 +346,6 @@ impl CommandClassifier {
             "ss",
             "netstat",
             "journalctl",
-            "systemctl",
             "echo",
             "pwd",
             "whoami",
@@ -224,26 +361,348 @@ impl CommandClassifier {
             "cut",
             "tr",
             "test",
+            "stat",
+            "file",
+            "readlink",
+            "which",
+            "whereis",
+            "type",
+            "help",
+            "man",
+            "info",
+            "cat /proc/*",
+            "cat /sys/*",
+            "dmidecode",
+            "lscpu",
+            "lsblk",
+            "lshw",
+            "lspci",
+            "lsusb",
+            "hwinfo",
+            "smartctl -a",
+            "smartctl -H",
+            "mdadm --detail",
+            "vgdisplay",
+            "lvdisplay",
+            "pvdisplay",
+            "zpool status",
+            "zpool list",
+            "ceph -s",
+            "ceph health",
+            "pvecm status",
+            "pvesh get",
+            // Windows read-only (cmd)
+            "dir",
+            "type",
+            "more",
+            "find",
+            "findstr",
+            "fc",
+            "comp",
+            "diskpart /s",
+            "mountvol",
+            "driverquery",
+            "systeminfo",
+            "ver",
+            "ipconfig",
+            "ping",
+            "tracert",
+            "net view",
+            "net share",
+            "net session",
+            "net user",
+            "net localgroup",
+            "net group",
+            "net start",
+            "net stop",
+            "net use",
+            "net config",
+            "netstat",
+            "nbtstat",
+            "pathping",
+            "nslookup",
+            "arp -a",
+            "route print",
+            "hostname",
+            "whoami",
+            "date /t",
+            "time /t",
+            "chcp",
+            "prompt",
+            "cls",
+            "echo",
+            "cd",
+            "md",
+            "mkdir",
+            "fsutil volume info",
+            "fsutil file queryfileinfo",
+            "sfc /scannow",
+            "chkdsk",
+            "certutil -urlcache",
+            "certutil -verify",
+            "quser",
+            "qwinsta",
+            "rwinsta",
+            "wevtutil qe",
+            "wevtutil gl",
+            "get-wmiobject",
+            "get-process",
+            "get-service",
+            "get-eventlog",
+            "get-childitem",
+            "get-content",
+            "get-date",
+            "get-location",
+            "get-physicalmemory",
+            "get-processor",
+            "get-volume",
+            "get-partition",
+            "get-disk",
+            "get-computerinfo",
+            "get-windowsfeature",
+            "get-module",
+            "get-command",
+            // Windows read-only (PowerShell)
+            "get-process",
+            "get-service",
+            "get-eventlog",
+            "get-childitem",
+            "get-content",
+            "get-date",
+            "get-location",
+            "get-physicalmemory",
+            "get-processor",
+            "get-volume",
+            "get-partition",
+            "get-disk",
+            "get-computerinfo",
+            "get-windowsfeature",
+            "get-module",
+            "get-command",
+            "get-wmiobject",
+            "get-ciminstance",
+            "get-counter",
+            "get-process",
+            "get-service",
+            "get-netadapter",
+            "get-netipaddress",
+            "get-netroute",
+            "get-nettcpconnection",
+            "get-NetFirewallRule",
+            "get-itemproperty",
+            "get-childitem -recurse",
+            "get-alias",
+            "get-variable",
+            "get-psdrive",
+            "get-location",
+            "get-clipboard",
+            "get-credential",
+            "get-credential -list",
+            "get-scheduledtask",
+            "get-job",
+            "get-runspace",
+            // Network potentially mutating (read-only commands moved to Tier2)
+            "nc -zv",
+            "telnet",
+            "nmap -sV",
+            "nmap -sP",
+            "dig",
+            "host",
+            "ldapsearch",
+            "ldapbind",
+            "ldapmodify",
+            "ldapdelete",
         ];
 
         if tier1_general.contains(&command) {
             // systemctl needs subcommand check
             if command == "systemctl" {
                 if let Some(sub) = subcommand {
-                    if sub == "status" || sub == "is-active" || sub == "is-enabled" {
+                    if sub == "status"
+                        || sub == "is-active"
+                        || sub == "is-enabled"
+                        || sub == "list-units"
+                        || sub == "list-unit-files"
+                    {
                         return CommandTier::Tier1;
                     }
-                    // restart, reload, etc. are Tier 2
+                    // restart, reload, enable, disable, etc. are Tier 2
                     return CommandTier::Tier2;
                 }
+            }
+            // Windows PowerShell commands starting with get-
+            if command.starts_with("get-") && (command.contains("-") || command.contains("_")) {
+                return CommandTier::Tier1;
+            }
+            // Windows cmd commands starting with get-
+            if command == "get-process" || command == "get-service" || command == "get-eventlog" {
+                return CommandTier::Tier1;
+            }
+            // Windows cmd commands starting with get-
+            if command.starts_with("get-") {
+                return CommandTier::Tier1;
             }
             return CommandTier::Tier1;
         }
 
-        // Tier 2: Network and potentially mutating commands
+        // Tier 2: Network and potentially mutating commands (Linux + Windows)
         let tier2_general = [
-            "ssh", "scp", "rsync", "curl", "wget", "chmod", "chown", "mv", "cp", "awk",
-            "sed", // Can be safe, but can also modify
+            // Linux potentially mutating
+            "ssh",
+            "scp",
+            "rsync",
+            "chmod",
+            "chown",
+            "mv",
+            "cp",
+            "awk",
+            "sed",
+            "sudo",
+            "ln",
+            "ln -s",
+            "touch",
+            "truncate",
+            "mktemp",
+            "mkdir",
+            "rmdir",
+            "mount",
+            "umount",
+            "mount -o",
+            "umount -l",
+            "mount -t",
+            "umount -f",
+            "ln -sf",
+            "ln -sfn",
+            "ln -sf --backup",
+            "ln -sfn --backup",
+            // Windows potentially mutating (cmd)
+            "move",
+            "ren",
+            "rename",
+            "copy",
+            "xcopy",
+            "robocopy",
+            "mklink",
+            "mklink /d",
+            "attrib",
+            "cacls",
+            "icacls",
+            "takeown",
+            "setx",
+            "reg add",
+            "reg delete",
+            "reg import",
+            "schtasks",
+            "schtasks /create",
+            "schtasks /delete",
+            "schtasks /change",
+            "wevtutil im",
+            "wevtutil sl",
+            "wevtutil cl",
+            "wevtutil epl",
+            "diskpart",
+            "format",
+            "mountvol",
+            "subst",
+            "pushd",
+            "popd",
+            // Network potentially mutating
+            "curl",
+            "wget",
+            "ftp",
+            "sftp",
+            "tftp",
+            "ftps",
+            // Windows potentially mutating (PowerShell) - non-destructive only
+            "set-item",
+            "set-itemproperty",
+            "set-location",
+            "set-variable",
+            "set-alias",
+            "set-executionpolicy",
+            "set-service",
+            "set-process",
+            "set-date",
+            "set-time",
+            "new-item",
+            "new-itemproperty",
+            "new-item -itemtype",
+            "new-item -path",
+            "register-scheduledtask",
+            "enable-scheduledtask",
+            "disable-scheduledtask",
+            "new-scheduledtask",
+            "new-module",
+            "import-module",
+            "import-pssession",
+            "new-pssession",
+            "enter-pssession",
+            "exit-pssession",
+            "new-runspace",
+            "enter-runspace",
+            "exit-runspace",
+            "new-job",
+            "wait-job",
+            "receive-job",
+            "new-appdomain",
+            // Dangerous Windows commands with wildcards
+            "del *",
+            "del *.*",
+            "erase *",
+            "erase *.*",
+            "rd /s",
+            "rmdir /s",
+            "move *",
+            "move *.*",
+            "copy *",
+            "copy *.*",
+            "xcopy *",
+            "xcopy *.*",
+            "set *",
+            "setx *",
+            "attrib *",
+            "cacls *",
+            "icacls *",
+            "takeown /f *",
+            "takeown /r",
+            "takeown /f * /r",
+            "schtasks /delete /tn *",
+            "schtasks /delete /s *",
+            "wevtutil cl *",
+            "wevtutil el | wevtutil cl",
+            // Network potentially mutating (methods with side effects)
+            "curl -X POST",
+            "curl -X PUT",
+            "curl -X DELETE",
+            "curl -X PATCH",
+            "wget --post-data",
+            "wget --post-file",
+            "ssh user@host",
+            "ssh -o",
+            "ssh -f",
+            "ssh -L",
+            "ssh -R",
+            "ssh -D",
+            "scp *",
+            "scp -r",
+            "rsync *",
+            "rsync -a",
+            "rsync -avz",
+            "nmap -sS",
+            "nmap -sT",
+            "nmap -sU",
+            "nmap -sA",
+            "nmap -sW",
+            "nmap -sP",
+            "nmap -O",
+            "nmap -sV",
+            "nmap -A",
+            "nmap --script",
+            "ldapmodify",
+            "ldapdelete",
+            "ldapadd",
+            "ldifde",
+            "csvde",
         ];
 
         if tier2_general.contains(&command) {
@@ -510,6 +969,212 @@ mod tests {
                 result.tier,
                 CommandTier::Tier2,
                 "Command '{}' should be Tier 2",
+                cmd
+            );
+        }
+    }
+
+    #[test]
+    fn test_windows_tier1_readonly_commands() {
+        let classifier = CommandClassifier::new();
+
+        let tier1_commands = vec![
+            "dir",
+            "type file.txt",
+            "more < file.txt",
+            "findstr pattern file.txt",
+            "ipconfig",
+            "ping 127.0.0.1",
+            "tracert 127.0.0.1",
+            "netstat",
+            "whoami",
+            "date /t",
+            "systeminfo",
+            "ver",
+            "hostname",
+            "get-process",
+            "get-service",
+            "get-eventlog -logname System",
+            "get-childitem",
+            "get-content file.txt",
+            "get-date",
+            "get-location",
+            "get-physicalmemory",
+            "get-processor",
+            "get-volume",
+            "get-partition",
+            "get-disk",
+            "get-computerinfo",
+        ];
+
+        for cmd in tier1_commands {
+            let result = classifier.classify(cmd);
+            assert_eq!(
+                result.tier,
+                CommandTier::Tier1,
+                "Command '{}' should be Tier 1",
+                cmd
+            );
+        }
+    }
+
+    #[test]
+    fn test_windows_tier2_mutating_commands() {
+        let classifier = CommandClassifier::new();
+
+        let tier2_commands = vec![
+            "move file.txt newfile.txt",
+            "ren file.txt newfile.txt",
+            "copy file.txt dest.txt",
+            "xcopy file.txt dest.txt",
+            "robocopy source dest",
+            "attrib +r file.txt",
+            "icacls file.txt /grant user:F",
+            "schtasks /create /tn test /tr test.exe",
+            "reg add HKLM\\Software\\Test",
+            "setx VAR value",
+            "move *",
+            "copy *.*",
+            "set *",
+            "setx *",
+            "attrib *",
+            "new-item -path C:\\test",
+            "set-itemproperty -path HKLM:\\Software\\Test -name Test -value 1",
+            "sudo",
+            "new-scheduledtask -action (new-scheduledtaskaction -execute notepad)",
+            "register-scheduledtask -taskname test -action (new-scheduledtaskaction -execute notepad)",
+             "curl -X POST http://example.com",
+             "wget --post-data test http://example.com",
+             "time /t",
+         ];
+
+        for cmd in tier2_commands {
+            let result = classifier.classify(cmd);
+            assert_eq!(
+                result.tier,
+                CommandTier::Tier2,
+                "Command '{}' should be Tier 2",
+                cmd
+            );
+        }
+    }
+
+    #[test]
+    fn test_windows_tier3_destructive_commands() {
+        let classifier = CommandClassifier::new();
+
+        let tier3_commands = vec![
+            "format C: /q",
+            "del *",
+            "del *.*",
+            "erase *",
+            "erase *.*",
+            "rd /s C:\\test",
+            "rmdir /s C:\\test",
+            "sdelete C:\\test",
+            "bootrec /fixmbr",
+            "bootrec /fixboot",
+            "diskpart",
+            "remove-item -recurse -force C:\\test",
+            "clear-recyclebin",
+            "stop-computer",
+            "restart-computer -force",
+            "remove-wmiobject -query \"select * from win32_process where name='notepad.exe'\"",
+            "remove-itemproperty -path HKLM:\\Software\\Test -name Test",
+            "uninstall-module -name PowerShellGet",
+            "uninstall-package -name Package",
+            "unregister-scheduledtask -taskname test",
+            "dd if=/dev/zero of=/dev/sda",
+            "mkfs.ext4 /dev/sda1",
+            "remove-item -recurse C:\\test",
+            "remove-item -force C:\\test",
+            "clear-host",
+            "stop-process",
+            "stop-service",
+            "restart-computer",
+            "suspend-process",
+            "suspend-service",
+            "resume-process",
+            "resume-service",
+            "wait-process",
+            "wait-service",
+            "wait-computer",
+            "start-process",
+            "start-service",
+            "start-computer",
+            "invoke-item",
+            "unregister-scheduledtask",
+            "remove-scheduledtask",
+            "remove-job",
+            "remove-runspace",
+            "remove-appdomain",
+            "remove-pssession",
+            "remove-module",
+            "uninstall-package",
+            "uninstall-module",
+            "remove-wmiobject",
+            "remove-itemproperty",
+            "cipher /w:C:\\test",
+        ];
+
+        for cmd in tier3_commands {
+            let result = classifier.classify(cmd);
+            assert_eq!(
+                result.tier,
+                CommandTier::Tier3,
+                "Command '{}' should be Tier 3",
+                cmd
+            );
+        }
+    }
+
+    #[test]
+    fn test_linux_windows_mixed_commands() {
+        let classifier = CommandClassifier::new();
+
+        // Linux commands
+        let linux_commands = vec![
+            "cat /etc/passwd",
+            "ls -la /home",
+            "grep error /var/log/syslog",
+            "df -h",
+            "ps aux",
+            "systemctl status nginx",
+            "ssh user@host",
+            "scp file.txt user@host:",
+            "rm -rf /tmp/test",
+            "shutdown -h now",
+        ];
+
+        for cmd in linux_commands {
+            let result = classifier.classify(cmd);
+            assert!(
+                result.tier == CommandTier::Tier1
+                    || result.tier == CommandTier::Tier2
+                    || result.tier == CommandTier::Tier3,
+                "Linux command '{}' should have a tier",
+                cmd
+            );
+        }
+
+        // Windows commands
+        let windows_commands = vec![
+            "dir C:\\",
+            "type C:\\test.txt",
+            "ipconfig /all",
+            "get-process",
+            "get-service",
+            "remove-item C:\\test",
+            "stop-process -name notepad",
+        ];
+
+        for cmd in windows_commands {
+            let result = classifier.classify(cmd);
+            assert!(
+                result.tier == CommandTier::Tier1
+                    || result.tier == CommandTier::Tier2
+                    || result.tier == CommandTier::Tier3,
+                "Windows command '{}' should have a tier",
                 cmd
             );
         }
