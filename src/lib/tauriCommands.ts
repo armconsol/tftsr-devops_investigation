@@ -788,3 +788,6 @@ export const deletePortForwardCmd = (id: string) =>
 
 export const listPortForwardsCmd = () =>
   invoke<PortForwardResponse[]>("list_port_forwards");
+
+export const shutdownPortForwardsCmd = () =>
+  invoke<void>("shutdown_port_forwards");

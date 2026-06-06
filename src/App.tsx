@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Routes, Route, NavLink, useLocation } from "react-router-dom";
 import {
   Home,
@@ -17,7 +17,7 @@ import {
   FileCode,
 } from "lucide-react";
 import { useSettingsStore } from "@/stores/settingsStore";
-import { getAppVersionCmd, loadAiProvidersCmd, testProviderConnectionCmd } from "@/lib/tauriCommands";
+import { getAppVersionCmd, loadAiProvidersCmd, testProviderConnectionCmd, shutdownPortForwardsCmd } from "@/lib/tauriCommands";
 
 import Dashboard from "@/pages/Dashboard";
 import NewIssue from "@/pages/NewIssue";
@@ -56,10 +56,23 @@ export default function App() {
   const [collapsed, setCollapsed] = useState(false);
   const [appVersion, setAppVersion] = useState("");
   const { theme, setTheme, setProviders, getActiveProvider } = useSettingsStore();
+  const cleanupDone = useRef(false);
   void useLocation();
 
   useEffect(() => {
     getAppVersionCmd().then(setAppVersion).catch(() => {});
+  }, []);
+
+  // Cleanup port forwards on app unmount
+  useEffect(() => {
+    return () => {
+      if (!cleanupDone.current) {
+        cleanupDone.current = true;
+        void shutdownPortForwardsCmd().catch((err) => {
+          console.error("Failed to shutdown port forwards:", err);
+        });
+      }
+    };
   }, []);
 
   // Load providers and auto-test active provider on startup
