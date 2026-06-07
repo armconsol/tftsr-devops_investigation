@@ -308,7 +308,6 @@ pub async fn discover_pods(
     Ok(pods)
 }
 
-
 // Regex patterns for Kubernetes resource names
 // Must match: ^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$ (DNS subdomain name)
 // Added max length check (253 chars) to prevent ReDoS attacks
@@ -710,7 +709,10 @@ pub struct DaemonSetInfo {
 }
 
 #[tauri::command]
-pub async fn list_namespaces(cluster_id: String, state: State<'_, AppState>) -> Result<Vec<NamespaceInfo>, String> {
+pub async fn list_namespaces(
+    cluster_id: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<NamespaceInfo>, String> {
     let clusters = state.clusters.lock().await;
     let cluster = clusters
         .get(&cluster_id)
@@ -780,18 +782,18 @@ fn parse_namespaces_json(json_str: &str) -> Result<Vec<NamespaceInfo>, String> {
             .map(parse_creation_timestamp)
             .unwrap_or("N/A".to_string());
 
-        namespaces.push(NamespaceInfo {
-            name,
-            status,
-            age,
-        });
+        namespaces.push(NamespaceInfo { name, status, age });
     }
 
     Ok(namespaces)
 }
 
 #[tauri::command]
-pub async fn list_pods(cluster_id: String, namespace: String, state: State<'_, AppState>) -> Result<Vec<PodInfo>, String> {
+pub async fn list_pods(
+    cluster_id: String,
+    namespace: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<PodInfo>, String> {
     let clusters = state.clusters.lock().await;
     let cluster = clusters
         .get(&cluster_id)
@@ -864,9 +866,10 @@ fn parse_pods_json(json_str: &str) -> Result<Vec<PodInfo>, String> {
             .and_then(|s| s.get("containerStatuses"))
             .and_then(|c| c.as_array())
             .map(|container_statuses| {
-                let ready_count = container_statuses.iter().filter(|c| {
-                    c.get("ready").and_then(|r| r.as_bool()).unwrap_or(false)
-                }).count();
+                let ready_count = container_statuses
+                    .iter()
+                    .filter(|c| c.get("ready").and_then(|r| r.as_bool()).unwrap_or(false))
+                    .count();
                 let total_count = container_statuses.len();
                 format!("{}/{}", ready_count, total_count)
             })
@@ -886,7 +889,11 @@ fn parse_pods_json(json_str: &str) -> Result<Vec<PodInfo>, String> {
             .map(|spec_containers| {
                 spec_containers
                     .iter()
-                    .filter_map(|c| c.get("name").and_then(|n| n.as_str()).map(|s| s.to_string()))
+                    .filter_map(|c| {
+                        c.get("name")
+                            .and_then(|n| n.as_str())
+                            .map(|s| s.to_string())
+                    })
                     .collect()
             })
             .unwrap_or_default();
@@ -904,7 +911,11 @@ fn parse_pods_json(json_str: &str) -> Result<Vec<PodInfo>, String> {
 }
 
 #[tauri::command]
-pub async fn list_services(cluster_id: String, namespace: String, state: State<'_, AppState>) -> Result<Vec<ServiceInfo>, String> {
+pub async fn list_services(
+    cluster_id: String,
+    namespace: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<ServiceInfo>, String> {
     let clusters = state.clusters.lock().await;
     let cluster = clusters
         .get(&cluster_id)
@@ -1001,12 +1012,25 @@ fn parse_services_json(json_str: &str) -> Result<Vec<ServiceInfo>, String> {
             .and_then(|s| s.get("ports"))
             .and_then(|p| p.as_array())
             .map(|ports_seq| {
-                ports_seq.iter().map(|p| ServicePort {
-                    name: p.get("name").and_then(|n| n.as_str()).map(|s| s.to_string()),
-                    port: p.get("port").and_then(|p| p.as_u64()).unwrap_or(0) as u16,
-                    target_port: p.get("targetPort").and_then(|tp| tp.as_str()).map(|s| s.to_string()),
-                    protocol: p.get("protocol").and_then(|p| p.as_str()).unwrap_or("TCP").to_string(),
-                }).collect()
+                ports_seq
+                    .iter()
+                    .map(|p| ServicePort {
+                        name: p
+                            .get("name")
+                            .and_then(|n| n.as_str())
+                            .map(|s| s.to_string()),
+                        port: p.get("port").and_then(|p| p.as_u64()).unwrap_or(0) as u16,
+                        target_port: p
+                            .get("targetPort")
+                            .and_then(|tp| tp.as_str())
+                            .map(|s| s.to_string()),
+                        protocol: p
+                            .get("protocol")
+                            .and_then(|p| p.as_str())
+                            .unwrap_or("TCP")
+                            .to_string(),
+                    })
+                    .collect()
             })
             .unwrap_or_default();
 
@@ -1022,9 +1046,9 @@ fn parse_services_json(json_str: &str) -> Result<Vec<ServiceInfo>, String> {
             .and_then(|s| s.get("selector"))
             .and_then(|s| s.as_object())
             .map(|s| {
-                s.iter().map(|(k, v)| {
-                    (k.clone(), v.as_str().unwrap_or("").to_string())
-                }).collect()
+                s.iter()
+                    .map(|(k, v)| (k.clone(), v.as_str().unwrap_or("").to_string()))
+                    .collect()
             })
             .unwrap_or_default();
 
@@ -1044,7 +1068,11 @@ fn parse_services_json(json_str: &str) -> Result<Vec<ServiceInfo>, String> {
 }
 
 #[tauri::command]
-pub async fn list_deployments(cluster_id: String, namespace: String, state: State<'_, AppState>) -> Result<Vec<DeploymentInfo>, String> {
+pub async fn list_deployments(
+    cluster_id: String,
+    namespace: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<DeploymentInfo>, String> {
     let clusters = state.clusters.lock().await;
     let cluster = clusters
         .get(&cluster_id)
@@ -1151,9 +1179,9 @@ fn parse_deployments_json(json_str: &str) -> Result<Vec<DeploymentInfo>, String>
             .and_then(|m| m.get("labels"))
             .and_then(|l| l.as_object())
             .map(|l| {
-                l.iter().map(|(k, v)| {
-                    (k.clone(), v.as_str().unwrap_or("").to_string())
-                }).collect()
+                l.iter()
+                    .map(|(k, v)| (k.clone(), v.as_str().unwrap_or("").to_string()))
+                    .collect()
             })
             .unwrap_or_default();
 
@@ -1173,7 +1201,11 @@ fn parse_deployments_json(json_str: &str) -> Result<Vec<DeploymentInfo>, String>
 }
 
 #[tauri::command]
-pub async fn list_statefulsets(cluster_id: String, namespace: String, state: State<'_, AppState>) -> Result<Vec<StatefulSetInfo>, String> {
+pub async fn list_statefulsets(
+    cluster_id: String,
+    namespace: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<StatefulSetInfo>, String> {
     let clusters = state.clusters.lock().await;
     let cluster = clusters
         .get(&cluster_id)
@@ -1266,9 +1298,9 @@ fn parse_statefulsets_json(json_str: &str) -> Result<Vec<StatefulSetInfo>, Strin
             .and_then(|m| m.get("labels"))
             .and_then(|l| l.as_object())
             .map(|l| {
-                l.iter().map(|(k, v)| {
-                    (k.clone(), v.as_str().unwrap_or("").to_string())
-                }).collect()
+                l.iter()
+                    .map(|(k, v)| (k.clone(), v.as_str().unwrap_or("").to_string()))
+                    .collect()
             })
             .unwrap_or_default();
 
@@ -1286,7 +1318,11 @@ fn parse_statefulsets_json(json_str: &str) -> Result<Vec<StatefulSetInfo>, Strin
 }
 
 #[tauri::command]
-pub async fn list_daemonsets(cluster_id: String, namespace: String, state: State<'_, AppState>) -> Result<Vec<DaemonSetInfo>, String> {
+pub async fn list_daemonsets(
+    cluster_id: String,
+    namespace: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<DaemonSetInfo>, String> {
     let clusters = state.clusters.lock().await;
     let cluster = clusters
         .get(&cluster_id)
@@ -1396,9 +1432,9 @@ fn parse_daemonsets_json(json_str: &str) -> Result<Vec<DaemonSetInfo>, String> {
             .and_then(|m| m.get("labels"))
             .and_then(|l| l.as_object())
             .map(|l| {
-                l.iter().map(|(k, v)| {
-                    (k.clone(), v.as_str().unwrap_or("").to_string())
-                }).collect()
+                l.iter()
+                    .map(|(k, v)| (k.clone(), v.as_str().unwrap_or("").to_string()))
+                    .collect()
             })
             .unwrap_or_default();
 
@@ -1447,7 +1483,13 @@ fn parse_creation_timestamp(timestamp: &str) -> String {
 // ─────────────────────────────────────────────────────────────────────────────
 
 #[tauri::command]
-pub async fn get_pod_logs(cluster_id: String, namespace: String, pod_name: String, container_name: String, state: State<'_, AppState>) -> Result<LogResponse, String> {
+pub async fn get_pod_logs(
+    cluster_id: String,
+    namespace: String,
+    pod_name: String,
+    container_name: String,
+    state: State<'_, AppState>,
+) -> Result<LogResponse, String> {
     let clusters = state.clusters.lock().await;
     let cluster = clusters
         .get(&cluster_id)
@@ -1489,7 +1531,13 @@ pub async fn get_pod_logs(cluster_id: String, namespace: String, pod_name: Strin
 }
 
 #[tauri::command]
-pub async fn scale_deployment(cluster_id: String, namespace: String, deployment_name: String, replicas: i32, state: State<'_, AppState>) -> Result<(), String> {
+pub async fn scale_deployment(
+    cluster_id: String,
+    namespace: String,
+    deployment_name: String,
+    replicas: i32,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
     let clusters = state.clusters.lock().await;
     let cluster = clusters
         .get(&cluster_id)
@@ -1530,7 +1578,12 @@ pub async fn scale_deployment(cluster_id: String, namespace: String, deployment_
 }
 
 #[tauri::command]
-pub async fn restart_deployment(cluster_id: String, namespace: String, deployment_name: String, state: State<'_, AppState>) -> Result<(), String> {
+pub async fn restart_deployment(
+    cluster_id: String,
+    namespace: String,
+    deployment_name: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
     let clusters = state.clusters.lock().await;
     let cluster = clusters
         .get(&cluster_id)
@@ -1570,7 +1623,13 @@ pub async fn restart_deployment(cluster_id: String, namespace: String, deploymen
 }
 
 #[tauri::command]
-pub async fn delete_resource(cluster_id: String, resource_type: String, namespace: String, resource_name: String, state: State<'_, AppState>) -> Result<(), String> {
+pub async fn delete_resource(
+    cluster_id: String,
+    resource_type: String,
+    namespace: String,
+    resource_name: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
     let clusters = state.clusters.lock().await;
     let cluster = clusters
         .get(&cluster_id)
@@ -1609,7 +1668,15 @@ pub async fn delete_resource(cluster_id: String, resource_type: String, namespac
 }
 
 #[tauri::command]
-pub async fn exec_pod(cluster_id: String, namespace: String, pod_name: String, container_name: Option<String>, shell: Option<String>, command: String, state: State<'_, AppState>) -> Result<ExecResponse, String> {
+pub async fn exec_pod(
+    cluster_id: String,
+    namespace: String,
+    pod_name: String,
+    container_name: Option<String>,
+    shell: Option<String>,
+    command: String,
+    state: State<'_, AppState>,
+) -> Result<ExecResponse, String> {
     let clusters = state.clusters.lock().await;
     let cluster = clusters
         .get(&cluster_id)
@@ -1627,10 +1694,22 @@ pub async fn exec_pod(cluster_id: String, namespace: String, pod_name: String, c
 
     let kubectl_path = locate_kubectl()?;
 
-    const ALLOWED_SHELLS: &[&str] = &["sh", "bash", "ash", "dash", "/bin/sh", "/bin/bash", "/bin/ash", "/bin/dash"];
+    const ALLOWED_SHELLS: &[&str] = &[
+        "sh",
+        "bash",
+        "ash",
+        "dash",
+        "/bin/sh",
+        "/bin/bash",
+        "/bin/ash",
+        "/bin/dash",
+    ];
     let shell_cmd = shell.as_deref().unwrap_or("sh");
     if !ALLOWED_SHELLS.contains(&shell_cmd) {
-        return Err(format!("Unsupported shell '{}'; allowed: sh, bash, ash, dash", shell_cmd));
+        return Err(format!(
+            "Unsupported shell '{}'; allowed: sh, bash, ash, dash",
+            shell_cmd
+        ));
     }
 
     let mut cmd = Command::new(kubectl_path);
@@ -1645,13 +1724,19 @@ pub async fn exec_pod(cluster_id: String, namespace: String, pod_name: String, c
     cmd.env("KUBECONFIG", temp_path.to_string_lossy().to_string())
         .env("KUBERNETES_CONTEXT", context);
 
-    let output = cmd.output().await
+    let output = cmd
+        .output()
+        .await
         .map_err(|e| format!("Failed to execute kubectl: {e}"))?;
 
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
     let stderr = String::from_utf8_lossy(&output.stderr).to_string();
 
-    Ok(ExecResponse { stdout, stderr, exit_code: output.status.code() })
+    Ok(ExecResponse {
+        stdout,
+        stderr,
+        exit_code: output.status.code(),
+    })
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1826,7 +1911,11 @@ pub struct HorizontalPodAutoscalerInfo {
 }
 
 #[tauri::command]
-pub async fn list_replicasets(cluster_id: String, namespace: String, state: State<'_, AppState>) -> Result<Vec<ReplicaSetInfo>, String> {
+pub async fn list_replicasets(
+    cluster_id: String,
+    namespace: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<ReplicaSetInfo>, String> {
     let clusters = state.clusters.lock().await;
     let cluster = clusters
         .get(&cluster_id)
@@ -1919,9 +2008,9 @@ fn parse_replicasets_json(json_str: &str) -> Result<Vec<ReplicaSetInfo>, String>
             .and_then(|m| m.get("labels"))
             .and_then(|l| l.as_object())
             .map(|l| {
-                l.iter().map(|(k, v)| {
-                    (k.clone(), v.as_str().unwrap_or("").to_string())
-                }).collect()
+                l.iter()
+                    .map(|(k, v)| (k.clone(), v.as_str().unwrap_or("").to_string()))
+                    .collect()
             })
             .unwrap_or_default();
 
@@ -1939,7 +2028,11 @@ fn parse_replicasets_json(json_str: &str) -> Result<Vec<ReplicaSetInfo>, String>
 }
 
 #[tauri::command]
-pub async fn list_jobs(cluster_id: String, namespace: String, state: State<'_, AppState>) -> Result<Vec<JobInfo>, String> {
+pub async fn list_jobs(
+    cluster_id: String,
+    namespace: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<JobInfo>, String> {
     let clusters = state.clusters.lock().await;
     let cluster = clusters
         .get(&cluster_id)
@@ -2070,9 +2163,9 @@ fn parse_jobs_json(json_str: &str) -> Result<Vec<JobInfo>, String> {
             .and_then(|m| m.get("labels"))
             .and_then(|l| l.as_object())
             .map(|l| {
-                l.iter().map(|(k, v)| {
-                    (k.clone(), v.as_str().unwrap_or("").to_string())
-                }).collect()
+                l.iter()
+                    .map(|(k, v)| (k.clone(), v.as_str().unwrap_or("").to_string()))
+                    .collect()
             })
             .unwrap_or_default();
 
@@ -2090,7 +2183,11 @@ fn parse_jobs_json(json_str: &str) -> Result<Vec<JobInfo>, String> {
 }
 
 #[tauri::command]
-pub async fn list_cronjobs(cluster_id: String, namespace: String, state: State<'_, AppState>) -> Result<Vec<CronJobInfo>, String> {
+pub async fn list_cronjobs(
+    cluster_id: String,
+    namespace: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<CronJobInfo>, String> {
     let clusters = state.clusters.lock().await;
     let cluster = clusters
         .get(&cluster_id)
@@ -2191,9 +2288,9 @@ fn parse_cronjobs_json(json_str: &str) -> Result<Vec<CronJobInfo>, String> {
             .and_then(|m| m.get("labels"))
             .and_then(|l| l.as_object())
             .map(|l| {
-                l.iter().map(|(k, v)| {
-                    (k.clone(), v.as_str().unwrap_or("").to_string())
-                }).collect()
+                l.iter()
+                    .map(|(k, v)| (k.clone(), v.as_str().unwrap_or("").to_string()))
+                    .collect()
             })
             .unwrap_or_default();
 
@@ -2212,7 +2309,11 @@ fn parse_cronjobs_json(json_str: &str) -> Result<Vec<CronJobInfo>, String> {
 }
 
 #[tauri::command]
-pub async fn list_configmaps(cluster_id: String, namespace: String, state: State<'_, AppState>) -> Result<Vec<ConfigMapInfo>, String> {
+pub async fn list_configmaps(
+    cluster_id: String,
+    namespace: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<ConfigMapInfo>, String> {
     let clusters = state.clusters.lock().await;
     let cluster = clusters
         .get(&cluster_id)
@@ -2305,7 +2406,11 @@ fn parse_configmaps_json(json_str: &str) -> Result<Vec<ConfigMapInfo>, String> {
 }
 
 #[tauri::command]
-pub async fn list_secrets(cluster_id: String, namespace: String, state: State<'_, AppState>) -> Result<Vec<SecretInfo>, String> {
+pub async fn list_secrets(
+    cluster_id: String,
+    namespace: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<SecretInfo>, String> {
     let clusters = state.clusters.lock().await;
     let cluster = clusters
         .get(&cluster_id)
@@ -2405,7 +2510,10 @@ fn parse_secrets_json(json_str: &str) -> Result<Vec<SecretInfo>, String> {
 }
 
 #[tauri::command]
-pub async fn list_nodes(cluster_id: String, state: State<'_, AppState>) -> Result<Vec<NodeInfo>, String> {
+pub async fn list_nodes(
+    cluster_id: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<NodeInfo>, String> {
     let clusters = state.clusters.lock().await;
     let cluster = clusters
         .get(&cluster_id)
@@ -2466,9 +2574,9 @@ fn parse_nodes_json(json_str: &str) -> Result<Vec<NodeInfo>, String> {
             .and_then(|s| s.get("conditions"))
             .and_then(|c| c.as_array())
             .and_then(|conditions| {
-                conditions.iter().find(|c| {
-                    c.get("type").and_then(|t| t.as_str()) == Some("Ready")
-                })
+                conditions
+                    .iter()
+                    .find(|c| c.get("type").and_then(|t| t.as_str()) == Some("Ready"))
             })
             .and_then(|c| c.get("status").and_then(|s| s.as_str()))
             .map(|s| match s {
@@ -2485,7 +2593,9 @@ fn parse_nodes_json(json_str: &str) -> Result<Vec<NodeInfo>, String> {
             .and_then(|l| l.as_object())
             .map(|l| {
                 let mut role_list: Vec<String> = Vec::new();
-                if l.contains_key("node-role.kubernetes.io/control-plane") || l.contains_key("node-role.kubernetes.io/master") {
+                if l.contains_key("node-role.kubernetes.io/control-plane")
+                    || l.contains_key("node-role.kubernetes.io/master")
+                {
                     role_list.push("control-plane".to_string());
                 }
                 if l.contains_key("node-role.kubernetes.io/worker") {
@@ -2517,9 +2627,9 @@ fn parse_nodes_json(json_str: &str) -> Result<Vec<NodeInfo>, String> {
             .and_then(|s| s.get("addresses"))
             .and_then(|a| a.as_array())
             .and_then(|addresses| {
-                addresses.iter().find(|addr| {
-                    addr.get("type").and_then(|t| t.as_str()) == Some("InternalIP")
-                })
+                addresses
+                    .iter()
+                    .find(|addr| addr.get("type").and_then(|t| t.as_str()) == Some("InternalIP"))
             })
             .and_then(|addr| addr.get("address").and_then(|a| a.as_str()))
             .unwrap_or("N/A")
@@ -2530,9 +2640,9 @@ fn parse_nodes_json(json_str: &str) -> Result<Vec<NodeInfo>, String> {
             .and_then(|s| s.get("addresses"))
             .and_then(|a| a.as_array())
             .and_then(|addresses| {
-                addresses.iter().find(|addr| {
-                    addr.get("type").and_then(|t| t.as_str()) == Some("ExternalIP")
-                })
+                addresses
+                    .iter()
+                    .find(|addr| addr.get("type").and_then(|t| t.as_str()) == Some("ExternalIP"))
             })
             .and_then(|addr| addr.get("address").and_then(|a| a.as_str()))
             .map(|s| s.to_string());
@@ -2586,7 +2696,11 @@ fn parse_nodes_json(json_str: &str) -> Result<Vec<NodeInfo>, String> {
 }
 
 #[tauri::command]
-pub async fn list_events(cluster_id: String, namespace: Option<String>, state: State<'_, AppState>) -> Result<Vec<EventInfo>, String> {
+pub async fn list_events(
+    cluster_id: String,
+    namespace: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<Vec<EventInfo>, String> {
     let clusters = state.clusters.lock().await;
     let cluster = clusters
         .get(&cluster_id)
@@ -2673,10 +2787,7 @@ fn parse_events_json(json_str: &str) -> Result<Vec<EventInfo>, String> {
             .unwrap_or("unknown")
             .to_string();
 
-        let count = item
-            .get("count")
-            .and_then(|c| c.as_i64())
-            .unwrap_or(1) as i32;
+        let count = item.get("count").and_then(|c| c.as_i64()).unwrap_or(1) as i32;
 
         let first_seen = item
             .get("firstTimestamp")
@@ -2713,7 +2824,11 @@ fn parse_events_json(json_str: &str) -> Result<Vec<EventInfo>, String> {
 }
 
 #[tauri::command]
-pub async fn list_ingresses(cluster_id: String, namespace: String, state: State<'_, AppState>) -> Result<Vec<IngressInfo>, String> {
+pub async fn list_ingresses(
+    cluster_id: String,
+    namespace: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<IngressInfo>, String> {
     let clusters = state.clusters.lock().await;
     let cluster = clusters
         .get(&cluster_id)
@@ -2802,9 +2917,14 @@ fn parse_ingresses_json(json_str: &str) -> Result<Vec<IngressInfo>, String> {
             .and_then(|l| l.get("ingress"))
             .and_then(|i| i.as_array())
             .map(|ingress| {
-                ingress.iter().filter_map(|ing| {
-                    ing.get("ip").and_then(|ip| ip.as_str()).map(|s| s.to_string())
-                }).collect()
+                ingress
+                    .iter()
+                    .filter_map(|ing| {
+                        ing.get("ip")
+                            .and_then(|ip| ip.as_str())
+                            .map(|s| s.to_string())
+                    })
+                    .collect()
             })
             .unwrap_or_default();
 
@@ -2829,7 +2949,11 @@ fn parse_ingresses_json(json_str: &str) -> Result<Vec<IngressInfo>, String> {
 }
 
 #[tauri::command]
-pub async fn list_persistentvolumeclaims(cluster_id: String, namespace: String, state: State<'_, AppState>) -> Result<Vec<PersistentVolumeClaimInfo>, String> {
+pub async fn list_persistentvolumeclaims(
+    cluster_id: String,
+    namespace: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<PersistentVolumeClaimInfo>, String> {
     let clusters = state.clusters.lock().await;
     let cluster = clusters
         .get(&cluster_id)
@@ -2926,7 +3050,10 @@ fn parse_pvcs_json(json_str: &str) -> Result<Vec<PersistentVolumeClaimInfo>, Str
             .and_then(|s| s.get("accessModes"))
             .and_then(|a| a.as_array())
             .map(|modes| {
-                modes.iter().filter_map(|m| m.as_str().map(|s| s.to_string())).collect()
+                modes
+                    .iter()
+                    .filter_map(|m| m.as_str().map(|s| s.to_string()))
+                    .collect()
             })
             .unwrap_or_default();
 
@@ -2952,7 +3079,10 @@ fn parse_pvcs_json(json_str: &str) -> Result<Vec<PersistentVolumeClaimInfo>, Str
 }
 
 #[tauri::command]
-pub async fn list_persistentvolumes(cluster_id: String, state: State<'_, AppState>) -> Result<Vec<PersistentVolumeInfo>, String> {
+pub async fn list_persistentvolumes(
+    cluster_id: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<PersistentVolumeInfo>, String> {
     let clusters = state.clusters.lock().await;
     let cluster = clusters
         .get(&cluster_id)
@@ -3030,7 +3160,10 @@ fn parse_pvs_json(json_str: &str) -> Result<Vec<PersistentVolumeInfo>, String> {
             .and_then(|s| s.get("accessModes"))
             .and_then(|a| a.as_array())
             .map(|modes| {
-                modes.iter().filter_map(|m| m.as_str().map(|s| s.to_string())).collect()
+                modes
+                    .iter()
+                    .filter_map(|m| m.as_str().map(|s| s.to_string()))
+                    .collect()
             })
             .unwrap_or_default();
 
@@ -3070,7 +3203,11 @@ fn parse_pvs_json(json_str: &str) -> Result<Vec<PersistentVolumeInfo>, String> {
 }
 
 #[tauri::command]
-pub async fn list_serviceaccounts(cluster_id: String, namespace: String, state: State<'_, AppState>) -> Result<Vec<ServiceAccountInfo>, String> {
+pub async fn list_serviceaccounts(
+    cluster_id: String,
+    namespace: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<ServiceAccountInfo>, String> {
     let clusters = state.clusters.lock().await;
     let cluster = clusters
         .get(&cluster_id)
@@ -3163,7 +3300,11 @@ fn parse_serviceaccounts_json(json_str: &str) -> Result<Vec<ServiceAccountInfo>,
 }
 
 #[tauri::command]
-pub async fn list_roles(cluster_id: String, namespace: String, state: State<'_, AppState>) -> Result<Vec<RoleInfo>, String> {
+pub async fn list_roles(
+    cluster_id: String,
+    namespace: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<RoleInfo>, String> {
     let clusters = state.clusters.lock().await;
     let cluster = clusters
         .get(&cluster_id)
@@ -3249,7 +3390,10 @@ fn parse_roles_json(json_str: &str) -> Result<Vec<RoleInfo>, String> {
 }
 
 #[tauri::command]
-pub async fn list_clusterroles(cluster_id: String, state: State<'_, AppState>) -> Result<Vec<ClusterRoleInfo>, String> {
+pub async fn list_clusterroles(
+    cluster_id: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<ClusterRoleInfo>, String> {
     let clusters = state.clusters.lock().await;
     let cluster = clusters
         .get(&cluster_id)
@@ -3312,17 +3456,18 @@ fn parse_clusterroles_json(json_str: &str) -> Result<Vec<ClusterRoleInfo>, Strin
             .map(parse_creation_timestamp)
             .unwrap_or("N/A".to_string());
 
-        clusterroles.push(ClusterRoleInfo {
-            name,
-            age,
-        });
+        clusterroles.push(ClusterRoleInfo { name, age });
     }
 
     Ok(clusterroles)
 }
 
 #[tauri::command]
-pub async fn list_rolebindings(cluster_id: String, namespace: String, state: State<'_, AppState>) -> Result<Vec<RoleBindingInfo>, String> {
+pub async fn list_rolebindings(
+    cluster_id: String,
+    namespace: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<RoleBindingInfo>, String> {
     let clusters = state.clusters.lock().await;
     let cluster = clusters
         .get(&cluster_id)
@@ -3416,7 +3561,10 @@ fn parse_rolebindings_json(json_str: &str) -> Result<Vec<RoleBindingInfo>, Strin
 }
 
 #[tauri::command]
-pub async fn list_clusterrolebindings(cluster_id: String, state: State<'_, AppState>) -> Result<Vec<ClusterRoleBindingInfo>, String> {
+pub async fn list_clusterrolebindings(
+    cluster_id: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<ClusterRoleBindingInfo>, String> {
     let clusters = state.clusters.lock().await;
     let cluster = clusters
         .get(&cluster_id)
@@ -3426,7 +3574,10 @@ pub async fn list_clusterrolebindings(cluster_id: String, state: State<'_, AppSt
     let context = &cluster.context;
 
     let temp_dir = std::env::temp_dir();
-    let temp_path = temp_dir.join(format!("kubeconfig-{}-clusterrolebindings.yaml", cluster_id));
+    let temp_path = temp_dir.join(format!(
+        "kubeconfig-{}-clusterrolebindings.yaml",
+        cluster_id
+    ));
     let _cleanup = TempFileCleanup(temp_path.clone());
 
     std::fs::write(&temp_path, kubeconfig_content)
@@ -3497,7 +3648,11 @@ fn parse_clusterrolebindings_json(json_str: &str) -> Result<Vec<ClusterRoleBindi
 }
 
 #[tauri::command]
-pub async fn list_horizontalpodautoscalers(cluster_id: String, namespace: String, state: State<'_, AppState>) -> Result<Vec<HorizontalPodAutoscalerInfo>, String> {
+pub async fn list_horizontalpodautoscalers(
+    cluster_id: String,
+    namespace: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<HorizontalPodAutoscalerInfo>, String> {
     let clusters = state.clusters.lock().await;
     let cluster = clusters
         .get(&cluster_id)
@@ -3611,7 +3766,11 @@ fn parse_hpas_json(json_str: &str) -> Result<Vec<HorizontalPodAutoscalerInfo>, S
 }
 
 #[tauri::command]
-pub async fn cordon_node(cluster_id: String, node_name: String, state: State<'_, AppState>) -> Result<(), String> {
+pub async fn cordon_node(
+    cluster_id: String,
+    node_name: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
     let clusters = state.clusters.lock().await;
     let cluster = clusters
         .get(&cluster_id)
@@ -3647,7 +3806,11 @@ pub async fn cordon_node(cluster_id: String, node_name: String, state: State<'_,
 }
 
 #[tauri::command]
-pub async fn uncordon_node(cluster_id: String, node_name: String, state: State<'_, AppState>) -> Result<(), String> {
+pub async fn uncordon_node(
+    cluster_id: String,
+    node_name: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
     let clusters = state.clusters.lock().await;
     let cluster = clusters
         .get(&cluster_id)
@@ -3683,7 +3846,11 @@ pub async fn uncordon_node(cluster_id: String, node_name: String, state: State<'
 }
 
 #[tauri::command]
-pub async fn drain_node(cluster_id: String, node_name: String, state: State<'_, AppState>) -> Result<(), String> {
+pub async fn drain_node(
+    cluster_id: String,
+    node_name: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
     let clusters = state.clusters.lock().await;
     let cluster = clusters
         .get(&cluster_id)
@@ -3722,7 +3889,12 @@ pub async fn drain_node(cluster_id: String, node_name: String, state: State<'_, 
 }
 
 #[tauri::command]
-pub async fn rollback_deployment(cluster_id: String, namespace: String, deployment_name: String, state: State<'_, AppState>) -> Result<(), String> {
+pub async fn rollback_deployment(
+    cluster_id: String,
+    namespace: String,
+    deployment_name: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
     let clusters = state.clusters.lock().await;
     let cluster = clusters
         .get(&cluster_id)
@@ -3762,7 +3934,13 @@ pub async fn rollback_deployment(cluster_id: String, namespace: String, deployme
 }
 
 #[tauri::command]
-pub async fn create_resource(cluster_id: String, namespace: String, _resource_type: String, yaml_content: String, state: State<'_, AppState>) -> Result<(), String> {
+pub async fn create_resource(
+    cluster_id: String,
+    namespace: String,
+    _resource_type: String,
+    yaml_content: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
     let clusters = state.clusters.lock().await;
     let cluster = clusters
         .get(&cluster_id)
@@ -3792,16 +3970,19 @@ pub async fn create_resource(cluster_id: String, namespace: String, _resource_ty
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
 
-    let mut child = cmd.spawn()
+    let mut child = cmd
+        .spawn()
         .map_err(|e| format!("Failed to spawn kubectl: {e}"))?;
 
     if let Some(mut stdin) = child.stdin.take() {
-        stdin.write_all(yaml_content.as_bytes())
+        stdin
+            .write_all(yaml_content.as_bytes())
             .await
             .map_err(|e| format!("Failed to write yaml to stdin: {e}"))?;
     }
 
-    let output = child.wait_with_output()
+    let output = child
+        .wait_with_output()
         .await
         .map_err(|e| format!("Failed to execute kubectl: {e}"))?;
 
@@ -3814,7 +3995,14 @@ pub async fn create_resource(cluster_id: String, namespace: String, _resource_ty
 }
 
 #[tauri::command]
-pub async fn edit_resource(cluster_id: String, namespace: String, _resource_type: String, _resource_name: String, yaml_content: String, state: State<'_, AppState>) -> Result<(), String> {
+pub async fn edit_resource(
+    cluster_id: String,
+    namespace: String,
+    _resource_type: String,
+    _resource_name: String,
+    yaml_content: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
     let clusters = state.clusters.lock().await;
     let cluster = clusters
         .get(&cluster_id)
@@ -3844,16 +4032,19 @@ pub async fn edit_resource(cluster_id: String, namespace: String, _resource_type
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
 
-    let mut child = cmd.spawn()
+    let mut child = cmd
+        .spawn()
         .map_err(|e| format!("Failed to spawn kubectl: {e}"))?;
 
     if let Some(mut stdin) = child.stdin.take() {
-        stdin.write_all(yaml_content.as_bytes())
+        stdin
+            .write_all(yaml_content.as_bytes())
             .await
             .map_err(|e| format!("Failed to write yaml to stdin: {e}"))?;
     }
 
-    let output = child.wait_with_output()
+    let output = child
+        .wait_with_output()
         .await
         .map_err(|e| format!("Failed to execute kubectl: {e}"))?;
 
@@ -3864,4 +4055,3 @@ pub async fn edit_resource(cluster_id: String, namespace: String, _resource_type
 
     Ok(())
 }
-
