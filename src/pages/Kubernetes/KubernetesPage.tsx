@@ -15,7 +15,7 @@ import {
 } from "@/lib/tauriCommands";
 
 export function KubernetesPage() {
-  const { selectedClusterId } = useKubernetesStore();
+  const { selectedClusterId, setSelectedCluster } = useKubernetesStore();
   const [kubeconfigs, setKubeconfigs] = useState<KubeconfigInfo[]>([]);
   const [portForwards, setPortForwards] = useState<PortForwardResponse[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -44,7 +44,14 @@ export function KubernetesPage() {
   const handleActivateKubeconfig = async (id: string) => {
     try {
       await activateKubeconfigCmd(id);
-      await loadData();
+      const [kubeconfigsData] = await Promise.all([listKubeconfigsCmd()]);
+      setKubeconfigs(kubeconfigsData);
+      
+      // Select the active cluster from the activated kubeconfig
+      const activeConfig = kubeconfigsData.find((c) => c.is_active);
+      if (activeConfig) {
+        setSelectedCluster(activeConfig.id);
+      }
     } catch (err) {
       console.error("Failed to activate kubeconfig:", err);
       alert("Failed to activate kubeconfig");
