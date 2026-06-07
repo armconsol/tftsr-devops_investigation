@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { ClusterInfo, ContextInfo, ResourceInfo } from "@/lib/tauriCommands";
+import type { ClusterInfo, ContextInfo, ResourceInfo, KubeconfigInfo } from "@/lib/tauriCommands";
 
 export type ResourceType = 
   | "pods" 
@@ -102,6 +102,13 @@ export const useKubernetesStore = create<KubernetesState>()((set, get) => ({
   
   // Actions
   setSelectedCluster: (clusterId) => set({ selectedClusterId: clusterId, selectedNamespace: "all" }),
+  
+  selectClusterFromKubeconfig: (kubeconfigs: KubeconfigInfo[]) => {
+    const activeConfig = kubeconfigs.find((c) => c.is_active);
+    if (activeConfig) {
+      set({ selectedClusterId: activeConfig.id, selectedNamespace: "all" });
+    }
+  },
   
   setSelectedNamespace: (namespace) => set({ selectedNamespace: namespace }),
   
