@@ -242,7 +242,7 @@ jobs:
 
           # Write body to file — passing 100KB+ JSON as a shell arg hits ARG_MAX.
           jq -cn \
-            --arg model "qwen3-coder-next" \
+            --arg model "qwen36-35b-a3b-nvfp4" \
             --rawfile content /tmp/prompt.txt \
             '{model: $model, messages: [{role: "user", content: $content}], stream: false}' \
             > /tmp/body.json
@@ -359,7 +359,7 @@ jobs:
           if [ -f "/tmp/pr_review.txt" ] && [ -s "/tmp/pr_review.txt" ]; then
             REVIEW_BODY=$(head -c 65536 /tmp/pr_review.txt)
             BODY=$(jq -n \
-              --arg body "Automated PR Review (qwen3-coder-next via liteLLM):\n\n${REVIEW_BODY}" \
+              --arg body "Automated PR Review (qwen36-35b-a3b-nvfp4 via liteLLM):\n\n${REVIEW_BODY}" \
               '{body: $body, event: "COMMENT"}')
           else
             BODY=$(jq -n \
