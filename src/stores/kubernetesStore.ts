@@ -87,7 +87,7 @@ export const useKubernetesStore = create<KubernetesState>()((set, get) => ({
   namespaces: {},
   
   // Loaded resources tracking
-  loadedResources: new Set<ResourceType>() as Set<ResourceType>,
+  loadedResources: new Set<ResourceType>(),
   
   // Terminal sessions
   terminalSessions: {},

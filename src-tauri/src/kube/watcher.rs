@@ -72,7 +72,13 @@ pub async fn start_all_resources_watcher(
 ) -> Result<mpsc::Receiver<serde_json::Value>> {
     let (tx, rx) = mpsc::channel(100);
 
-    let resources = vec!["pods", "services", "deployments", "replicasets", "daemonsets"];
+    let resources = vec![
+        "pods",
+        "services",
+        "deployments",
+        "replicasets",
+        "daemonsets",
+    ];
 
     for resource_type in resources {
         let watcher_tx = tx.clone();
@@ -80,7 +86,8 @@ pub async fn start_all_resources_watcher(
         let namespace = "default".to_string();
 
         tokio::spawn(async move {
-            let watcher = Watcher::new(cluster_id, namespace, resource_type.to_string(), watcher_tx);
+            let watcher =
+                Watcher::new(cluster_id, namespace, resource_type.to_string(), watcher_tx);
             if let Err(e) = watcher.start().await {
                 tracing::error!("Watcher for {} failed: {}", resource_type, e);
             }
