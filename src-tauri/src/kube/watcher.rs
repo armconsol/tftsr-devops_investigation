@@ -32,11 +32,14 @@ impl Watcher {
             self.resource_type, self.cluster_id, self.namespace
         );
 
-        // Placeholder for watcher implementation
-        // Requires k8s-openapi with watch feature and tokio-stream
-        loop {
-            tokio::time::sleep(tokio::time::Duration::from_secs(60)).await;
-        }
+        // TODO: implement real watch stream via k8s-openapi + tokio-stream
+        tracing::warn!(
+            resource_type = %self.resource_type,
+            cluster_id = %self.cluster_id,
+            namespace = %self.namespace,
+            "Watcher is a stub — no events will be emitted until k8s watch stream is implemented"
+        );
+        Ok(())
     }
 }
 

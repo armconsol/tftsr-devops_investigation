@@ -4064,7 +4064,6 @@ pub async fn subscribe_to_k8s_events(
     state: State<'_, AppState>,
 ) -> Result<String, String> {
     let _app_state = state.inner();
-    let _app_state = state.inner();
 
     let rx = crate::kube::start_resource_watcher(_app_state, cluster_id, namespace, resource_type)
         .await
@@ -4090,7 +4089,6 @@ pub async fn subscribe_to_all_k8s_events(
     cluster_id: String,
     state: State<'_, AppState>,
 ) -> Result<String, String> {
-    let _app_state = state.inner();
     let _app_state = state.inner();
 
     let rx = crate::kube::start_all_resources_watcher(_app_state, cluster_id)

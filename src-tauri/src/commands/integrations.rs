@@ -326,6 +326,10 @@ pub async fn initiate_oauth(
         let integration_webviews = app_state.integration_webviews.clone();
         let mcp_connections = app_state.mcp_connections.clone();
         let pending_approvals = app_state.pending_approvals.clone();
+        let clusters = app_state.clusters.clone();
+        let port_forwards = app_state.port_forwards.clone();
+        let refresh_registry = app_state.refresh_registry.clone();
+        let watchers = app_state.watchers.clone();
 
         tokio::spawn(async move {
             let app_state_for_callback = AppState {
@@ -335,12 +339,10 @@ pub async fn initiate_oauth(
                 integration_webviews,
                 mcp_connections,
                 pending_approvals,
-                clusters: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
-                port_forwards: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
-                refresh_registry: Arc::new(tokio::sync::Mutex::new(
-                    crate::kube::RefreshRegistry::new(),
-                )),
-                watchers: Arc::new(Mutex::new(std::collections::HashMap::new())),
+                clusters,
+                port_forwards,
+                refresh_registry,
+                watchers,
             };
             while let Some(callback) = callback_rx.recv().await {
                 tracing::info!("Received OAuth callback for state: {}", callback.state);
