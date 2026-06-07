@@ -8,17 +8,15 @@ on:
 jobs:
   renovate:
     runs-on: ubuntu-latest
+    container:
+      image: renovate/renovate:latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.ref_name }}
-
-      - name: Self-hosted Renovate
-        uses: renovatebot/github-action@v41.0.0
-        with:
-          token: ${{ secrets.RENOVATE_TOKEN }}
+      - name: Run Renovate
+        run: renovate
         env:
-          RENOVATE_ENDPOINT: https://gogs.tftsr.com/api/v3
+          RENOVATE_TOKEN: ${{ secrets.RENOVATE_TOKEN }}
           RENOVATE_PLATFORM: gitea
+          RENOVATE_ENDPOINT: https://gogs.tftsr.com/api/v3
+          RENOVATE_AUTODISCOVER: 'false'
+          RENOVATE_REPOSITORIES: '["sarman/tftsr-devops_investigation"]'
           RENOVATE_AUTOMERGE: 'false'
