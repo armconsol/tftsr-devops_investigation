@@ -97,6 +97,8 @@ pub struct AppState {
     pub port_forwards: Arc<TokioMutex<HashMap<String, crate::kube::PortForwardSession>>>,
     /// Refresh registry for domain-based data fetching
     pub refresh_registry: Arc<TokioMutex<crate::kube::RefreshRegistry>>,
+    /// Resource watchers: unsubscribe_id -> receiver
+    pub watchers: Arc<Mutex<HashMap<String, tokio::sync::mpsc::Receiver<serde_json::Value>>>>,
 }
 
 /// Determine the application data directory.

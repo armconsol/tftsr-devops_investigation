@@ -1,10 +1,12 @@
 pub mod client;
 pub mod portforward;
 pub mod refresh;
+pub mod watcher;
 
 pub use client::ClusterClient;
 pub use portforward::{PortForwardSession, PortForwardStatus};
 pub use refresh::RefreshRegistry;
+pub use watcher::{start_all_resources_watcher, start_resource_watcher, Watcher};
 
 #[cfg(test)]
 mod tests {

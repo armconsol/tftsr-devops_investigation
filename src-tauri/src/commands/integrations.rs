@@ -340,6 +340,7 @@ pub async fn initiate_oauth(
                 refresh_registry: Arc::new(tokio::sync::Mutex::new(
                     crate::kube::RefreshRegistry::new(),
                 )),
+                watchers: Arc::new(Mutex::new(std::collections::HashMap::new())),
             };
             while let Some(callback) = callback_rx.recv().await {
                 tracing::info!("Received OAuth callback for state: {}", callback.state);
