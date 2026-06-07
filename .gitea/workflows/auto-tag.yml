@@ -138,8 +138,8 @@ jobs:
           PREV_TAG=$(git tag --sort=-version:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' \
             | grep -v "^${CURRENT_TAG}$" | head -1 || echo "")
           if [ -n "$PREV_TAG" ]; then
-            # Generate changelog for current tag only using tag range
-            git-cliff --config cliff.toml --tag "${PREV_TAG}..${CURRENT_TAG}" > /tmp/release_body.md || true
+            # Generate release body for this tag only (commits since previous tag)
+            git-cliff --config cliff.toml "${PREV_TAG}..${CURRENT_TAG}" > /tmp/release_body.md || true
             # Generate full CHANGELOG.md from all tags
             git-cliff --config cliff.toml --output CHANGELOG.md
           else
