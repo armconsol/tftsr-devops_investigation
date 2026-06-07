@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from "react";
+import { useKubernetesStore } from "@/stores/kubernetesStore";
 import { ClusterList } from "@/components/Kubernetes/ClusterList";
 import { PortForwardList } from "@/components/Kubernetes/PortForwardList";
 import { AddClusterModal } from "@/components/Kubernetes/AddClusterModal";
 import { PortForwardForm } from "@/components/Kubernetes/PortForwardForm";
+import { ResourceBrowser } from "@/components/Kubernetes/ResourceBrowser";
 import type { ClusterInfo, PortForwardResponse } from "@/lib/tauriCommands";
 import {
   listClustersCmd,
@@ -13,7 +15,7 @@ import {
 } from "@/lib/tauriCommands";
 
 export function KubernetesPage() {
-  const [clusters, setClusters] = useState<ClusterInfo[]>([]);
+  const { clusters, addCluster, removeCluster, selectedClusterId } = useKubernetesStore();
   const [portForwards, setPortForwards] = useState<PortForwardResponse[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isAddClusterOpen, setIsAddClusterOpen] = useState(false);
@@ -30,7 +32,8 @@ export function KubernetesPage() {
         listClustersCmd(),
         listPortForwardsCmd(),
       ]);
-      setClusters(clustersData);
+      
+      clustersData.forEach(addCluster);
       setPortForwards(portForwardsData);
     } catch (err) {
       console.error("Failed to load data:", err);
@@ -42,7 +45,7 @@ export function KubernetesPage() {
   const handleRemoveCluster = async (clusterId: string) => {
     try {
       await removeClusterCmd(clusterId);
-      setClusters((prev) => prev.filter((c) => c.id !== clusterId));
+      removeCluster(clusterId);
     } catch (err) {
       console.error("Failed to remove cluster:", err);
       alert("Failed to remove cluster");
@@ -70,7 +73,7 @@ export function KubernetesPage() {
   };
 
   const handleAddCluster = (cluster: ClusterInfo) => {
-    setClusters((prev) => [...prev, cluster]);
+    addCluster(cluster);
   };
 
   const handleStartPortForward = (portForward: PortForwardResponse) => {
@@ -93,17 +96,41 @@ export function KubernetesPage() {
       <div className="flex flex-col gap-2">
         <h1 className="text-3xl font-bold tracking-tight">Kubernetes Management</h1>
         <p className="text-muted-foreground">
-          Manage your Kubernetes clusters and port forwarding sessions
+          Manage your Kubernetes clusters and resources
         </p>
       </div>
 
-      <div className="grid gap-8">
+      {/* Cluster Management Section */}
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <h2 className="text-xl font-semibold">Clusters</h2>
+          <button
+            onClick={() => setIsAddClusterOpen(true)}
+            className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90"
+          >
+            Add Cluster
+          </button>
+        </div>
+        
         <ClusterList
           clusters={clusters}
           onAdd={() => setIsAddClusterOpen(true)}
           onRemove={handleRemoveCluster}
         />
+      </div>
 
+      {/* Port Forwarding Section */}
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <h2 className="text-xl font-semibold">Port Forwarding</h2>
+          <button
+            onClick={() => setIsStartPortForwardOpen(true)}
+            className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90"
+          >
+            Start Port Forward
+          </button>
+        </div>
+        
         <PortForwardList
           portForwards={portForwards}
           onStart={() => setIsStartPortForwardOpen(true)}
@@ -112,12 +139,22 @@ export function KubernetesPage() {
         />
       </div>
 
+      {/* Resource Browser Section */}
+      {selectedClusterId && (
+        <div className="space-y-6">
+          <h2 className="text-xl font-semibold">Resource Browser</h2>
+          <ResourceBrowser clusterId={selectedClusterId} />
+        </div>
+      )}
+
+      {/* Add Cluster Modal */}
       <AddClusterModal
         isOpen={isAddClusterOpen}
         onClose={() => setIsAddClusterOpen(false)}
         onAdd={handleAddCluster}
       />
 
+      {/* Port Forward Form */}
       <PortForwardForm
         isOpen={isStartPortForwardOpen}
         onClose={() => setIsStartPortForwardOpen(false)}
