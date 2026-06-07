@@ -103,6 +103,26 @@ export default function LogUpload() {
     }
   };
 
+  const handleImagesUpload = useCallback(async (imageFiles: File[]) => {
+    if (!id || imageFiles.length === 0) return;
+
+    setIsUploading(true);
+    setError(null);
+    try {
+      const uploaded = await Promise.all(
+        imageFiles.map(async (file) => {
+          const result = await uploadImageAttachmentCmd(id, file.name);
+          return result;
+        })
+      );
+      setImages((prev) => [...prev, ...uploaded]);
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setIsUploading(false);
+    }
+  }, [id]);
+
   const handleImageDrop = useCallback(
     (e: React.DragEvent) => {
       e.preventDefault();
@@ -113,7 +133,7 @@ export default function LogUpload() {
         handleImagesUpload(imageFiles);
       }
     },
-    [id]
+    [handleImagesUpload]
   );
 
   const handleImageFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -150,26 +170,6 @@ export default function LogUpload() {
     },
     [id]
   );
-
-  const handleImagesUpload = async (imageFiles: File[]) => {
-    if (!id || imageFiles.length === 0) return;
-    
-    setIsUploading(true);
-    setError(null);
-    try {
-      const uploaded = await Promise.all(
-        imageFiles.map(async (file) => {
-          const result = await uploadImageAttachmentCmd(id, file.name);
-          return result;
-        })
-      );
-      setImages((prev) => [...prev, ...uploaded]);
-    } catch (err) {
-      setError(String(err));
-    } finally {
-      setIsUploading(false);
-    }
-  };
 
   const handleDeleteImage = async (image: ImageAttachment) => {
     try {

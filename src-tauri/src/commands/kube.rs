@@ -5,9 +5,11 @@ use crate::state::AppState;
 use lazy_static::lazy_static;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use serde_yaml::Value;
+use serde_json::Value;
+use std::process::Stdio;
 use std::sync::Arc;
 use tauri::State;
+use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
 use tracing::info;
 
@@ -59,6 +61,7 @@ pub struct PodInfo {
     pub status: String,
     pub ready: String,
     pub age: String,
+    pub containers: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -111,7 +114,7 @@ pub async fn add_cluster(
 }
 
 fn extract_context(content: &str) -> Result<String, String> {
-    let value: Value =
+    let value: serde_yaml::Value =
         serde_yaml::from_str(content).map_err(|e| format!("Invalid kubeconfig YAML: {}", e))?;
 
     let contexts = value
@@ -130,7 +133,7 @@ fn extract_context(content: &str) -> Result<String, String> {
 }
 
 fn extract_server_url(content: &str) -> Result<String, String> {
-    let value: Value =
+    let value: serde_yaml::Value =
         serde_yaml::from_str(content).map_err(|e| format!("Invalid kubeconfig YAML: {}", e))?;
 
     let clusters = value
@@ -303,91 +306,6 @@ pub async fn discover_pods(
     let pods = parse_pods_json(&stdout)?;
 
     Ok(pods)
-}
-
-/// Parses the JSON output from `kubectl get pods -o json`
-/// and extracts pod information including real status, ready state, and age.
-fn parse_pods_json(json_str: &str) -> Result<Vec<PodInfo>, String> {
-    let value: serde_json::Value = serde_json::from_str(json_str)
-        .map_err(|e| format!("Failed to parse kubectl JSON output: {}", e))?;
-
-    let items = value
-        .get("items")
-        .and_then(|v| v.as_array())
-        .ok_or("Missing 'items' array in kubectl JSON output")?;
-
-    let mut pods = Vec::new();
-
-    for item in items {
-        let metadata = item
-            .get("metadata")
-            .ok_or("Missing 'metadata' in pod item")?;
-        let status = item.get("status").ok_or("Missing 'status' in pod item")?;
-
-        let name = metadata
-            .get("name")
-            .and_then(|v| v.as_str())
-            .unwrap_or("unknown")
-            .to_string();
-
-        let phase = status
-            .get("phase")
-            .and_then(|v| v.as_str())
-            .unwrap_or("Unknown")
-            .to_string();
-
-        let mut ready = "N/A".to_string();
-        let mut age = "N/A".to_string();
-
-        // Parse ready state from container statuses
-        if let Some(container_statuses) = status.get("containerStatuses").and_then(|v| v.as_array())
-        {
-            let total = container_statuses.len();
-            let ready_count = container_statuses
-                .iter()
-                .filter(|c| c.get("ready").and_then(|v| v.as_bool()).unwrap_or(false))
-                .count();
-            ready = format!("{}/{}", ready_count, total);
-        }
-
-        // Parse age from creation timestamp
-        if let Some(creation_timestamp) = metadata.get("creationTimestamp").and_then(|v| v.as_str())
-        {
-            age = parse_creation_timestamp(creation_timestamp);
-        }
-
-        pods.push(PodInfo {
-            name,
-            status: phase,
-            ready,
-            age,
-        });
-    }
-
-    Ok(pods)
-}
-
-/// Parses a Kubernetes creation timestamp and returns a human-readable age.
-fn parse_creation_timestamp(timestamp: &str) -> String {
-    use chrono::{DateTime, Utc};
-
-    // Try parsing as RFC3339 format (e.g., "2024-01-15T10:30:00Z")
-    if let Ok(dt) = timestamp.parse::<DateTime<Utc>>() {
-        let elapsed = Utc::now() - dt;
-        let seconds = elapsed.num_seconds();
-
-        if seconds < 60 {
-            return format!("{}s", seconds);
-        } else if seconds < 3600 {
-            return format!("{}m", seconds / 60);
-        } else if seconds < 86400 {
-            return format!("{}h", seconds / 3600);
-        } else {
-            return format!("{}d", seconds / 86400);
-        }
-    }
-
-    "N/A".to_string()
 }
 
 // Regex patterns for Kubernetes resource names
@@ -718,6 +636,3421 @@ pub async fn shutdown_port_forwards(state: State<'_, AppState>) -> Result<(), St
         if let Some(mut session) = port_forwards.remove(&session_id) {
             session.close().await;
         }
+    }
+
+    Ok(())
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// New Resource Discovery Commands (Phase 1)
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NamespaceInfo {
+    pub name: String,
+    pub status: String,
+    pub age: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ServicePort {
+    pub name: Option<String>,
+    pub port: u16,
+    pub target_port: Option<String>,
+    pub protocol: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ServiceInfo {
+    pub name: String,
+    pub namespace: String,
+    #[serde(rename = "type")]
+    pub service_type: String,
+    pub cluster_ip: String,
+    pub external_ip: Option<String>,
+    pub ports: Vec<ServicePort>,
+    pub age: String,
+    pub selector: std::collections::HashMap<String, String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeploymentInfo {
+    pub name: String,
+    pub namespace: String,
+    pub ready: String,
+    pub up_to_date: String,
+    pub available: String,
+    pub age: String,
+    pub replicas: i32,
+    pub labels: std::collections::HashMap<String, String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StatefulSetInfo {
+    pub name: String,
+    pub namespace: String,
+    pub ready: String,
+    pub age: String,
+    pub replicas: i32,
+    pub labels: std::collections::HashMap<String, String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DaemonSetInfo {
+    pub name: String,
+    pub namespace: String,
+    pub desired: i32,
+    pub current: i32,
+    pub ready: i32,
+    pub up_to_date: i32,
+    pub available: i32,
+    pub age: String,
+    pub labels: std::collections::HashMap<String, String>,
+}
+
+#[tauri::command]
+pub async fn list_namespaces(
+    cluster_id: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<NamespaceInfo>, String> {
+    let clusters = state.clusters.lock().await;
+    let cluster = clusters
+        .get(&cluster_id)
+        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+
+    let kubeconfig_content = cluster.kubeconfig_content.as_ref();
+    let context = &cluster.context;
+
+    let temp_dir = std::env::temp_dir();
+    let temp_path = temp_dir.join(format!("kubeconfig-{}-namespaces.yaml", cluster_id));
+    let _cleanup = TempFileCleanup(temp_path.clone());
+
+    std::fs::write(&temp_path, kubeconfig_content)
+        .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
+
+    let kubectl_path = locate_kubectl()?;
+
+    let output = Command::new(kubectl_path)
+        .arg("get")
+        .arg("namespaces")
+        .arg("-o")
+        .arg("json")
+        .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
+        .env("KUBERNETES_CONTEXT", context)
+        .output()
+        .await
+        .map_err(|e| format!("Failed to execute kubectl: {e}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(stderr.to_string());
+    }
+
+    let output_str = String::from_utf8_lossy(&output.stdout);
+    parse_namespaces_json(&output_str)
+}
+
+fn parse_namespaces_json(json_str: &str) -> Result<Vec<NamespaceInfo>, String> {
+    let value: Value = serde_json::from_str(json_str)
+        .map_err(|e| format!("Failed to parse kubectl JSON output: {}", e))?;
+
+    let items = value
+        .get("items")
+        .and_then(|i| i.as_array())
+        .ok_or("Missing 'items' array in kubectl JSON output")?;
+
+    let mut namespaces = Vec::new();
+    for item in items {
+        let name = item
+            .get("metadata")
+            .and_then(|m| m.get("name"))
+            .and_then(|n| n.as_str())
+            .unwrap_or("unknown")
+            .to_string();
+
+        let status = item
+            .get("status")
+            .and_then(|s| s.get("phase"))
+            .and_then(|p| p.as_str())
+            .unwrap_or("Unknown")
+            .to_string();
+
+        let age = item
+            .get("metadata")
+            .and_then(|m| m.get("creationTimestamp"))
+            .and_then(|c| c.as_str())
+            .map(parse_creation_timestamp)
+            .unwrap_or("N/A".to_string());
+
+        namespaces.push(NamespaceInfo { name, status, age });
+    }
+
+    Ok(namespaces)
+}
+
+#[tauri::command]
+pub async fn list_pods(
+    cluster_id: String,
+    namespace: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<PodInfo>, String> {
+    let clusters = state.clusters.lock().await;
+    let cluster = clusters
+        .get(&cluster_id)
+        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+
+    let kubeconfig_content = cluster.kubeconfig_content.as_ref();
+    let context = &cluster.context;
+
+    let temp_dir = std::env::temp_dir();
+    let temp_path = temp_dir.join(format!("kubeconfig-{}-pods.yaml", cluster_id));
+    let _cleanup = TempFileCleanup(temp_path.clone());
+
+    std::fs::write(&temp_path, kubeconfig_content)
+        .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
+
+    let kubectl_path = locate_kubectl()?;
+
+    let mut kubectl_cmd = Command::new(kubectl_path);
+    kubectl_cmd.arg("get").arg("pods");
+    if namespace.is_empty() {
+        kubectl_cmd.arg("--all-namespaces");
+    } else {
+        kubectl_cmd.arg("-n").arg(&namespace);
+    }
+    let output = kubectl_cmd
+        .arg("-o")
+        .arg("json")
+        .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
+        .env("KUBERNETES_CONTEXT", context)
+        .output()
+        .await
+        .map_err(|e| format!("Failed to execute kubectl: {e}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(stderr.to_string());
+    }
+
+    let output_str = String::from_utf8_lossy(&output.stdout);
+    parse_pods_json(&output_str)
+}
+
+fn parse_pods_json(json_str: &str) -> Result<Vec<PodInfo>, String> {
+    let value: Value = serde_json::from_str(json_str)
+        .map_err(|e| format!("Failed to parse kubectl JSON output: {}", e))?;
+
+    let items = value
+        .get("items")
+        .and_then(|i| i.as_array())
+        .ok_or("Missing 'items' array in kubectl JSON output")?;
+
+    let mut pods = Vec::new();
+    for item in items {
+        let name = item
+            .get("metadata")
+            .and_then(|m| m.get("name"))
+            .and_then(|n| n.as_str())
+            .unwrap_or("unknown")
+            .to_string();
+
+        let status = item
+            .get("status")
+            .and_then(|s| s.get("phase"))
+            .and_then(|p| p.as_str())
+            .unwrap_or("Unknown")
+            .to_string();
+
+        let ready = item
+            .get("status")
+            .and_then(|s| s.get("containerStatuses"))
+            .and_then(|c| c.as_array())
+            .map(|container_statuses| {
+                let ready_count = container_statuses
+                    .iter()
+                    .filter(|c| c.get("ready").and_then(|r| r.as_bool()).unwrap_or(false))
+                    .count();
+                let total_count = container_statuses.len();
+                format!("{}/{}", ready_count, total_count)
+            })
+            .unwrap_or("0/0".to_string());
+
+        let age = item
+            .get("metadata")
+            .and_then(|m| m.get("creationTimestamp"))
+            .and_then(|c| c.as_str())
+            .map(parse_creation_timestamp)
+            .unwrap_or("N/A".to_string());
+
+        let containers = item
+            .get("spec")
+            .and_then(|s| s.get("containers"))
+            .and_then(|c| c.as_array())
+            .map(|spec_containers| {
+                spec_containers
+                    .iter()
+                    .filter_map(|c| {
+                        c.get("name")
+                            .and_then(|n| n.as_str())
+                            .map(|s| s.to_string())
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        pods.push(PodInfo {
+            name,
+            status,
+            ready,
+            age,
+            containers,
+        });
+    }
+
+    Ok(pods)
+}
+
+#[tauri::command]
+pub async fn list_services(
+    cluster_id: String,
+    namespace: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<ServiceInfo>, String> {
+    let clusters = state.clusters.lock().await;
+    let cluster = clusters
+        .get(&cluster_id)
+        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+
+    let kubeconfig_content = cluster.kubeconfig_content.as_ref();
+    let context = &cluster.context;
+
+    let temp_dir = std::env::temp_dir();
+    let temp_path = temp_dir.join(format!("kubeconfig-{}-services.yaml", cluster_id));
+    let _cleanup = TempFileCleanup(temp_path.clone());
+
+    std::fs::write(&temp_path, kubeconfig_content)
+        .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
+
+    let kubectl_path = locate_kubectl()?;
+
+    let mut kubectl_cmd = Command::new(kubectl_path);
+    kubectl_cmd.arg("get").arg("services");
+    if namespace.is_empty() {
+        kubectl_cmd.arg("--all-namespaces");
+    } else {
+        kubectl_cmd.arg("-n").arg(&namespace);
+    }
+    let output = kubectl_cmd
+        .arg("-o")
+        .arg("json")
+        .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
+        .env("KUBERNETES_CONTEXT", context)
+        .output()
+        .await
+        .map_err(|e| format!("Failed to execute kubectl: {e}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(stderr.to_string());
+    }
+
+    let output_str = String::from_utf8_lossy(&output.stdout);
+    parse_services_json(&output_str)
+}
+
+fn parse_services_json(json_str: &str) -> Result<Vec<ServiceInfo>, String> {
+    let value: Value = serde_json::from_str(json_str)
+        .map_err(|e| format!("Failed to parse kubectl JSON output: {}", e))?;
+
+    let items = value
+        .get("items")
+        .and_then(|i| i.as_array())
+        .ok_or("Missing 'items' array in kubectl JSON output")?;
+
+    let mut services = Vec::new();
+    for item in items {
+        let name = item
+            .get("metadata")
+            .and_then(|m| m.get("name"))
+            .and_then(|n| n.as_str())
+            .unwrap_or("unknown")
+            .to_string();
+
+        let namespace = item
+            .get("metadata")
+            .and_then(|m| m.get("namespace"))
+            .and_then(|n| n.as_str())
+            .unwrap_or("default")
+            .to_string();
+
+        let service_type = item
+            .get("spec")
+            .and_then(|s| s.get("type"))
+            .and_then(|t| t.as_str())
+            .unwrap_or("ClusterIP")
+            .to_string();
+
+        let cluster_ip = item
+            .get("spec")
+            .and_then(|s| s.get("clusterIP"))
+            .and_then(|c| c.as_str())
+            .unwrap_or("None")
+            .to_string();
+
+        let external_ip = item
+            .get("status")
+            .and_then(|s| s.get("loadBalancer"))
+            .and_then(|l| l.get("ingress"))
+            .and_then(|i| i.as_array())
+            .and_then(|ingress| ingress.first())
+            .and_then(|ing| ing.get("ip"))
+            .and_then(|ip| ip.as_str())
+            .map(|s| s.to_string());
+
+        let ports = item
+            .get("spec")
+            .and_then(|s| s.get("ports"))
+            .and_then(|p| p.as_array())
+            .map(|ports_seq| {
+                ports_seq
+                    .iter()
+                    .map(|p| ServicePort {
+                        name: p
+                            .get("name")
+                            .and_then(|n| n.as_str())
+                            .map(|s| s.to_string()),
+                        port: p.get("port").and_then(|p| p.as_u64()).unwrap_or(0) as u16,
+                        target_port: p
+                            .get("targetPort")
+                            .and_then(|tp| tp.as_str())
+                            .map(|s| s.to_string()),
+                        protocol: p
+                            .get("protocol")
+                            .and_then(|p| p.as_str())
+                            .unwrap_or("TCP")
+                            .to_string(),
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let age = item
+            .get("metadata")
+            .and_then(|m| m.get("creationTimestamp"))
+            .and_then(|c| c.as_str())
+            .map(parse_creation_timestamp)
+            .unwrap_or("N/A".to_string());
+
+        let selector = item
+            .get("spec")
+            .and_then(|s| s.get("selector"))
+            .and_then(|s| s.as_object())
+            .map(|s| {
+                s.iter()
+                    .map(|(k, v)| (k.clone(), v.as_str().unwrap_or("").to_string()))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        services.push(ServiceInfo {
+            name,
+            namespace,
+            service_type,
+            cluster_ip,
+            external_ip,
+            ports,
+            age,
+            selector,
+        });
+    }
+
+    Ok(services)
+}
+
+#[tauri::command]
+pub async fn list_deployments(
+    cluster_id: String,
+    namespace: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<DeploymentInfo>, String> {
+    let clusters = state.clusters.lock().await;
+    let cluster = clusters
+        .get(&cluster_id)
+        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+
+    let kubeconfig_content = cluster.kubeconfig_content.as_ref();
+    let context = &cluster.context;
+
+    let temp_dir = std::env::temp_dir();
+    let temp_path = temp_dir.join(format!("kubeconfig-{}-deployments.yaml", cluster_id));
+    let _cleanup = TempFileCleanup(temp_path.clone());
+
+    std::fs::write(&temp_path, kubeconfig_content)
+        .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
+
+    let kubectl_path = locate_kubectl()?;
+
+    let mut kubectl_cmd = Command::new(kubectl_path);
+    kubectl_cmd.arg("get").arg("deployments");
+    if namespace.is_empty() {
+        kubectl_cmd.arg("--all-namespaces");
+    } else {
+        kubectl_cmd.arg("-n").arg(&namespace);
+    }
+    let output = kubectl_cmd
+        .arg("-o")
+        .arg("json")
+        .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
+        .env("KUBERNETES_CONTEXT", context)
+        .output()
+        .await
+        .map_err(|e| format!("Failed to execute kubectl: {e}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(stderr.to_string());
+    }
+
+    let output_str = String::from_utf8_lossy(&output.stdout);
+    parse_deployments_json(&output_str)
+}
+
+fn parse_deployments_json(json_str: &str) -> Result<Vec<DeploymentInfo>, String> {
+    let value: Value = serde_json::from_str(json_str)
+        .map_err(|e| format!("Failed to parse kubectl JSON output: {}", e))?;
+
+    let items = value
+        .get("items")
+        .and_then(|i| i.as_array())
+        .ok_or("Missing 'items' array in kubectl JSON output")?;
+
+    let mut deployments = Vec::new();
+    for item in items {
+        let name = item
+            .get("metadata")
+            .and_then(|m| m.get("name"))
+            .and_then(|n| n.as_str())
+            .unwrap_or("unknown")
+            .to_string();
+
+        let namespace = item
+            .get("metadata")
+            .and_then(|m| m.get("namespace"))
+            .and_then(|n| n.as_str())
+            .unwrap_or("default")
+            .to_string();
+
+        let replicas = item
+            .get("spec")
+            .and_then(|s| s.get("replicas"))
+            .and_then(|r| r.as_i64())
+            .unwrap_or(0) as i32;
+
+        let ready = item
+            .get("status")
+            .and_then(|s| s.get("readyReplicas"))
+            .and_then(|r| r.as_i64())
+            .map(|r| format!("{}/{}", r, replicas))
+            .unwrap_or_else(|| format!("0/{}", replicas));
+
+        let up_to_date = item
+            .get("status")
+            .and_then(|s| s.get("updatedReplicas"))
+            .and_then(|r| r.as_i64())
+            .map(|r| r.to_string())
+            .unwrap_or_else(|| "N/A".to_string());
+
+        let available = item
+            .get("status")
+            .and_then(|s| s.get("availableReplicas"))
+            .and_then(|r| r.as_i64())
+            .map(|r| r.to_string())
+            .unwrap_or_else(|| "N/A".to_string());
+
+        let age = item
+            .get("metadata")
+            .and_then(|m| m.get("creationTimestamp"))
+            .and_then(|c| c.as_str())
+            .map(parse_creation_timestamp)
+            .unwrap_or("N/A".to_string());
+
+        let labels = item
+            .get("metadata")
+            .and_then(|m| m.get("labels"))
+            .and_then(|l| l.as_object())
+            .map(|l| {
+                l.iter()
+                    .map(|(k, v)| (k.clone(), v.as_str().unwrap_or("").to_string()))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        deployments.push(DeploymentInfo {
+            name,
+            namespace,
+            ready,
+            up_to_date,
+            available,
+            age,
+            replicas,
+            labels,
+        });
+    }
+
+    Ok(deployments)
+}
+
+#[tauri::command]
+pub async fn list_statefulsets(
+    cluster_id: String,
+    namespace: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<StatefulSetInfo>, String> {
+    let clusters = state.clusters.lock().await;
+    let cluster = clusters
+        .get(&cluster_id)
+        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+
+    let kubeconfig_content = cluster.kubeconfig_content.as_ref();
+    let context = &cluster.context;
+
+    let temp_dir = std::env::temp_dir();
+    let temp_path = temp_dir.join(format!("kubeconfig-{}-statefulsets.yaml", cluster_id));
+    let _cleanup = TempFileCleanup(temp_path.clone());
+
+    std::fs::write(&temp_path, kubeconfig_content)
+        .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
+
+    let kubectl_path = locate_kubectl()?;
+
+    let mut kubectl_cmd = Command::new(kubectl_path);
+    kubectl_cmd.arg("get").arg("statefulsets");
+    if namespace.is_empty() {
+        kubectl_cmd.arg("--all-namespaces");
+    } else {
+        kubectl_cmd.arg("-n").arg(&namespace);
+    }
+    let output = kubectl_cmd
+        .arg("-o")
+        .arg("json")
+        .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
+        .env("KUBERNETES_CONTEXT", context)
+        .output()
+        .await
+        .map_err(|e| format!("Failed to execute kubectl: {e}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(stderr.to_string());
+    }
+
+    let output_str = String::from_utf8_lossy(&output.stdout);
+    parse_statefulsets_json(&output_str)
+}
+
+fn parse_statefulsets_json(json_str: &str) -> Result<Vec<StatefulSetInfo>, String> {
+    let value: Value = serde_json::from_str(json_str)
+        .map_err(|e| format!("Failed to parse kubectl JSON output: {}", e))?;
+
+    let items = value
+        .get("items")
+        .and_then(|i| i.as_array())
+        .ok_or("Missing 'items' array in kubectl JSON output")?;
+
+    let mut statefulsets = Vec::new();
+    for item in items {
+        let name = item
+            .get("metadata")
+            .and_then(|m| m.get("name"))
+            .and_then(|n| n.as_str())
+            .unwrap_or("unknown")
+            .to_string();
+
+        let namespace = item
+            .get("metadata")
+            .and_then(|m| m.get("namespace"))
+            .and_then(|n| n.as_str())
+            .unwrap_or("default")
+            .to_string();
+
+        let replicas = item
+            .get("spec")
+            .and_then(|s| s.get("replicas"))
+            .and_then(|r| r.as_i64())
+            .unwrap_or(0) as i32;
+
+        let ready = item
+            .get("status")
+            .and_then(|s| s.get("readyReplicas"))
+            .and_then(|r| r.as_i64())
+            .map(|r| format!("{}/{}", r, replicas))
+            .unwrap_or_else(|| format!("0/{}", replicas));
+
+        let age = item
+            .get("metadata")
+            .and_then(|m| m.get("creationTimestamp"))
+            .and_then(|c| c.as_str())
+            .map(parse_creation_timestamp)
+            .unwrap_or("N/A".to_string());
+
+        let labels = item
+            .get("metadata")
+            .and_then(|m| m.get("labels"))
+            .and_then(|l| l.as_object())
+            .map(|l| {
+                l.iter()
+                    .map(|(k, v)| (k.clone(), v.as_str().unwrap_or("").to_string()))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        statefulsets.push(StatefulSetInfo {
+            name,
+            namespace,
+            ready,
+            age,
+            replicas,
+            labels,
+        });
+    }
+
+    Ok(statefulsets)
+}
+
+#[tauri::command]
+pub async fn list_daemonsets(
+    cluster_id: String,
+    namespace: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<DaemonSetInfo>, String> {
+    let clusters = state.clusters.lock().await;
+    let cluster = clusters
+        .get(&cluster_id)
+        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+
+    let kubeconfig_content = cluster.kubeconfig_content.as_ref();
+    let context = &cluster.context;
+
+    let temp_dir = std::env::temp_dir();
+    let temp_path = temp_dir.join(format!("kubeconfig-{}-daemonsets.yaml", cluster_id));
+    let _cleanup = TempFileCleanup(temp_path.clone());
+
+    std::fs::write(&temp_path, kubeconfig_content)
+        .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
+
+    let kubectl_path = locate_kubectl()?;
+
+    let mut kubectl_cmd = Command::new(kubectl_path);
+    kubectl_cmd.arg("get").arg("daemonsets");
+    if namespace.is_empty() {
+        kubectl_cmd.arg("--all-namespaces");
+    } else {
+        kubectl_cmd.arg("-n").arg(&namespace);
+    }
+    let output = kubectl_cmd
+        .arg("-o")
+        .arg("json")
+        .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
+        .env("KUBERNETES_CONTEXT", context)
+        .output()
+        .await
+        .map_err(|e| format!("Failed to execute kubectl: {e}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(stderr.to_string());
+    }
+
+    let output_str = String::from_utf8_lossy(&output.stdout);
+    parse_daemonsets_json(&output_str)
+}
+
+fn parse_daemonsets_json(json_str: &str) -> Result<Vec<DaemonSetInfo>, String> {
+    let value: Value = serde_json::from_str(json_str)
+        .map_err(|e| format!("Failed to parse kubectl JSON output: {}", e))?;
+
+    let items = value
+        .get("items")
+        .and_then(|i| i.as_array())
+        .ok_or("Missing 'items' array in kubectl JSON output")?;
+
+    let mut daemonsets = Vec::new();
+    for item in items {
+        let name = item
+            .get("metadata")
+            .and_then(|m| m.get("name"))
+            .and_then(|n| n.as_str())
+            .unwrap_or("unknown")
+            .to_string();
+
+        let namespace = item
+            .get("metadata")
+            .and_then(|m| m.get("namespace"))
+            .and_then(|n| n.as_str())
+            .unwrap_or("default")
+            .to_string();
+
+        let desired = item
+            .get("status")
+            .and_then(|s| s.get("desiredNumberScheduled"))
+            .and_then(|r| r.as_i64())
+            .unwrap_or(0) as i32;
+
+        let current = item
+            .get("status")
+            .and_then(|s| s.get("currentNumberScheduled"))
+            .and_then(|r| r.as_i64())
+            .unwrap_or(0) as i32;
+
+        let ready = item
+            .get("status")
+            .and_then(|s| s.get("numberReady"))
+            .and_then(|r| r.as_i64())
+            .unwrap_or(0) as i32;
+
+        let up_to_date = item
+            .get("status")
+            .and_then(|s| s.get("updatedNumberScheduled"))
+            .and_then(|r| r.as_i64())
+            .unwrap_or(0) as i32;
+
+        let available = item
+            .get("status")
+            .and_then(|s| s.get("numberAvailable"))
+            .and_then(|r| r.as_i64())
+            .unwrap_or(0) as i32;
+
+        let age = item
+            .get("metadata")
+            .and_then(|m| m.get("creationTimestamp"))
+            .and_then(|c| c.as_str())
+            .map(parse_creation_timestamp)
+            .unwrap_or("N/A".to_string());
+
+        let labels = item
+            .get("metadata")
+            .and_then(|m| m.get("labels"))
+            .and_then(|l| l.as_object())
+            .map(|l| {
+                l.iter()
+                    .map(|(k, v)| (k.clone(), v.as_str().unwrap_or("").to_string()))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        daemonsets.push(DaemonSetInfo {
+            name,
+            namespace,
+            desired,
+            current,
+            ready,
+            up_to_date,
+            available,
+            age,
+            labels,
+        });
+    }
+
+    Ok(daemonsets)
+}
+
+fn parse_creation_timestamp(timestamp: &str) -> String {
+    if timestamp.is_empty() || timestamp == "null" {
+        return "N/A".to_string();
+    }
+
+    if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(timestamp) {
+        let now = chrono::Utc::now();
+        let diff = now.signed_duration_since(dt);
+
+        if diff.num_days() > 0 {
+            return format!("{}d", diff.num_days());
+        }
+        if diff.num_hours() > 0 {
+            return format!("{}h", diff.num_hours());
+        }
+        if diff.num_minutes() > 0 {
+            return format!("{}m", diff.num_minutes());
+        }
+        return format!("{}s", diff.num_seconds());
+    }
+
+    "N/A".to_string()
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Resource Management Commands (Phase 2)
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[tauri::command]
+pub async fn get_pod_logs(
+    cluster_id: String,
+    namespace: String,
+    pod_name: String,
+    container_name: String,
+    state: State<'_, AppState>,
+) -> Result<LogResponse, String> {
+    let clusters = state.clusters.lock().await;
+    let cluster = clusters
+        .get(&cluster_id)
+        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+
+    let kubeconfig_content = cluster.kubeconfig_content.as_ref();
+    let context = &cluster.context;
+
+    let temp_dir = std::env::temp_dir();
+    let temp_path = temp_dir.join(format!("kubeconfig-{}-logs.yaml", cluster_id));
+    let _cleanup = TempFileCleanup(temp_path.clone());
+
+    std::fs::write(&temp_path, kubeconfig_content)
+        .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
+
+    let kubectl_path = locate_kubectl()?;
+
+    let output = Command::new(kubectl_path)
+        .arg("logs")
+        .arg(pod_name)
+        .arg("-n")
+        .arg(namespace)
+        .arg("-c")
+        .arg(container_name)
+        .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
+        .env("KUBERNETES_CONTEXT", context)
+        .output()
+        .await
+        .map_err(|e| format!("Failed to execute kubectl: {e}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(stderr.to_string());
+    }
+
+    let logs = String::from_utf8_lossy(&output.stdout).to_string();
+
+    Ok(LogResponse { logs })
+}
+
+#[tauri::command]
+pub async fn scale_deployment(
+    cluster_id: String,
+    namespace: String,
+    deployment_name: String,
+    replicas: i32,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let clusters = state.clusters.lock().await;
+    let cluster = clusters
+        .get(&cluster_id)
+        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+
+    let kubeconfig_content = cluster.kubeconfig_content.as_ref();
+    let context = &cluster.context;
+
+    let temp_dir = std::env::temp_dir();
+    let temp_path = temp_dir.join(format!("kubeconfig-{}-scale.yaml", cluster_id));
+    let _cleanup = TempFileCleanup(temp_path.clone());
+
+    std::fs::write(&temp_path, kubeconfig_content)
+        .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
+
+    let kubectl_path = locate_kubectl()?;
+
+    let output = Command::new(kubectl_path)
+        .arg("scale")
+        .arg("deployment")
+        .arg(deployment_name)
+        .arg("--replicas")
+        .arg(replicas.to_string())
+        .arg("-n")
+        .arg(namespace)
+        .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
+        .env("KUBERNETES_CONTEXT", context)
+        .output()
+        .await
+        .map_err(|e| format!("Failed to execute kubectl: {e}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(stderr.to_string());
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn restart_deployment(
+    cluster_id: String,
+    namespace: String,
+    deployment_name: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let clusters = state.clusters.lock().await;
+    let cluster = clusters
+        .get(&cluster_id)
+        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+
+    let kubeconfig_content = cluster.kubeconfig_content.as_ref();
+    let context = &cluster.context;
+
+    let temp_dir = std::env::temp_dir();
+    let temp_path = temp_dir.join(format!("kubeconfig-{}-restart.yaml", cluster_id));
+    let _cleanup = TempFileCleanup(temp_path.clone());
+
+    std::fs::write(&temp_path, kubeconfig_content)
+        .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
+
+    let kubectl_path = locate_kubectl()?;
+
+    let output = Command::new(kubectl_path)
+        .arg("rollout")
+        .arg("restart")
+        .arg("deployment")
+        .arg(deployment_name)
+        .arg("-n")
+        .arg(namespace)
+        .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
+        .env("KUBERNETES_CONTEXT", context)
+        .output()
+        .await
+        .map_err(|e| format!("Failed to execute kubectl: {e}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(stderr.to_string());
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn delete_resource(
+    cluster_id: String,
+    resource_type: String,
+    namespace: String,
+    resource_name: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let clusters = state.clusters.lock().await;
+    let cluster = clusters
+        .get(&cluster_id)
+        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+
+    let kubeconfig_content = cluster.kubeconfig_content.as_ref();
+    let context = &cluster.context;
+
+    let temp_dir = std::env::temp_dir();
+    let temp_path = temp_dir.join(format!("kubeconfig-{}-delete.yaml", cluster_id));
+    let _cleanup = TempFileCleanup(temp_path.clone());
+
+    std::fs::write(&temp_path, kubeconfig_content)
+        .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
+
+    let kubectl_path = locate_kubectl()?;
+
+    let output = Command::new(kubectl_path)
+        .arg("delete")
+        .arg(resource_type)
+        .arg(resource_name)
+        .arg("-n")
+        .arg(namespace)
+        .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
+        .env("KUBERNETES_CONTEXT", context)
+        .output()
+        .await
+        .map_err(|e| format!("Failed to execute kubectl: {e}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(stderr.to_string());
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn exec_pod(
+    cluster_id: String,
+    namespace: String,
+    pod_name: String,
+    container_name: Option<String>,
+    shell: Option<String>,
+    command: String,
+    state: State<'_, AppState>,
+) -> Result<ExecResponse, String> {
+    let clusters = state.clusters.lock().await;
+    let cluster = clusters
+        .get(&cluster_id)
+        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+
+    let kubeconfig_content = cluster.kubeconfig_content.as_ref();
+    let context = &cluster.context;
+
+    let temp_dir = std::env::temp_dir();
+    let temp_path = temp_dir.join(format!("kubeconfig-{}-exec.yaml", cluster_id));
+    let _cleanup = TempFileCleanup(temp_path.clone());
+
+    std::fs::write(&temp_path, kubeconfig_content)
+        .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
+
+    let kubectl_path = locate_kubectl()?;
+
+    const ALLOWED_SHELLS: &[&str] = &[
+        "sh",
+        "bash",
+        "ash",
+        "dash",
+        "/bin/sh",
+        "/bin/bash",
+        "/bin/ash",
+        "/bin/dash",
+    ];
+    let shell_cmd = shell.as_deref().unwrap_or("sh");
+    if !ALLOWED_SHELLS.contains(&shell_cmd) {
+        return Err(format!(
+            "Unsupported shell '{}'; allowed: sh, bash, ash, dash",
+            shell_cmd
+        ));
+    }
+
+    let mut cmd = Command::new(kubectl_path);
+    cmd.arg("exec").arg(&pod_name).arg("-n").arg(&namespace);
+
+    if let Some(ref container) = container_name {
+        cmd.arg("-c").arg(container);
+    }
+
+    cmd.arg("--").arg(shell_cmd).arg("-c").arg(&command);
+
+    cmd.env("KUBECONFIG", temp_path.to_string_lossy().to_string())
+        .env("KUBERNETES_CONTEXT", context);
+
+    let output = cmd
+        .output()
+        .await
+        .map_err(|e| format!("Failed to execute kubectl: {e}"))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+
+    Ok(ExecResponse {
+        stdout,
+        stderr,
+        exit_code: output.status.code(),
+    })
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LogResponse {
+    pub logs: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExecResponse {
+    pub stdout: String,
+    pub stderr: String,
+    pub exit_code: Option<i32>,
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Additional Resource Discovery Commands (Phase 3)
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReplicaSetInfo {
+    pub name: String,
+    pub namespace: String,
+    pub replicas: i32,
+    pub ready: String,
+    pub age: String,
+    pub labels: std::collections::HashMap<String, String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct JobInfo {
+    pub name: String,
+    pub namespace: String,
+    pub completions: String,
+    pub duration: String,
+    pub age: String,
+    pub labels: std::collections::HashMap<String, String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CronJobInfo {
+    pub name: String,
+    pub namespace: String,
+    pub schedule: String,
+    pub active: i32,
+    pub last_schedule: String,
+    pub age: String,
+    pub labels: std::collections::HashMap<String, String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConfigMapInfo {
+    pub name: String,
+    pub namespace: String,
+    pub data_keys: i32,
+    pub age: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SecretInfo {
+    pub name: String,
+    pub namespace: String,
+    #[serde(rename = "type")]
+    pub secret_type: String,
+    pub data_keys: i32,
+    pub age: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NodeInfo {
+    pub name: String,
+    pub status: String,
+    pub roles: String,
+    pub version: String,
+    pub internal_ip: String,
+    pub external_ip: Option<String>,
+    pub os_image: String,
+    pub kernel_version: String,
+    pub kubelet_version: String,
+    pub age: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EventInfo {
+    pub name: String,
+    pub namespace: String,
+    pub event_type: String,
+    pub reason: String,
+    pub object: String,
+    pub count: i32,
+    pub first_seen: String,
+    pub last_seen: String,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IngressInfo {
+    pub name: String,
+    pub namespace: String,
+    pub class: Option<String>,
+    pub host: String,
+    pub addresses: Vec<String>,
+    pub age: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PersistentVolumeClaimInfo {
+    pub name: String,
+    pub namespace: String,
+    pub status: String,
+    pub volume: String,
+    pub capacity: String,
+    pub access_modes: Vec<String>,
+    pub age: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PersistentVolumeInfo {
+    pub name: String,
+    pub status: String,
+    pub capacity: String,
+    pub access_modes: Vec<String>,
+    pub reclaim_policy: String,
+    pub storage_class: String,
+    pub age: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ServiceAccountInfo {
+    pub name: String,
+    pub namespace: String,
+    pub secrets: i32,
+    pub age: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RoleInfo {
+    pub name: String,
+    pub namespace: String,
+    pub age: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ClusterRoleInfo {
+    pub name: String,
+    pub age: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RoleBindingInfo {
+    pub name: String,
+    pub namespace: String,
+    pub role: String,
+    pub age: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ClusterRoleBindingInfo {
+    pub name: String,
+    pub cluster_role: String,
+    pub age: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HorizontalPodAutoscalerInfo {
+    pub name: String,
+    pub namespace: String,
+    pub min_replicas: i32,
+    pub max_replicas: i32,
+    pub current_replicas: i32,
+    pub desired_replicas: i32,
+    pub age: String,
+}
+
+#[tauri::command]
+pub async fn list_replicasets(
+    cluster_id: String,
+    namespace: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<ReplicaSetInfo>, String> {
+    let clusters = state.clusters.lock().await;
+    let cluster = clusters
+        .get(&cluster_id)
+        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+
+    let kubeconfig_content = cluster.kubeconfig_content.as_ref();
+    let context = &cluster.context;
+
+    let temp_dir = std::env::temp_dir();
+    let temp_path = temp_dir.join(format!("kubeconfig-{}-replicasets.yaml", cluster_id));
+    let _cleanup = TempFileCleanup(temp_path.clone());
+
+    std::fs::write(&temp_path, kubeconfig_content)
+        .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
+
+    let kubectl_path = locate_kubectl()?;
+
+    let mut kubectl_cmd = Command::new(kubectl_path);
+    kubectl_cmd.arg("get").arg("replicasets");
+    if namespace.is_empty() {
+        kubectl_cmd.arg("--all-namespaces");
+    } else {
+        kubectl_cmd.arg("-n").arg(&namespace);
+    }
+    let output = kubectl_cmd
+        .arg("-o")
+        .arg("json")
+        .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
+        .env("KUBERNETES_CONTEXT", context)
+        .output()
+        .await
+        .map_err(|e| format!("Failed to execute kubectl: {e}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(stderr.to_string());
+    }
+
+    let output_str = String::from_utf8_lossy(&output.stdout);
+    parse_replicasets_json(&output_str)
+}
+
+fn parse_replicasets_json(json_str: &str) -> Result<Vec<ReplicaSetInfo>, String> {
+    let value: Value = serde_json::from_str(json_str)
+        .map_err(|e| format!("Failed to parse kubectl JSON output: {}", e))?;
+
+    let items = value
+        .get("items")
+        .and_then(|i| i.as_array())
+        .ok_or("Missing 'items' array in kubectl JSON output")?;
+
+    let mut replicasets = Vec::new();
+    for item in items {
+        let name = item
+            .get("metadata")
+            .and_then(|m| m.get("name"))
+            .and_then(|n| n.as_str())
+            .unwrap_or("unknown")
+            .to_string();
+
+        let namespace = item
+            .get("metadata")
+            .and_then(|m| m.get("namespace"))
+            .and_then(|n| n.as_str())
+            .unwrap_or("default")
+            .to_string();
+
+        let replicas = item
+            .get("spec")
+            .and_then(|s| s.get("replicas"))
+            .and_then(|r| r.as_i64())
+            .unwrap_or(0) as i32;
+
+        let ready = item
+            .get("status")
+            .and_then(|s| s.get("readyReplicas"))
+            .and_then(|r| r.as_i64())
+            .map(|r| format!("{}/{}", r, replicas))
+            .unwrap_or_else(|| format!("0/{}", replicas));
+
+        let age = item
+            .get("metadata")
+            .and_then(|m| m.get("creationTimestamp"))
+            .and_then(|c| c.as_str())
+            .map(parse_creation_timestamp)
+            .unwrap_or("N/A".to_string());
+
+        let labels = item
+            .get("metadata")
+            .and_then(|m| m.get("labels"))
+            .and_then(|l| l.as_object())
+            .map(|l| {
+                l.iter()
+                    .map(|(k, v)| (k.clone(), v.as_str().unwrap_or("").to_string()))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        replicasets.push(ReplicaSetInfo {
+            name,
+            namespace,
+            replicas,
+            ready,
+            age,
+            labels,
+        });
+    }
+
+    Ok(replicasets)
+}
+
+#[tauri::command]
+pub async fn list_jobs(
+    cluster_id: String,
+    namespace: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<JobInfo>, String> {
+    let clusters = state.clusters.lock().await;
+    let cluster = clusters
+        .get(&cluster_id)
+        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+
+    let kubeconfig_content = cluster.kubeconfig_content.as_ref();
+    let context = &cluster.context;
+
+    let temp_dir = std::env::temp_dir();
+    let temp_path = temp_dir.join(format!("kubeconfig-{}-jobs.yaml", cluster_id));
+    let _cleanup = TempFileCleanup(temp_path.clone());
+
+    std::fs::write(&temp_path, kubeconfig_content)
+        .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
+
+    let kubectl_path = locate_kubectl()?;
+
+    let mut kubectl_cmd = Command::new(kubectl_path);
+    kubectl_cmd.arg("get").arg("jobs");
+    if namespace.is_empty() {
+        kubectl_cmd.arg("--all-namespaces");
+    } else {
+        kubectl_cmd.arg("-n").arg(&namespace);
+    }
+    let output = kubectl_cmd
+        .arg("-o")
+        .arg("json")
+        .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
+        .env("KUBERNETES_CONTEXT", context)
+        .output()
+        .await
+        .map_err(|e| format!("Failed to execute kubectl: {e}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(stderr.to_string());
+    }
+
+    let output_str = String::from_utf8_lossy(&output.stdout);
+    parse_jobs_json(&output_str)
+}
+
+fn parse_jobs_json(json_str: &str) -> Result<Vec<JobInfo>, String> {
+    let value: Value = serde_json::from_str(json_str)
+        .map_err(|e| format!("Failed to parse kubectl JSON output: {}", e))?;
+
+    let items = value
+        .get("items")
+        .and_then(|i| i.as_array())
+        .ok_or("Missing 'items' array in kubectl JSON output")?;
+
+    let mut jobs = Vec::new();
+    for item in items {
+        let name = item
+            .get("metadata")
+            .and_then(|m| m.get("name"))
+            .and_then(|n| n.as_str())
+            .unwrap_or("unknown")
+            .to_string();
+
+        let namespace = item
+            .get("metadata")
+            .and_then(|m| m.get("namespace"))
+            .and_then(|n| n.as_str())
+            .unwrap_or("default")
+            .to_string();
+
+        let completions = item
+            .get("status")
+            .and_then(|s| s.get("succeeded"))
+            .and_then(|s| s.as_i64())
+            .map(|s| {
+                let total = item
+                    .get("spec")
+                    .and_then(|sp| sp.get("completions"))
+                    .and_then(|c| c.as_i64())
+                    .unwrap_or(1);
+                format!("{}/{}", s, total)
+            })
+            .unwrap_or_else(|| "0/0".to_string());
+
+        let duration = item
+            .get("status")
+            .and_then(|s| s.get("startTime"))
+            .and_then(|st| st.as_str())
+            .and_then(|st| {
+                let completion_time = item
+                    .get("status")
+                    .and_then(|s| s.get("completionTime"))
+                    .and_then(|ct| ct.as_str());
+                completion_time.or(Some(st))
+            })
+            .map(|st| {
+                if let Ok(start) = chrono::DateTime::parse_from_rfc3339(st) {
+                    let end_time = item
+                        .get("status")
+                        .and_then(|s| s.get("completionTime"))
+                        .and_then(|ct| ct.as_str());
+                    if let Some(end) = end_time {
+                        if let Ok(end_dt) = chrono::DateTime::parse_from_rfc3339(end) {
+                            let diff = end_dt.signed_duration_since(start);
+                            if diff.num_minutes() > 0 {
+                                return format!("{}m", diff.num_minutes());
+                            }
+                            return format!("{}s", diff.num_seconds());
+                        }
+                    }
+                    let now = chrono::Utc::now();
+                    let diff = now.signed_duration_since(start);
+                    if diff.num_minutes() > 0 {
+                        return format!("{}m", diff.num_minutes());
+                    }
+                    return format!("{}s", diff.num_seconds());
+                }
+                "N/A".to_string()
+            })
+            .unwrap_or("N/A".to_string());
+
+        let age = item
+            .get("metadata")
+            .and_then(|m| m.get("creationTimestamp"))
+            .and_then(|c| c.as_str())
+            .map(parse_creation_timestamp)
+            .unwrap_or("N/A".to_string());
+
+        let labels = item
+            .get("metadata")
+            .and_then(|m| m.get("labels"))
+            .and_then(|l| l.as_object())
+            .map(|l| {
+                l.iter()
+                    .map(|(k, v)| (k.clone(), v.as_str().unwrap_or("").to_string()))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        jobs.push(JobInfo {
+            name,
+            namespace,
+            completions,
+            duration,
+            age,
+            labels,
+        });
+    }
+
+    Ok(jobs)
+}
+
+#[tauri::command]
+pub async fn list_cronjobs(
+    cluster_id: String,
+    namespace: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<CronJobInfo>, String> {
+    let clusters = state.clusters.lock().await;
+    let cluster = clusters
+        .get(&cluster_id)
+        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+
+    let kubeconfig_content = cluster.kubeconfig_content.as_ref();
+    let context = &cluster.context;
+
+    let temp_dir = std::env::temp_dir();
+    let temp_path = temp_dir.join(format!("kubeconfig-{}-cronjobs.yaml", cluster_id));
+    let _cleanup = TempFileCleanup(temp_path.clone());
+
+    std::fs::write(&temp_path, kubeconfig_content)
+        .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
+
+    let kubectl_path = locate_kubectl()?;
+
+    let mut kubectl_cmd = Command::new(kubectl_path);
+    kubectl_cmd.arg("get").arg("cronjobs");
+    if namespace.is_empty() {
+        kubectl_cmd.arg("--all-namespaces");
+    } else {
+        kubectl_cmd.arg("-n").arg(&namespace);
+    }
+    let output = kubectl_cmd
+        .arg("-o")
+        .arg("json")
+        .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
+        .env("KUBERNETES_CONTEXT", context)
+        .output()
+        .await
+        .map_err(|e| format!("Failed to execute kubectl: {e}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(stderr.to_string());
+    }
+
+    let output_str = String::from_utf8_lossy(&output.stdout);
+    parse_cronjobs_json(&output_str)
+}
+
+fn parse_cronjobs_json(json_str: &str) -> Result<Vec<CronJobInfo>, String> {
+    let value: Value = serde_json::from_str(json_str)
+        .map_err(|e| format!("Failed to parse kubectl JSON output: {}", e))?;
+
+    let items = value
+        .get("items")
+        .and_then(|i| i.as_array())
+        .ok_or("Missing 'items' array in kubectl JSON output")?;
+
+    let mut cronjobs = Vec::new();
+    for item in items {
+        let name = item
+            .get("metadata")
+            .and_then(|m| m.get("name"))
+            .and_then(|n| n.as_str())
+            .unwrap_or("unknown")
+            .to_string();
+
+        let namespace = item
+            .get("metadata")
+            .and_then(|m| m.get("namespace"))
+            .and_then(|n| n.as_str())
+            .unwrap_or("default")
+            .to_string();
+
+        let schedule = item
+            .get("spec")
+            .and_then(|s| s.get("schedule"))
+            .and_then(|s| s.as_str())
+            .unwrap_or("* * * * *")
+            .to_string();
+
+        let active = item
+            .get("status")
+            .and_then(|s| s.get("active"))
+            .and_then(|a| a.as_array())
+            .map(|a| a.len() as i32)
+            .unwrap_or(0);
+
+        let last_schedule = item
+            .get("status")
+            .and_then(|s| s.get("lastScheduleTime"))
+            .and_then(|l| l.as_str())
+            .map(parse_creation_timestamp)
+            .unwrap_or("N/A".to_string());
+
+        let age = item
+            .get("metadata")
+            .and_then(|m| m.get("creationTimestamp"))
+            .and_then(|c| c.as_str())
+            .map(parse_creation_timestamp)
+            .unwrap_or("N/A".to_string());
+
+        let labels = item
+            .get("metadata")
+            .and_then(|m| m.get("labels"))
+            .and_then(|l| l.as_object())
+            .map(|l| {
+                l.iter()
+                    .map(|(k, v)| (k.clone(), v.as_str().unwrap_or("").to_string()))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        cronjobs.push(CronJobInfo {
+            name,
+            namespace,
+            schedule,
+            active,
+            last_schedule,
+            age,
+            labels,
+        });
+    }
+
+    Ok(cronjobs)
+}
+
+#[tauri::command]
+pub async fn list_configmaps(
+    cluster_id: String,
+    namespace: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<ConfigMapInfo>, String> {
+    let clusters = state.clusters.lock().await;
+    let cluster = clusters
+        .get(&cluster_id)
+        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+
+    let kubeconfig_content = cluster.kubeconfig_content.as_ref();
+    let context = &cluster.context;
+
+    let temp_dir = std::env::temp_dir();
+    let temp_path = temp_dir.join(format!("kubeconfig-{}-configmaps.yaml", cluster_id));
+    let _cleanup = TempFileCleanup(temp_path.clone());
+
+    std::fs::write(&temp_path, kubeconfig_content)
+        .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
+
+    let kubectl_path = locate_kubectl()?;
+
+    let mut kubectl_cmd = Command::new(kubectl_path);
+    kubectl_cmd.arg("get").arg("configmaps");
+    if namespace.is_empty() {
+        kubectl_cmd.arg("--all-namespaces");
+    } else {
+        kubectl_cmd.arg("-n").arg(&namespace);
+    }
+    let output = kubectl_cmd
+        .arg("-o")
+        .arg("json")
+        .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
+        .env("KUBERNETES_CONTEXT", context)
+        .output()
+        .await
+        .map_err(|e| format!("Failed to execute kubectl: {e}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(stderr.to_string());
+    }
+
+    let output_str = String::from_utf8_lossy(&output.stdout);
+    parse_configmaps_json(&output_str)
+}
+
+fn parse_configmaps_json(json_str: &str) -> Result<Vec<ConfigMapInfo>, String> {
+    let value: Value = serde_json::from_str(json_str)
+        .map_err(|e| format!("Failed to parse kubectl JSON output: {}", e))?;
+
+    let items = value
+        .get("items")
+        .and_then(|i| i.as_array())
+        .ok_or("Missing 'items' array in kubectl JSON output")?;
+
+    let mut configmaps = Vec::new();
+    for item in items {
+        let name = item
+            .get("metadata")
+            .and_then(|m| m.get("name"))
+            .and_then(|n| n.as_str())
+            .unwrap_or("unknown")
+            .to_string();
+
+        let namespace = item
+            .get("metadata")
+            .and_then(|m| m.get("namespace"))
+            .and_then(|n| n.as_str())
+            .unwrap_or("default")
+            .to_string();
+
+        let data_keys = item
+            .get("data")
+            .and_then(|d| d.as_object())
+            .map(|d| d.len() as i32)
+            .unwrap_or(0);
+
+        let age = item
+            .get("metadata")
+            .and_then(|m| m.get("creationTimestamp"))
+            .and_then(|c| c.as_str())
+            .map(parse_creation_timestamp)
+            .unwrap_or("N/A".to_string());
+
+        configmaps.push(ConfigMapInfo {
+            name,
+            namespace,
+            data_keys,
+            age,
+        });
+    }
+
+    Ok(configmaps)
+}
+
+#[tauri::command]
+pub async fn list_secrets(
+    cluster_id: String,
+    namespace: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<SecretInfo>, String> {
+    let clusters = state.clusters.lock().await;
+    let cluster = clusters
+        .get(&cluster_id)
+        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+
+    let kubeconfig_content = cluster.kubeconfig_content.as_ref();
+    let context = &cluster.context;
+
+    let temp_dir = std::env::temp_dir();
+    let temp_path = temp_dir.join(format!("kubeconfig-{}-secrets.yaml", cluster_id));
+    let _cleanup = TempFileCleanup(temp_path.clone());
+
+    std::fs::write(&temp_path, kubeconfig_content)
+        .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
+
+    let kubectl_path = locate_kubectl()?;
+
+    let mut kubectl_cmd = Command::new(kubectl_path);
+    kubectl_cmd.arg("get").arg("secrets");
+    if namespace.is_empty() {
+        kubectl_cmd.arg("--all-namespaces");
+    } else {
+        kubectl_cmd.arg("-n").arg(&namespace);
+    }
+    let output = kubectl_cmd
+        .arg("-o")
+        .arg("json")
+        .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
+        .env("KUBERNETES_CONTEXT", context)
+        .output()
+        .await
+        .map_err(|e| format!("Failed to execute kubectl: {e}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(stderr.to_string());
+    }
+
+    let output_str = String::from_utf8_lossy(&output.stdout);
+    parse_secrets_json(&output_str)
+}
+
+fn parse_secrets_json(json_str: &str) -> Result<Vec<SecretInfo>, String> {
+    let value: Value = serde_json::from_str(json_str)
+        .map_err(|e| format!("Failed to parse kubectl JSON output: {}", e))?;
+
+    let items = value
+        .get("items")
+        .and_then(|i| i.as_array())
+        .ok_or("Missing 'items' array in kubectl JSON output")?;
+
+    let mut secrets = Vec::new();
+    for item in items {
+        let name = item
+            .get("metadata")
+            .and_then(|m| m.get("name"))
+            .and_then(|n| n.as_str())
+            .unwrap_or("unknown")
+            .to_string();
+
+        let namespace = item
+            .get("metadata")
+            .and_then(|m| m.get("namespace"))
+            .and_then(|n| n.as_str())
+            .unwrap_or("default")
+            .to_string();
+
+        let secret_type = item
+            .get("type")
+            .and_then(|t| t.as_str())
+            .unwrap_or("Opaque")
+            .to_string();
+
+        let data_keys = item
+            .get("data")
+            .and_then(|d| d.as_object())
+            .map(|d| d.len() as i32)
+            .unwrap_or(0);
+
+        let age = item
+            .get("metadata")
+            .and_then(|m| m.get("creationTimestamp"))
+            .and_then(|c| c.as_str())
+            .map(parse_creation_timestamp)
+            .unwrap_or("N/A".to_string());
+
+        secrets.push(SecretInfo {
+            name,
+            namespace,
+            secret_type,
+            data_keys,
+            age,
+        });
+    }
+
+    Ok(secrets)
+}
+
+#[tauri::command]
+pub async fn list_nodes(
+    cluster_id: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<NodeInfo>, String> {
+    let clusters = state.clusters.lock().await;
+    let cluster = clusters
+        .get(&cluster_id)
+        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+
+    let kubeconfig_content = cluster.kubeconfig_content.as_ref();
+    let context = &cluster.context;
+
+    let temp_dir = std::env::temp_dir();
+    let temp_path = temp_dir.join(format!("kubeconfig-{}-nodes.yaml", cluster_id));
+    let _cleanup = TempFileCleanup(temp_path.clone());
+
+    std::fs::write(&temp_path, kubeconfig_content)
+        .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
+
+    let kubectl_path = locate_kubectl()?;
+
+    let output = Command::new(kubectl_path)
+        .arg("get")
+        .arg("nodes")
+        .arg("-o")
+        .arg("json")
+        .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
+        .env("KUBERNETES_CONTEXT", context)
+        .output()
+        .await
+        .map_err(|e| format!("Failed to execute kubectl: {e}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(stderr.to_string());
+    }
+
+    let output_str = String::from_utf8_lossy(&output.stdout);
+    parse_nodes_json(&output_str)
+}
+
+fn parse_nodes_json(json_str: &str) -> Result<Vec<NodeInfo>, String> {
+    let value: Value = serde_json::from_str(json_str)
+        .map_err(|e| format!("Failed to parse kubectl JSON output: {}", e))?;
+
+    let items = value
+        .get("items")
+        .and_then(|i| i.as_array())
+        .ok_or("Missing 'items' array in kubectl JSON output")?;
+
+    let mut nodes = Vec::new();
+    for item in items {
+        let name = item
+            .get("metadata")
+            .and_then(|m| m.get("name"))
+            .and_then(|n| n.as_str())
+            .unwrap_or("unknown")
+            .to_string();
+
+        let status = item
+            .get("status")
+            .and_then(|s| s.get("conditions"))
+            .and_then(|c| c.as_array())
+            .and_then(|conditions| {
+                conditions
+                    .iter()
+                    .find(|c| c.get("type").and_then(|t| t.as_str()) == Some("Ready"))
+            })
+            .and_then(|c| c.get("status").and_then(|s| s.as_str()))
+            .map(|s| match s {
+                "True" => "Ready",
+                "False" => "NotReady",
+                _ => "Unknown",
+            })
+            .unwrap_or("Unknown")
+            .to_string();
+
+        let roles = item
+            .get("metadata")
+            .and_then(|m| m.get("labels"))
+            .and_then(|l| l.as_object())
+            .map(|l| {
+                let mut role_list: Vec<String> = Vec::new();
+                if l.contains_key("node-role.kubernetes.io/control-plane")
+                    || l.contains_key("node-role.kubernetes.io/master")
+                {
+                    role_list.push("control-plane".to_string());
+                }
+                if l.contains_key("node-role.kubernetes.io/worker") {
+                    role_list.push("worker".to_string());
+                }
+                if l.contains_key("node-role.kubernetes.io/etcd") {
+                    role_list.push("etcd".to_string());
+                }
+                if l.contains_key("node-role.kubernetes.io/ingress") {
+                    role_list.push("ingress".to_string());
+                }
+                if role_list.is_empty() {
+                    role_list.push("none".to_string());
+                }
+                role_list.join(",")
+            })
+            .unwrap_or("none".to_string());
+
+        let version = item
+            .get("status")
+            .and_then(|s| s.get("nodeInfo"))
+            .and_then(|n| n.get("kubeletVersion"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("N/A")
+            .to_string();
+
+        let internal_ip = item
+            .get("status")
+            .and_then(|s| s.get("addresses"))
+            .and_then(|a| a.as_array())
+            .and_then(|addresses| {
+                addresses
+                    .iter()
+                    .find(|addr| addr.get("type").and_then(|t| t.as_str()) == Some("InternalIP"))
+            })
+            .and_then(|addr| addr.get("address").and_then(|a| a.as_str()))
+            .unwrap_or("N/A")
+            .to_string();
+
+        let external_ip = item
+            .get("status")
+            .and_then(|s| s.get("addresses"))
+            .and_then(|a| a.as_array())
+            .and_then(|addresses| {
+                addresses
+                    .iter()
+                    .find(|addr| addr.get("type").and_then(|t| t.as_str()) == Some("ExternalIP"))
+            })
+            .and_then(|addr| addr.get("address").and_then(|a| a.as_str()))
+            .map(|s| s.to_string());
+
+        let os_image = item
+            .get("status")
+            .and_then(|s| s.get("nodeInfo"))
+            .and_then(|n| n.get("osImage"))
+            .and_then(|o| o.as_str())
+            .unwrap_or("N/A")
+            .to_string();
+
+        let kernel_version = item
+            .get("status")
+            .and_then(|s| s.get("nodeInfo"))
+            .and_then(|n| n.get("kernelVersion"))
+            .and_then(|k| k.as_str())
+            .unwrap_or("N/A")
+            .to_string();
+
+        let kubelet_version = item
+            .get("status")
+            .and_then(|s| s.get("nodeInfo"))
+            .and_then(|n| n.get("kubeletVersion"))
+            .and_then(|k| k.as_str())
+            .unwrap_or("N/A")
+            .to_string();
+
+        let age = item
+            .get("metadata")
+            .and_then(|m| m.get("creationTimestamp"))
+            .and_then(|c| c.as_str())
+            .map(parse_creation_timestamp)
+            .unwrap_or("N/A".to_string());
+
+        nodes.push(NodeInfo {
+            name,
+            status,
+            roles,
+            version,
+            internal_ip,
+            external_ip,
+            os_image,
+            kernel_version,
+            kubelet_version,
+            age,
+        });
+    }
+
+    Ok(nodes)
+}
+
+#[tauri::command]
+pub async fn list_events(
+    cluster_id: String,
+    namespace: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<Vec<EventInfo>, String> {
+    let clusters = state.clusters.lock().await;
+    let cluster = clusters
+        .get(&cluster_id)
+        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+
+    let kubeconfig_content = cluster.kubeconfig_content.as_ref();
+    let context = &cluster.context;
+
+    let temp_dir = std::env::temp_dir();
+    let temp_path = temp_dir.join(format!("kubeconfig-{}-events.yaml", cluster_id));
+    let _cleanup = TempFileCleanup(temp_path.clone());
+
+    std::fs::write(&temp_path, kubeconfig_content)
+        .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
+
+    let kubectl_path = locate_kubectl()?;
+
+    let mut kubectl_cmd = Command::new(kubectl_path);
+    kubectl_cmd.arg("get").arg("events");
+    if let Some(ns) = &namespace {
+        kubectl_cmd.arg("-n").arg(ns);
+    } else {
+        kubectl_cmd.arg("--all-namespaces");
+    }
+    let output = kubectl_cmd
+        .arg("-o")
+        .arg("json")
+        .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
+        .env("KUBERNETES_CONTEXT", context)
+        .output()
+        .await
+        .map_err(|e| format!("Failed to execute kubectl: {e}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(stderr.to_string());
+    }
+
+    let output_str = String::from_utf8_lossy(&output.stdout);
+    parse_events_json(&output_str)
+}
+
+fn parse_events_json(json_str: &str) -> Result<Vec<EventInfo>, String> {
+    let value: Value = serde_json::from_str(json_str)
+        .map_err(|e| format!("Failed to parse kubectl JSON output: {}", e))?;
+
+    let items = value
+        .get("items")
+        .and_then(|i| i.as_array())
+        .ok_or("Missing 'items' array in kubectl JSON output")?;
+
+    let mut events = Vec::new();
+    for item in items {
+        let name = item
+            .get("metadata")
+            .and_then(|m| m.get("name"))
+            .and_then(|n| n.as_str())
+            .unwrap_or("unknown")
+            .to_string();
+
+        let namespace = item
+            .get("metadata")
+            .and_then(|m| m.get("namespace"))
+            .and_then(|n| n.as_str())
+            .unwrap_or("default")
+            .to_string();
+
+        let event_type = item
+            .get("type")
+            .and_then(|t| t.as_str())
+            .unwrap_or("Normal")
+            .to_string();
+
+        let reason = item
+            .get("reason")
+            .and_then(|r| r.as_str())
+            .unwrap_or("Unknown")
+            .to_string();
+
+        let object = item
+            .get("involvedObject")
+            .and_then(|o| o.get("name"))
+            .and_then(|n| n.as_str())
+            .unwrap_or("unknown")
+            .to_string();
+
+        let count = item.get("count").and_then(|c| c.as_i64()).unwrap_or(1) as i32;
+
+        let first_seen = item
+            .get("firstTimestamp")
+            .and_then(|f| f.as_str())
+            .map(parse_creation_timestamp)
+            .unwrap_or("N/A".to_string());
+
+        let last_seen = item
+            .get("lastTimestamp")
+            .and_then(|l| l.as_str())
+            .map(parse_creation_timestamp)
+            .unwrap_or("N/A".to_string());
+
+        let message = item
+            .get("message")
+            .and_then(|m| m.as_str())
+            .unwrap_or("")
+            .to_string();
+
+        events.push(EventInfo {
+            name,
+            namespace,
+            event_type,
+            reason,
+            object,
+            count,
+            first_seen,
+            last_seen,
+            message,
+        });
+    }
+
+    Ok(events)
+}
+
+#[tauri::command]
+pub async fn list_ingresses(
+    cluster_id: String,
+    namespace: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<IngressInfo>, String> {
+    let clusters = state.clusters.lock().await;
+    let cluster = clusters
+        .get(&cluster_id)
+        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+
+    let kubeconfig_content = cluster.kubeconfig_content.as_ref();
+    let context = &cluster.context;
+
+    let temp_dir = std::env::temp_dir();
+    let temp_path = temp_dir.join(format!("kubeconfig-{}-ingresses.yaml", cluster_id));
+    let _cleanup = TempFileCleanup(temp_path.clone());
+
+    std::fs::write(&temp_path, kubeconfig_content)
+        .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
+
+    let kubectl_path = locate_kubectl()?;
+
+    let mut kubectl_cmd = Command::new(kubectl_path);
+    kubectl_cmd.arg("get").arg("ingresses");
+    if namespace.is_empty() {
+        kubectl_cmd.arg("--all-namespaces");
+    } else {
+        kubectl_cmd.arg("-n").arg(&namespace);
+    }
+    let output = kubectl_cmd
+        .arg("-o")
+        .arg("json")
+        .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
+        .env("KUBERNETES_CONTEXT", context)
+        .output()
+        .await
+        .map_err(|e| format!("Failed to execute kubectl: {e}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(stderr.to_string());
+    }
+
+    let output_str = String::from_utf8_lossy(&output.stdout);
+    parse_ingresses_json(&output_str)
+}
+
+fn parse_ingresses_json(json_str: &str) -> Result<Vec<IngressInfo>, String> {
+    let value: Value = serde_json::from_str(json_str)
+        .map_err(|e| format!("Failed to parse kubectl JSON output: {}", e))?;
+
+    let items = value
+        .get("items")
+        .and_then(|i| i.as_array())
+        .ok_or("Missing 'items' array in kubectl JSON output")?;
+
+    let mut ingresses = Vec::new();
+    for item in items {
+        let name = item
+            .get("metadata")
+            .and_then(|m| m.get("name"))
+            .and_then(|n| n.as_str())
+            .unwrap_or("unknown")
+            .to_string();
+
+        let namespace = item
+            .get("metadata")
+            .and_then(|m| m.get("namespace"))
+            .and_then(|n| n.as_str())
+            .unwrap_or("default")
+            .to_string();
+
+        let class = item
+            .get("spec")
+            .and_then(|s| s.get("ingressClassName"))
+            .and_then(|c| c.as_str())
+            .map(|s| s.to_string());
+
+        let host = item
+            .get("spec")
+            .and_then(|s| s.get("rules"))
+            .and_then(|r| r.as_array())
+            .and_then(|rules| rules.first())
+            .and_then(|rule| rule.get("host").and_then(|h| h.as_str()))
+            .unwrap_or("")
+            .to_string();
+
+        let addresses = item
+            .get("status")
+            .and_then(|s| s.get("loadBalancer"))
+            .and_then(|l| l.get("ingress"))
+            .and_then(|i| i.as_array())
+            .map(|ingress| {
+                ingress
+                    .iter()
+                    .filter_map(|ing| {
+                        ing.get("ip")
+                            .and_then(|ip| ip.as_str())
+                            .map(|s| s.to_string())
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let age = item
+            .get("metadata")
+            .and_then(|m| m.get("creationTimestamp"))
+            .and_then(|c| c.as_str())
+            .map(parse_creation_timestamp)
+            .unwrap_or("N/A".to_string());
+
+        ingresses.push(IngressInfo {
+            name,
+            namespace,
+            class,
+            host,
+            addresses,
+            age,
+        });
+    }
+
+    Ok(ingresses)
+}
+
+#[tauri::command]
+pub async fn list_persistentvolumeclaims(
+    cluster_id: String,
+    namespace: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<PersistentVolumeClaimInfo>, String> {
+    let clusters = state.clusters.lock().await;
+    let cluster = clusters
+        .get(&cluster_id)
+        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+
+    let kubeconfig_content = cluster.kubeconfig_content.as_ref();
+    let context = &cluster.context;
+
+    let temp_dir = std::env::temp_dir();
+    let temp_path = temp_dir.join(format!("kubeconfig-{}-pvcs.yaml", cluster_id));
+    let _cleanup = TempFileCleanup(temp_path.clone());
+
+    std::fs::write(&temp_path, kubeconfig_content)
+        .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
+
+    let kubectl_path = locate_kubectl()?;
+
+    let mut kubectl_cmd = Command::new(kubectl_path);
+    kubectl_cmd.arg("get").arg("persistentvolumeclaims");
+    if namespace.is_empty() {
+        kubectl_cmd.arg("--all-namespaces");
+    } else {
+        kubectl_cmd.arg("-n").arg(&namespace);
+    }
+    let output = kubectl_cmd
+        .arg("-o")
+        .arg("json")
+        .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
+        .env("KUBERNETES_CONTEXT", context)
+        .output()
+        .await
+        .map_err(|e| format!("Failed to execute kubectl: {e}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(stderr.to_string());
+    }
+
+    let output_str = String::from_utf8_lossy(&output.stdout);
+    parse_pvcs_json(&output_str)
+}
+
+fn parse_pvcs_json(json_str: &str) -> Result<Vec<PersistentVolumeClaimInfo>, String> {
+    let value: Value = serde_json::from_str(json_str)
+        .map_err(|e| format!("Failed to parse kubectl JSON output: {}", e))?;
+
+    let items = value
+        .get("items")
+        .and_then(|i| i.as_array())
+        .ok_or("Missing 'items' array in kubectl JSON output")?;
+
+    let mut pvcs = Vec::new();
+    for item in items {
+        let name = item
+            .get("metadata")
+            .and_then(|m| m.get("name"))
+            .and_then(|n| n.as_str())
+            .unwrap_or("unknown")
+            .to_string();
+
+        let namespace = item
+            .get("metadata")
+            .and_then(|m| m.get("namespace"))
+            .and_then(|n| n.as_str())
+            .unwrap_or("default")
+            .to_string();
+
+        let status = item
+            .get("status")
+            .and_then(|s| s.get("phase"))
+            .and_then(|p| p.as_str())
+            .unwrap_or("Unknown")
+            .to_string();
+
+        let volume = item
+            .get("spec")
+            .and_then(|s| s.get("volumeName"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("N/A")
+            .to_string();
+
+        let capacity = item
+            .get("status")
+            .and_then(|s| s.get("capacity"))
+            .and_then(|c| c.as_object())
+            .map(|c| {
+                let storage = c.get("storage").and_then(|s| s.as_str()).unwrap_or("N/A");
+                storage.to_string()
+            })
+            .unwrap_or("N/A".to_string());
+
+        let access_modes = item
+            .get("spec")
+            .and_then(|s| s.get("accessModes"))
+            .and_then(|a| a.as_array())
+            .map(|modes| {
+                modes
+                    .iter()
+                    .filter_map(|m| m.as_str().map(|s| s.to_string()))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let age = item
+            .get("metadata")
+            .and_then(|m| m.get("creationTimestamp"))
+            .and_then(|c| c.as_str())
+            .map(parse_creation_timestamp)
+            .unwrap_or("N/A".to_string());
+
+        pvcs.push(PersistentVolumeClaimInfo {
+            name,
+            namespace,
+            status,
+            volume,
+            capacity,
+            access_modes,
+            age,
+        });
+    }
+
+    Ok(pvcs)
+}
+
+#[tauri::command]
+pub async fn list_persistentvolumes(
+    cluster_id: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<PersistentVolumeInfo>, String> {
+    let clusters = state.clusters.lock().await;
+    let cluster = clusters
+        .get(&cluster_id)
+        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+
+    let kubeconfig_content = cluster.kubeconfig_content.as_ref();
+    let context = &cluster.context;
+
+    let temp_dir = std::env::temp_dir();
+    let temp_path = temp_dir.join(format!("kubeconfig-{}-pvs.yaml", cluster_id));
+    let _cleanup = TempFileCleanup(temp_path.clone());
+
+    std::fs::write(&temp_path, kubeconfig_content)
+        .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
+
+    let kubectl_path = locate_kubectl()?;
+
+    let output = Command::new(kubectl_path)
+        .arg("get")
+        .arg("persistentvolumes")
+        .arg("-o")
+        .arg("json")
+        .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
+        .env("KUBERNETES_CONTEXT", context)
+        .output()
+        .await
+        .map_err(|e| format!("Failed to execute kubectl: {e}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(stderr.to_string());
+    }
+
+    let output_str = String::from_utf8_lossy(&output.stdout);
+    parse_pvs_json(&output_str)
+}
+
+fn parse_pvs_json(json_str: &str) -> Result<Vec<PersistentVolumeInfo>, String> {
+    let value: Value = serde_json::from_str(json_str)
+        .map_err(|e| format!("Failed to parse kubectl JSON output: {}", e))?;
+
+    let items = value
+        .get("items")
+        .and_then(|i| i.as_array())
+        .ok_or("Missing 'items' array in kubectl JSON output")?;
+
+    let mut pvs = Vec::new();
+    for item in items {
+        let name = item
+            .get("metadata")
+            .and_then(|m| m.get("name"))
+            .and_then(|n| n.as_str())
+            .unwrap_or("unknown")
+            .to_string();
+
+        let status = item
+            .get("status")
+            .and_then(|s| s.get("phase"))
+            .and_then(|p| p.as_str())
+            .unwrap_or("Unknown")
+            .to_string();
+
+        let capacity = item
+            .get("spec")
+            .and_then(|s| s.get("capacity"))
+            .and_then(|c| c.as_object())
+            .map(|c| {
+                let storage = c.get("storage").and_then(|s| s.as_str()).unwrap_or("N/A");
+                storage.to_string()
+            })
+            .unwrap_or("N/A".to_string());
+
+        let access_modes = item
+            .get("spec")
+            .and_then(|s| s.get("accessModes"))
+            .and_then(|a| a.as_array())
+            .map(|modes| {
+                modes
+                    .iter()
+                    .filter_map(|m| m.as_str().map(|s| s.to_string()))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let reclaim_policy = item
+            .get("spec")
+            .and_then(|s| s.get("persistentVolumeReclaimPolicy"))
+            .and_then(|r| r.as_str())
+            .unwrap_or("Retain")
+            .to_string();
+
+        let storage_class = item
+            .get("spec")
+            .and_then(|s| s.get("storageClassName"))
+            .and_then(|s| s.as_str())
+            .unwrap_or("N/A")
+            .to_string();
+
+        let age = item
+            .get("metadata")
+            .and_then(|m| m.get("creationTimestamp"))
+            .and_then(|c| c.as_str())
+            .map(parse_creation_timestamp)
+            .unwrap_or("N/A".to_string());
+
+        pvs.push(PersistentVolumeInfo {
+            name,
+            status,
+            capacity,
+            access_modes,
+            reclaim_policy,
+            storage_class,
+            age,
+        });
+    }
+
+    Ok(pvs)
+}
+
+#[tauri::command]
+pub async fn list_serviceaccounts(
+    cluster_id: String,
+    namespace: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<ServiceAccountInfo>, String> {
+    let clusters = state.clusters.lock().await;
+    let cluster = clusters
+        .get(&cluster_id)
+        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+
+    let kubeconfig_content = cluster.kubeconfig_content.as_ref();
+    let context = &cluster.context;
+
+    let temp_dir = std::env::temp_dir();
+    let temp_path = temp_dir.join(format!("kubeconfig-{}-sas.yaml", cluster_id));
+    let _cleanup = TempFileCleanup(temp_path.clone());
+
+    std::fs::write(&temp_path, kubeconfig_content)
+        .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
+
+    let kubectl_path = locate_kubectl()?;
+
+    let mut kubectl_cmd = Command::new(kubectl_path);
+    kubectl_cmd.arg("get").arg("serviceaccounts");
+    if namespace.is_empty() {
+        kubectl_cmd.arg("--all-namespaces");
+    } else {
+        kubectl_cmd.arg("-n").arg(&namespace);
+    }
+    let output = kubectl_cmd
+        .arg("-o")
+        .arg("json")
+        .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
+        .env("KUBERNETES_CONTEXT", context)
+        .output()
+        .await
+        .map_err(|e| format!("Failed to execute kubectl: {e}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(stderr.to_string());
+    }
+
+    let output_str = String::from_utf8_lossy(&output.stdout);
+    parse_serviceaccounts_json(&output_str)
+}
+
+fn parse_serviceaccounts_json(json_str: &str) -> Result<Vec<ServiceAccountInfo>, String> {
+    let value: Value = serde_json::from_str(json_str)
+        .map_err(|e| format!("Failed to parse kubectl JSON output: {}", e))?;
+
+    let items = value
+        .get("items")
+        .and_then(|i| i.as_array())
+        .ok_or("Missing 'items' array in kubectl JSON output")?;
+
+    let mut serviceaccounts = Vec::new();
+    for item in items {
+        let name = item
+            .get("metadata")
+            .and_then(|m| m.get("name"))
+            .and_then(|n| n.as_str())
+            .unwrap_or("unknown")
+            .to_string();
+
+        let namespace = item
+            .get("metadata")
+            .and_then(|m| m.get("namespace"))
+            .and_then(|n| n.as_str())
+            .unwrap_or("default")
+            .to_string();
+
+        let secrets = item
+            .get("secrets")
+            .and_then(|s| s.as_array())
+            .map(|s| s.len() as i32)
+            .unwrap_or(0);
+
+        let age = item
+            .get("metadata")
+            .and_then(|m| m.get("creationTimestamp"))
+            .and_then(|c| c.as_str())
+            .map(parse_creation_timestamp)
+            .unwrap_or("N/A".to_string());
+
+        serviceaccounts.push(ServiceAccountInfo {
+            name,
+            namespace,
+            secrets,
+            age,
+        });
+    }
+
+    Ok(serviceaccounts)
+}
+
+#[tauri::command]
+pub async fn list_roles(
+    cluster_id: String,
+    namespace: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<RoleInfo>, String> {
+    let clusters = state.clusters.lock().await;
+    let cluster = clusters
+        .get(&cluster_id)
+        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+
+    let kubeconfig_content = cluster.kubeconfig_content.as_ref();
+    let context = &cluster.context;
+
+    let temp_dir = std::env::temp_dir();
+    let temp_path = temp_dir.join(format!("kubeconfig-{}-roles.yaml", cluster_id));
+    let _cleanup = TempFileCleanup(temp_path.clone());
+
+    std::fs::write(&temp_path, kubeconfig_content)
+        .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
+
+    let kubectl_path = locate_kubectl()?;
+
+    let mut kubectl_cmd = Command::new(kubectl_path);
+    kubectl_cmd.arg("get").arg("roles");
+    if namespace.is_empty() {
+        kubectl_cmd.arg("--all-namespaces");
+    } else {
+        kubectl_cmd.arg("-n").arg(&namespace);
+    }
+    let output = kubectl_cmd
+        .arg("-o")
+        .arg("json")
+        .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
+        .env("KUBERNETES_CONTEXT", context)
+        .output()
+        .await
+        .map_err(|e| format!("Failed to execute kubectl: {e}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(stderr.to_string());
+    }
+
+    let output_str = String::from_utf8_lossy(&output.stdout);
+    parse_roles_json(&output_str)
+}
+
+fn parse_roles_json(json_str: &str) -> Result<Vec<RoleInfo>, String> {
+    let value: Value = serde_json::from_str(json_str)
+        .map_err(|e| format!("Failed to parse kubectl JSON output: {}", e))?;
+
+    let items = value
+        .get("items")
+        .and_then(|i| i.as_array())
+        .ok_or("Missing 'items' array in kubectl JSON output")?;
+
+    let mut roles = Vec::new();
+    for item in items {
+        let name = item
+            .get("metadata")
+            .and_then(|m| m.get("name"))
+            .and_then(|n| n.as_str())
+            .unwrap_or("unknown")
+            .to_string();
+
+        let namespace = item
+            .get("metadata")
+            .and_then(|m| m.get("namespace"))
+            .and_then(|n| n.as_str())
+            .unwrap_or("default")
+            .to_string();
+
+        let age = item
+            .get("metadata")
+            .and_then(|m| m.get("creationTimestamp"))
+            .and_then(|c| c.as_str())
+            .map(parse_creation_timestamp)
+            .unwrap_or("N/A".to_string());
+
+        roles.push(RoleInfo {
+            name,
+            namespace,
+            age,
+        });
+    }
+
+    Ok(roles)
+}
+
+#[tauri::command]
+pub async fn list_clusterroles(
+    cluster_id: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<ClusterRoleInfo>, String> {
+    let clusters = state.clusters.lock().await;
+    let cluster = clusters
+        .get(&cluster_id)
+        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+
+    let kubeconfig_content = cluster.kubeconfig_content.as_ref();
+    let context = &cluster.context;
+
+    let temp_dir = std::env::temp_dir();
+    let temp_path = temp_dir.join(format!("kubeconfig-{}-clusterroles.yaml", cluster_id));
+    let _cleanup = TempFileCleanup(temp_path.clone());
+
+    std::fs::write(&temp_path, kubeconfig_content)
+        .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
+
+    let kubectl_path = locate_kubectl()?;
+
+    let output = Command::new(kubectl_path)
+        .arg("get")
+        .arg("clusterroles")
+        .arg("-o")
+        .arg("json")
+        .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
+        .env("KUBERNETES_CONTEXT", context)
+        .output()
+        .await
+        .map_err(|e| format!("Failed to execute kubectl: {e}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(stderr.to_string());
+    }
+
+    let output_str = String::from_utf8_lossy(&output.stdout);
+    parse_clusterroles_json(&output_str)
+}
+
+fn parse_clusterroles_json(json_str: &str) -> Result<Vec<ClusterRoleInfo>, String> {
+    let value: Value = serde_json::from_str(json_str)
+        .map_err(|e| format!("Failed to parse kubectl JSON output: {}", e))?;
+
+    let items = value
+        .get("items")
+        .and_then(|i| i.as_array())
+        .ok_or("Missing 'items' array in kubectl JSON output")?;
+
+    let mut clusterroles = Vec::new();
+    for item in items {
+        let name = item
+            .get("metadata")
+            .and_then(|m| m.get("name"))
+            .and_then(|n| n.as_str())
+            .unwrap_or("unknown")
+            .to_string();
+
+        let age = item
+            .get("metadata")
+            .and_then(|m| m.get("creationTimestamp"))
+            .and_then(|c| c.as_str())
+            .map(parse_creation_timestamp)
+            .unwrap_or("N/A".to_string());
+
+        clusterroles.push(ClusterRoleInfo { name, age });
+    }
+
+    Ok(clusterroles)
+}
+
+#[tauri::command]
+pub async fn list_rolebindings(
+    cluster_id: String,
+    namespace: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<RoleBindingInfo>, String> {
+    let clusters = state.clusters.lock().await;
+    let cluster = clusters
+        .get(&cluster_id)
+        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+
+    let kubeconfig_content = cluster.kubeconfig_content.as_ref();
+    let context = &cluster.context;
+
+    let temp_dir = std::env::temp_dir();
+    let temp_path = temp_dir.join(format!("kubeconfig-{}-rolebindings.yaml", cluster_id));
+    let _cleanup = TempFileCleanup(temp_path.clone());
+
+    std::fs::write(&temp_path, kubeconfig_content)
+        .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
+
+    let kubectl_path = locate_kubectl()?;
+
+    let mut kubectl_cmd = Command::new(kubectl_path);
+    kubectl_cmd.arg("get").arg("rolebindings");
+    if namespace.is_empty() {
+        kubectl_cmd.arg("--all-namespaces");
+    } else {
+        kubectl_cmd.arg("-n").arg(&namespace);
+    }
+    let output = kubectl_cmd
+        .arg("-o")
+        .arg("json")
+        .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
+        .env("KUBERNETES_CONTEXT", context)
+        .output()
+        .await
+        .map_err(|e| format!("Failed to execute kubectl: {e}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(stderr.to_string());
+    }
+
+    let output_str = String::from_utf8_lossy(&output.stdout);
+    parse_rolebindings_json(&output_str)
+}
+
+fn parse_rolebindings_json(json_str: &str) -> Result<Vec<RoleBindingInfo>, String> {
+    let value: Value = serde_json::from_str(json_str)
+        .map_err(|e| format!("Failed to parse kubectl JSON output: {}", e))?;
+
+    let items = value
+        .get("items")
+        .and_then(|i| i.as_array())
+        .ok_or("Missing 'items' array in kubectl JSON output")?;
+
+    let mut rolebindings = Vec::new();
+    for item in items {
+        let name = item
+            .get("metadata")
+            .and_then(|m| m.get("name"))
+            .and_then(|n| n.as_str())
+            .unwrap_or("unknown")
+            .to_string();
+
+        let namespace = item
+            .get("metadata")
+            .and_then(|m| m.get("namespace"))
+            .and_then(|n| n.as_str())
+            .unwrap_or("default")
+            .to_string();
+
+        let role = item
+            .get("roleRef")
+            .and_then(|r| r.get("name"))
+            .and_then(|n| n.as_str())
+            .unwrap_or("unknown")
+            .to_string();
+
+        let age = item
+            .get("metadata")
+            .and_then(|m| m.get("creationTimestamp"))
+            .and_then(|c| c.as_str())
+            .map(parse_creation_timestamp)
+            .unwrap_or("N/A".to_string());
+
+        rolebindings.push(RoleBindingInfo {
+            name,
+            namespace,
+            role,
+            age,
+        });
+    }
+
+    Ok(rolebindings)
+}
+
+#[tauri::command]
+pub async fn list_clusterrolebindings(
+    cluster_id: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<ClusterRoleBindingInfo>, String> {
+    let clusters = state.clusters.lock().await;
+    let cluster = clusters
+        .get(&cluster_id)
+        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+
+    let kubeconfig_content = cluster.kubeconfig_content.as_ref();
+    let context = &cluster.context;
+
+    let temp_dir = std::env::temp_dir();
+    let temp_path = temp_dir.join(format!(
+        "kubeconfig-{}-clusterrolebindings.yaml",
+        cluster_id
+    ));
+    let _cleanup = TempFileCleanup(temp_path.clone());
+
+    std::fs::write(&temp_path, kubeconfig_content)
+        .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
+
+    let kubectl_path = locate_kubectl()?;
+
+    let output = Command::new(kubectl_path)
+        .arg("get")
+        .arg("clusterrolebindings")
+        .arg("-o")
+        .arg("json")
+        .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
+        .env("KUBERNETES_CONTEXT", context)
+        .output()
+        .await
+        .map_err(|e| format!("Failed to execute kubectl: {e}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(stderr.to_string());
+    }
+
+    let output_str = String::from_utf8_lossy(&output.stdout);
+    parse_clusterrolebindings_json(&output_str)
+}
+
+fn parse_clusterrolebindings_json(json_str: &str) -> Result<Vec<ClusterRoleBindingInfo>, String> {
+    let value: Value = serde_json::from_str(json_str)
+        .map_err(|e| format!("Failed to parse kubectl JSON output: {}", e))?;
+
+    let items = value
+        .get("items")
+        .and_then(|i| i.as_array())
+        .ok_or("Missing 'items' array in kubectl JSON output")?;
+
+    let mut clusterrolebindings = Vec::new();
+    for item in items {
+        let name = item
+            .get("metadata")
+            .and_then(|m| m.get("name"))
+            .and_then(|n| n.as_str())
+            .unwrap_or("unknown")
+            .to_string();
+
+        let cluster_role = item
+            .get("roleRef")
+            .and_then(|r| r.get("name"))
+            .and_then(|n| n.as_str())
+            .unwrap_or("unknown")
+            .to_string();
+
+        let age = item
+            .get("metadata")
+            .and_then(|m| m.get("creationTimestamp"))
+            .and_then(|c| c.as_str())
+            .map(parse_creation_timestamp)
+            .unwrap_or("N/A".to_string());
+
+        clusterrolebindings.push(ClusterRoleBindingInfo {
+            name,
+            cluster_role,
+            age,
+        });
+    }
+
+    Ok(clusterrolebindings)
+}
+
+#[tauri::command]
+pub async fn list_horizontalpodautoscalers(
+    cluster_id: String,
+    namespace: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<HorizontalPodAutoscalerInfo>, String> {
+    let clusters = state.clusters.lock().await;
+    let cluster = clusters
+        .get(&cluster_id)
+        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+
+    let kubeconfig_content = cluster.kubeconfig_content.as_ref();
+    let context = &cluster.context;
+
+    let temp_dir = std::env::temp_dir();
+    let temp_path = temp_dir.join(format!("kubeconfig-{}-hpas.yaml", cluster_id));
+    let _cleanup = TempFileCleanup(temp_path.clone());
+
+    std::fs::write(&temp_path, kubeconfig_content)
+        .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
+
+    let kubectl_path = locate_kubectl()?;
+
+    let mut kubectl_cmd = Command::new(kubectl_path);
+    kubectl_cmd.arg("get").arg("horizontalpodautoscalers");
+    if namespace.is_empty() {
+        kubectl_cmd.arg("--all-namespaces");
+    } else {
+        kubectl_cmd.arg("-n").arg(&namespace);
+    }
+    let output = kubectl_cmd
+        .arg("-o")
+        .arg("json")
+        .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
+        .env("KUBERNETES_CONTEXT", context)
+        .output()
+        .await
+        .map_err(|e| format!("Failed to execute kubectl: {e}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(stderr.to_string());
+    }
+
+    let output_str = String::from_utf8_lossy(&output.stdout);
+    parse_hpas_json(&output_str)
+}
+
+fn parse_hpas_json(json_str: &str) -> Result<Vec<HorizontalPodAutoscalerInfo>, String> {
+    let value: Value = serde_json::from_str(json_str)
+        .map_err(|e| format!("Failed to parse kubectl JSON output: {}", e))?;
+
+    let items = value
+        .get("items")
+        .and_then(|i| i.as_array())
+        .ok_or("Missing 'items' array in kubectl JSON output")?;
+
+    let mut hpas = Vec::new();
+    for item in items {
+        let name = item
+            .get("metadata")
+            .and_then(|m| m.get("name"))
+            .and_then(|n| n.as_str())
+            .unwrap_or("unknown")
+            .to_string();
+
+        let namespace = item
+            .get("metadata")
+            .and_then(|m| m.get("namespace"))
+            .and_then(|n| n.as_str())
+            .unwrap_or("default")
+            .to_string();
+
+        let min_replicas = item
+            .get("spec")
+            .and_then(|s| s.get("minReplicas"))
+            .and_then(|r| r.as_i64())
+            .unwrap_or(1) as i32;
+
+        let max_replicas = item
+            .get("spec")
+            .and_then(|s| s.get("maxReplicas"))
+            .and_then(|r| r.as_i64())
+            .unwrap_or(1) as i32;
+
+        let current_replicas = item
+            .get("status")
+            .and_then(|s| s.get("currentReplicas"))
+            .and_then(|r| r.as_i64())
+            .unwrap_or(0) as i32;
+
+        let desired_replicas = item
+            .get("status")
+            .and_then(|s| s.get("desiredReplicas"))
+            .and_then(|r| r.as_i64())
+            .unwrap_or(0) as i32;
+
+        let age = item
+            .get("metadata")
+            .and_then(|m| m.get("creationTimestamp"))
+            .and_then(|c| c.as_str())
+            .map(parse_creation_timestamp)
+            .unwrap_or("N/A".to_string());
+
+        hpas.push(HorizontalPodAutoscalerInfo {
+            name,
+            namespace,
+            min_replicas,
+            max_replicas,
+            current_replicas,
+            desired_replicas,
+            age,
+        });
+    }
+
+    Ok(hpas)
+}
+
+#[tauri::command]
+pub async fn cordon_node(
+    cluster_id: String,
+    node_name: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let clusters = state.clusters.lock().await;
+    let cluster = clusters
+        .get(&cluster_id)
+        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+
+    let kubeconfig_content = cluster.kubeconfig_content.as_ref();
+    let context = &cluster.context;
+
+    let temp_dir = std::env::temp_dir();
+    let temp_path = temp_dir.join(format!("kubeconfig-{}-cordon.yaml", cluster_id));
+    let _cleanup = TempFileCleanup(temp_path.clone());
+
+    std::fs::write(&temp_path, kubeconfig_content)
+        .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
+
+    let kubectl_path = locate_kubectl()?;
+
+    let output = Command::new(kubectl_path)
+        .arg("cordon")
+        .arg(node_name)
+        .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
+        .env("KUBERNETES_CONTEXT", context)
+        .output()
+        .await
+        .map_err(|e| format!("Failed to execute kubectl: {e}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(stderr.to_string());
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn uncordon_node(
+    cluster_id: String,
+    node_name: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let clusters = state.clusters.lock().await;
+    let cluster = clusters
+        .get(&cluster_id)
+        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+
+    let kubeconfig_content = cluster.kubeconfig_content.as_ref();
+    let context = &cluster.context;
+
+    let temp_dir = std::env::temp_dir();
+    let temp_path = temp_dir.join(format!("kubeconfig-{}-uncordon.yaml", cluster_id));
+    let _cleanup = TempFileCleanup(temp_path.clone());
+
+    std::fs::write(&temp_path, kubeconfig_content)
+        .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
+
+    let kubectl_path = locate_kubectl()?;
+
+    let output = Command::new(kubectl_path)
+        .arg("uncordon")
+        .arg(node_name)
+        .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
+        .env("KUBERNETES_CONTEXT", context)
+        .output()
+        .await
+        .map_err(|e| format!("Failed to execute kubectl: {e}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(stderr.to_string());
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn drain_node(
+    cluster_id: String,
+    node_name: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let clusters = state.clusters.lock().await;
+    let cluster = clusters
+        .get(&cluster_id)
+        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+
+    let kubeconfig_content = cluster.kubeconfig_content.as_ref();
+    let context = &cluster.context;
+
+    let temp_dir = std::env::temp_dir();
+    let temp_path = temp_dir.join(format!("kubeconfig-{}-drain.yaml", cluster_id));
+    let _cleanup = TempFileCleanup(temp_path.clone());
+
+    std::fs::write(&temp_path, kubeconfig_content)
+        .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
+
+    let kubectl_path = locate_kubectl()?;
+
+    let output = Command::new(kubectl_path)
+        .arg("drain")
+        .arg(node_name)
+        .arg("--ignore-daemonsets")
+        .arg("--delete-emptydir-data")
+        .arg("--force")
+        .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
+        .env("KUBERNETES_CONTEXT", context)
+        .output()
+        .await
+        .map_err(|e| format!("Failed to execute kubectl: {e}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(stderr.to_string());
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn rollback_deployment(
+    cluster_id: String,
+    namespace: String,
+    deployment_name: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let clusters = state.clusters.lock().await;
+    let cluster = clusters
+        .get(&cluster_id)
+        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+
+    let kubeconfig_content = cluster.kubeconfig_content.as_ref();
+    let context = &cluster.context;
+
+    let temp_dir = std::env::temp_dir();
+    let temp_path = temp_dir.join(format!("kubeconfig-{}-rollback.yaml", cluster_id));
+    let _cleanup = TempFileCleanup(temp_path.clone());
+
+    std::fs::write(&temp_path, kubeconfig_content)
+        .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
+
+    let kubectl_path = locate_kubectl()?;
+
+    let output = Command::new(kubectl_path)
+        .arg("rollout")
+        .arg("undo")
+        .arg("deployment")
+        .arg(deployment_name)
+        .arg("-n")
+        .arg(namespace)
+        .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
+        .env("KUBERNETES_CONTEXT", context)
+        .output()
+        .await
+        .map_err(|e| format!("Failed to execute kubectl: {e}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(stderr.to_string());
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn create_resource(
+    cluster_id: String,
+    namespace: String,
+    _resource_type: String,
+    yaml_content: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let clusters = state.clusters.lock().await;
+    let cluster = clusters
+        .get(&cluster_id)
+        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+
+    let kubeconfig_content = cluster.kubeconfig_content.as_ref();
+    let context = &cluster.context;
+
+    let temp_dir = std::env::temp_dir();
+    let temp_path = temp_dir.join(format!("kubeconfig-{}-create.yaml", cluster_id));
+    let _cleanup = TempFileCleanup(temp_path.clone());
+
+    std::fs::write(&temp_path, kubeconfig_content)
+        .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
+
+    let kubectl_path = locate_kubectl()?;
+
+    let mut cmd = Command::new(kubectl_path);
+    cmd.arg("create")
+        .arg("-f")
+        .arg("-")
+        .arg("-n")
+        .arg(namespace)
+        .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
+        .env("KUBERNETES_CONTEXT", context)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| format!("Failed to spawn kubectl: {e}"))?;
+
+    if let Some(mut stdin) = child.stdin.take() {
+        stdin
+            .write_all(yaml_content.as_bytes())
+            .await
+            .map_err(|e| format!("Failed to write yaml to stdin: {e}"))?;
+    }
+
+    let output = child
+        .wait_with_output()
+        .await
+        .map_err(|e| format!("Failed to execute kubectl: {e}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(stderr.to_string());
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn edit_resource(
+    cluster_id: String,
+    namespace: String,
+    _resource_type: String,
+    _resource_name: String,
+    yaml_content: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let clusters = state.clusters.lock().await;
+    let cluster = clusters
+        .get(&cluster_id)
+        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+
+    let kubeconfig_content = cluster.kubeconfig_content.as_ref();
+    let context = &cluster.context;
+
+    let temp_dir = std::env::temp_dir();
+    let temp_path = temp_dir.join(format!("kubeconfig-{}-edit.yaml", cluster_id));
+    let _cleanup = TempFileCleanup(temp_path.clone());
+
+    std::fs::write(&temp_path, kubeconfig_content)
+        .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
+
+    let kubectl_path = locate_kubectl()?;
+
+    let mut cmd = Command::new(kubectl_path);
+    cmd.arg("apply")
+        .arg("-f")
+        .arg("-")
+        .arg("-n")
+        .arg(namespace)
+        .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
+        .env("KUBERNETES_CONTEXT", context)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| format!("Failed to spawn kubectl: {e}"))?;
+
+    if let Some(mut stdin) = child.stdin.take() {
+        stdin
+            .write_all(yaml_content.as_bytes())
+            .await
+            .map_err(|e| format!("Failed to write yaml to stdin: {e}"))?;
+    }
+
+    let output = child
+        .wait_with_output()
+        .await
+        .map_err(|e| format!("Failed to execute kubectl: {e}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(stderr.to_string());
     }
 
     Ok(())

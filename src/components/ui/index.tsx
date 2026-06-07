@@ -412,4 +412,295 @@ export const RadioGroupItem = React.forwardRef<HTMLInputElement, RadioGroupItemP
 );
 RadioGroupItem.displayName = "RadioGroupItem";
 
+// ─── Table ────────────────────────────────────────────────────────────────────
+
+export const Table = React.forwardRef<
+  HTMLTableElement,
+  React.HTMLAttributes<HTMLTableElement>
+>(({ className, ...props }, ref) => (
+  <div className="relative w-full overflow-auto">
+    <table
+      ref={ref}
+      className={cn("w-full caption-bottom text-sm", className)}
+      {...props}
+    />
+  </div>
+));
+Table.displayName = "Table";
+
+export const TableHeader = React.forwardRef<
+  HTMLTableSectionElement,
+  React.HTMLAttributes<HTMLTableSectionElement>
+>(({ className, ...props }, ref) => (
+  <thead ref={ref} className={cn("[&_tr]:border-b", className)} {...props} />
+));
+TableHeader.displayName = "TableHeader";
+
+export const TableBody = React.forwardRef<
+  HTMLTableSectionElement,
+  React.HTMLAttributes<HTMLTableSectionElement>
+>(({ className, ...props }, ref) => (
+  <tbody
+    ref={ref}
+    className={cn("[&_tr:last-child]:border-0", className)}
+    {...props}
+  />
+));
+TableBody.displayName = "TableBody";
+
+export const TableFooter = React.forwardRef<
+  HTMLTableSectionElement,
+  React.HTMLAttributes<HTMLTableSectionElement>
+>(({ className, ...props }, ref) => (
+  <tfoot
+    ref={ref}
+    className={cn("border-t bg-muted/50 font-medium [&>tr]:last:border-b-0", className)}
+    {...props}
+  />
+));
+TableFooter.displayName = "TableFooter";
+
+export const TableRow = React.forwardRef<
+  HTMLTableRowElement,
+  React.HTMLAttributes<HTMLTableRowElement> & { hover?: boolean }
+>(({ className, hover: _hover, ...props }, ref) => (
+  <tr
+    ref={ref}
+    className={cn(
+      "border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted",
+      className
+    )}
+    {...props}
+  />
+));
+TableRow.displayName = "TableRow";
+
+export const TableHead = React.forwardRef<
+  HTMLTableCellElement,
+  React.ThHTMLAttributes<HTMLTableCellElement>
+>(({ className, ...props }, ref) => (
+  <th
+    ref={ref}
+    className={cn(
+      "h-12 px-4 text-left align-middle font-medium text-muted-foreground [&:has([role=checkbox])]:pr-0",
+      className
+    )}
+    {...props}
+  />
+));
+TableHead.displayName = "TableHead";
+
+export const TableCell = React.forwardRef<
+  HTMLTableCellElement,
+  React.TdHTMLAttributes<HTMLTableCellElement>
+>(({ className, ...props }, ref) => (
+  <td
+    ref={ref}
+    className={cn("p-4 align-middle [&:has([role=checkbox])]:pr-0", className)}
+    {...props}
+  />
+));
+TableCell.displayName = "TableCell";
+
+export const TableCaption = React.forwardRef<
+  HTMLTableCaptionElement,
+  React.HTMLAttributes<HTMLTableCaptionElement>
+>(({ className, ...props }, ref) => (
+  <caption
+    ref={ref}
+    className={cn("mt-4 text-sm text-muted-foreground", className)}
+    {...props}
+  />
+));
+TableCaption.displayName = "TableCaption";
+
+// ─── Tabs ─────────────────────────────────────────────────────────────────────
+
+const TabsContext = React.createContext<{
+  value: string;
+  onValueChange: (value: string) => void;
+} | null>(null);
+
+export function Tabs({ value, onValueChange, children }: { value: string; onValueChange: (value: string) => void; children: React.ReactNode }) {
+  return (
+    <TabsContext.Provider value={{ value, onValueChange }}>
+      <div className="w-full">{children}</div>
+    </TabsContext.Provider>
+  );
+}
+
+export function TabsList({ className, children }: { className?: string; children: React.ReactNode }) {
+  return (
+    <div
+      className={cn(
+        "inline-flex h-10 items-center justify-center rounded-md bg-muted p-1 text-muted-foreground",
+        className
+      )}
+    >
+      {children}
+    </div>
+  );
+}
+
+export function TabsTrigger({ className, children, value }: { className?: string; children: React.ReactNode; value: string }) {
+  const ctx = React.useContext(TabsContext);
+  if (!ctx) throw new Error("TabsTrigger must be used within Tabs");
+
+  return (
+    <button
+      className={cn(
+        "inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1.5 text-sm font-medium ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50",
+        ctx.value === value
+          ? "bg-background text-foreground shadow-sm"
+          : "hover:bg-background hover:text-foreground",
+        className
+      )}
+      onClick={() => ctx.onValueChange(value)}
+    >
+      {children}
+    </button>
+  );
+}
+
+export function TabsContent({ className, children, value }: { className?: string; children: React.ReactNode; value: string }) {
+  const ctx = React.useContext(TabsContext);
+  if (!ctx) throw new Error("TabsContent must be used within Tabs");
+
+  return (
+    <div
+      className={cn(
+        "mt-2 ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+        ctx.value === value ? "block" : "hidden",
+        className
+      )}
+    >
+      {children}
+    </div>
+  );
+}
+
+// ─── Dialog ───────────────────────────────────────────────────────────────────
+
+const DialogContext = React.createContext<{
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+} | null>(null);
+
+export function Dialog({ open, onOpenChange, children }: { open: boolean; onOpenChange: (open: boolean) => void; children: React.ReactNode }) {
+  return (
+    <DialogContext.Provider value={{ open, onOpenChange }}>
+      {children}
+    </DialogContext.Provider>
+  );
+}
+
+export function DialogTrigger({ children }: { children: React.ReactNode }) {
+  return <>{children}</>;
+}
+
+export function DialogContent({ className, children }: { className?: string; children: React.ReactNode }) {
+  const ctx = React.useContext(DialogContext);
+  if (!ctx) throw new Error("DialogContent must be used within Dialog");
+
+  if (!ctx.open) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+      <div
+        className={cn(
+          "fixed left-[50%] top-[50%] z-50 grid w-full max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 border bg-background p-6 shadow-lg duration-200 sm:rounded-lg",
+          className
+        )}
+      >
+        {children}
+      </div>
+    </div>
+  );
+}
+
+export function DialogHeader({ className, children }: { className?: string; children: React.ReactNode }) {
+  return (
+    <div className={cn("flex flex-col space-y-1.5 text-center sm:text-left", className)}>
+      {children}
+    </div>
+  );
+}
+
+export function DialogFooter({ className, children }: { className?: string; children: React.ReactNode }) {
+  return (
+    <div className={cn("flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2", className)}>
+      {children}
+    </div>
+  );
+}
+
+export function DialogTitle({ className, children }: { className?: string; children: React.ReactNode }) {
+  return (
+    <h2 className={cn("text-lg font-semibold leading-none tracking-tight", className)}>
+      {children}
+    </h2>
+  );
+}
+
+export function DialogDescription({ className, children }: { className?: string; children: React.ReactNode }) {
+  return (
+    <p className={cn("text-sm text-muted-foreground", className)}>
+      {children}
+    </p>
+  );
+}
+
+// ─── Alert ───────────────────────────────────────────────────────────────────
+
+const alertVariants = cva(
+  "relative w-full rounded-lg border p-4",
+  {
+    variants: {
+      variant: {
+        default: "bg-background text-foreground",
+        destructive: "border-destructive/50 text-destructive dark:border-destructive [&>svg]:text-destructive",
+      },
+    },
+    defaultVariants: {
+      variant: "default",
+    },
+  }
+);
+
+export interface AlertProps extends React.HTMLAttributes<HTMLDivElement>, VariantProps<typeof alertVariants> {}
+
+export function Alert({ className, variant, children, ...props }: AlertProps) {
+  return (
+    <div
+      className={cn(alertVariants({ variant }), className)}
+      role="alert"
+      {...props}
+    >
+      {children}
+    </div>
+  );
+}
+
+export function AlertTitle({ className, children, ...props }: React.HTMLAttributes<HTMLHeadingElement>) {
+  return (
+    <h5
+      className={cn("mb-1 font-medium leading-none tracking-tight", className)}
+      {...props}
+    >
+      {children}
+    </h5>
+  );
+}
+
+export function AlertDescription({ className, children, ...props }: React.HTMLAttributes<HTMLDivElement>) {
+  return (
+    <div
+      className={cn("text-sm [&_p]:leading-relaxed", className)}
+      {...props}
+    >
+      {children}
+    </div>
+  );
+}
+
 export { cn };

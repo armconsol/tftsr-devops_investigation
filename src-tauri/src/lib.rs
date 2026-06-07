@@ -187,6 +187,43 @@ pub fn run() {
             commands::kube::shutdown_port_forwards,
             commands::kube::test_cluster_connection,
             commands::kube::discover_pods,
+            // Kubernetes Resource Discovery
+            commands::kube::list_namespaces,
+            commands::kube::list_pods,
+            commands::kube::list_services,
+            commands::kube::list_deployments,
+            commands::kube::list_statefulsets,
+            commands::kube::list_daemonsets,
+            // Additional Kubernetes Resource Discovery
+            commands::kube::list_replicasets,
+            commands::kube::list_jobs,
+            commands::kube::list_cronjobs,
+            commands::kube::list_configmaps,
+            commands::kube::list_secrets,
+            commands::kube::list_nodes,
+            commands::kube::list_events,
+            commands::kube::list_ingresses,
+            commands::kube::list_persistentvolumeclaims,
+            commands::kube::list_persistentvolumes,
+            commands::kube::list_serviceaccounts,
+            commands::kube::list_roles,
+            commands::kube::list_clusterroles,
+            commands::kube::list_rolebindings,
+            commands::kube::list_clusterrolebindings,
+            commands::kube::list_horizontalpodautoscalers,
+            // Kubernetes Resource Management
+            commands::kube::get_pod_logs,
+            commands::kube::scale_deployment,
+            commands::kube::restart_deployment,
+            commands::kube::delete_resource,
+            commands::kube::exec_pod,
+            // Additional Kubernetes Resource Management
+            commands::kube::cordon_node,
+            commands::kube::uncordon_node,
+            commands::kube::drain_node,
+            commands::kube::rollback_deployment,
+            commands::kube::create_resource,
+            commands::kube::edit_resource,
         ])
         .run(tauri::generate_context!())
         .expect("Error running Troubleshooting and RCA Assistant application");
