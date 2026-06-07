@@ -16,7 +16,7 @@ jobs:
         run: |
           set -eux
           git init
-          git remote add origin http://172.0.0.29:3000/sarman/tftsr-devops_investigation.git
+          git remote add origin https://gogs.tftsr.com/sarman/tftsr-devops_investigation.git
           if [ -n "${GITHUB_SHA:-}" ] && git fetch --depth=1 origin "$GITHUB_SHA"; then
             echo "Fetched commit SHA: $GITHUB_SHA"
           elif [ -n "${GITHUB_REF_NAME:-}" ] && git fetch --depth=1 origin "$GITHUB_REF_NAME"; then
@@ -63,7 +63,7 @@ jobs:
         run: |
           set -eux
           git init
-          git remote add origin http://172.0.0.29:3000/sarman/tftsr-devops_investigation.git
+          git remote add origin https://gogs.tftsr.com/sarman/tftsr-devops_investigation.git
           if [ -n "${GITHUB_SHA:-}" ] && git fetch --depth=1 origin "$GITHUB_SHA"; then
             echo "Fetched commit SHA: $GITHUB_SHA"
           elif [ -n "${GITHUB_REF_NAME:-}" ] && git fetch --depth=1 origin "$GITHUB_REF_NAME"; then
@@ -100,7 +100,7 @@ jobs:
         run: |
           set -eux
           git init
-          git remote add origin http://172.0.0.29:3000/sarman/tftsr-devops_investigation.git
+          git remote add origin https://gogs.tftsr.com/sarman/tftsr-devops_investigation.git
           if [ -n "${GITHUB_SHA:-}" ] && git fetch --depth=1 origin "$GITHUB_SHA"; then
             echo "Fetched commit SHA: $GITHUB_SHA"
           elif [ -n "${GITHUB_REF_NAME:-}" ] && git fetch --depth=1 origin "$GITHUB_REF_NAME"; then
@@ -139,7 +139,7 @@ jobs:
           set -eux
           apk add --no-cache git
           git init
-          git remote add origin http://172.0.0.29:3000/sarman/tftsr-devops_investigation.git
+          git remote add origin https://gogs.tftsr.com/sarman/tftsr-devops_investigation.git
           if [ -n "${GITHUB_SHA:-}" ] && git fetch --depth=1 origin "$GITHUB_SHA"; then
             echo "Fetched commit SHA: $GITHUB_SHA"
           elif [ -n "${GITHUB_REF_NAME:-}" ] && git fetch --depth=1 origin "$GITHUB_REF_NAME"; then
@@ -173,7 +173,7 @@ jobs:
           set -eux
           apk add --no-cache git
           git init
-          git remote add origin http://172.0.0.29:3000/sarman/tftsr-devops_investigation.git
+          git remote add origin https://gogs.tftsr.com/sarman/tftsr-devops_investigation.git
           if [ -n "${GITHUB_SHA:-}" ] && git fetch --depth=1 origin "$GITHUB_SHA"; then
             echo "Fetched commit SHA: $GITHUB_SHA"
           elif [ -n "${GITHUB_REF_NAME:-}" ] && git fetch --depth=1 origin "$GITHUB_REF_NAME"; then
