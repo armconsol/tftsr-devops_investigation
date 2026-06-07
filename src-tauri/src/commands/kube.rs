@@ -465,10 +465,14 @@ pub async fn start_port_forward(
 
     // Use kubectl's dynamic port binding by specifying 0 as local port
     // This avoids race condition with port allocation
+    // Note: Dynamic port allocation (when local_port=0) currently returns 0
+    // The actual allocated port could be captured from kubectl's stderr/stdout
+    // but this requires parsing kubectl output which is complex and error-prone
+    // For now, users must specify a local port or use the default behavior
     let local_port = if request.local_port > 0 {
         request.local_port
     } else {
-        0 // Let kubectl allocate dynamically
+        0 // Let kubectl allocate dynamically (currently not captured)
     };
 
     info!(
