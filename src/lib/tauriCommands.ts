@@ -1150,6 +1150,54 @@ export const listClusterrolebindingsCmd = (clusterId: string) =>
 export const listHorizontalpodautoscalersCmd = (clusterId: string, namespace: string) =>
   invoke<HorizontalPodAutoscalerInfo[]>("list_horizontalpodautoscalers", { clusterId, namespace });
 
+// ─── Additional Lens Resource Types ───────────────────────────────────────────
+
+export interface StorageClassInfo {
+  name: string;
+  provisioner: string;
+  reclaim_policy: string;
+  volume_binding_mode: string;
+  allow_volume_expansion: boolean;
+  age: string;
+}
+
+export interface NetworkPolicyInfo {
+  name: string;
+  namespace: string;
+  pod_selector: string;
+  policy_types: string[];
+  age: string;
+}
+
+export interface ResourceQuotaInfo {
+  name: string;
+  namespace: string;
+  request_cpu: string;
+  request_memory: string;
+  limit_cpu: string;
+  limit_memory: string;
+  age: string;
+}
+
+export interface LimitRangeInfo {
+  name: string;
+  namespace: string;
+  limit_count: number;
+  age: string;
+}
+
+export const listStorageclassesCmd = (clusterId: string) =>
+  invoke<StorageClassInfo[]>("list_storageclasses", { clusterId });
+
+export const listNetworkpoliciesCmd = (clusterId: string, namespace: string) =>
+  invoke<NetworkPolicyInfo[]>("list_networkpolicies", { clusterId, namespace });
+
+export const listResourcequotasCmd = (clusterId: string, namespace: string) =>
+  invoke<ResourceQuotaInfo[]>("list_resourcequotas", { clusterId, namespace });
+
+export const listLimitrangesCmd = (clusterId: string, namespace: string) =>
+  invoke<LimitRangeInfo[]>("list_limitranges", { clusterId, namespace });
+
 // ─── Additional Kubernetes Resource Management Commands ───────────────────────
 
 export const cordonNodeCmd = (clusterId: string, nodeName: string) =>

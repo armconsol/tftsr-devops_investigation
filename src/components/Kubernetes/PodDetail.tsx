@@ -4,24 +4,66 @@ import { Badge } from "@/components/ui";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui";
 import { Button } from "@/components/ui";
-import { Copy, Terminal, X } from "lucide-react";
+import { Copy, X } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { YamlEditor } from "./YamlEditor";
+import { getPodLogsCmd } from "@/lib/tauriCommands";
+import type { PodInfo } from "@/lib/tauriCommands";
 
 interface PodDetailProps {
-  podName: string;
+  clusterId: string;
   namespace: string;
-  _clusterId: string;
-  onClose: () => void;
+  pod: PodInfo;
+  onClose?: () => void;
 }
 
-export function PodDetail({ podName, namespace, _clusterId, onClose }: PodDetailProps) {
+export function PodDetail({ clusterId, namespace, pod, onClose }: PodDetailProps) {
   const [activeTab, setActiveTab] = React.useState("overview");
+  const [selectedContainer, setSelectedContainer] = React.useState(pod.containers[0] ?? "");
+  const [logs, setLogs] = React.useState<string | null>(null);
+  const [logsLoading, setLogsLoading] = React.useState(false);
+  const [logsError, setLogsError] = React.useState<string | null>(null);
+
+  const fetchLogs = React.useCallback(
+    async (containerName: string) => {
+      if (!containerName) return;
+      setLogsLoading(true);
+      setLogsError(null);
+      setLogs(null);
+      try {
+        const response = await getPodLogsCmd(clusterId, namespace, pod.name, containerName);
+        setLogs(response.logs);
+      } catch (err) {
+        setLogsError(err instanceof Error ? err.message : String(err));
+      } finally {
+        setLogsLoading(false);
+      }
+    },
+    [clusterId, namespace, pod.name]
+  );
+
+  const handleTabChange = (tab: string) => {
+    setActiveTab(tab);
+    if (tab === "logs" && logs === null && !logsLoading && !logsError) {
+      void fetchLogs(selectedContainer);
+    }
+  };
+
+  const handleContainerChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const name = e.target.value;
+    setSelectedContainer(name);
+    void fetchLogs(name);
+  };
+
+  const copyLogs = () => {
+    if (logs) void navigator.clipboard.writeText(logs);
+  };
 
   return (
     <div className="h-full flex flex-col">
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
-          <h2 className="text-xl font-semibold">Pod: {podName}</h2>
+          <h2 className="text-xl font-semibold">Pod: {pod.name}</h2>
           <Badge variant="outline">{namespace}</Badge>
         </div>
         <Button variant="ghost" size="sm" onClick={onClose}>
@@ -29,12 +71,11 @@ export function PodDetail({ podName, namespace, _clusterId, onClose }: PodDetail
         </Button>
       </div>
 
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid grid-cols-4 mb-4">
+      <Tabs value={activeTab} onValueChange={handleTabChange}>
+        <TabsList className="grid grid-cols-3 mb-4">
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="logs">Logs</TabsTrigger>
           <TabsTrigger value="yaml">YAML</TabsTrigger>
-          <TabsTrigger value="events">Events</TabsTrigger>
         </TabsList>
 
         <div className="flex-1 overflow-hidden">
@@ -47,7 +88,7 @@ export function PodDetail({ podName, namespace, _clusterId, onClose }: PodDetail
                 <CardContent className="space-y-2">
                   <div className="flex items-center justify-between">
                     <span className="text-sm text-muted-foreground">Name</span>
-                    <span className="font-mono">{podName}</span>
+                    <span className="font-mono">{pod.name}</span>
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="text-sm text-muted-foreground">Namespace</span>
@@ -55,23 +96,17 @@ export function PodDetail({ podName, namespace, _clusterId, onClose }: PodDetail
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="text-sm text-muted-foreground">Status</span>
-                    <Badge variant="default">Running</Badge>
+                    <Badge variant={pod.status === "Running" ? "default" : "secondary"}>
+                      {pod.status}
+                    </Badge>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="text-sm text-muted-foreground">IP</span>
-                    <span className="font-mono">10.0.0.1</span>
+                    <span className="text-sm text-muted-foreground">Ready</span>
+                    <span className="font-mono">{pod.ready}</span>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="text-sm text-muted-foreground">Node</span>
-                    <span className="font-mono">node-1</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-muted-foreground">Restart Count</span>
-                    <span>0</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-muted-foreground">Created</span>
-                    <span className="text-sm">2 hours ago</span>
+                    <span className="text-sm text-muted-foreground">Age</span>
+                    <span className="text-sm">{pod.age}</span>
                   </div>
                 </CardContent>
               </Card>
@@ -85,33 +120,16 @@ export function PodDetail({ podName, namespace, _clusterId, onClose }: PodDetail
                     <TableHeader>
                       <TableRow>
                         <TableHead>Name</TableHead>
-                        <TableHead>Image</TableHead>
-                        <TableHead>State</TableHead>
-                        <TableHead>Ready</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      <TableRow>
-                        <TableCell>example</TableCell>
-                        <TableCell className="font-mono">nginx:latest</TableCell>
-                        <TableCell>Running</TableCell>
-                        <TableCell>True</TableCell>
-                      </TableRow>
+                      {pod.containers.map((c) => (
+                        <TableRow key={c}>
+                          <TableCell className="font-mono">{c}</TableCell>
+                        </TableRow>
+                      ))}
                     </TableBody>
                   </Table>
-                </CardContent>
-              </Card>
-
-              <Card className="lg:col-span-2">
-                <CardHeader>
-                  <CardTitle>Labels</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex flex-wrap gap-2">
-                    <Badge variant="secondary">app=web</Badge>
-                    <Badge variant="secondary">tier=frontend</Badge>
-                    <Badge variant="secondary">version=v1</Badge>
-                  </div>
                 </CardContent>
               </Card>
             </div>
@@ -122,63 +140,56 @@ export function PodDetail({ podName, namespace, _clusterId, onClose }: PodDetail
               <CardHeader className="flex flex-row items-center justify-between">
                 <CardTitle>Container Logs</CardTitle>
                 <div className="flex items-center gap-2">
-                  <Button variant="outline" size="sm">
-                    <Terminal className="w-4 h-4 mr-2" />
-                    Execute
-                  </Button>
-                  <Button variant="outline" size="sm">
+                  {pod.containers.length > 1 && (
+                    <select
+                      value={selectedContainer}
+                      onChange={handleContainerChange}
+                      className="text-sm border rounded px-2 py-1 bg-background"
+                    >
+                      {pod.containers.map((c) => (
+                        <option key={c} value={c}>
+                          {c}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                  <Button variant="outline" size="sm" onClick={copyLogs} disabled={!logs}>
                     <Copy className="w-4 h-4 mr-2" />
                     Copy
                   </Button>
                 </div>
               </CardHeader>
               <CardContent className="flex-1 bg-slate-900 rounded-md p-4 overflow-auto font-mono text-sm">
-                <div className="text-green-400">[INFO] Starting nginx server...</div>
-                <div className="text-green-400">[INFO] Listening on port 80</div>
-                <div className="text-blue-400">[ACCESS] GET / - 200 OK</div>
-                <div className="text-blue-400">[ACCESS] GET /css/style.css - 200 OK</div>
-                <div className="text-blue-400">[ACCESS] GET /js/app.js - 200 OK</div>
-                <div className="text-yellow-400">[WARN] Slow response time detected</div>
-                <div className="text-blue-400">[ACCESS] POST /api/data - 201 Created</div>
+                {logsLoading && (
+                  <div
+                    data-testid="logs-loading"
+                    className="flex items-center gap-2 text-muted-foreground"
+                  >
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Loading logs…
+                  </div>
+                )}
+                {logsError && (
+                  <div data-testid="logs-error" className="text-red-400">
+                    Failed to load logs: {logsError}
+                  </div>
+                )}
+                {!logsLoading && !logsError && logs !== null && (
+                  <pre className="text-green-400 whitespace-pre-wrap break-words">{logs}</pre>
+                )}
+                {!logsLoading && !logsError && logs === null && (
+                  <span className="text-muted-foreground">Select a container to view logs.</span>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
 
           <TabsContent value="yaml" className="h-full">
-            <YamlEditor onChange={() => {}} />
-          </TabsContent>
-
-          <TabsContent value="events" className="h-full overflow-y-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Time</TableHead>
-                  <TableHead>Reason</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Message</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                <TableRow>
-                  <TableCell>2 hours ago</TableCell>
-                  <TableCell>Pulled</TableCell>
-                  <TableCell>Normal</TableCell>
-                  <TableCell>Container image "nginx:latest" already present on machine</TableCell>
-                </TableRow>
-                <TableRow>
-                  <TableCell>2 hours ago</TableCell>
-                  <TableCell>Created</TableCell>
-                  <TableCell>Normal</TableCell>
-                  <TableCell>Created container example</TableCell>
-                </TableRow>
-                <TableRow>
-                  <TableCell>2 hours ago</TableCell>
-                  <TableCell>Started</TableCell>
-                  <TableCell>Normal</TableCell>
-                  <TableCell>Started container example</TableCell>
-                </TableRow>
-              </TableBody>
-            </Table>
+            <YamlEditor
+              readOnly
+              showControls={false}
+              content={JSON.stringify(pod, null, 2)}
+            />
           </TabsContent>
         </div>
       </Tabs>

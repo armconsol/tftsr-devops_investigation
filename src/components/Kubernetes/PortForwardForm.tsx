@@ -20,6 +20,15 @@ export function PortForwardForm({ isOpen, onClose, onStart }: PortForwardFormPro
   const [error, setError] = useState("");
   const [clusters, setClusters] = useState<{ id: string; name: string }[]>([]);
 
+  const loadClusters = async () => {
+    try {
+      const data = await listClustersCmd();
+      setClusters(data.map((c) => ({ id: c.id, name: c.name })));
+    } catch (err) {
+      console.error("Failed to load clusters:", err);
+    }
+  };
+
   useEffect(() => {
     if (isOpen) {
       loadClusters();
@@ -27,15 +36,6 @@ export function PortForwardForm({ isOpen, onClose, onStart }: PortForwardFormPro
   }, [isOpen]);
 
   if (!isOpen) return null;
-
-  const loadClusters = async () => {
-    try {
-      const clusters = await listClustersCmd();
-      setClusters(clusters.map((c) => ({ id: c.id, name: c.name })));
-    } catch (err) {
-      console.error("Failed to load clusters:", err);
-    }
-  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

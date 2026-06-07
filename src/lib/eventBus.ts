@@ -1,59 +1,58 @@
 import { invoke } from "@tauri-apps/api/core";
 
-export type EventCallback<T = any> = (data: T) => void;
+export type EventCallback<T = unknown> = (data: T) => void;
 
 export interface EventUnsubscribe {
   (): void;
 }
 
 export interface EventBus {
-  on<T = any>(event: string, callback: EventCallback<T>): EventUnsubscribe;
-  off(event: string, callback: EventCallback): void;
-  emit<T = any>(event: string, data?: T): void;
-  once<T = any>(event: string, callback: EventCallback<T>): EventUnsubscribe;
+  on<T = unknown>(event: string, callback: EventCallback<T>): EventUnsubscribe;
+  off<T = unknown>(event: string, callback: EventCallback<T>): void;
+  emit<T = unknown>(event: string, data?: T): void;
+  once<T = unknown>(event: string, callback: EventCallback<T>): EventUnsubscribe;
 }
 
 class SimpleEventBus implements EventBus {
-  private events: Record<string, Set<EventCallback>> = {};
-  private onceEvents: Record<string, Set<EventCallback>> = {};
+  private events: Record<string, Set<EventCallback<unknown>>> = {};
+  private onceEvents: Record<string, Set<EventCallback<unknown>>> = {};
 
-  on<T = any>(event: string, callback: EventCallback<T>): EventUnsubscribe {
+  on<T = unknown>(event: string, callback: EventCallback<T>): EventUnsubscribe {
     if (!this.events[event]) {
       this.events[event] = new Set();
     }
-    this.events[event].add(callback);
-
+    this.events[event].add(callback as EventCallback<unknown>);
     return () => this.off(event, callback);
   }
 
-  off(event: string, callback: EventCallback): void {
+  off<T = unknown>(event: string, callback: EventCallback<T>): void {
     if (this.events[event]) {
-      this.events[event].delete(callback);
+      this.events[event].delete(callback as EventCallback<unknown>);
     }
   }
 
-  emit<T = any>(event: string, data?: T): void {
+  emit<T = unknown>(event: string, data?: T): void {
     const callbacks = this.events[event];
     if (callbacks) {
-      callbacks.forEach((callback) => callback(data as T));
+      callbacks.forEach((callback) => callback(data as unknown));
     }
 
     const onceCallbacks = this.onceEvents[event];
     if (onceCallbacks) {
-      onceCallbacks.forEach((callback) => callback(data as T));
+      onceCallbacks.forEach((callback) => callback(data as unknown));
       delete this.onceEvents[event];
     }
   }
 
-  once<T = any>(event: string, callback: EventCallback<T>): EventUnsubscribe {
+  once<T = unknown>(event: string, callback: EventCallback<T>): EventUnsubscribe {
     if (!this.onceEvents[event]) {
       this.onceEvents[event] = new Set();
     }
-    this.onceEvents[event].add(callback);
+    this.onceEvents[event].add(callback as EventCallback<unknown>);
 
     return () => {
       if (this.onceEvents[event]) {
-        this.onceEvents[event].delete(callback);
+        this.onceEvents[event].delete(callback as EventCallback<unknown>);
       }
     };
   }
@@ -65,7 +64,7 @@ export async function subscribeToK8sEvents(
   clusterId: string,
   namespace: string,
   resourceType: string,
-  callback: EventCallback<any>
+  callback: EventCallback<unknown>
 ): Promise<EventUnsubscribe> {
   try {
     const unsubscribeId = await invoke<string>("subscribe_to_k8s_events", {
@@ -74,7 +73,7 @@ export async function subscribeToK8sEvents(
       resourceType,
     });
 
-    const handler = (data: any) => {
+    const handler = (data: unknown) => {
       callback(data);
     };
 
@@ -92,14 +91,14 @@ export async function subscribeToK8sEvents(
 
 export async function subscribeToAllEvents(
   clusterId: string,
-  callback: EventCallback<any>
+  callback: EventCallback<unknown>
 ): Promise<EventUnsubscribe> {
   try {
     const unsubscribeId = await invoke<string>("subscribe_to_all_k8s_events", {
       clusterId,
     });
 
-    const handler = (data: any) => {
+    const handler = (data: unknown) => {
       callback(data);
     };
 

@@ -1910,6 +1910,44 @@ pub struct HorizontalPodAutoscalerInfo {
     pub age: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StorageClassInfo {
+    pub name: String,
+    pub provisioner: String,
+    pub reclaim_policy: String,
+    pub volume_binding_mode: String,
+    pub allow_volume_expansion: bool,
+    pub age: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NetworkPolicyInfo {
+    pub name: String,
+    pub namespace: String,
+    pub pod_selector: String,
+    pub policy_types: Vec<String>,
+    pub age: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ResourceQuotaInfo {
+    pub name: String,
+    pub namespace: String,
+    pub request_cpu: String,
+    pub request_memory: String,
+    pub limit_cpu: String,
+    pub limit_memory: String,
+    pub age: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LimitRangeInfo {
+    pub name: String,
+    pub namespace: String,
+    pub limit_count: usize,
+    pub age: String,
+}
+
 #[tauri::command]
 pub async fn list_replicasets(
     cluster_id: String,
@@ -3763,6 +3801,437 @@ fn parse_hpas_json(json_str: &str) -> Result<Vec<HorizontalPodAutoscalerInfo>, S
     }
 
     Ok(hpas)
+}
+
+#[tauri::command]
+pub async fn list_storageclasses(
+    cluster_id: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<StorageClassInfo>, String> {
+    let clusters = state.clusters.lock().await;
+    let cluster = clusters
+        .get(&cluster_id)
+        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+
+    let kubeconfig_content = cluster.kubeconfig_content.as_ref();
+    let context = &cluster.context;
+
+    let temp_dir = std::env::temp_dir();
+    let temp_path = temp_dir.join(format!("kubeconfig-{}-storageclasses.yaml", cluster_id));
+    let _cleanup = TempFileCleanup(temp_path.clone());
+
+    std::fs::write(&temp_path, kubeconfig_content)
+        .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
+
+    let kubectl_path = locate_kubectl()?;
+
+    let output = Command::new(kubectl_path)
+        .arg("get")
+        .arg("storageclasses")
+        .arg("-o")
+        .arg("json")
+        .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
+        .env("KUBERNETES_CONTEXT", context)
+        .output()
+        .await
+        .map_err(|e| format!("Failed to execute kubectl: {e}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(stderr.to_string());
+    }
+
+    let output_str = String::from_utf8_lossy(&output.stdout);
+    parse_storageclasses_json(&output_str)
+}
+
+fn parse_storageclasses_json(json_str: &str) -> Result<Vec<StorageClassInfo>, String> {
+    let value: Value = serde_json::from_str(json_str)
+        .map_err(|e| format!("Failed to parse kubectl JSON output: {}", e))?;
+
+    let items = value
+        .get("items")
+        .and_then(|i| i.as_array())
+        .ok_or("Missing 'items' array in kubectl JSON output")?;
+
+    let mut storageclasses = Vec::new();
+    for item in items {
+        let name = item
+            .get("metadata")
+            .and_then(|m| m.get("name"))
+            .and_then(|n| n.as_str())
+            .unwrap_or("unknown")
+            .to_string();
+
+        let provisioner = item
+            .get("provisioner")
+            .and_then(|p| p.as_str())
+            .unwrap_or("unknown")
+            .to_string();
+
+        let reclaim_policy = item
+            .get("reclaimPolicy")
+            .and_then(|r| r.as_str())
+            .unwrap_or("Delete")
+            .to_string();
+
+        let volume_binding_mode = item
+            .get("volumeBindingMode")
+            .and_then(|v| v.as_str())
+            .unwrap_or("Immediate")
+            .to_string();
+
+        let allow_volume_expansion = item
+            .get("allowVolumeExpansion")
+            .and_then(|a| a.as_bool())
+            .unwrap_or(false);
+
+        let age = item
+            .get("metadata")
+            .and_then(|m| m.get("creationTimestamp"))
+            .and_then(|c| c.as_str())
+            .map(parse_creation_timestamp)
+            .unwrap_or("N/A".to_string());
+
+        storageclasses.push(StorageClassInfo {
+            name,
+            provisioner,
+            reclaim_policy,
+            volume_binding_mode,
+            allow_volume_expansion,
+            age,
+        });
+    }
+
+    Ok(storageclasses)
+}
+
+#[tauri::command]
+pub async fn list_networkpolicies(
+    cluster_id: String,
+    namespace: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<NetworkPolicyInfo>, String> {
+    let clusters = state.clusters.lock().await;
+    let cluster = clusters
+        .get(&cluster_id)
+        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+
+    let kubeconfig_content = cluster.kubeconfig_content.as_ref();
+    let context = &cluster.context;
+
+    let temp_dir = std::env::temp_dir();
+    let temp_path = temp_dir.join(format!("kubeconfig-{}-networkpolicies.yaml", cluster_id));
+    let _cleanup = TempFileCleanup(temp_path.clone());
+
+    std::fs::write(&temp_path, kubeconfig_content)
+        .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
+
+    let kubectl_path = locate_kubectl()?;
+
+    let mut kubectl_cmd = Command::new(kubectl_path);
+    kubectl_cmd.arg("get").arg("networkpolicies");
+    if namespace.is_empty() {
+        kubectl_cmd.arg("--all-namespaces");
+    } else {
+        kubectl_cmd.arg("-n").arg(&namespace);
+    }
+    let output = kubectl_cmd
+        .arg("-o")
+        .arg("json")
+        .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
+        .env("KUBERNETES_CONTEXT", context)
+        .output()
+        .await
+        .map_err(|e| format!("Failed to execute kubectl: {e}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(stderr.to_string());
+    }
+
+    let output_str = String::from_utf8_lossy(&output.stdout);
+    parse_networkpolicies_json(&output_str)
+}
+
+fn parse_networkpolicies_json(json_str: &str) -> Result<Vec<NetworkPolicyInfo>, String> {
+    let value: Value = serde_json::from_str(json_str)
+        .map_err(|e| format!("Failed to parse kubectl JSON output: {}", e))?;
+
+    let items = value
+        .get("items")
+        .and_then(|i| i.as_array())
+        .ok_or("Missing 'items' array in kubectl JSON output")?;
+
+    let mut networkpolicies = Vec::new();
+    for item in items {
+        let name = item
+            .get("metadata")
+            .and_then(|m| m.get("name"))
+            .and_then(|n| n.as_str())
+            .unwrap_or("unknown")
+            .to_string();
+
+        let namespace = item
+            .get("metadata")
+            .and_then(|m| m.get("namespace"))
+            .and_then(|n| n.as_str())
+            .unwrap_or("default")
+            .to_string();
+
+        let pod_selector = item
+            .get("spec")
+            .and_then(|s| s.get("podSelector"))
+            .map(|ps| serde_json::to_string(ps).unwrap_or_default())
+            .unwrap_or_default();
+
+        let policy_types = item
+            .get("spec")
+            .and_then(|s| s.get("policyTypes"))
+            .and_then(|pt| pt.as_array())
+            .map(|types| {
+                types
+                    .iter()
+                    .filter_map(|t| t.as_str().map(|s| s.to_string()))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let age = item
+            .get("metadata")
+            .and_then(|m| m.get("creationTimestamp"))
+            .and_then(|c| c.as_str())
+            .map(parse_creation_timestamp)
+            .unwrap_or("N/A".to_string());
+
+        networkpolicies.push(NetworkPolicyInfo {
+            name,
+            namespace,
+            pod_selector,
+            policy_types,
+            age,
+        });
+    }
+
+    Ok(networkpolicies)
+}
+
+#[tauri::command]
+pub async fn list_resourcequotas(
+    cluster_id: String,
+    namespace: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<ResourceQuotaInfo>, String> {
+    let clusters = state.clusters.lock().await;
+    let cluster = clusters
+        .get(&cluster_id)
+        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+
+    let kubeconfig_content = cluster.kubeconfig_content.as_ref();
+    let context = &cluster.context;
+
+    let temp_dir = std::env::temp_dir();
+    let temp_path = temp_dir.join(format!("kubeconfig-{}-resourcequotas.yaml", cluster_id));
+    let _cleanup = TempFileCleanup(temp_path.clone());
+
+    std::fs::write(&temp_path, kubeconfig_content)
+        .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
+
+    let kubectl_path = locate_kubectl()?;
+
+    let mut kubectl_cmd = Command::new(kubectl_path);
+    kubectl_cmd.arg("get").arg("resourcequotas");
+    if namespace.is_empty() {
+        kubectl_cmd.arg("--all-namespaces");
+    } else {
+        kubectl_cmd.arg("-n").arg(&namespace);
+    }
+    let output = kubectl_cmd
+        .arg("-o")
+        .arg("json")
+        .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
+        .env("KUBERNETES_CONTEXT", context)
+        .output()
+        .await
+        .map_err(|e| format!("Failed to execute kubectl: {e}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(stderr.to_string());
+    }
+
+    let output_str = String::from_utf8_lossy(&output.stdout);
+    parse_resourcequotas_json(&output_str)
+}
+
+fn parse_resourcequotas_json(json_str: &str) -> Result<Vec<ResourceQuotaInfo>, String> {
+    let value: Value = serde_json::from_str(json_str)
+        .map_err(|e| format!("Failed to parse kubectl JSON output: {}", e))?;
+
+    let items = value
+        .get("items")
+        .and_then(|i| i.as_array())
+        .ok_or("Missing 'items' array in kubectl JSON output")?;
+
+    let mut resourcequotas = Vec::new();
+    for item in items {
+        let name = item
+            .get("metadata")
+            .and_then(|m| m.get("name"))
+            .and_then(|n| n.as_str())
+            .unwrap_or("unknown")
+            .to_string();
+
+        let namespace = item
+            .get("metadata")
+            .and_then(|m| m.get("namespace"))
+            .and_then(|n| n.as_str())
+            .unwrap_or("default")
+            .to_string();
+
+        let hard = item.get("status").and_then(|s| s.get("hard"));
+
+        let request_cpu = hard
+            .and_then(|h| h.get("requests.cpu"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+
+        let request_memory = hard
+            .and_then(|h| h.get("requests.memory"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+
+        let limit_cpu = hard
+            .and_then(|h| h.get("limits.cpu"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+
+        let limit_memory = hard
+            .and_then(|h| h.get("limits.memory"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+
+        let age = item
+            .get("metadata")
+            .and_then(|m| m.get("creationTimestamp"))
+            .and_then(|c| c.as_str())
+            .map(parse_creation_timestamp)
+            .unwrap_or("N/A".to_string());
+
+        resourcequotas.push(ResourceQuotaInfo {
+            name,
+            namespace,
+            request_cpu,
+            request_memory,
+            limit_cpu,
+            limit_memory,
+            age,
+        });
+    }
+
+    Ok(resourcequotas)
+}
+
+#[tauri::command]
+pub async fn list_limitranges(
+    cluster_id: String,
+    namespace: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<LimitRangeInfo>, String> {
+    let clusters = state.clusters.lock().await;
+    let cluster = clusters
+        .get(&cluster_id)
+        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+
+    let kubeconfig_content = cluster.kubeconfig_content.as_ref();
+    let context = &cluster.context;
+
+    let temp_dir = std::env::temp_dir();
+    let temp_path = temp_dir.join(format!("kubeconfig-{}-limitranges.yaml", cluster_id));
+    let _cleanup = TempFileCleanup(temp_path.clone());
+
+    std::fs::write(&temp_path, kubeconfig_content)
+        .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
+
+    let kubectl_path = locate_kubectl()?;
+
+    let mut kubectl_cmd = Command::new(kubectl_path);
+    kubectl_cmd.arg("get").arg("limitranges");
+    if namespace.is_empty() {
+        kubectl_cmd.arg("--all-namespaces");
+    } else {
+        kubectl_cmd.arg("-n").arg(&namespace);
+    }
+    let output = kubectl_cmd
+        .arg("-o")
+        .arg("json")
+        .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
+        .env("KUBERNETES_CONTEXT", context)
+        .output()
+        .await
+        .map_err(|e| format!("Failed to execute kubectl: {e}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(stderr.to_string());
+    }
+
+    let output_str = String::from_utf8_lossy(&output.stdout);
+    parse_limitranges_json(&output_str)
+}
+
+fn parse_limitranges_json(json_str: &str) -> Result<Vec<LimitRangeInfo>, String> {
+    let value: Value = serde_json::from_str(json_str)
+        .map_err(|e| format!("Failed to parse kubectl JSON output: {}", e))?;
+
+    let items = value
+        .get("items")
+        .and_then(|i| i.as_array())
+        .ok_or("Missing 'items' array in kubectl JSON output")?;
+
+    let mut limitranges = Vec::new();
+    for item in items {
+        let name = item
+            .get("metadata")
+            .and_then(|m| m.get("name"))
+            .and_then(|n| n.as_str())
+            .unwrap_or("unknown")
+            .to_string();
+
+        let namespace = item
+            .get("metadata")
+            .and_then(|m| m.get("namespace"))
+            .and_then(|n| n.as_str())
+            .unwrap_or("default")
+            .to_string();
+
+        let limit_count = item
+            .get("spec")
+            .and_then(|s| s.get("limits"))
+            .and_then(|l| l.as_array())
+            .map(|l| l.len())
+            .unwrap_or(0);
+
+        let age = item
+            .get("metadata")
+            .and_then(|m| m.get("creationTimestamp"))
+            .and_then(|c| c.as_str())
+            .map(parse_creation_timestamp)
+            .unwrap_or("N/A".to_string());
+
+        limitranges.push(LimitRangeInfo {
+            name,
+            namespace,
+            limit_count,
+            age,
+        });
+    }
+
+    Ok(limitranges)
 }
 
 #[tauri::command]
