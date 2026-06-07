@@ -130,4 +130,19 @@ describe("ClusterDetails", () => {
       expect(screen.getByTestId("cluster-no-data")).toBeInTheDocument();
     });
   });
+
+  it("shows context name in header instead of raw GUID", async () => {
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "list_kubeconfigs") return Promise.resolve(mockKubeconfigs);
+      if (cmd === "list_nodes") return Promise.resolve(mockNodes);
+      return Promise.resolve([]);
+    });
+
+    render(<ClusterDetails clusterId="cluster-1" />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("cluster-context-header")).toHaveTextContent("prod-context");
+      expect(screen.queryByText("cluster-1")).not.toBeInTheDocument();
+    });
+  });
 });

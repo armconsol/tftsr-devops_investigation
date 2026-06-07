@@ -10,6 +10,7 @@ import type { NodeInfo, PodInfo, DeploymentInfo, NamespaceInfo } from "@/lib/tau
 
 interface ClusterOverviewProps {
   clusterId: string;
+  clusterName?: string;
 }
 
 interface SummaryCardProps {
@@ -42,7 +43,7 @@ function nodeIsReady(node: NodeInfo): boolean {
   return node.status === "Ready";
 }
 
-export function ClusterOverview({ clusterId }: ClusterOverviewProps) {
+export function ClusterOverview({ clusterId, clusterName }: ClusterOverviewProps) {
   const [nodes, setNodes] = useState<NodeInfo[]>([]);
   const [pods, setPods] = useState<PodInfo[]>([]);
   const [deployments, setDeployments] = useState<DeploymentInfo[]>([]);
@@ -116,7 +117,9 @@ export function ClusterOverview({ clusterId }: ClusterOverviewProps) {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-semibold">Cluster Overview</h2>
-          <p className="text-muted-foreground text-sm mt-0.5">Cluster ID: {clusterId}</p>
+          <p className="text-muted-foreground text-sm mt-0.5" data-testid="cluster-name-header">
+            {clusterName ?? clusterId}
+          </p>
         </div>
         <button
           onClick={() => void loadData()}

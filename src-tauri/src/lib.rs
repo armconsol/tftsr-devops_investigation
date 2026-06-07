@@ -179,6 +179,7 @@ pub fn run() {
             commands::shell::check_kubectl_installed,
             // Kubernetes Management
             commands::kube::add_cluster,
+            commands::kube::connect_cluster_from_kubeconfig,
             commands::kube::remove_cluster,
             commands::kube::list_clusters,
             commands::kube::start_port_forward,

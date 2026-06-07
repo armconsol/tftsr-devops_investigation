@@ -138,4 +138,33 @@ describe("Kubernetes Management Commands", () => {
       expect(result[0].pod).toBe("nginx-abc123");
     });
   });
+
+  describe("connectClusterFromKubeconfigCmd", () => {
+    it("should call invoke with kubeconfig id", async () => {
+      (invoke as MockedFunction).mockResolvedValue(undefined);
+
+      await tauriCommands.connectClusterFromKubeconfigCmd("kubeconfig-uuid-123");
+
+      expect(invoke).toHaveBeenCalledWith("connect_cluster_from_kubeconfig", {
+        id: "kubeconfig-uuid-123",
+      });
+    });
+
+    it("should resolve with void on success", async () => {
+      (invoke as MockedFunction).mockResolvedValue(undefined);
+
+      const result = await tauriCommands.connectClusterFromKubeconfigCmd("some-id");
+      expect(result).toBeUndefined();
+    });
+
+    it("should propagate errors from invoke", async () => {
+      (invoke as MockedFunction).mockRejectedValue(
+        new Error("Kubeconfig not found")
+      );
+
+      await expect(
+        tauriCommands.connectClusterFromKubeconfigCmd("bad-id")
+      ).rejects.toThrow("Kubeconfig not found");
+    });
+  });
 });

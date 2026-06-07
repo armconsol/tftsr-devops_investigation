@@ -899,6 +899,9 @@ export const addClusterCmd = (id: string, name: string, kubeconfigContent: strin
 export const removeClusterCmd = (id: string) =>
   invoke<void>("remove_cluster", { id });
 
+export const connectClusterFromKubeconfigCmd = (id: string) =>
+  invoke<void>("connect_cluster_from_kubeconfig", { id });
+
 export const listClustersCmd = () =>
   invoke<ClusterInfo[]>("list_clusters");
 

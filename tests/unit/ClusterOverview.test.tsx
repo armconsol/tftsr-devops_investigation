@@ -166,4 +166,26 @@ describe("ClusterOverview", () => {
       expect(screen.getByTestId("node-ready-status")).toHaveTextContent("Ready: 2/3");
     });
   });
+
+  it("displays clusterName prop in header instead of raw GUID", async () => {
+    mockInvoke.mockImplementation(() => Promise.resolve([]));
+
+    render(<ClusterOverview clusterId="019e9ff0-b6a4-78e1-a566-7a0c05e32577" clusterName="devops1-mgmt" />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("cluster-name-header")).toHaveTextContent("devops1-mgmt");
+      expect(screen.queryByText("019e9ff0-b6a4-78e1-a566-7a0c05e32577")).not.toBeInTheDocument();
+    });
+  });
+
+  it("falls back gracefully when clusterName prop is not provided", async () => {
+    mockInvoke.mockImplementation(() => Promise.resolve([]));
+
+    render(<ClusterOverview clusterId="cluster-1" />);
+
+    await waitFor(() => {
+      const header = screen.getByTestId("cluster-name-header");
+      expect(header).toBeInTheDocument();
+    });
+  });
 });
