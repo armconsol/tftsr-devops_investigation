@@ -86,11 +86,15 @@ impl PortForwardSession {
         let child_for_task = child_arc.clone();
         let temp_path_clone = self.temp_kubeconfig_path.clone();
         let join_handle = tokio::spawn(async move {
-            // Take the child from the Arc
-            let mut child = child_for_task.lock().await.take().expect("Child not set");
+            // Take the child from the Arc. If None, stop_async/close already took it and will
+            // handle cleanup — nothing left to do here.
+            let child_opt = child_for_task.lock().await.take();
+            let mut child = match child_opt {
+                Some(c) => c,
+                None => return,
+            };
 
             // Wait for the child process to complete
-            // This is safe because we're in an async context
             let result = child.wait().await;
 
             // Clean up temp kubeconfig file after child completes
@@ -146,6 +150,12 @@ impl PortForwardSession {
                 let _ = child.kill().await;
             }
         }
+
+        // Clean up the temp kubeconfig file. Taking the child above causes the background
+        // task to exit early without reaching its own cleanup branch.
+        if let Some(ref path) = self.temp_kubeconfig_path {
+            let _ = std::fs::remove_file(path);
+        }
     }
 
     pub async fn close(&mut self) {
@@ -158,8 +168,11 @@ impl PortForwardSession {
             }
         }
 
-        // Temp file cleanup is now handled by the background task after child completes
-        // We don't need to clean up here since the background task will do it
+        // Clean up the temp kubeconfig file. Taking the child above causes the background
+        // task to exit early without reaching its own cleanup branch.
+        if let Some(ref path) = self.temp_kubeconfig_path {
+            let _ = std::fs::remove_file(path);
+        }
     }
 
     pub fn set_error(&mut self, error: String) {
@@ -180,18 +193,18 @@ impl PortForwardSession {
 
 impl Drop for PortForwardSession {
     fn drop(&mut self) {
-        // Only kill if not already stopped
         if self.is_stopped.load(Ordering::SeqCst) {
             return;
         }
 
-        // Kill the child process if it exists
-        // Note: This is called from sync context, so we can't await
-        // The Child will be dropped and cleaned up by the background task
+        // Drop the handle — detaches the background task. Called from sync context so
+        // we cannot await kill(); the Child inside the task will be dropped by the OS.
         self.child_wait_handle = None;
 
-        // Temp file cleanup is now handled by the background task after child completes
-        // We don't need to clean up here since the background task will do it
+        // Best-effort temp file cleanup on unexpected drop (e.g., panic paths).
+        if let Some(ref path) = self.temp_kubeconfig_path {
+            let _ = std::fs::remove_file(path);
+        }
     }
 }
 
