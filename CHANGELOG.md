@@ -66,7 +66,6 @@ CI, chore, and build changes are excluded.
 - Pin plugin-stronghold npm version to match Rust crate (2.3.1)
 
 ### Features
-- Full copy from apollo_nxt-trcaa with complete sanitization
 - **kube**: Add Kubernetes management support
 
 ## [0.3.12] — 2026-06-05
