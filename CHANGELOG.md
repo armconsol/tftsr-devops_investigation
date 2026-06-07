@@ -31,9 +31,12 @@ CI, chore, and build changes are excluded.
 - **kube**: Resolve automated PR review blockers and warnings
 - **ci**: Replace JS-based Renovate action with direct container invocation
 - Use public Gitea URL in test workflow
+- **kubernetes**: Address PR #76 review findings
+- **kubernetes**: Remove redundant TS cast and fix cargo fmt failures
 
 ### Documentation
 - **kubernetes**: Add comment about dynamic port allocation limitation
+- Update documentation for Kubernetes Management UI
 
 ### Features
 - **kube**: Add Kubernetes management GUI components
@@ -45,15 +48,9 @@ CI, chore, and build changes are excluded.
 - Implement full Lens-like Kubernetes UI with resource discovery and management
 - Implement additional Kubernetes resource discovery and management commands
 - Add Kubernetes Management Implementation Plan
-- **k8s**: Implement Phase 7 - Real-time updates with event bus and watchers
-- **k8s**: Add 15 new resource list components (Secret, ReplicaSet, Job, CronJob, Ingress, PVC, PV, ServiceAccount, Role, ClusterRole, RoleBinding, ClusterRoleBinding, HPA, Node, Event, ConfigMap)
-- **k8s**: Add advanced components (Terminal, YamlEditor, MetricsChart, SearchBar, ContextSwitcher, ApplicationView)
-- **k8s**: Add detail views for all major resource types
-- **k8s**: Add UX components (Hotbar, CommandPalette, Toast, LoadingSpinner)
-- **k8s**: Add resource management dialogs (CreateResourceModal, EditResourceModal)
-- **k8s**: Add RBAC management (RbacViewer, RbacEditor)
-- **k8s**: Add event bus for frontend event handling
-- **k8s**: Add watcher module for Kubernetes API resource watching
+- **kubernetes**: Implement Phase 1 & 2: resource discovery UIs and advanced features
+- **kubernetes**: Implement Phase 3 - detail views and cluster management
+- **kubernetes**: Implement Phase 7 - real-time updates
 
 ## [1.1.0] — 2026-06-06
 
