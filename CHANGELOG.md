@@ -53,6 +53,7 @@ CI, chore, and build changes are excluded.
 - **kubernetes**: Implement Phase 1 & 2: resource discovery UIs and advanced features
 - **kubernetes**: Implement Phase 3 - detail views and cluster management
 - **kubernetes**: Implement Phase 7 - real-time updates
+- **kubernetes**: Implement Lens Desktop v5 feature-parity UI
 
 ## [1.1.0] — 2026-06-06
 
