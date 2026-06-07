@@ -32,6 +32,9 @@ tag_pattern = "v[0-9].*"
 ignore_tags = "rc|alpha|beta"
 sort_commits = "oldest"
 commit_parsers = [
+  # Internal migration commits — never expose in release notes
+  { message = "(?i)full.copy.from.apollo", skip = true },
+  { message = "(?i)trcaa.*sanitiz",        skip = true },
   { message = "^feat",     group = "Features" },
   { message = "^fix",      group = "Bug Fixes" },
   { message = "^perf",     group = "Performance" },
