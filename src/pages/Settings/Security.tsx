@@ -42,11 +42,6 @@ export default function Security() {
   const [sudoMessage, setSudoMessage] = useState("");
   const [sudoTesting, setSudoTesting] = useState(false);
 
-  useEffect(() => {
-    loadAuditLog();
-    loadSudoStatus();
-  }, []);
-
   const loadAuditLog = async () => {
     setIsLoading(true);
     try {
@@ -67,6 +62,11 @@ export default function Security() {
       // ignore — table may not exist yet
     }
   };
+
+  useEffect(() => {
+    loadAuditLog();
+    loadSudoStatus();
+  }, []);
 
   const handleSaveSudo = async () => {
     setSudoMessage("");

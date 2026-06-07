@@ -45,3 +45,7 @@ export { CreateResourceModal } from "./CreateResourceModal";
 export { EditResourceModal } from "./EditResourceModal";
 export { RbacViewer } from "./RbacViewer";
 export { RbacEditor } from "./RbacEditor";
+export { StorageClassList } from "./StorageClassList";
+export { NetworkPolicyList } from "./NetworkPolicyList";
+export { ResourceQuotaList } from "./ResourceQuotaList";
+export { LimitRangeList } from "./LimitRangeList";

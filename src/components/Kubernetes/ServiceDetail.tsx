@@ -6,22 +6,23 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Button } from "@/components/ui";
 import { X } from "lucide-react";
 import { YamlEditor } from "./YamlEditor";
+import type { ServiceInfo } from "@/lib/tauriCommands";
 
 interface ServiceDetailProps {
-  serviceName: string;
+  clusterId: string;
   namespace: string;
-  _clusterId: string;
-  onClose: () => void;
+  service: ServiceInfo;
+  onClose?: () => void;
 }
 
-export function ServiceDetail({ serviceName, namespace, _clusterId, onClose }: ServiceDetailProps) {
+export function ServiceDetail({ namespace, service, onClose }: ServiceDetailProps) {
   const [activeTab, setActiveTab] = React.useState("overview");
 
   return (
     <div className="h-full flex flex-col">
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
-          <h2 className="text-xl font-semibold">Service: {serviceName}</h2>
+          <h2 className="text-xl font-semibold">Service: {service.name}</h2>
           <Badge variant="outline">{namespace}</Badge>
         </div>
         <Button variant="ghost" size="sm" onClick={onClose}>
@@ -30,11 +31,9 @@ export function ServiceDetail({ serviceName, namespace, _clusterId, onClose }: S
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid grid-cols-4 mb-4">
+        <TabsList className="grid grid-cols-2 mb-4">
           <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="endpoints">Endpoints</TabsTrigger>
           <TabsTrigger value="yaml">YAML</TabsTrigger>
-          <TabsTrigger value="events">Events</TabsTrigger>
         </TabsList>
 
         <div className="flex-1 overflow-hidden">
@@ -47,108 +46,90 @@ export function ServiceDetail({ serviceName, namespace, _clusterId, onClose }: S
                 <CardContent className="space-y-2">
                   <div className="flex items-center justify-between">
                     <span className="text-sm text-muted-foreground">Name</span>
-                    <span className="font-mono">{serviceName}</span>
+                    <span className="font-mono">{service.name}</span>
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="text-sm text-muted-foreground">Namespace</span>
-                    <span className="font-mono">{namespace}</span>
+                    <span className="font-mono">{service.namespace}</span>
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="text-sm text-muted-foreground">Type</span>
-                    <Badge variant="secondary">ClusterIP</Badge>
+                    <Badge variant="secondary">{service.type}</Badge>
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="text-sm text-muted-foreground">Cluster IP</span>
-                    <span className="font-mono">10.96.0.1</span>
+                    <span className="font-mono">{service.cluster_ip}</span>
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="text-sm text-muted-foreground">External IP</span>
-                    <span className="text-muted-foreground">none</span>
+                    <span className="font-mono text-muted-foreground">
+                      {service.external_ip ?? "none"}
+                    </span>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="text-sm text-muted-foreground">Port</span>
-                    <span>80/TCP</span>
+                    <span className="text-sm text-muted-foreground">Age</span>
+                    <span className="text-sm">{service.age}</span>
                   </div>
                 </CardContent>
               </Card>
 
               <Card>
                 <CardHeader>
-                  <CardTitle>Selector</CardTitle>
+                  <CardTitle>Ports</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="flex flex-wrap gap-2">
-                    <Badge variant="secondary">app=web</Badge>
-                  </div>
+                  {service.ports.length === 0 ? (
+                    <span className="text-sm text-muted-foreground">No ports defined.</span>
+                  ) : (
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Name</TableHead>
+                          <TableHead>Port</TableHead>
+                          <TableHead>Protocol</TableHead>
+                          <TableHead>Target Port</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {service.ports.map((p) => (
+                          <TableRow key={`${p.port}-${p.protocol}`}>
+                            <TableCell>{p.name ?? "—"}</TableCell>
+                            <TableCell>{p.port}</TableCell>
+                            <TableCell>{p.protocol}</TableCell>
+                            <TableCell>{p.target_port ?? "—"}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  )}
                 </CardContent>
               </Card>
 
-              <Card className="lg:col-span-2">
-                <CardHeader>
-                  <CardTitle>Labels</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex flex-wrap gap-2">
-                    <Badge variant="secondary">app=web</Badge>
-                    <Badge variant="secondary">tier=frontend</Badge>
-                  </div>
-                </CardContent>
-              </Card>
+              {Object.keys(service.selector).length > 0 && (
+                <Card className="lg:col-span-2">
+                  <CardHeader>
+                    <CardTitle>Selector</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="flex flex-wrap gap-2">
+                      {Object.entries(service.selector).map(([k, v]) => (
+                        <Badge key={k} variant="secondary">
+                          {k}={v}
+                        </Badge>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
             </div>
           </TabsContent>
 
-          <TabsContent value="endpoints" className="h-full overflow-y-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>IP</TableHead>
-                  <TableHead>Port</TableHead>
-                  <TableHead>Node</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                <TableRow>
-                  <TableCell>10.0.0.1</TableCell>
-                  <TableCell>80</TableCell>
-                  <TableCell>node-1</TableCell>
-                </TableRow>
-                <TableRow>
-                  <TableCell>10.0.0.2</TableCell>
-                  <TableCell>80</TableCell>
-                  <TableCell>node-2</TableCell>
-                </TableRow>
-                <TableRow>
-                  <TableCell>10.0.0.3</TableCell>
-                  <TableCell>80</TableCell>
-                  <TableCell>node-3</TableCell>
-                </TableRow>
-              </TableBody>
-            </Table>
-          </TabsContent>
-
           <TabsContent value="yaml" className="h-full">
-            <YamlEditor onChange={() => {}} />
-          </TabsContent>
-
-          <TabsContent value="events" className="h-full overflow-y-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Time</TableHead>
-                  <TableHead>Reason</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Message</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                <TableRow>
-                  <TableCell>2 hours ago</TableCell>
-                  <TableCell>SettingClusterIP</TableCell>
-                  <TableCell>Normal</TableCell>
-                  <TableCell>Assigned cluster IP 10.96.0.1</TableCell>
-                </TableRow>
-              </TableBody>
-            </Table>
+            <YamlEditor
+              readOnly
+              showControls={false}
+              content={JSON.stringify(service, null, 2)}
+            />
           </TabsContent>
         </div>
       </Tabs>

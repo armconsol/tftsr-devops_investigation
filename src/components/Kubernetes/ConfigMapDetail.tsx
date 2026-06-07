@@ -5,22 +5,23 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui";
 import { Button } from "@/components/ui";
 import { X } from "lucide-react";
 import { YamlEditor } from "./YamlEditor";
+import type { ConfigMapInfo } from "@/lib/tauriCommands";
 
 interface ConfigMapDetailProps {
-  configMapName: string;
+  clusterId: string;
   namespace: string;
-  _clusterId: string;
-  onClose: () => void;
+  configMap: ConfigMapInfo;
+  onClose?: () => void;
 }
 
-export function ConfigMapDetail({ configMapName, namespace, _clusterId, onClose }: ConfigMapDetailProps) {
+export function ConfigMapDetail({ namespace, configMap, onClose }: ConfigMapDetailProps) {
   const [activeTab, setActiveTab] = React.useState("data");
 
   return (
     <div className="h-full flex flex-col">
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
-          <h2 className="text-xl font-semibold">ConfigMap: {configMapName}</h2>
+          <h2 className="text-xl font-semibold">ConfigMap: {configMap.name}</h2>
           <Badge variant="outline">{namespace}</Badge>
         </div>
         <Button variant="ghost" size="sm" onClick={onClose}>
@@ -31,38 +32,27 @@ export function ConfigMapDetail({ configMapName, namespace, _clusterId, onClose 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList className="grid grid-cols-3 mb-4">
           <TabsTrigger value="data">Data</TabsTrigger>
-          <TabsTrigger value="yaml">YAML</TabsTrigger>
           <TabsTrigger value="metadata">Metadata</TabsTrigger>
+          <TabsTrigger value="yaml">YAML</TabsTrigger>
         </TabsList>
 
         <div className="flex-1 overflow-hidden">
           <TabsContent value="data" className="h-full overflow-y-auto">
-            <Card className="h-full flex flex-col">
+            <Card>
               <CardHeader>
                 <CardTitle>ConfigMap Data</CardTitle>
               </CardHeader>
-              <CardContent className="flex-1 bg-slate-900 rounded-md p-4 overflow-auto font-mono text-sm">
-                <div className="space-y-2">
-                  <div>
-                    <span className="text-blue-400">config.json:</span>
-                    <pre className="mt-1 text-green-400">{`{
-  "debug": true,
-  "logLevel": "info"
-}`}</pre>
-                  </div>
-                  <div>
-                    <span className="text-blue-400">app.properties:</span>
-                    <pre className="mt-1 text-green-400">{`app.name=MyApp
-app.version=1.0.0
-app.port=8080`}</pre>
-                  </div>
+              <CardContent>
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <span>Keys:</span>
+                  <Badge variant="secondary">{configMap.data_keys}</Badge>
                 </div>
+                <p className="mt-3 text-sm text-muted-foreground">
+                  The backend returns a key count only. Full data values are available via{" "}
+                  <code className="font-mono text-xs">kubectl get configmap</code>.
+                </p>
               </CardContent>
             </Card>
-          </TabsContent>
-
-          <TabsContent value="yaml" className="h-full">
-            <YamlEditor onChange={() => {}} />
           </TabsContent>
 
           <TabsContent value="metadata" className="h-full overflow-y-auto">
@@ -74,35 +64,31 @@ app.port=8080`}</pre>
                 <CardContent className="space-y-2">
                   <div className="flex items-center justify-between">
                     <span className="text-sm text-muted-foreground">Name</span>
-                    <span className="font-mono">{configMapName}</span>
+                    <span className="font-mono">{configMap.name}</span>
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="text-sm text-muted-foreground">Namespace</span>
-                    <span className="font-mono">{namespace}</span>
+                    <span className="font-mono">{configMap.namespace}</span>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="text-sm text-muted-foreground">UID</span>
-                    <span className="font-mono text-xs">abc123-def456</span>
+                    <span className="text-sm text-muted-foreground">Data Keys</span>
+                    <span>{configMap.data_keys}</span>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="text-sm text-muted-foreground">Created</span>
-                    <span className="text-sm">2 hours ago</span>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle>Labels</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex flex-wrap gap-2">
-                    <Badge variant="secondary">app=web</Badge>
-                    <Badge variant="secondary">tier=frontend</Badge>
+                    <span className="text-sm text-muted-foreground">Age</span>
+                    <span className="text-sm">{configMap.age}</span>
                   </div>
                 </CardContent>
               </Card>
             </div>
+          </TabsContent>
+
+          <TabsContent value="yaml" className="h-full">
+            <YamlEditor
+              readOnly
+              showControls={false}
+              content={JSON.stringify(configMap, null, 2)}
+            />
           </TabsContent>
         </div>
       </Tabs>

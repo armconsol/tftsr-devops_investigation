@@ -212,6 +212,10 @@ pub fn run() {
             commands::kube::list_rolebindings,
             commands::kube::list_clusterrolebindings,
             commands::kube::list_horizontalpodautoscalers,
+            commands::kube::list_storageclasses,
+            commands::kube::list_networkpolicies,
+            commands::kube::list_resourcequotas,
+            commands::kube::list_limitranges,
             // Kubernetes Resource Management
             commands::kube::get_pod_logs,
             commands::kube::scale_deployment,
