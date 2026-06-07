@@ -85,7 +85,7 @@ impl PortForwardSession {
         let join_handle = tokio::spawn(async move {
             // Take the child from the Arc
             let mut child = child_for_task.lock().await.take().expect("Child not set");
-            
+
             // Wait for the child process to complete
             // This is safe because we're in an async context
             let result = child.wait().await;

@@ -1,8 +1,8 @@
 use tauri::State;
 
 use crate::db::models::{
-    AiConversation, AiMessage, ImageAttachment, Issue, IssueDetail, IssueFilter, IssueSummary,
-    IssueUpdate, LogFile, ResolutionStep, TimelineEvent,
+    AiConversation, AiMessage, Cluster, ImageAttachment, Issue, IssueDetail, IssueFilter,
+    IssueSummary, IssueUpdate, LogFile, PortForward, ResolutionStep, TimelineEvent,
 };
 use crate::state::AppState;
 
@@ -804,4 +804,94 @@ mod tests {
         assert_eq!(results.len(), 1);
         assert_eq!(results[0], "issue-1");
     }
+}
+
+// ─── Kubernetes Cluster CRUD ────────────────────────────────────────────────
+
+use rusqlite::ffi;
+
+#[tauri::command]
+pub async fn load_clusters(state: State<'_, AppState>) -> Result<Vec<Cluster>, String> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+
+    let mut stmt = db
+        .prepare(
+            "SELECT id, name, context, server_url, kubeconfig_id, created_at, updated_at \
+             FROM clusters ORDER BY name ASC",
+        )
+        .map_err(|e| e.to_string())?;
+
+    let clusters: Vec<Cluster> = stmt
+        .query_map([], |row| {
+            Ok(Cluster {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                context: row.get(2)?,
+                server_url: row.get(3)?,
+                kubeconfig_id: row.get(4)?,
+                created_at: row.get(5)?,
+                updated_at: row.get(6)?,
+            })
+        })
+        .map_err(|e| e.to_string())?
+        .filter_map(|r| r.ok())
+        .collect();
+
+    Ok(clusters)
+}
+
+// ─── Port Forward CRUD ──────────────────────────────────────────────────────
+
+#[tauri::command]
+pub async fn load_port_forwards(state: State<'_, AppState>) -> Result<Vec<PortForward>, String> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+
+    let mut stmt = db
+        .prepare(
+            "SELECT id, cluster_id, namespace, pod, container, ports, local_ports, status, error_message, created_at, updated_at \
+             FROM port_forwards ORDER BY created_at ASC",
+        )
+        .map_err(|e| e.to_string())?;
+
+    let port_forwards: Vec<PortForward> = stmt
+        .query_map([], |row| {
+            let ports_str: String = row.get(5)?;
+            let local_ports_str: String = row.get(6)?;
+            let ports: Vec<u16> = match serde_json::from_str(&ports_str) {
+                Ok(v) => v,
+                Err(e) => {
+                    return Err(rusqlite::Error::SqliteFailure(
+                        ffi::Error::new(ffi::SQLITE_ERROR),
+                        Some(format!("Failed to parse ports: {e}")),
+                    ))
+                }
+            };
+            let local_ports: Vec<u16> = match serde_json::from_str(&local_ports_str) {
+                Ok(v) => v,
+                Err(e) => {
+                    return Err(rusqlite::Error::SqliteFailure(
+                        ffi::Error::new(ffi::SQLITE_ERROR),
+                        Some(format!("Failed to parse local_ports: {e}")),
+                    ))
+                }
+            };
+            Ok(PortForward {
+                id: row.get(0)?,
+                cluster_id: row.get(1)?,
+                namespace: row.get(2)?,
+                pod: row.get(3)?,
+                container: row.get(4)?,
+                ports,
+                local_ports,
+                status: row.get(7)?,
+                error_message: row.get(8)?,
+                created_at: row.get(9)?,
+                updated_at: row.get(10)?,
+            })
+        })
+        .map_err(|e| e.to_string())?
+        .filter_map(|r| r.ok())
+        .collect();
+
+    Ok(port_forwards)
 }

@@ -95,6 +95,8 @@ pub fn run() {
             commands::db::update_five_why,
             commands::db::add_timeline_event,
             commands::db::get_timeline_events,
+            commands::db::load_clusters,
+            commands::db::load_port_forwards,
             // Analysis / PII
             commands::analysis::upload_log_file,
             commands::analysis::upload_log_file_by_content,

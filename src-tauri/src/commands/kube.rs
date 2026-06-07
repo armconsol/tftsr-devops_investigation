@@ -148,13 +148,20 @@ fn extract_server_url(content: &str) -> Result<String, String> {
 
 #[tauri::command]
 pub async fn remove_cluster(id: String, state: State<'_, AppState>) -> Result<(), String> {
+    // Delete cluster from database (cascade will delete port_forwards)
+    {
+        let db = state.db.lock().map_err(|e| e.to_string())?;
+        db.execute("DELETE FROM clusters WHERE id = ?1", [&id])
+            .map_err(|e| format!("Failed to delete cluster: {e}"))?;
+    }
+
     let mut clusters = state.clusters.lock().await;
 
     if clusters.remove(&id).is_none() {
         return Err(format!("Cluster {id} not found"));
     }
 
-    // Cascade delete: remove all port forwards for this cluster
+    // Cascade delete: remove all port forwards for this cluster from memory
     let mut port_forwards = state.port_forwards.lock().await;
     let session_ids_to_remove: Vec<String> = port_forwards
         .iter()
@@ -163,7 +170,9 @@ pub async fn remove_cluster(id: String, state: State<'_, AppState>) -> Result<()
         .collect();
 
     for session_id in session_ids_to_remove {
-        port_forwards.remove(&session_id);
+        if let Some(mut session) = port_forwards.remove(&session_id) {
+            session.close().await;
+        }
     }
 
     Ok(())
@@ -202,7 +211,7 @@ pub async fn test_cluster_connection(
     // Write kubeconfig to temp file and ensure cleanup even on panic
     let temp_dir = std::env::temp_dir();
     let temp_path = temp_dir.join(format!("kubeconfig-{}.yaml", cluster_id));
-    
+
     // Create cleanup struct BEFORE writing - ensures cleanup happens even on panic
     struct TempFileCleanup(std::path::PathBuf);
     impl Drop for TempFileCleanup {
@@ -258,7 +267,7 @@ pub async fn discover_pods(
     // Write kubeconfig to temp file and ensure cleanup even on panic
     let temp_dir = std::env::temp_dir();
     let temp_path = temp_dir.join(format!("kubeconfig-{}-pods.yaml", cluster_id));
-    
+
     // Create cleanup struct BEFORE writing - ensures cleanup happens even on panic
     struct TempFileCleanup(std::path::PathBuf);
     impl Drop for TempFileCleanup {
@@ -475,7 +484,7 @@ pub async fn start_port_forward(
     // Write kubeconfig to temp file and ensure cleanup even on panic
     let temp_dir = std::env::temp_dir();
     let temp_path = temp_dir.join(format!("kubeconfig-{}.yaml", request.cluster_id));
-    
+
     // Create cleanup struct BEFORE writing - ensures cleanup happens even on panic
     struct TempFileCleanup(std::path::PathBuf);
     impl Drop for TempFileCleanup {
@@ -591,6 +600,13 @@ pub async fn list_port_forwards(
 
 #[tauri::command]
 pub async fn delete_port_forward(id: String, state: State<'_, AppState>) -> Result<(), String> {
+    // Delete from database
+    {
+        let db = state.db.lock().map_err(|e| e.to_string())?;
+        db.execute("DELETE FROM port_forwards WHERE id = ?1", [&id])
+            .map_err(|e| format!("Failed to delete port forward: {e}"))?;
+    }
+
     let mut port_forwards = state.port_forwards.lock().await;
 
     if let Some(mut session) = port_forwards.remove(&id) {
@@ -698,15 +714,15 @@ mod tests {
 #[tauri::command]
 pub async fn shutdown_port_forwards(state: State<'_, AppState>) -> Result<(), String> {
     let mut port_forwards = state.port_forwards.lock().await;
-    
+
     // Close all active port forward sessions
     let session_ids: Vec<String> = port_forwards.keys().cloned().collect();
-    
+
     for session_id in session_ids {
         if let Some(mut session) = port_forwards.remove(&session_id) {
             session.close().await;
         }
     }
-    
+
     Ok(())
 }
