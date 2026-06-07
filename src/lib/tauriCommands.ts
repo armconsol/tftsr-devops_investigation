@@ -771,6 +771,7 @@ export interface PodInfo {
   status: string;
   ready: string;
   age: string;
+  containers: string[];
 }
 
 export interface ClusterConnectionState {
@@ -944,5 +945,5 @@ export const restartDeploymentCmd = (clusterId: string, namespace: string, deplo
 export const deleteResourceCmd = (clusterId: string, resourceType: string, namespace: string, resourceName: string) =>
   invoke<void>("delete_resource", { clusterId, resourceType, namespace, resourceName });
 
-export const execPodCmd = (clusterId: string, namespace: string, podName: string, containerName: string, command: string) =>
-  invoke<ExecResponse>("exec_pod", { clusterId, namespace, podName, containerName, command });
+export const execPodCmd = (clusterId: string, namespace: string, podName: string, containerName: string, command: string, shell?: string) =>
+  invoke<ExecResponse>("exec_pod", { clusterId, namespace, podName, containerName, shell, command });

@@ -1,5 +1,4 @@
 import React from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui";
 import type { DaemonSetInfo } from "@/lib/tauriCommands";
 
@@ -9,7 +8,7 @@ interface DaemonSetListProps {
   namespace: string;
 }
 
-export function DaemonSetList({ daemonsets, clusterId, namespace }: DaemonSetListProps) {
+export function DaemonSetList({ daemonsets, clusterId: _clusterId, namespace: _namespace }: DaemonSetListProps) {
   return (
     <div className="overflow-x-auto">
       <Table>

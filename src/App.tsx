@@ -88,10 +88,8 @@ export default function App() {
         // Auto-test the active provider
         const activeProvider = getActiveProvider();
         if (activeProvider) {
-          console.log("Auto-testing active AI provider:", activeProvider.name);
           try {
             await testProviderConnectionCmd(activeProvider);
-            console.log("✓ Active provider connection verified:", activeProvider.name);
           } catch (err) {
             console.warn("⚠ Active provider connection test failed:", activeProvider.name, err);
           }

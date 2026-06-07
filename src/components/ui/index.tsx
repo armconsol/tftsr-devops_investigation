@@ -463,7 +463,7 @@ TableFooter.displayName = "TableFooter";
 export const TableRow = React.forwardRef<
   HTMLTableRowElement,
   React.HTMLAttributes<HTMLTableRowElement> & { hover?: boolean }
->(({ className, hover, ...props }, ref) => (
+>(({ className, hover: _hover, ...props }, ref) => (
   <tr
     ref={ref}
     className={cn(

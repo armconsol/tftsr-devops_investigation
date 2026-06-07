@@ -1,5 +1,4 @@
 import React from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui";
 import { Badge } from "@/components/ui";
 import type { ServiceInfo } from "@/lib/tauriCommands";
@@ -10,7 +9,7 @@ interface ServiceListProps {
   namespace: string;
 }
 
-export function ServiceList({ services, clusterId, namespace }: ServiceListProps) {
+export function ServiceList({ services, clusterId: _clusterId, namespace: _namespace }: ServiceListProps) {
   const getServiceTypeColor = (type: string) => {
     switch (type.toLowerCase()) {
       case "clusterip":

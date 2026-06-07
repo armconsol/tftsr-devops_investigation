@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
+import { Card, CardContent, CardHeader } from "@/components/ui";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui";
 import { Button } from "@/components/ui";
@@ -31,11 +31,7 @@ export function ResourceBrowser({ clusterId }: ResourceBrowserProps) {
   const [statefulsets, setStatefulsets] = useState<StatefulSetInfo[]>([]);
   const [daemonsets, setDaemonsets] = useState<DaemonSetInfo[]>([]);
 
-  useEffect(() => {
-    loadData();
-  }, [clusterId, selectedNamespace, resourceType]);
-
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     setIsLoading(true);
     setError(null);
     try {
@@ -60,15 +56,19 @@ export function ResourceBrowser({ clusterId }: ResourceBrowserProps) {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [clusterId, selectedNamespace]);
 
-  const getNamespaceOptions = () => {
+  useEffect(() => {
+    loadData();
+  }, [loadData, resourceType]);
+
+  const namespaceOptions = useMemo(() => {
     const options = [{ name: "All Namespaces", value: "all" }];
     namespaces.forEach(ns => {
       options.push({ name: ns.name, value: ns.name });
     });
     return options;
-  };
+  }, [namespaces]);
 
   if (isLoading) {
     return (
@@ -132,7 +132,7 @@ export function ResourceBrowser({ clusterId }: ResourceBrowserProps) {
                   <SelectValue placeholder="Select namespace" />
                 </SelectTrigger>
                 <SelectContent>
-                  {getNamespaceOptions().map((ns) => (
+                  {namespaceOptions.map((ns) => (
                     <SelectItem key={ns.value} value={ns.value}>
                       {ns.name}
                     </SelectItem>

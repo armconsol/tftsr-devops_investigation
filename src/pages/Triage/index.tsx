@@ -83,7 +83,7 @@ export default function Triage() {
         }
       })
       .catch((e) => setError(String(e)));
-  }, [id]);
+  }, [id, addMessage, setActiveDomain, startSession]);
 
   const handleAttach = async () => {
     if (!id) return;

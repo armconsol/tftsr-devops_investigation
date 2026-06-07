@@ -1,6 +1,5 @@
 import React, { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui";
 import { Badge } from "@/components/ui";
 import { Button } from "@/components/ui";
@@ -69,7 +68,7 @@ export function PodList({ pods, clusterId, namespace }: PodListProps) {
     setError(null);
   };
 
-  const containers = selectedPod ? [selectedPod.name] : [];
+  const containers = selectedPod?.containers ?? [];
 
   return (
     <>
@@ -111,7 +110,7 @@ export function PodList({ pods, clusterId, namespace }: PodListProps) {
                         <DialogHeader>
                           <DialogTitle>{pod.name} - {namespace} namespace</DialogTitle>
                         </DialogHeader>
-                        <div className="flex-1 overflow-hidden flex flex-col">
+                        <div className="flex-1 overflow-y-auto flex flex-col">
                           {selectedPod && (
                             <div className="space-y-4">
                               <div className="flex items-center gap-2">

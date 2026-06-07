@@ -1,5 +1,4 @@
 import React from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui";
 import type { StatefulSetInfo } from "@/lib/tauriCommands";
 
@@ -9,7 +8,7 @@ interface StatefulSetListProps {
   namespace: string;
 }
 
-export function StatefulSetList({ statefulsets, clusterId, namespace }: StatefulSetListProps) {
+export function StatefulSetList({ statefulsets, clusterId: _clusterId, namespace: _namespace }: StatefulSetListProps) {
   return (
     <div className="overflow-x-auto">
       <Table>
