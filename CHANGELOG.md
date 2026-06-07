@@ -30,6 +30,7 @@ CI, chore, and build changes are excluded.
 - **kube**: Address portforward race condition and temp file leak
 - **kube**: Resolve automated PR review blockers and warnings
 - **ci**: Replace JS-based Renovate action with direct container invocation
+- Use public Gitea URL in test workflow
 
 ### Documentation
 - **kubernetes**: Add comment about dynamic port allocation limitation
