@@ -156,6 +156,38 @@ fn extract_server_url(content: &str) -> Result<String, String> {
         .ok_or_else(|| "Server URL not found in cluster".to_string())
 }
 
+/// Load a stored kubeconfig into the in-memory cluster map so all kube commands can use it.
+///
+/// This bridges the kubeconfig_files table (encrypted storage) with the in-memory
+/// state.clusters map that every kubernetes command requires.
+#[tauri::command]
+pub async fn connect_cluster_from_kubeconfig(
+    id: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    // Read name and encrypted content from DB
+    let (name, encrypted_content) = {
+        let db = state.db.lock().map_err(|e| e.to_string())?;
+        db.query_row(
+            "SELECT name, encrypted_content FROM kubeconfig_files WHERE id = ?1",
+            rusqlite::params![&id],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+        )
+        .map_err(|e| format!("Kubeconfig {id} not found in storage: {e}"))?
+    };
+
+    let content = crate::integrations::auth::decrypt_token(&encrypted_content)?;
+    let context = extract_context(&content)?;
+    let server_url = extract_server_url(&content).unwrap_or_default();
+
+    let client = ClusterClient::new(id.clone(), name, context, server_url, Arc::new(content));
+
+    let mut clusters = state.clusters.lock().await;
+    clusters.insert(id, client);
+
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn remove_cluster(id: String, state: State<'_, AppState>) -> Result<(), String> {
     // Check existence in memory BEFORE touching the DB

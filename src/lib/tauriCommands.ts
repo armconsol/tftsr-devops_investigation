@@ -739,6 +739,21 @@ export const listCommandExecutionsCmd = (issueId?: string) =>
 export const checkKubectlInstalledCmd = () =>
   invoke<KubectlStatus>("check_kubectl_installed");
 
+export interface ClassifierRules {
+  tier1_kubectl: string[];
+  tier1_systemctl: string[];
+  tier1_proxmox: string[];
+  tier1_general: string[];
+  tier2_kubectl: string[];
+  tier2_systemctl: string[];
+  tier2_proxmox: string[];
+  tier2_general: string[];
+  tier3: string[];
+}
+
+export const getClassifierRulesCmd = () =>
+  invoke<ClassifierRules>("get_classifier_rules");
+
 // ─── Kubernetes Management Types ──────────────────────────────────────────────
 
 export interface ClusterInfo {
@@ -898,6 +913,9 @@ export const addClusterCmd = (id: string, name: string, kubeconfigContent: strin
 
 export const removeClusterCmd = (id: string) =>
   invoke<void>("remove_cluster", { id });
+
+export const connectClusterFromKubeconfigCmd = (id: string) =>
+  invoke<void>("connect_cluster_from_kubeconfig", { id });
 
 export const listClustersCmd = () =>
   invoke<ClusterInfo[]>("list_clusters");

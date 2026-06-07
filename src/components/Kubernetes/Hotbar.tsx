@@ -9,9 +9,11 @@ interface HotbarProps {
   onRefresh: () => void;
   onAddResource: () => void;
   onSettings: () => void;
+  onNotifications?: () => void;
+  notificationCount?: number;
 }
 
-export function Hotbar({ onRefresh, onAddResource, onSettings }: HotbarProps) {
+export function Hotbar({ onRefresh, onAddResource, onSettings, onNotifications, notificationCount = 0 }: HotbarProps) {
   const clusters = useStore(useKubernetesStore, (state) => state.clusters);
   const selectedClusterId = useStore(useKubernetesStore, (state) => state.selectedClusterId);
   const selectedCluster = clusters.find((c: { id: string }) => c.id === selectedClusterId);
@@ -38,11 +40,18 @@ export function Hotbar({ onRefresh, onAddResource, onSettings }: HotbarProps) {
 
       <div className="flex items-center gap-2">
         <div className="flex items-center gap-2">
-          <Button variant="ghost" size="sm">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onNotifications}
+            aria-label="Notifications"
+          >
             <Bell className="w-4 h-4" />
-            <Badge variant="destructive" className="h-4 w-4 flex items-center justify-center p-0 text-[10px]">
-              3
-            </Badge>
+            {notificationCount > 0 && (
+              <Badge variant="destructive" className="h-4 w-4 flex items-center justify-center p-0 text-[10px]">
+                {notificationCount}
+              </Badge>
+            )}
           </Button>
           <Button variant="ghost" size="sm" onClick={onSettings}>
             <Settings className="w-4 h-4" />

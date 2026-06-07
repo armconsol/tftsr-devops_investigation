@@ -112,7 +112,9 @@ export function ClusterDetails({ clusterId }: ClusterDetailsProps) {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-semibold">Cluster Details</h2>
-          <p className="text-muted-foreground text-sm mt-0.5">Cluster ID: {clusterId}</p>
+          <p className="text-muted-foreground text-sm mt-0.5" data-testid="cluster-context-header">
+            {kubeconfig.context}
+          </p>
         </div>
         <button
           onClick={() => void loadData()}

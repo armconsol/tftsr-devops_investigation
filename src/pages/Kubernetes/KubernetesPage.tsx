@@ -18,6 +18,10 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
 } from "@/components/ui";
 import {
   PodList,
@@ -84,6 +88,7 @@ import type {
 import {
   listKubeconfigsCmd,
   activateKubeconfigCmd,
+  connectClusterFromKubeconfigCmd,
   listNamespacesCmd,
   listPortForwardsCmd,
   startPortForwardCmd,
@@ -299,6 +304,7 @@ export function KubernetesPage() {
   const [isLoadingResources, setIsLoadingResources] = useState(false);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [isPortForwardFormOpen, setIsPortForwardFormOpen] = useState(false);
+  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
 
   // Track the last loaded section to avoid redundant fetches
   const lastLoadedRef = useRef<{ section: ActiveSection; clusterId: string; namespace: string } | null>(null);
@@ -316,7 +322,10 @@ export function KubernetesPage() {
 
       const activeConfig = kubeconfigsData.find((c) => c.is_active);
       if (activeConfig && !selectedClusterId) {
+        await connectClusterFromKubeconfigCmd(activeConfig.id).catch(() => {});
         setSelectedCluster(activeConfig.id);
+      } else if (selectedClusterId) {
+        await connectClusterFromKubeconfigCmd(selectedClusterId).catch(() => {});
       }
     } catch (err) {
       console.error("Failed to load initial Kubernetes data:", err);
@@ -509,6 +518,7 @@ export function KubernetesPage() {
   const handleClusterChange = async (id: string) => {
     try {
       await activateKubeconfigCmd(id);
+      await connectClusterFromKubeconfigCmd(id);
       const updated = await listKubeconfigsCmd();
       setKubeconfigs(updated);
       const active = updated.find((c) => c.is_active);
@@ -584,7 +594,13 @@ export function KubernetesPage() {
     }
 
     if (activeSection === "overview") {
-      return <ClusterOverview clusterId={selectedClusterId} />;
+      const overviewConfig = kubeconfigs.find((c) => c.id === selectedClusterId);
+      return (
+        <ClusterOverview
+          clusterId={selectedClusterId}
+          clusterName={overviewConfig?.context}
+        />
+      );
     }
 
     if (activeSection === "portforwarding") {
@@ -689,6 +705,7 @@ export function KubernetesPage() {
         onRefresh={handleRefresh}
         onAddResource={() => setIsCommandPaletteOpen(true)}
         onSettings={() => {}}
+        onNotifications={() => setIsNotificationsOpen(true)}
       />
 
       {/* Top bar: cluster selector + namespace selector */}
@@ -827,6 +844,33 @@ export function KubernetesPage() {
         onClose={() => setIsCommandPaletteOpen(false)}
         onNavigate={handleNavigate}
       />
+
+      {/* Notifications panel */}
+      <Dialog open={isNotificationsOpen} onOpenChange={setIsNotificationsOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Notifications</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            {selectedConfig ? (
+              <div className="text-sm">
+                <p className="font-medium mb-1">Active cluster</p>
+                <p className="text-muted-foreground">{selectedConfig.context}</p>
+                {selectedConfig.cluster_url && (
+                  <p className="font-mono text-xs text-muted-foreground mt-0.5 truncate">
+                    {selectedConfig.cluster_url}
+                  </p>
+                )}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">No cluster connected.</p>
+            )}
+            <p className="text-xs text-muted-foreground pt-2 border-t">
+              Navigate to <strong>Cluster → Events</strong> to view live cluster events.
+            </p>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Port Forward Form (only rendered outside portforwarding section via global trigger) */}
       {activeSection !== "portforwarding" && (
