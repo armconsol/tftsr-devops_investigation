@@ -450,8 +450,8 @@ pub async fn start_port_forward(
 ) -> Result<PortForwardResponse, String> {
     let session_id = uuid::Uuid::now_v7().to_string();
 
-    // Validate namespace and pod names to prevent command injection
-    // Using validate_resource_name() which includes ReDoS protection
+    // Validate namespace and pod names FIRST to prevent command injection
+    // Validation must happen before any operations to prevent partial state creation
     validate_resource_name(&request.namespace, "namespace")?;
     validate_resource_name(&request.pod, "pod")?;
 

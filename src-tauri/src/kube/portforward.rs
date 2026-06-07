@@ -7,7 +7,6 @@ use tokio::sync::Mutex as TokioMutex;
 /// Background task handle for waiting on kubectl child process
 pub struct ChildWaitHandle {
     pub join_handle: tokio::task::JoinHandle<()>,
-    pub child_id: String,
     pub child: Arc<TokioMutex<Option<Child>>>,
 }
 
@@ -72,7 +71,7 @@ impl PortForwardSession {
     /// Spawn a background task to wait on the kubectl child process
     /// and update session state on completion/error
     pub fn spawn_child_waiter(&mut self, child: Child) {
-        let child_id = format!("{}-{}", self.id, self.pod);
+        let _child_id = format!("{}-{}", self.id, self.pod);
         let is_stopped = self.is_stopped.clone();
         let status_clone = Arc::new(std::sync::Mutex::new(self.status.clone()));
         let error_clone = Arc::new(std::sync::Mutex::new(self.error_message.clone()));
@@ -82,6 +81,7 @@ impl PortForwardSession {
         let child_arc = Arc::new(TokioMutex::new(Some(child)));
 
         let child_for_task = child_arc.clone();
+        let temp_path_clone = self.temp_kubeconfig_path.clone();
         let join_handle = tokio::spawn(async move {
             // Take the child from the Arc
             let mut child = child_for_task.lock().await.take().expect("Child not set");
@@ -89,6 +89,11 @@ impl PortForwardSession {
             // Wait for the child process to complete
             // This is safe because we're in an async context
             let result = child.wait().await;
+
+            // Clean up temp kubeconfig file after child completes
+            if let Some(path) = &temp_path_clone {
+                let _ = std::fs::remove_file(path);
+            }
 
             // Only update if not already explicitly stopped
             if !is_stopped.load(Ordering::SeqCst) {
@@ -112,7 +117,6 @@ impl PortForwardSession {
 
         self.child_wait_handle = Some(Arc::new(TokioMutex::new(ChildWaitHandle {
             join_handle,
-            child_id,
             child: child_arc,
         })));
     }
@@ -150,10 +154,8 @@ impl PortForwardSession {
             }
         }
 
-        // Clean up temp kubeconfig file if it exists
-        if let Some(path) = &self.temp_kubeconfig_path {
-            let _ = std::fs::remove_file(path);
-        }
+        // Temp file cleanup is now handled by the background task after child completes
+        // We don't need to clean up here since the background task will do it
     }
 
     pub fn set_error(&mut self, error: String) {
@@ -178,10 +180,8 @@ impl Drop for PortForwardSession {
         // The Child will be dropped and cleaned up by the background task
         self.child_wait_handle = None;
 
-        // Clean up temp kubeconfig file if it exists
-        if let Some(path) = &self.temp_kubeconfig_path {
-            let _ = std::fs::remove_file(path);
-        }
+        // Temp file cleanup is now handled by the background task after child completes
+        // We don't need to clean up here since the background task will do it
     }
 }
 
