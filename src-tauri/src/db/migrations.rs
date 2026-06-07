@@ -360,6 +360,40 @@ pub fn run_migrations(conn: &Connection) -> anyhow::Result<()> {
             "ALTER TABLE ai_providers ADD COLUMN supports_tool_calling INTEGER DEFAULT 1;
              -- Default to true for existing providers to maintain backward compatibility",
         ),
+        (
+            "029_create_clusters",
+            "CREATE TABLE IF NOT EXISTS clusters (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                context TEXT NOT NULL,
+                server_url TEXT,
+                kubeconfig_content TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+            CREATE INDEX IF NOT EXISTS idx_clusters_name ON clusters(name);
+            CREATE INDEX IF NOT EXISTS idx_clusters_context ON clusters(context);",
+        ),
+        (
+            "030_create_port_forwards",
+            "CREATE TABLE IF NOT EXISTS port_forwards (
+                id TEXT PRIMARY KEY,
+                cluster_id TEXT NOT NULL,
+                namespace TEXT NOT NULL,
+                pod TEXT NOT NULL,
+                container TEXT,
+                ports TEXT NOT NULL,
+                local_ports TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'stopped', 'error')),
+                error_message TEXT,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+                FOREIGN KEY (cluster_id) REFERENCES clusters(id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_port_forwards_cluster ON port_forwards(cluster_id);
+            CREATE INDEX IF NOT EXISTS idx_port_forwards_status ON port_forwards(status);
+            CREATE INDEX IF NOT EXISTS idx_port_forwards_namespace ON port_forwards(namespace);",
+        ),
     ];
 
     for (name, sql) in migrations {
@@ -1345,5 +1379,219 @@ mod tests {
             )
             .unwrap();
         assert_eq!(applied, 1, "023 should only be recorded once");
+    }
+
+    // ─── Migration 029-030: Kubernetes clusters and port_forwards ───────────────
+
+    #[test]
+    fn test_029_clusters_table_exists() {
+        let conn = setup_test_db();
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='clusters'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn test_029_clusters_columns() {
+        let conn = setup_test_db();
+        let mut stmt = conn.prepare("PRAGMA table_info(clusters)").unwrap();
+        let columns: Vec<String> = stmt
+            .query_map([], |row| row.get::<_, String>(1))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+
+        assert!(columns.contains(&"id".to_string()));
+        assert!(columns.contains(&"name".to_string()));
+        assert!(columns.contains(&"context".to_string()));
+        assert!(columns.contains(&"server_url".to_string()));
+        assert!(columns.contains(&"kubeconfig_content".to_string()));
+        assert!(columns.contains(&"created_at".to_string()));
+        assert!(columns.contains(&"updated_at".to_string()));
+    }
+
+    #[test]
+    fn test_029_clusters_foreign_key() {
+        let conn = setup_test_db();
+        conn.execute("PRAGMA foreign_keys = ON", []).unwrap();
+
+        // Create cluster with embedded kubeconfig
+        let kubeconfig = "apiVersion: v1
+kind: Config
+clusters:
+- cluster:
+    server: https://k8s.example.com
+  name: cluster-1
+contexts:
+- context:
+    cluster: cluster-1
+    user: user-1
+  name: context-1
+users:
+- name: user-1
+  user:
+    token: test-token
+";
+        conn.execute(
+            "INSERT INTO clusters (id, name, context, server_url, kubeconfig_content)
+             VALUES ('cluster-1', 'Production', 'context-1', 'https://k8s.example.com', ?1)",
+            [kubeconfig],
+        )
+        .unwrap();
+
+        // Verify insertion
+        let (name, context, server_url, kubeconfig_content): (String, String, String, String) = conn
+            .query_row(
+                "SELECT name, context, server_url, kubeconfig_content FROM clusters WHERE id = 'cluster-1'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+            )
+            .unwrap();
+
+        assert_eq!(name, "Production");
+        assert_eq!(context, "context-1");
+        assert_eq!(server_url, "https://k8s.example.com");
+        assert!(kubeconfig_content.contains("k8s.example.com"));
+    }
+
+    #[test]
+    fn test_030_port_forwards_table_exists() {
+        let conn = setup_test_db();
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='port_forwards'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn test_030_port_forwards_columns() {
+        let conn = setup_test_db();
+        let mut stmt = conn.prepare("PRAGMA table_info(port_forwards)").unwrap();
+        let columns: Vec<String> = stmt
+            .query_map([], |row| row.get::<_, String>(1))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+
+        assert!(columns.contains(&"id".to_string()));
+        assert!(columns.contains(&"cluster_id".to_string()));
+        assert!(columns.contains(&"namespace".to_string()));
+        assert!(columns.contains(&"pod".to_string()));
+        assert!(columns.contains(&"container".to_string()));
+        assert!(columns.contains(&"ports".to_string()));
+        assert!(columns.contains(&"local_ports".to_string()));
+        assert!(columns.contains(&"status".to_string()));
+        assert!(columns.contains(&"error_message".to_string()));
+        assert!(columns.contains(&"created_at".to_string()));
+        assert!(columns.contains(&"updated_at".to_string()));
+    }
+
+    #[test]
+    fn test_030_port_forwards_status_constraint() {
+        let conn = setup_test_db();
+        conn.execute("PRAGMA foreign_keys = ON", []).unwrap();
+
+        // Create kubeconfig first
+        conn.execute(
+            "INSERT INTO kubeconfig_files (id, name, encrypted_content, context)
+             VALUES ('k8s-test', 'Test Cluster', 'encrypted', 'test-context')",
+            [],
+        )
+        .unwrap();
+
+        // Create cluster
+        conn.execute(
+            "INSERT INTO clusters (id, name, context, kubeconfig_content)
+             VALUES ('cluster-1', 'Test', 'test-context', 'k8s-test')",
+            [],
+        )
+        .unwrap();
+
+        // Valid status should succeed
+        conn.execute(
+            "INSERT INTO port_forwards (id, cluster_id, namespace, pod, ports, local_ports, status)
+             VALUES ('pf-1', 'cluster-1', 'default', 'pod-1', '[8080]', '[0]', 'active')",
+            [],
+        )
+        .unwrap();
+
+        // Invalid status must fail
+        let err = conn.execute(
+            "INSERT INTO port_forwards (id, cluster_id, namespace, pod, ports, local_ports, status)
+             VALUES ('pf-2', 'cluster-1', 'default', 'pod-2', '[8080]', '[0]', 'unknown')",
+            [],
+        );
+        assert!(err.is_err(), "invalid status should be rejected");
+    }
+
+    #[test]
+    fn test_030_port_forwards_cascade_delete() {
+        let conn = setup_test_db();
+        conn.execute("PRAGMA foreign_keys = ON", []).unwrap();
+
+        // Create kubeconfig first
+        conn.execute(
+            "INSERT INTO kubeconfig_files (id, name, encrypted_content, context)
+             VALUES ('k8s-3', 'Test Cluster', 'encrypted', 'ctx')",
+            [],
+        )
+        .unwrap();
+
+        // Create cluster
+        conn.execute(
+            "INSERT INTO clusters (id, name, context, kubeconfig_content)
+             VALUES ('cluster-3', 'Test', 'ctx', 'k8s-3')",
+            [],
+        )
+        .unwrap();
+
+        conn.execute(
+            "INSERT INTO port_forwards (id, cluster_id, namespace, pod, ports, local_ports)
+             VALUES ('pf-3', 'cluster-3', 'default', 'pod-3', '[8080]', '[0]')",
+            [],
+        )
+        .unwrap();
+
+        // Verify port forward exists
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM port_forwards", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 1);
+
+        // Delete cluster — cascade should remove port forward
+        conn.execute("DELETE FROM clusters WHERE id = 'cluster-3'", [])
+            .unwrap();
+
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM port_forwards", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 0, "cascade delete should remove port_forwards");
+    }
+
+    #[test]
+    fn test_029_030_idempotent() {
+        let conn = Connection::open_in_memory().unwrap();
+        run_migrations(&conn).unwrap();
+        run_migrations(&conn).unwrap();
+
+        for migration in &["029_create_clusters", "030_create_port_forwards"] {
+            let count: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM _migrations WHERE name = ?1",
+                    [migration],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            assert_eq!(count, 1, "{migration} should be recorded exactly once");
+        }
     }
 }

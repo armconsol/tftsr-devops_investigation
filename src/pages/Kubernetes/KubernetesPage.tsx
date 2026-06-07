@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from "react";
-import { Server, Activity } from "lucide-react";
 import { ClusterList } from "@/components/Kubernetes/ClusterList";
 import { PortForwardList } from "@/components/Kubernetes/PortForwardList";
 import { AddClusterModal } from "@/components/Kubernetes/AddClusterModal";

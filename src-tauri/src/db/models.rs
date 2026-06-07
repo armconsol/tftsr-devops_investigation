@@ -64,17 +64,6 @@ pub struct IssueSummary {
     pub step_count: i64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct IssueListItem {
-    pub id: String,
-    pub title: String,
-    pub domain: String,
-    pub status: String,
-    pub severity: String,
-    pub created_at: i64,
-    pub updated_at: i64,
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct IssueFilter {
     pub status: Option<String>,
@@ -466,6 +455,169 @@ pub struct ImageAttachmentSummary {
     pub uploaded_at: String,
     pub pii_warning_acknowledged: bool,
     pub is_paste: bool,
+}
+
+// ─── Kubernetes Cluster ─────────────────────────────────────────────────────
+
+/// Represents a Kubernetes cluster configuration stored in the database.
+/// The kubeconfig content is stored directly in the clusters table.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Cluster {
+    pub id: String,
+    pub name: String,
+    pub context: String,
+    pub server_url: Option<String>,
+    pub kubeconfig_content: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+impl Cluster {
+    pub fn new(
+        name: String,
+        context: String,
+        server_url: Option<String>,
+        kubeconfig_content: String,
+    ) -> Self {
+        let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+        Cluster {
+            id: Uuid::now_v7().to_string(),
+            name,
+            context,
+            server_url,
+            kubeconfig_content,
+            created_at: now.clone(),
+            updated_at: now,
+        }
+    }
+}
+
+/// Lightweight summary for cluster list views.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ClusterSummary {
+    pub id: String,
+    pub name: String,
+    pub context: String,
+    pub server_url: String,
+    pub created_at: String,
+    pub updated_at: String,
+    pub port_forward_count: i64,
+}
+
+// ─── Port Forward ───────────────────────────────────────────────────────────
+
+/// Represents a port forwarding session for a Kubernetes cluster.
+/// The ports and local_ports are stored as JSON arrays of u16.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PortForward {
+    pub id: String,
+    pub cluster_id: String,
+    pub namespace: String,
+    pub pod: String,
+    pub container: Option<String>,
+    pub ports: Vec<u16>,
+    pub local_ports: Vec<u16>,
+    pub status: String,
+    pub error_message: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+impl PortForward {
+    pub fn new(
+        cluster_id: String,
+        namespace: String,
+        pod: String,
+        container: Option<String>,
+        ports: Vec<u16>,
+        local_ports: Vec<u16>,
+    ) -> Self {
+        let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+        PortForward {
+            id: Uuid::now_v7().to_string(),
+            cluster_id,
+            namespace,
+            pod,
+            container,
+            ports,
+            local_ports,
+            status: "Active".to_string(),
+            error_message: None,
+            created_at: now.clone(),
+            updated_at: now,
+        }
+    }
+}
+
+/// Lightweight summary for port forward list views.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PortForwardSummary {
+    pub id: String,
+    pub cluster_id: String,
+    pub cluster_name: String,
+    pub namespace: String,
+    pub pod: String,
+    pub container: Option<String>,
+    pub ports: Vec<u16>,
+    pub local_ports: Vec<u16>,
+    pub status: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+/// Filter for listing clusters.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ClusterFilter {
+    pub name: Option<String>,
+    pub context: Option<String>,
+    pub limit: Option<i64>,
+    pub offset: Option<i64>,
+}
+
+/// Filter for listing port forwards.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct PortForwardFilter {
+    pub cluster_id: Option<String>,
+    pub status: Option<String>,
+    pub namespace: Option<String>,
+    pub limit: Option<i64>,
+    pub offset: Option<i64>,
+}
+
+/// New cluster data for creation.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NewCluster {
+    pub name: String,
+    pub context: String,
+    pub server_url: String,
+    pub kubeconfig_content: String,
+}
+
+/// Update for existing cluster.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ClusterUpdate {
+    pub name: Option<String>,
+    pub context: Option<String>,
+    pub server_url: Option<String>,
+    pub kubeconfig_content: Option<String>,
+}
+
+/// New port forward data for creation.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NewPortForward {
+    pub cluster_id: String,
+    pub namespace: String,
+    pub pod: String,
+    pub container: Option<String>,
+    pub ports: Vec<u16>,
+    pub local_ports: Vec<u16>,
+}
+
+/// Update for existing port forward.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct PortForwardUpdate {
+    pub status: Option<String>,
+    pub error_message: Option<String>,
 }
 
 impl ImageAttachment {
