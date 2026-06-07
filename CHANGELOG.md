@@ -28,6 +28,7 @@ CI, chore, and build changes are excluded.
 - Add app shutdown cleanup for port forward processes
 - **kubernetes**: Address automated PR review findings
 - **kube**: Address portforward race condition and temp file leak
+- **kube**: Resolve automated PR review blockers and warnings
 - **ci**: Replace JS-based Renovate action with direct container invocation
 
 ### Documentation
@@ -40,6 +41,9 @@ CI, chore, and build changes are excluded.
 - Add comprehensive Windows and Linux command support to shell classifier
 - **kubernetes**: Add database persistence for clusters and port_forwards
 - **k8s**: Implement clean-room Kubernetes management GUI
+- Implement full Lens-like Kubernetes UI with resource discovery and management
+- Implement additional Kubernetes resource discovery and management commands
+- Add Kubernetes Management Implementation Plan
 
 ## [1.1.0] — 2026-06-06
 
