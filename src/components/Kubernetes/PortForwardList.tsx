@@ -2,7 +2,6 @@ import React from "react";
 import { Trash2, Plus, Activity } from "lucide-react";
 import { Button } from "@/components/ui";
 import type { PortForwardResponse } from "@/lib/tauriCommands";
-import { stopPortForwardCmd } from "@/lib/tauriCommands";
 
 interface PortForwardListProps {
   portForwards: PortForwardResponse[];

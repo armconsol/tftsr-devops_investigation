@@ -816,7 +816,7 @@ pub async fn load_clusters(state: State<'_, AppState>) -> Result<Vec<Cluster>, S
 
     let mut stmt = db
         .prepare(
-            "SELECT id, name, context, server_url, kubeconfig_id, created_at, updated_at \
+            "SELECT id, name, context, server_url, kubeconfig_content, created_at, updated_at \
              FROM clusters ORDER BY name ASC",
         )
         .map_err(|e| e.to_string())?;
@@ -828,7 +828,7 @@ pub async fn load_clusters(state: State<'_, AppState>) -> Result<Vec<Cluster>, S
                 name: row.get(1)?,
                 context: row.get(2)?,
                 server_url: row.get(3)?,
-                kubeconfig_id: row.get(4)?,
+                kubeconfig_content: row.get(4)?,
                 created_at: row.get(5)?,
                 updated_at: row.get(6)?,
             })

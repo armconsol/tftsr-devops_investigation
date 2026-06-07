@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { X, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui";
 import type { PortForwardResponse } from "@/lib/tauriCommands";
@@ -20,13 +20,13 @@ export function PortForwardForm({ isOpen, onClose, onStart }: PortForwardFormPro
   const [error, setError] = useState("");
   const [clusters, setClusters] = useState<{ id: string; name: string }[]>([]);
 
-  if (!isOpen) return null;
-
-  React.useEffect(() => {
+  useEffect(() => {
     if (isOpen) {
       loadClusters();
     }
   }, [isOpen]);
+
+  if (!isOpen) return null;
 
   const loadClusters = async () => {
     try {

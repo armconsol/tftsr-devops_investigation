@@ -5,8 +5,8 @@ import * as tauriCommands from "@/lib/tauriCommands";
 // Mock Tauri invoke
 vi.mock("@tauri-apps/api/core");
 
-type MockedFunction<T = (...args: any[]) => any> = T & {
-  mockResolvedValue: (value: any) => void;
+type MockedFunction<T = (...args: unknown[]) => unknown> = T & {
+  mockResolvedValue: (value: unknown) => void;
   mockRejectedValue: (error: Error) => void;
 };
 

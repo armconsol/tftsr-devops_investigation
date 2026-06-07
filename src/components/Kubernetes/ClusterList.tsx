@@ -1,8 +1,7 @@
 import React from "react";
-import { Trash2, Plus, Server, Activity } from "lucide-react";
+import { Trash2, Plus, Server } from "lucide-react";
 import { Button } from "@/components/ui";
 import type { ClusterInfo } from "@/lib/tauriCommands";
-import { removeClusterCmd } from "@/lib/tauriCommands";
 
 interface ClusterListProps {
   clusters: ClusterInfo[];

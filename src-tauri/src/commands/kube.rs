@@ -16,6 +16,13 @@ lazy_static! {
     static ref NAME_PATTERN_REGEX: Regex = Regex::new(r"^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$").unwrap();
 }
 
+struct TempFileCleanup(std::path::PathBuf);
+impl Drop for TempFileCleanup {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.0);
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ClusterInfo {
     pub id: String,
@@ -148,7 +155,16 @@ fn extract_server_url(content: &str) -> Result<String, String> {
 
 #[tauri::command]
 pub async fn remove_cluster(id: String, state: State<'_, AppState>) -> Result<(), String> {
-    // Delete cluster from database (cascade will delete port_forwards)
+    // Check existence in memory BEFORE touching the DB
+    let exists = {
+        let clusters = state.clusters.lock().await;
+        clusters.contains_key(&id)
+    };
+    if !exists {
+        return Err(format!("Cluster {id} not found"));
+    }
+
+    // Safe to delete from DB now
     {
         let db = state.db.lock().map_err(|e| e.to_string())?;
         db.execute("DELETE FROM clusters WHERE id = ?1", [&id])
@@ -156,12 +172,9 @@ pub async fn remove_cluster(id: String, state: State<'_, AppState>) -> Result<()
     }
 
     let mut clusters = state.clusters.lock().await;
+    clusters.remove(&id);
 
-    if clusters.remove(&id).is_none() {
-        return Err(format!("Cluster {id} not found"));
-    }
-
-    // Cascade delete: remove all port forwards for this cluster from memory
+    // Cascade: close all port forwards for this cluster
     let mut port_forwards = state.port_forwards.lock().await;
     let session_ids_to_remove: Vec<String> = port_forwards
         .iter()
@@ -211,14 +224,6 @@ pub async fn test_cluster_connection(
     // Write kubeconfig to temp file and ensure cleanup even on panic
     let temp_dir = std::env::temp_dir();
     let temp_path = temp_dir.join(format!("kubeconfig-{}.yaml", cluster_id));
-
-    // Create cleanup struct BEFORE writing - ensures cleanup happens even on panic
-    struct TempFileCleanup(std::path::PathBuf);
-    impl Drop for TempFileCleanup {
-        fn drop(&mut self) {
-            let _ = std::fs::remove_file(&self.0);
-        }
-    }
     let _cleanup = TempFileCleanup(temp_path.clone());
 
     std::fs::write(&temp_path, kubeconfig_content)
@@ -267,14 +272,6 @@ pub async fn discover_pods(
     // Write kubeconfig to temp file and ensure cleanup even on panic
     let temp_dir = std::env::temp_dir();
     let temp_path = temp_dir.join(format!("kubeconfig-{}-pods.yaml", cluster_id));
-
-    // Create cleanup struct BEFORE writing - ensures cleanup happens even on panic
-    struct TempFileCleanup(std::path::PathBuf);
-    impl Drop for TempFileCleanup {
-        fn drop(&mut self) {
-            let _ = std::fs::remove_file(&self.0);
-        }
-    }
     let _cleanup = TempFileCleanup(temp_path.clone());
 
     std::fs::write(&temp_path, kubeconfig_content)
@@ -485,18 +482,9 @@ pub async fn start_port_forward(
         "Allocating local port for port-forward"
     );
 
-    // Write kubeconfig to temp file and ensure cleanup even on panic
+    // Write kubeconfig to temp file
     let temp_dir = std::env::temp_dir();
     let temp_path = temp_dir.join(format!("kubeconfig-{}.yaml", request.cluster_id));
-
-    // Create cleanup struct BEFORE writing - ensures cleanup happens even on panic
-    struct TempFileCleanup(std::path::PathBuf);
-    impl Drop for TempFileCleanup {
-        fn drop(&mut self) {
-            let _ = std::fs::remove_file(&self.0);
-        }
-    }
-    let _cleanup = TempFileCleanup(temp_path.clone());
 
     std::fs::write(&temp_path, kubeconfig_content.as_ref())
         .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
@@ -582,22 +570,26 @@ pub async fn list_port_forwards(
 ) -> Result<Vec<PortForwardResponse>, String> {
     let port_forwards = state.port_forwards.lock().await;
 
-    let forwards: Vec<PortForwardResponse> = port_forwards
-        .values()
-        .map(|s| PortForwardResponse {
+    let mut forwards = Vec::new();
+    for s in port_forwards.values() {
+        let status_str = {
+            let status = s.shared_status.lock().await;
+            match &*status {
+                crate::kube::PortForwardStatus::Active => "Active".to_string(),
+                crate::kube::PortForwardStatus::Stopped => "Stopped".to_string(),
+                crate::kube::PortForwardStatus::Error(e) => e.clone(),
+            }
+        };
+        forwards.push(PortForwardResponse {
             id: s.id.clone(),
             cluster_id: s.cluster_id.clone(),
             namespace: s.namespace.clone(),
             pod: s.pod.clone(),
             container_ports: s.ports.clone(),
             local_ports: s.local_ports.clone(),
-            status: match s.status {
-                crate::kube::PortForwardStatus::Active => "Active".to_string(),
-                crate::kube::PortForwardStatus::Stopped => "Stopped".to_string(),
-                crate::kube::PortForwardStatus::Error(ref e) => e.clone(),
-            },
-        })
-        .collect();
+            status: status_str,
+        });
+    }
 
     Ok(forwards)
 }

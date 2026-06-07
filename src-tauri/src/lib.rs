@@ -185,6 +185,8 @@ pub fn run() {
             commands::kube::list_port_forwards,
             commands::kube::delete_port_forward,
             commands::kube::shutdown_port_forwards,
+            commands::kube::test_cluster_connection,
+            commands::kube::discover_pods,
         ])
         .run(tauri::generate_context!())
         .expect("Error running Troubleshooting and RCA Assistant application");

@@ -367,12 +367,10 @@ pub fn run_migrations(conn: &Connection) -> anyhow::Result<()> {
                 name TEXT NOT NULL,
                 context TEXT NOT NULL,
                 server_url TEXT,
-                kubeconfig_id TEXT NOT NULL,
+                kubeconfig_content TEXT NOT NULL,
                 created_at TEXT NOT NULL DEFAULT (datetime('now')),
-                updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-                FOREIGN KEY (kubeconfig_id) REFERENCES kubeconfig_files(id) ON DELETE CASCADE
+                updated_at TEXT NOT NULL DEFAULT (datetime('now'))
             );
-            CREATE INDEX IF NOT EXISTS idx_clusters_kubeconfig ON clusters(kubeconfig_id);
             CREATE INDEX IF NOT EXISTS idx_clusters_name ON clusters(name);
             CREATE INDEX IF NOT EXISTS idx_clusters_context ON clusters(context);",
         ),
@@ -1412,7 +1410,7 @@ mod tests {
         assert!(columns.contains(&"name".to_string()));
         assert!(columns.contains(&"context".to_string()));
         assert!(columns.contains(&"server_url".to_string()));
-        assert!(columns.contains(&"kubeconfig_id".to_string()));
+        assert!(columns.contains(&"kubeconfig_content".to_string()));
         assert!(columns.contains(&"created_at".to_string()));
         assert!(columns.contains(&"updated_at".to_string()));
     }
@@ -1422,26 +1420,34 @@ mod tests {
         let conn = setup_test_db();
         conn.execute("PRAGMA foreign_keys = ON", []).unwrap();
 
-        // Create kubeconfig first
+        // Create cluster with embedded kubeconfig
+        let kubeconfig = "apiVersion: v1
+kind: Config
+clusters:
+- cluster:
+    server: https://k8s.example.com
+  name: cluster-1
+contexts:
+- context:
+    cluster: cluster-1
+    user: user-1
+  name: context-1
+users:
+- name: user-1
+  user:
+    token: test-token
+";
         conn.execute(
-            "INSERT INTO kubeconfig_files (id, name, encrypted_content, context)
-             VALUES ('k8s-1', 'My Cluster', 'encrypted_content', 'context-1')",
-            [],
-        )
-        .unwrap();
-
-        // Create cluster referencing kubeconfig
-        conn.execute(
-            "INSERT INTO clusters (id, name, context, server_url, kubeconfig_id)
-             VALUES ('cluster-1', 'Production', 'context-1', 'https://k8s.example.com', 'k8s-1')",
-            [],
+            "INSERT INTO clusters (id, name, context, server_url, kubeconfig_content)
+             VALUES ('cluster-1', 'Production', 'context-1', 'https://k8s.example.com', ?1)",
+            [kubeconfig],
         )
         .unwrap();
 
         // Verify insertion
-        let (name, context, server_url, kubeconfig_id): (String, String, String, String) = conn
+        let (name, context, server_url, kubeconfig_content): (String, String, String, String) = conn
             .query_row(
-                "SELECT name, context, server_url, kubeconfig_id FROM clusters WHERE id = 'cluster-1'",
+                "SELECT name, context, server_url, kubeconfig_content FROM clusters WHERE id = 'cluster-1'",
                 [],
                 |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
             )
@@ -1450,42 +1456,7 @@ mod tests {
         assert_eq!(name, "Production");
         assert_eq!(context, "context-1");
         assert_eq!(server_url, "https://k8s.example.com");
-        assert_eq!(kubeconfig_id, "k8s-1");
-    }
-
-    #[test]
-    fn test_029_clusters_cascade_delete() {
-        let conn = setup_test_db();
-        conn.execute("PRAGMA foreign_keys = ON", []).unwrap();
-
-        conn.execute(
-            "INSERT INTO kubeconfig_files (id, name, encrypted_content, context)
-             VALUES ('k8s-2', 'Test Cluster', 'encrypted', 'ctx')",
-            [],
-        )
-        .unwrap();
-
-        conn.execute(
-            "INSERT INTO clusters (id, name, context, kubeconfig_id)
-             VALUES ('cluster-2', 'Test', 'ctx', 'k8s-2')",
-            [],
-        )
-        .unwrap();
-
-        // Verify cluster exists
-        let count: i64 = conn
-            .query_row("SELECT COUNT(*) FROM clusters", [], |r| r.get(0))
-            .unwrap();
-        assert_eq!(count, 1);
-
-        // Delete kubeconfig — cascade should remove cluster
-        conn.execute("DELETE FROM kubeconfig_files WHERE id = 'k8s-2'", [])
-            .unwrap();
-
-        let count: i64 = conn
-            .query_row("SELECT COUNT(*) FROM clusters", [], |r| r.get(0))
-            .unwrap();
-        assert_eq!(count, 0, "cascade delete should remove clusters");
+        assert!(kubeconfig_content.contains("k8s.example.com"));
     }
 
     #[test]
@@ -1539,7 +1510,7 @@ mod tests {
 
         // Create cluster
         conn.execute(
-            "INSERT INTO clusters (id, name, context, kubeconfig_id)
+            "INSERT INTO clusters (id, name, context, kubeconfig_content)
              VALUES ('cluster-1', 'Test', 'test-context', 'k8s-test')",
             [],
         )
@@ -1577,7 +1548,7 @@ mod tests {
 
         // Create cluster
         conn.execute(
-            "INSERT INTO clusters (id, name, context, kubeconfig_id)
+            "INSERT INTO clusters (id, name, context, kubeconfig_content)
              VALUES ('cluster-3', 'Test', 'ctx', 'k8s-3')",
             [],
         )

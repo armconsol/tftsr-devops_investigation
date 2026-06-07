@@ -64,17 +64,6 @@ pub struct IssueSummary {
     pub step_count: i64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct IssueListItem {
-    pub id: String,
-    pub title: String,
-    pub domain: String,
-    pub status: String,
-    pub severity: String,
-    pub created_at: i64,
-    pub updated_at: i64,
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct IssueFilter {
     pub status: Option<String>,
@@ -471,16 +460,16 @@ pub struct ImageAttachmentSummary {
 // ─── Kubernetes Cluster ─────────────────────────────────────────────────────
 
 /// Represents a Kubernetes cluster configuration stored in the database.
-/// The kubeconfig is referenced by kubeconfig_id (foreign key to kubeconfig_files table).
+/// The kubeconfig content is stored directly in the clusters table.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Cluster {
     pub id: String,
     pub name: String,
     pub context: String,
     pub server_url: Option<String>,
-    pub kubeconfig_id: String,
-    pub created_at: i64,
-    pub updated_at: i64,
+    pub kubeconfig_content: String,
+    pub created_at: String,
+    pub updated_at: String,
 }
 
 impl Cluster {
@@ -488,16 +477,16 @@ impl Cluster {
         name: String,
         context: String,
         server_url: Option<String>,
-        kubeconfig_id: String,
+        kubeconfig_content: String,
     ) -> Self {
-        let now = chrono::Utc::now().timestamp();
+        let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
         Cluster {
             id: Uuid::now_v7().to_string(),
             name,
             context,
             server_url,
-            kubeconfig_id,
-            created_at: now,
+            kubeconfig_content,
+            created_at: now.clone(),
             updated_at: now,
         }
     }
@@ -510,8 +499,8 @@ pub struct ClusterSummary {
     pub name: String,
     pub context: String,
     pub server_url: String,
-    pub created_at: i64,
-    pub updated_at: i64,
+    pub created_at: String,
+    pub updated_at: String,
     pub port_forward_count: i64,
 }
 
@@ -530,8 +519,8 @@ pub struct PortForward {
     pub local_ports: Vec<u16>,
     pub status: String,
     pub error_message: Option<String>,
-    pub created_at: i64,
-    pub updated_at: i64,
+    pub created_at: String,
+    pub updated_at: String,
 }
 
 impl PortForward {
@@ -543,7 +532,7 @@ impl PortForward {
         ports: Vec<u16>,
         local_ports: Vec<u16>,
     ) -> Self {
-        let now = chrono::Utc::now().timestamp();
+        let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
         PortForward {
             id: Uuid::now_v7().to_string(),
             cluster_id,
@@ -554,7 +543,7 @@ impl PortForward {
             local_ports,
             status: "Active".to_string(),
             error_message: None,
-            created_at: now,
+            created_at: now.clone(),
             updated_at: now,
         }
     }
@@ -572,8 +561,8 @@ pub struct PortForwardSummary {
     pub ports: Vec<u16>,
     pub local_ports: Vec<u16>,
     pub status: String,
-    pub created_at: i64,
-    pub updated_at: i64,
+    pub created_at: String,
+    pub updated_at: String,
 }
 
 /// Filter for listing clusters.

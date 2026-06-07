@@ -24,6 +24,8 @@ pub struct PortForwardSession {
     pub child_wait_handle: Option<Arc<TokioMutex<ChildWaitHandle>>>,
     pub is_stopped: Arc<AtomicBool>,
     pub error_message: Option<String>,
+    pub shared_status: Arc<TokioMutex<PortForwardStatus>>,
+    pub shared_error: Arc<TokioMutex<Option<String>>>,
     /// Path to temp kubeconfig file for cleanup
     pub temp_kubeconfig_path: Option<std::path::PathBuf>,
 }
@@ -64,6 +66,8 @@ impl PortForwardSession {
             child_wait_handle: None,
             is_stopped: Arc::new(AtomicBool::new(false)),
             error_message: None,
+            shared_status: Arc::new(TokioMutex::new(PortForwardStatus::Active)),
+            shared_error: Arc::new(TokioMutex::new(None)),
             temp_kubeconfig_path: config.temp_kubeconfig_path,
         }
     }
@@ -71,10 +75,9 @@ impl PortForwardSession {
     /// Spawn a background task to wait on the kubectl child process
     /// and update session state on completion/error
     pub fn spawn_child_waiter(&mut self, child: Child) {
-        let _child_id = format!("{}-{}", self.id, self.pod);
         let is_stopped = self.is_stopped.clone();
-        let status_clone = Arc::new(std::sync::Mutex::new(self.status.clone()));
-        let error_clone = Arc::new(std::sync::Mutex::new(self.error_message.clone()));
+        let status_clone = self.shared_status.clone();
+        let error_clone = self.shared_error.clone();
 
         // Store the child in an Arc<Mutex<Option<Child>>> so it can be accessed from the async task
         // and also from the stop() method
@@ -99,17 +102,17 @@ impl PortForwardSession {
             if !is_stopped.load(Ordering::SeqCst) {
                 match result {
                     Ok(status) if status.success() => {
-                        *status_clone.lock().unwrap() = PortForwardStatus::Stopped;
+                        *status_clone.lock().await = PortForwardStatus::Stopped;
                     }
                     Ok(status) => {
                         let error_msg = format!("kubectl process exited with status: {}", status);
-                        *status_clone.lock().unwrap() = PortForwardStatus::Error(error_msg.clone());
-                        *error_clone.lock().unwrap() = Some(error_msg);
+                        *status_clone.lock().await = PortForwardStatus::Error(error_msg.clone());
+                        *error_clone.lock().await = Some(error_msg);
                     }
                     Err(e) => {
                         let error_msg = format!("Failed to wait for kubectl process: {}", e);
-                        *status_clone.lock().unwrap() = PortForwardStatus::Error(error_msg.clone());
-                        *error_clone.lock().unwrap() = Some(error_msg);
+                        *status_clone.lock().await = PortForwardStatus::Error(error_msg.clone());
+                        *error_clone.lock().await = Some(error_msg);
                     }
                 }
             }
@@ -124,15 +127,16 @@ impl PortForwardSession {
     pub fn stop(&mut self) {
         self.is_stopped.store(true, Ordering::SeqCst);
         self.status = PortForwardStatus::Stopped;
-
-        // Drop the child wait handle - this cancels the background task
-        // and the Child will be dropped, which kills it
+        if let Ok(mut s) = self.shared_status.try_lock() {
+            *s = PortForwardStatus::Stopped;
+        }
         self.child_wait_handle = None;
     }
 
     pub async fn stop_async(&mut self) {
         self.is_stopped.store(true, Ordering::SeqCst);
         self.status = PortForwardStatus::Stopped;
+        *self.shared_status.lock().await = PortForwardStatus::Stopped;
 
         // Kill the child process if it exists
         if let Some(ref child_wait_handle) = self.child_wait_handle {
@@ -160,7 +164,13 @@ impl PortForwardSession {
 
     pub fn set_error(&mut self, error: String) {
         self.status = PortForwardStatus::Error(error.clone());
-        self.error_message = Some(error);
+        self.error_message = Some(error.clone());
+        if let Ok(mut s) = self.shared_status.try_lock() {
+            *s = PortForwardStatus::Error(error.clone());
+        }
+        if let Ok(mut e) = self.shared_error.try_lock() {
+            *e = Some(error);
+        }
     }
 
     pub fn is_active(&self) -> bool {
@@ -293,6 +303,8 @@ mod tests {
             child_wait_handle: None,
             is_stopped: Arc::new(AtomicBool::new(false)),
             error_message: None,
+            shared_status: Arc::new(TokioMutex::new(PortForwardStatus::Stopped)),
+            shared_error: Arc::new(TokioMutex::new(None)),
             temp_kubeconfig_path: None,
         };
         assert!(!stopped_session.is_active());
@@ -311,6 +323,10 @@ mod tests {
             child_wait_handle: None,
             is_stopped: Arc::new(AtomicBool::new(false)),
             error_message: Some("error".to_string()),
+            shared_status: Arc::new(TokioMutex::new(PortForwardStatus::Error(
+                "error".to_string(),
+            ))),
+            shared_error: Arc::new(TokioMutex::new(Some("error".to_string()))),
             temp_kubeconfig_path: None,
         };
         assert!(!error_session.is_active());

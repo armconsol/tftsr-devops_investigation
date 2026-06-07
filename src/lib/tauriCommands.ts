@@ -766,6 +766,23 @@ export interface PortForwardResponse {
   status: string;
 }
 
+export interface PodInfo {
+  name: string;
+  status: string;
+  ready: string;
+  age: string;
+}
+
+export interface ClusterConnectionState {
+  type: "Connected" | "Disconnected";
+  error?: string;
+}
+
+export interface ClusterConnectionStatus {
+  status: ClusterConnectionState;
+  context: string;
+}
+
 // ─── Kubernetes Management Commands ───────────────────────────────────────────
 
 export const addClusterCmd = (id: string, name: string, kubeconfigContent: string) =>
@@ -791,3 +808,9 @@ export const listPortForwardsCmd = () =>
 
 export const shutdownPortForwardsCmd = () =>
   invoke<void>("shutdown_port_forwards");
+
+export const testClusterConnectionCmd = (clusterId: string) =>
+  invoke<ClusterConnectionStatus>("test_cluster_connection", { clusterId });
+
+export const discoverPodsCmd = (clusterId: string, namespace: string) =>
+  invoke<PodInfo[]>("discover_pods", { clusterId, namespace });

@@ -17,7 +17,7 @@
 | Frontend test (watch) | `npm run test` |
 | Frontend coverage | `npm run test:coverage` |
 | TypeScript type check | `npx tsc --noEmit` |
-| Frontend lint | `npx eslint . --quiet` |
+| Frontend lint | `npx eslint src/ tests/ --quiet` |
 
 **Lint Policy**: **ALWAYS run `cargo fmt` and `cargo clippy` after any Rust code change**. Fix all issues before proceeding.
 
