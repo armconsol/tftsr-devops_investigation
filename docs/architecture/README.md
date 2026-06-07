@@ -1352,3 +1352,4 @@ See the [adrs/](./adrs/) directory for all Architecture Decision Records.
 | [ADR-007](./adrs/ADR-007-three-tier-shell-safety.md) | Three-Tier Shell Command Safety Classification | Accepted |
 | [ADR-008](./adrs/ADR-008-mcp-protocol-integration.md) | Model Context Protocol for External Tools | Accepted |
 | [ADR-009](./adrs/ADR-009-bundled-kubectl-binary.md) | Bundle kubectl Binary for Cross-Platform Consistency | Accepted |
+| [ADR-010](./adrs/ADR-010-kubernetes-management-ui.md) | Kubernetes Management UI with Lens Desktop v5.x Feature Parity | Accepted |
