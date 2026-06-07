@@ -33,6 +33,8 @@ CI, chore, and build changes are excluded.
 - Use public Gitea URL in test workflow
 - **kubernetes**: Address PR #76 review findings
 - **kubernetes**: Remove redundant TS cast and fix cargo fmt failures
+- **kubernetes**: Use kubeconfig files from Settings instead of duplicate cluster management
+- **kubernetes**: Sync active kubeconfig to store's selectedClusterId
 
 ### Documentation
 - **kubernetes**: Add comment about dynamic port allocation limitation
