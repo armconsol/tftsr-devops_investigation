@@ -187,6 +187,19 @@ pub fn run() {
             commands::kube::shutdown_port_forwards,
             commands::kube::test_cluster_connection,
             commands::kube::discover_pods,
+            // Kubernetes Resource Discovery
+            commands::kube::list_namespaces,
+            commands::kube::list_pods,
+            commands::kube::list_services,
+            commands::kube::list_deployments,
+            commands::kube::list_statefulsets,
+            commands::kube::list_daemonsets,
+            // Kubernetes Resource Management
+            commands::kube::get_pod_logs,
+            commands::kube::scale_deployment,
+            commands::kube::restart_deployment,
+            commands::kube::delete_resource,
+            commands::kube::exec_pod,
         ])
         .run(tauri::generate_context!())
         .expect("Error running Troubleshooting and RCA Assistant application");

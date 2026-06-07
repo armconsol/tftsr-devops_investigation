@@ -15,6 +15,7 @@ import {
   Moon,
   Terminal,
   FileCode,
+  Server,
 } from "lucide-react";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { getAppVersionCmd, loadAiProvidersCmd, testProviderConnectionCmd, shutdownPortForwardsCmd } from "@/lib/tauriCommands";
@@ -34,11 +35,13 @@ import MCPServers from "@/pages/Settings/MCPServers";
 import Security from "@/pages/Settings/Security";
 import ShellExecution from "@/pages/Settings/ShellExecution";
 import KubeconfigManager from "@/pages/Settings/KubeconfigManager";
+import { KubernetesPage } from "@/pages/Kubernetes/KubernetesPage";
 import { ShellApprovalModal } from "@/components/ShellApprovalModal";
 
 const navItems = [
   { to: "/", icon: Home, label: "Dashboard" },
   { to: "/new-issue", icon: Plus, label: "New Issue" },
+  { to: "/kubernetes", icon: Server, label: "Kubernetes" },
   { to: "/history", icon: Clock, label: "History" },
 ];
 
@@ -197,6 +200,7 @@ export default function App() {
             <Route path="/settings/ollama" element={<Ollama />} />
             <Route path="/settings/shell" element={<ShellExecution />} />
             <Route path="/settings/kubeconfig" element={<KubeconfigManager />} />
+            <Route path="/kubernetes" element={<KubernetesPage />} />
             <Route path="/settings/integrations" element={<Integrations />} />
             <Route path="/settings/mcp" element={<MCPServers />} />
             <Route path="/settings/security" element={<Security />} />

@@ -783,6 +783,101 @@ export interface ClusterConnectionStatus {
   context: string;
 }
 
+// ─── Kubernetes Resource Discovery Types ──────────────────────────────────────
+
+export interface NamespaceInfo {
+  name: string;
+  status: string;
+  age: string;
+}
+
+export interface ServicePort {
+  name?: string;
+  port: number;
+  target_port?: string;
+  protocol: string;
+}
+
+export interface ServiceInfo {
+  name: string;
+  namespace: string;
+  type: string;
+  cluster_ip: string;
+  external_ip?: string;
+  ports: ServicePort[];
+  age: string;
+  selector: Record<string, string>;
+}
+
+export interface DeploymentInfo {
+  name: string;
+  namespace: string;
+  ready: string;
+  up_to_date: string;
+  available: string;
+  age: string;
+  replicas: number;
+  labels: Record<string, string>;
+}
+
+export interface StatefulSetInfo {
+  name: string;
+  namespace: string;
+  ready: string;
+  age: string;
+  replicas: number;
+  labels: Record<string, string>;
+}
+
+export interface DaemonSetInfo {
+  name: string;
+  namespace: string;
+  desired: number;
+  current: number;
+  ready: number;
+  up_to_date: number;
+  available: number;
+  age: string;
+  labels: Record<string, string>;
+}
+
+export interface NodeMetrics {
+  name: string;
+  cpu_usage: string;
+  memory_usage: string;
+  cpu_percentage: number;
+  memory_percentage: number;
+  age: string;
+}
+
+export interface PodMetrics {
+  name: string;
+  namespace: string;
+  cpu_usage: string;
+  memory_usage: string;
+  cpu_percentage: number;
+  memory_percentage: number;
+}
+
+export interface LogResponse {
+  logs: string;
+}
+
+export interface ExecResponse {
+  stdout: string;
+  stderr: string;
+  exit_code: number | null;
+}
+
+export interface ExecSessionResponse {
+  session_id: string;
+  cluster_id: string;
+  namespace: string;
+  pod: string;
+  container?: string;
+  status: string;
+}
+
 // ─── Kubernetes Management Commands ───────────────────────────────────────────
 
 export const addClusterCmd = (id: string, name: string, kubeconfigContent: string) =>
@@ -814,3 +909,40 @@ export const testClusterConnectionCmd = (clusterId: string) =>
 
 export const discoverPodsCmd = (clusterId: string, namespace: string) =>
   invoke<PodInfo[]>("discover_pods", { clusterId, namespace });
+
+// ─── Kubernetes Resource Discovery Commands ───────────────────────────────────
+
+export const listNamespacesCmd = (clusterId: string) =>
+  invoke<NamespaceInfo[]>("list_namespaces", { clusterId });
+
+export const listPodsCmd = (clusterId: string, namespace: string) =>
+  invoke<PodInfo[]>("list_pods", { clusterId, namespace });
+
+export const listServicesCmd = (clusterId: string, namespace: string) =>
+  invoke<ServiceInfo[]>("list_services", { clusterId, namespace });
+
+export const listDeploymentsCmd = (clusterId: string, namespace: string) =>
+  invoke<DeploymentInfo[]>("list_deployments", { clusterId, namespace });
+
+export const listStatefulsetsCmd = (clusterId: string, namespace: string) =>
+  invoke<StatefulSetInfo[]>("list_statefulsets", { clusterId, namespace });
+
+export const listDaemonsetsCmd = (clusterId: string, namespace: string) =>
+  invoke<DaemonSetInfo[]>("list_daemonsets", { clusterId, namespace });
+
+// ─── Kubernetes Resource Management Commands ──────────────────────────────────
+
+export const getPodLogsCmd = (clusterId: string, namespace: string, podName: string, containerName: string) =>
+  invoke<LogResponse>("get_pod_logs", { clusterId, namespace, podName, containerName });
+
+export const scaleDeploymentCmd = (clusterId: string, namespace: string, deploymentName: string, replicas: number) =>
+  invoke<void>("scale_deployment", { clusterId, namespace, deploymentName, replicas });
+
+export const restartDeploymentCmd = (clusterId: string, namespace: string, deploymentName: string) =>
+  invoke<void>("restart_deployment", { clusterId, namespace, deploymentName });
+
+export const deleteResourceCmd = (clusterId: string, resourceType: string, namespace: string, resourceName: string) =>
+  invoke<void>("delete_resource", { clusterId, resourceType, namespace, resourceName });
+
+export const execPodCmd = (clusterId: string, namespace: string, podName: string, containerName: string, command: string) =>
+  invoke<ExecResponse>("exec_pod", { clusterId, namespace, podName, containerName, command });
