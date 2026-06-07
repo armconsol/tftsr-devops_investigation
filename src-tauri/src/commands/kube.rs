@@ -6,8 +6,10 @@ use lazy_static::lazy_static;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::process::Stdio;
 use std::sync::Arc;
 use tauri::State;
+use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
 use tracing::info;
 
@@ -3609,44 +3611,257 @@ fn parse_hpas_json(json_str: &str) -> Result<Vec<HorizontalPodAutoscalerInfo>, S
 }
 
 #[tauri::command]
-#[allow(unused_variables)]
 pub async fn cordon_node(cluster_id: String, node_name: String, state: State<'_, AppState>) -> Result<(), String> {
-    // Implementation similar to other management commands
+    let clusters = state.clusters.lock().await;
+    let cluster = clusters
+        .get(&cluster_id)
+        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+
+    let kubeconfig_content = cluster.kubeconfig_content.as_ref();
+    let context = &cluster.context;
+
+    let temp_dir = std::env::temp_dir();
+    let temp_path = temp_dir.join(format!("kubeconfig-{}-cordon.yaml", cluster_id));
+    let _cleanup = TempFileCleanup(temp_path.clone());
+
+    std::fs::write(&temp_path, kubeconfig_content)
+        .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
+
+    let kubectl_path = locate_kubectl()?;
+
+    let output = Command::new(kubectl_path)
+        .arg("cordon")
+        .arg(node_name)
+        .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
+        .env("KUBERNETES_CONTEXT", context)
+        .output()
+        .await
+        .map_err(|e| format!("Failed to execute kubectl: {e}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(stderr.to_string());
+    }
+
     Ok(())
 }
 
 #[tauri::command]
-#[allow(unused_variables)]
 pub async fn uncordon_node(cluster_id: String, node_name: String, state: State<'_, AppState>) -> Result<(), String> {
-    // Implementation similar to other management commands
+    let clusters = state.clusters.lock().await;
+    let cluster = clusters
+        .get(&cluster_id)
+        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+
+    let kubeconfig_content = cluster.kubeconfig_content.as_ref();
+    let context = &cluster.context;
+
+    let temp_dir = std::env::temp_dir();
+    let temp_path = temp_dir.join(format!("kubeconfig-{}-uncordon.yaml", cluster_id));
+    let _cleanup = TempFileCleanup(temp_path.clone());
+
+    std::fs::write(&temp_path, kubeconfig_content)
+        .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
+
+    let kubectl_path = locate_kubectl()?;
+
+    let output = Command::new(kubectl_path)
+        .arg("uncordon")
+        .arg(node_name)
+        .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
+        .env("KUBERNETES_CONTEXT", context)
+        .output()
+        .await
+        .map_err(|e| format!("Failed to execute kubectl: {e}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(stderr.to_string());
+    }
+
     Ok(())
 }
 
 #[tauri::command]
-#[allow(unused_variables)]
 pub async fn drain_node(cluster_id: String, node_name: String, state: State<'_, AppState>) -> Result<(), String> {
-    // Implementation similar to other management commands
+    let clusters = state.clusters.lock().await;
+    let cluster = clusters
+        .get(&cluster_id)
+        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+
+    let kubeconfig_content = cluster.kubeconfig_content.as_ref();
+    let context = &cluster.context;
+
+    let temp_dir = std::env::temp_dir();
+    let temp_path = temp_dir.join(format!("kubeconfig-{}-drain.yaml", cluster_id));
+    let _cleanup = TempFileCleanup(temp_path.clone());
+
+    std::fs::write(&temp_path, kubeconfig_content)
+        .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
+
+    let kubectl_path = locate_kubectl()?;
+
+    let output = Command::new(kubectl_path)
+        .arg("drain")
+        .arg(node_name)
+        .arg("--ignore-daemonsets")
+        .arg("--delete-emptydir-data")
+        .arg("--force")
+        .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
+        .env("KUBERNETES_CONTEXT", context)
+        .output()
+        .await
+        .map_err(|e| format!("Failed to execute kubectl: {e}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(stderr.to_string());
+    }
+
     Ok(())
 }
 
 #[tauri::command]
-#[allow(unused_variables)]
 pub async fn rollback_deployment(cluster_id: String, namespace: String, deployment_name: String, state: State<'_, AppState>) -> Result<(), String> {
-    // Implementation similar to other management commands
+    let clusters = state.clusters.lock().await;
+    let cluster = clusters
+        .get(&cluster_id)
+        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+
+    let kubeconfig_content = cluster.kubeconfig_content.as_ref();
+    let context = &cluster.context;
+
+    let temp_dir = std::env::temp_dir();
+    let temp_path = temp_dir.join(format!("kubeconfig-{}-rollback.yaml", cluster_id));
+    let _cleanup = TempFileCleanup(temp_path.clone());
+
+    std::fs::write(&temp_path, kubeconfig_content)
+        .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
+
+    let kubectl_path = locate_kubectl()?;
+
+    let output = Command::new(kubectl_path)
+        .arg("rollout")
+        .arg("undo")
+        .arg("deployment")
+        .arg(deployment_name)
+        .arg("-n")
+        .arg(namespace)
+        .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
+        .env("KUBERNETES_CONTEXT", context)
+        .output()
+        .await
+        .map_err(|e| format!("Failed to execute kubectl: {e}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(stderr.to_string());
+    }
+
     Ok(())
 }
 
 #[tauri::command]
-#[allow(unused_variables)]
-pub async fn create_resource(cluster_id: String, namespace: String, resource_type: String, yaml_content: String, state: State<'_, AppState>) -> Result<(), String> {
-    // Implementation similar to other management commands
+pub async fn create_resource(cluster_id: String, namespace: String, _resource_type: String, yaml_content: String, state: State<'_, AppState>) -> Result<(), String> {
+    let clusters = state.clusters.lock().await;
+    let cluster = clusters
+        .get(&cluster_id)
+        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+
+    let kubeconfig_content = cluster.kubeconfig_content.as_ref();
+    let context = &cluster.context;
+
+    let temp_dir = std::env::temp_dir();
+    let temp_path = temp_dir.join(format!("kubeconfig-{}-create.yaml", cluster_id));
+    let _cleanup = TempFileCleanup(temp_path.clone());
+
+    std::fs::write(&temp_path, kubeconfig_content)
+        .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
+
+    let kubectl_path = locate_kubectl()?;
+
+    let mut cmd = Command::new(kubectl_path);
+    cmd.arg("create")
+        .arg("-f")
+        .arg("-")
+        .arg("-n")
+        .arg(namespace)
+        .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
+        .env("KUBERNETES_CONTEXT", context)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    let mut child = cmd.spawn()
+        .map_err(|e| format!("Failed to spawn kubectl: {e}"))?;
+
+    if let Some(mut stdin) = child.stdin.take() {
+        stdin.write_all(yaml_content.as_bytes())
+            .await
+            .map_err(|e| format!("Failed to write yaml to stdin: {e}"))?;
+    }
+
+    let output = child.wait_with_output()
+        .await
+        .map_err(|e| format!("Failed to execute kubectl: {e}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(stderr.to_string());
+    }
+
     Ok(())
 }
 
 #[tauri::command]
-#[allow(unused_variables)]
-pub async fn edit_resource(cluster_id: String, namespace: String, resource_type: String, resource_name: String, yaml_content: String, state: State<'_, AppState>) -> Result<(), String> {
-    // Implementation similar to other management commands
+pub async fn edit_resource(cluster_id: String, namespace: String, _resource_type: String, _resource_name: String, yaml_content: String, state: State<'_, AppState>) -> Result<(), String> {
+    let clusters = state.clusters.lock().await;
+    let cluster = clusters
+        .get(&cluster_id)
+        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+
+    let kubeconfig_content = cluster.kubeconfig_content.as_ref();
+    let context = &cluster.context;
+
+    let temp_dir = std::env::temp_dir();
+    let temp_path = temp_dir.join(format!("kubeconfig-{}-edit.yaml", cluster_id));
+    let _cleanup = TempFileCleanup(temp_path.clone());
+
+    std::fs::write(&temp_path, kubeconfig_content)
+        .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
+
+    let kubectl_path = locate_kubectl()?;
+
+    let mut cmd = Command::new(kubectl_path);
+    cmd.arg("apply")
+        .arg("-f")
+        .arg("-")
+        .arg("-n")
+        .arg(namespace)
+        .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
+        .env("KUBERNETES_CONTEXT", context)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    let mut child = cmd.spawn()
+        .map_err(|e| format!("Failed to spawn kubectl: {e}"))?;
+
+    if let Some(mut stdin) = child.stdin.take() {
+        stdin.write_all(yaml_content.as_bytes())
+            .await
+            .map_err(|e| format!("Failed to write yaml to stdin: {e}"))?;
+    }
+
+    let output = child.wait_with_output()
+        .await
+        .map_err(|e| format!("Failed to execute kubectl: {e}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(stderr.to_string());
+    }
+
     Ok(())
 }
 
