@@ -7,6 +7,8 @@ CI, chore, and build changes are excluded.
 ## [Unreleased]
 
 ### Bug Fixes
+- **lint**: Resolve ESLint errors
+- **changelog**: Only include current tag commits in release body
 - **workflow**: Remove duplicate else block in changelog generation
 - **fmt**: Format code with cargo fmt
 - Address PR review findings
@@ -35,6 +37,8 @@ CI, chore, and build changes are excluded.
 - **kubernetes**: Sync active kubeconfig to store's selectedClusterId
 - **ci**: Generate per-release changelog body using positional range arg
 - **ci**: Exclude internal migration commits from changelog
+- **kube**: Bridge kubeconfig storage to in-memory cluster map and fix UI issues
+- **classifier**: Fix 3 safety bugs, extract const arrays, make tier UI dynamic
 
 ### Documentation
 - **kubernetes**: Add comment about dynamic port allocation limitation
@@ -74,8 +78,6 @@ CI, chore, and build changes are excluded.
 - **clippy**: Fix Rust nightly clippy lints
 - Align Tauri npm packages with Rust crate versions
 - Pin plugin-stronghold npm version to match Rust crate (2.3.1)
-- **lint**: Resolve ESLint errors
-- **changelog**: Only include current tag commits in release body
 
 ### Features
 - **kube**: Add Kubernetes management support
@@ -124,6 +126,63 @@ CI, chore, and build changes are excluded.
 - **security**: Expand Password PII patterns; add regression tests
 
 ## [0.3.8] — 2026-06-01
+
+### Bug Fixes
+- **security**: Block PII in chat attachments and typed messages
+- **security**: Address PR review — move attachment handling to backend, auto-redact PII
+- **security**: Backend-only PII redaction; fix fmt CI failure
+- **security**: Frontend attachment scan notice, bubble redaction update, fmt fix
+- **security**: Full-content PII scan, clippy, IPC null fix, scan size cap
+- Audit PII redaction metadata, safe bubble update, update ticket
+
+## [0.3.7] — 2026-05-31
+
+### Bug Fixes
+- Address PR review findings — compress errors, size guard, modal error display
+
+### Features
+- Attachment DB storage and cross-incident recall
+
+## [0.3.6] — 2026-05-31
+
+### Bug Fixes
+- **ci**: Push detached HEAD to master using HEAD:master refspec
+- **ci**: Consolidate all auto-tag changelog fixes
+
+## [0.3.5] — 2026-05-31
+
+### Bug Fixes
+- **ci**: Changelog job creates release to avoid race with build jobs
+- **ci**: Verify tag exists locally before running git-cliff
+
+## [0.3.4] — 2026-05-31
+
+### Bug Fixes
+- **ci**: Pass release_tag as job output; fix equal-version case; drop git-describe [skip ci]
+- **ai,search**: Load history across all conversations; deep search related tables
+- **ci**: Reduce AI review hallucinations in pr-review workflow
+- **agentic**: Inline format arg in writeln! to satisfy clippy::uninlined_format_args
+- **ci**: Rewrite pr-review to send full file contents instead of diffs
+- **ci**: Fix secret scrubbing regex that was deleting legitimate code lines
+- **ci**: Add post-generation evidence verification to pr-review
+- **ci**: Add codebase index to prompt; verify findings against full repo
+- **ci**: Fix backtick command substitution crash in pr-review prompt
+- **ci**: Remove concurrency group that silently dropped pr-review runs
+- **ci**: Replace heredoc with printf to fix YAML block scalar breakage
+- **ci**: Fix grep invalid range and printf invalid option in pr-review
+- **ci**: Remove remaining printf -- calls in Analyze with LLM step
+- **ci**: Use printf '%s' form to avoid format strings starting with hyphen
+- **ci**: Write curl body to file to avoid ARG_MAX limit
+- **ci**: Install python3 in pr-review container (ubuntu:22.04 omits it)
+- **sudo**: Enforce username scope and singleton row in sudo_config
+
+### Documentation
+- **analysis**: Document zip-slip safety guarantee in extract_docx_text
+
+### Features
+- **upload**: Add safe file extension validation and binary text extraction
+
+## [0.3.3] — 2026-05-23
 
 ### Bug Fixes
 - Resolve all clippy lints (uninlined format args, range::contains, push_str single chars)
@@ -261,34 +320,6 @@ CI, chore, and build changes are excluded.
 - **ci**: Replace tea with curl, honour Cargo.toml version [skip ci]
 - **ci**: Replace tea CLI with curl in changelog steps; read Cargo.toml for version
 - Bump tauri.conf.json version to 0.3.0
-- **ci**: Pass release_tag as job output; fix equal-version case; drop git-describe [skip ci]
-- **ai,search**: Load history across all conversations; deep search related tables
-- **ci**: Reduce AI review hallucinations in pr-review workflow
-- **agentic**: Inline format arg in writeln! to satisfy clippy::uninlined_format_args
-- **ci**: Rewrite pr-review to send full file contents instead of diffs
-- **ci**: Fix secret scrubbing regex that was deleting legitimate code lines
-- **ci**: Add post-generation evidence verification to pr-review
-- **ci**: Add codebase index to prompt; verify findings against full repo
-- **ci**: Fix backtick command substitution crash in pr-review prompt
-- **ci**: Remove concurrency group that silently dropped pr-review runs
-- **ci**: Replace heredoc with printf to fix YAML block scalar breakage
-- **ci**: Fix grep invalid range and printf invalid option in pr-review
-- **ci**: Remove remaining printf -- calls in Analyze with LLM step
-- **ci**: Use printf '%s' form to avoid format strings starting with hyphen
-- **ci**: Write curl body to file to avoid ARG_MAX limit
-- **ci**: Install python3 in pr-review container (ubuntu:22.04 omits it)
-- **sudo**: Enforce username scope and singleton row in sudo_config
-- **ci**: Changelog job creates release to avoid race with build jobs
-- **ci**: Verify tag exists locally before running git-cliff
-- **ci**: Push detached HEAD to master using HEAD:master refspec
-- **ci**: Consolidate all auto-tag changelog fixes
-- Address PR review findings — compress errors, size guard, modal error display
-- **security**: Block PII in chat attachments and typed messages
-- **security**: Address PR review — move attachment handling to backend, auto-redact PII
-- **security**: Backend-only PII redaction; fix fmt CI failure
-- **security**: Frontend attachment scan notice, bubble redaction update, fmt fix
-- **security**: Full-content PII scan, clippy, IPC null fix, scan size cap
-- Audit PII redaction metadata, safe bubble update, update ticket
 
 ### Documentation
 - Update PLAN.md with accurate implementation status
@@ -312,7 +343,6 @@ CI, chore, and build changes are excluded.
 - Update CHANGELOG.md for v0.2.68
 - Update CHANGELOG.md for v0.2.69-v0.2.71
 - Update CHANGELOG.md for v0.2.71
-- **analysis**: Document zip-slip safety guarantee in extract_docx_text
 
 ### Features
 - Initial implementation of TFTSR IT Triage & RCA application
@@ -352,8 +382,6 @@ CI, chore, and build changes are excluded.
 - Wire incident response methodology into AI and record triage events
 - **ai**: Add devops-incident-responder agent with domain auto-detection
 - **mcp**: Add MCP Server Support with TDD implementation
-- **upload**: Add safe file extension validation and binary text extraction
-- Attachment DB storage and cross-incident recall
 
 ### Performance
 - **ci**: Use pre-baked images and add cargo/npm caching
