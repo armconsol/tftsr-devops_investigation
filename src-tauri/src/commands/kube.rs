@@ -180,13 +180,7 @@ pub async fn connect_cluster_from_kubeconfig(
     let context = extract_context(&content)?;
     let server_url = extract_server_url(&content).unwrap_or_default();
 
-    let client = ClusterClient::new(
-        id.clone(),
-        name,
-        context,
-        server_url,
-        Arc::new(content),
-    );
+    let client = ClusterClient::new(id.clone(), name, context, server_url, Arc::new(content));
 
     let mut clusters = state.clusters.lock().await;
     clusters.insert(id, client);

@@ -232,3 +232,11 @@ pub async fn check_kubectl_installed(_state: State<'_, AppState>) -> Result<Kube
         }),
     }
 }
+
+/// Return the live classifier rule lists so the UI can render them dynamically.
+/// The data derives directly from the module-level const arrays in classifier.rs,
+/// so any addition or removal there is automatically reflected in the UI.
+#[tauri::command]
+pub fn get_classifier_rules() -> crate::shell::classifier::ClassifierRules {
+    crate::shell::classifier::CommandClassifier::get_rules()
+}
