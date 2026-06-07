@@ -44,6 +44,7 @@ pub fn run() {
         clusters: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
         port_forwards: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
         refresh_registry: Arc::new(tokio::sync::Mutex::new(crate::kube::RefreshRegistry::new())),
+        watchers: Arc::new(Mutex::new(std::collections::HashMap::new())),
     };
     let stronghold_salt = format!(
         "tftsr-stronghold-salt-v1-{:x}",

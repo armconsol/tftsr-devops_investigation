@@ -748,6 +748,18 @@ export interface ClusterInfo {
   cluster_url: string;
 }
 
+export interface ContextInfo {
+  name: string;
+  cluster: string;
+  user: string;
+}
+
+export interface ResourceInfo {
+  name: string;
+  namespace: string;
+  [key: string]: unknown;
+}
+
 export interface PortForwardRequest {
   cluster_id: string;
   namespace: string;

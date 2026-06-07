@@ -4055,3 +4055,76 @@ pub async fn edit_resource(
 
     Ok(())
 }
+
+#[tauri::command]
+pub async fn subscribe_to_k8s_events(
+    cluster_id: String,
+    namespace: String,
+    resource_type: String,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    let _app_state = state.inner();
+
+    let rx = crate::kube::start_resource_watcher(_app_state, cluster_id, namespace, resource_type)
+        .await
+        .map_err(|e| format!("Failed to start watcher: {e}"))?;
+
+    let duration = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|e| format!("Failed to get duration: {e}"))?;
+    let unsubscribe_id = format!("watcher-{}", duration.as_millis());
+
+    state
+        .inner()
+        .watchers
+        .lock()
+        .unwrap()
+        .insert(unsubscribe_id.clone(), rx);
+
+    Ok(unsubscribe_id)
+}
+
+#[tauri::command]
+pub async fn subscribe_to_all_k8s_events(
+    cluster_id: String,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    let _app_state = state.inner();
+
+    let rx = crate::kube::start_all_resources_watcher(_app_state, cluster_id)
+        .await
+        .map_err(|e| format!("Failed to start all watcher: {e}"))?;
+
+    let duration = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|e| format!("Failed to get duration: {e}"))?;
+    let unsubscribe_id = format!("watcher-all-{}", duration.as_millis());
+
+    state
+        .inner()
+        .watchers
+        .lock()
+        .unwrap()
+        .insert(unsubscribe_id.clone(), rx);
+
+    Ok(unsubscribe_id)
+}
+
+#[tauri::command]
+pub async fn unsubscribe_from_k8s_events(
+    unsubscribe_id: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let removed = state
+        .inner()
+        .watchers
+        .lock()
+        .unwrap()
+        .remove(&unsubscribe_id);
+
+    if removed.is_none() {
+        return Err(format!("Watcher {} not found", unsubscribe_id));
+    }
+
+    Ok(())
+}

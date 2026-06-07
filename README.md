@@ -208,10 +208,10 @@ tftsr/
 │   ├── lib.rs        # App builder, plugin registration, command handler registration
 │   └── state.rs      # AppState (DB connection, settings)
 ├── src/
-│   ├── pages/        # Dashboard, NewIssue, LogUpload, Triage, Resolution, RCA, Postmortem, History, Settings
-│   ├── components/   # ChatWindow, TriageProgress, PiiDiffViewer, DocEditor, HardwareReport, ModelSelector, UI
-│   ├── stores/       # sessionStore, settingsStore (persisted), historyStore
-│   ├── lib/          # tauriCommands.ts (typed IPC wrappers), domainPrompts.ts
+│   ├── pages/        # Dashboard, NewIssue, LogUpload, Triage, Resolution, RCA, Postmortem, History, Settings, Kubernetes
+│   ├── components/   # ChatWindow, TriageProgress, PiiDiffViewer, DocEditor, HardwareReport, ModelSelector, UI, Kubernetes (26 components)
+│   ├── stores/       # sessionStore, settingsStore (persisted), historyStore, kubernetesStore
+│   ├── lib/          # tauriCommands.ts (typed IPC wrappers), domainPrompts.ts, eventBus.ts
 │   └── styles/       # Tailwind + CSS custom properties
 ├── tests/
 │   ├── unit/         # Vitest unit tests (PII, session store, settings store)

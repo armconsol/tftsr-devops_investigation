@@ -45,6 +45,15 @@ CI, chore, and build changes are excluded.
 - Implement full Lens-like Kubernetes UI with resource discovery and management
 - Implement additional Kubernetes resource discovery and management commands
 - Add Kubernetes Management Implementation Plan
+- **k8s**: Implement Phase 7 - Real-time updates with event bus and watchers
+- **k8s**: Add 15 new resource list components (Secret, ReplicaSet, Job, CronJob, Ingress, PVC, PV, ServiceAccount, Role, ClusterRole, RoleBinding, ClusterRoleBinding, HPA, Node, Event, ConfigMap)
+- **k8s**: Add advanced components (Terminal, YamlEditor, MetricsChart, SearchBar, ContextSwitcher, ApplicationView)
+- **k8s**: Add detail views for all major resource types
+- **k8s**: Add UX components (Hotbar, CommandPalette, Toast, LoadingSpinner)
+- **k8s**: Add resource management dialogs (CreateResourceModal, EditResourceModal)
+- **k8s**: Add RBAC management (RbacViewer, RbacEditor)
+- **k8s**: Add event bus for frontend event handling
+- **k8s**: Add watcher module for Kubernetes API resource watching
 
 ## [1.1.0] — 2026-06-06
 
