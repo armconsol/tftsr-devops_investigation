@@ -35,6 +35,7 @@ CI, chore, and build changes are excluded.
 - **kubernetes**: Remove redundant TS cast and fix cargo fmt failures
 - **kubernetes**: Use kubeconfig files from Settings instead of duplicate cluster management
 - **kubernetes**: Sync active kubeconfig to store's selectedClusterId
+- **ci**: Generate per-release changelog body using positional range arg
 
 ### Documentation
 - **kubernetes**: Add comment about dynamic port allocation limitation
