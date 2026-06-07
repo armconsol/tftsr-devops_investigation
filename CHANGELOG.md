@@ -18,10 +18,28 @@ CI, chore, and build changes are excluded.
 - **fmt**: Format code with cargo fmt
 - Address clippy warnings
 - **fmt**: Format code with cargo fmt
+- **changelog**: Use tag range for release notes
+- **fmt**: Apply cargo fmt
+- Address automated PR review findings
+- Address all automated PR review findings
+- Properly handle kubectl subprocess with async child management
+- Address automated PR review findings
+- Add shutdown_port_forwards command for app cleanup
+- Add app shutdown cleanup for port forward processes
+- **kubernetes**: Address automated PR review findings
+- **kube**: Address portforward race condition and temp file leak
+- **ci**: Replace JS-based Renovate action with direct container invocation
+
+### Documentation
+- **kubernetes**: Add comment about dynamic port allocation limitation
 
 ### Features
 - **kube**: Add Kubernetes management GUI components
 - **kube**: Implement delete_port_forward command
+- **kube**: Implement complete kubectl port-forward runtime
+- Add comprehensive Windows and Linux command support to shell classifier
+- **kubernetes**: Add database persistence for clusters and port_forwards
+- **k8s**: Implement clean-room Kubernetes management GUI
 
 ## [1.1.0] — 2026-06-06
 
@@ -44,6 +62,7 @@ CI, chore, and build changes are excluded.
 - Pin plugin-stronghold npm version to match Rust crate (2.3.1)
 
 ### Features
+- Full copy from apollo_nxt-trcaa with complete sanitization
 - **kube**: Add Kubernetes management support
 
 ## [0.3.12] — 2026-06-05
