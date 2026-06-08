@@ -188,9 +188,28 @@ interface SelectContextValue {
   onChange: (value: string) => void;
   open: boolean;
   setOpen: (open: boolean) => void;
+  labelMap: Map<string, React.ReactNode>;
 }
 
 const SelectContext = React.createContext<SelectContextValue | null>(null);
+
+/** Walk a React node tree collecting SelectItem value→children mappings. */
+function collectLabels(
+  nodes: React.ReactNode,
+  map: Map<string, React.ReactNode>
+): void {
+  React.Children.forEach(nodes, (child) => {
+    if (!React.isValidElement(child)) return;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const props = child.props as any;
+    if (child.type === SelectItem && typeof props.value === "string") {
+      map.set(props.value, props.children);
+    }
+    if (props.children) {
+      collectLabels(props.children as React.ReactNode, map);
+    }
+  });
+}
 
 interface SelectProps {
   value?: string;
@@ -207,8 +226,13 @@ export function Select({ value = "", onValueChange, children }: SelectProps) {
     },
     [onValueChange]
   );
+  const labelMap = React.useMemo(() => {
+    const map = new Map<string, React.ReactNode>();
+    collectLabels(children, map);
+    return map;
+  }, [children]);
   return (
-    <SelectContext.Provider value={{ value, onChange, open, setOpen }}>
+    <SelectContext.Provider value={{ value, onChange, open, setOpen, labelMap }}>
       <div className="relative">{children}</div>
     </SelectContext.Provider>
   );
@@ -242,7 +266,12 @@ export function SelectTrigger({
 
 export function SelectValue({ placeholder }: { placeholder?: string }) {
   const ctx = React.useContext(SelectContext)!;
-  return <span className={ctx.value ? "text-foreground" : "text-muted-foreground"}>{ctx.value || placeholder}</span>;
+  const label = ctx.value ? ctx.labelMap.get(ctx.value) : undefined;
+  return (
+    <span className={ctx.value ? "text-foreground" : "text-muted-foreground"}>
+      {label ?? (ctx.value ? ctx.value : placeholder)}
+    </span>
+  );
 }
 
 export function SelectContent({
