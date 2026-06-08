@@ -39,6 +39,7 @@ CI, chore, and build changes are excluded.
 - **ci**: Exclude internal migration commits from changelog
 - **kube**: Bridge kubeconfig storage to in-memory cluster map and fix UI issues
 - **classifier**: Fix 3 safety bugs, extract const arrays, make tier UI dynamic
+- **kube**: Correct kubectl context, dialog close, icon visibility, cluster name
 
 ### Documentation
 - **kubernetes**: Add comment about dynamic port allocation limitation
