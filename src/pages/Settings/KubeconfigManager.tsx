@@ -1,11 +1,13 @@
 import { useState, useEffect } from 'react';
-import { Upload, Check, Trash2, FileCode } from 'lucide-react';
+import { Upload, Check, Trash2, FileCode, FlaskConical } from 'lucide-react';
 import { Button, Card, CardHeader, CardTitle, CardContent, Badge } from '@/components/ui';
 import {
   uploadKubeconfigCmd,
   listKubeconfigsCmd,
   activateKubeconfigCmd,
   deleteKubeconfigCmd,
+  connectClusterFromKubeconfigCmd,
+  testKubectlConnectionCmd,
   type KubeconfigInfo,
 } from '@/lib/tauriCommands';
 
@@ -15,6 +17,8 @@ export default function KubeconfigManager() {
   const [uploadContent, setUploadContent] = useState('');
   const [uploadName, setUploadName] = useState('');
   const [error, setError] = useState('');
+  const [testResult, setTestResult] = useState<{ id: string; output: string } | null>(null);
+  const [testingId, setTestingId] = useState<string | null>(null);
 
   const loadConfigs = async () => {
     try {
@@ -87,6 +91,22 @@ export default function KubeconfigManager() {
       setError(String(err));
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleTestConnection = async (id: string) => {
+    setTestingId(id);
+    setTestResult(null);
+    setError('');
+    try {
+      // Ensure the cluster is loaded into the session first
+      await connectClusterFromKubeconfigCmd(id).catch(() => {});
+      const output = await testKubectlConnectionCmd(id);
+      setTestResult({ id, output });
+    } catch (err) {
+      setTestResult({ id, output: String(err) });
+    } finally {
+      setTestingId(null);
     }
   };
 
@@ -200,6 +220,16 @@ export default function KubeconfigManager() {
                     </div>
 
                     <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleTestConnection(config.id)}
+                        disabled={testingId === config.id}
+                        title="Test kubectl connection"
+                      >
+                        <FlaskConical className="h-4 w-4 mr-1" />
+                        {testingId === config.id ? 'Testing…' : 'Test'}
+                      </Button>
                       {!config.is_active && (
                         <Button
                           variant="outline"
@@ -221,6 +251,13 @@ export default function KubeconfigManager() {
                       </Button>
                     </div>
                   </div>
+
+                  {/* Test result for this config */}
+                  {testResult?.id === config.id && (
+                    <div className="mt-3 rounded-md bg-slate-950 p-3 font-mono text-xs text-slate-300 overflow-x-auto max-h-64 overflow-y-auto">
+                      <pre>{testResult.output}</pre>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -243,6 +280,7 @@ export default function KubeconfigManager() {
             <li>Multiple clusters can be configured and switched between</li>
             <li>The active configuration is used for kubectl commands</li>
             <li>All kubeconfig files are encrypted using AES-256-GCM</li>
+            <li>Use the <strong>Test</strong> button to diagnose connection issues</li>
           </ul>
         </CardContent>
       </Card>

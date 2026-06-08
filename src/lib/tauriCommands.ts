@@ -917,6 +917,10 @@ export const removeClusterCmd = (id: string) =>
 export const connectClusterFromKubeconfigCmd = (id: string) =>
   invoke<void>("connect_cluster_from_kubeconfig", { id });
 
+/** Diagnostic: runs kubectl cluster-info and returns a human-readable summary. */
+export const testKubectlConnectionCmd = (clusterId: string) =>
+  invoke<string>("test_kubectl_connection", { clusterId });
+
 export const listClustersCmd = () =>
   invoke<ClusterInfo[]>("list_clusters");
 
