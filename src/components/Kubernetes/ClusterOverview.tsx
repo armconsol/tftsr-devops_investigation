@@ -117,9 +117,11 @@ export function ClusterOverview({ clusterId, clusterName }: ClusterOverviewProps
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-semibold">Cluster Overview</h2>
-          <p className="text-muted-foreground text-sm mt-0.5" data-testid="cluster-name-header">
-            {clusterName ?? clusterId}
-          </p>
+          {clusterName && (
+            <p className="text-muted-foreground text-sm mt-0.5" data-testid="cluster-name-header">
+              {clusterName}
+            </p>
+          )}
         </div>
         <button
           onClick={() => void loadData()}

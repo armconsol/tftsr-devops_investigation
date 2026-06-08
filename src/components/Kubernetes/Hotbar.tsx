@@ -2,8 +2,6 @@ import React from "react";
 import { Button } from "@/components/ui";
 import { Settings, Bell, User, Search, Plus, RefreshCw } from "lucide-react";
 import { Badge } from "@/components/ui";
-import { useKubernetesStore } from "@/stores/kubernetesStore";
-import { useStore } from "zustand";
 
 interface HotbarProps {
   onRefresh: () => void;
@@ -11,21 +9,25 @@ interface HotbarProps {
   onSettings: () => void;
   onNotifications?: () => void;
   notificationCount?: number;
+  clusterName?: string;
 }
 
-export function Hotbar({ onRefresh, onAddResource, onSettings, onNotifications, notificationCount = 0 }: HotbarProps) {
-  const clusters = useStore(useKubernetesStore, (state) => state.clusters);
-  const selectedClusterId = useStore(useKubernetesStore, (state) => state.selectedClusterId);
-  const selectedCluster = clusters.find((c: { id: string }) => c.id === selectedClusterId);
-
+export function Hotbar({
+  onRefresh,
+  onAddResource,
+  onSettings,
+  onNotifications,
+  notificationCount = 0,
+  clusterName,
+}: HotbarProps) {
   return (
     <div className="h-12 bg-background border-b flex items-center justify-between px-4">
       <div className="flex items-center gap-2">
         <div className="flex items-center gap-1">
-          <Button variant="ghost" size="sm" onClick={onRefresh}>
+          <Button variant="ghost" size="sm" onClick={onRefresh} className="text-foreground">
             <RefreshCw className="w-4 h-4" />
           </Button>
-          <Button variant="ghost" size="sm" onClick={onAddResource}>
+          <Button variant="ghost" size="sm" onClick={onAddResource} className="text-foreground">
             <Plus className="w-4 h-4" />
           </Button>
         </div>
@@ -33,33 +35,35 @@ export function Hotbar({ onRefresh, onAddResource, onSettings, onNotifications, 
         <div className="flex items-center gap-2">
           <Search className="w-4 h-4 text-muted-foreground" />
           <span className="text-sm text-muted-foreground">
-            {selectedCluster?.name || "No cluster selected"}
+            {clusterName ?? "No cluster selected"}
           </span>
         </div>
       </div>
 
       <div className="flex items-center gap-2">
-        <div className="flex items-center gap-2">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onNotifications}
-            aria-label="Notifications"
-          >
-            <Bell className="w-4 h-4" />
-            {notificationCount > 0 && (
-              <Badge variant="destructive" className="h-4 w-4 flex items-center justify-center p-0 text-[10px]">
-                {notificationCount}
-              </Badge>
-            )}
-          </Button>
-          <Button variant="ghost" size="sm" onClick={onSettings}>
-            <Settings className="w-4 h-4" />
-          </Button>
-          <Button variant="ghost" size="sm">
-            <User className="w-4 h-4" />
-          </Button>
-        </div>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={onNotifications}
+          aria-label="Notifications"
+          className="text-foreground"
+        >
+          <Bell className="w-4 h-4" />
+          {notificationCount > 0 && (
+            <Badge
+              variant="destructive"
+              className="h-4 w-4 flex items-center justify-center p-0 text-[10px]"
+            >
+              {notificationCount}
+            </Badge>
+          )}
+        </Button>
+        <Button variant="ghost" size="sm" onClick={onSettings} className="text-foreground">
+          <Settings className="w-4 h-4" />
+        </Button>
+        <Button variant="ghost" size="sm" className="text-foreground">
+          <User className="w-4 h-4" />
+        </Button>
       </div>
     </div>
   );

@@ -594,11 +594,10 @@ export function KubernetesPage() {
     }
 
     if (activeSection === "overview") {
-      const overviewConfig = kubeconfigs.find((c) => c.id === selectedClusterId);
       return (
         <ClusterOverview
           clusterId={selectedClusterId}
-          clusterName={overviewConfig?.context}
+          clusterName={selectedConfig?.name}
         />
       );
     }
@@ -706,6 +705,7 @@ export function KubernetesPage() {
         onAddResource={() => setIsCommandPaletteOpen(true)}
         onSettings={() => {}}
         onNotifications={() => setIsNotificationsOpen(true)}
+        clusterName={selectedConfig?.name}
       />
 
       {/* Top bar: cluster selector + namespace selector */}

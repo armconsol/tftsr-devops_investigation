@@ -270,7 +270,8 @@ pub async fn test_cluster_connection(
     let output = Command::new(kubectl_path)
         .arg("cluster-info")
         .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
-        .env("KUBERNETES_CONTEXT", context)
+        .arg("--context")
+        .arg(context.as_str())
         .output()
         .await
         .map_err(|e| format!("Failed to execute kubectl: {e}"))?;
@@ -323,7 +324,8 @@ pub async fn discover_pods(
         .arg("-o")
         .arg("json")
         .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
-        .env("KUBERNETES_CONTEXT", context)
+        .arg("--context")
+        .arg(context.as_str())
         .output()
         .await
         .map_err(|e| format!("Failed to execute kubectl: {e}"))?;
@@ -458,8 +460,9 @@ pub async fn start_port_forward(
     // Spawn kubectl subprocess
     let child = Command::new(kubectl_path)
         .args(&args)
+        .arg("--context")
+        .arg(cluster.context.as_str())
         .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
-        .env("KUBERNETES_CONTEXT", &cluster.context)
         .spawn()
         .map_err(|e| format!("Failed to spawn kubectl: {e}"))?;
 
@@ -768,7 +771,8 @@ pub async fn list_namespaces(
         .arg("-o")
         .arg("json")
         .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
-        .env("KUBERNETES_CONTEXT", context)
+        .arg("--context")
+        .arg(context.as_str())
         .output()
         .await
         .map_err(|e| format!("Failed to execute kubectl: {e}"))?;
@@ -854,7 +858,8 @@ pub async fn list_pods(
         .arg("-o")
         .arg("json")
         .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
-        .env("KUBERNETES_CONTEXT", context)
+        .arg("--context")
+        .arg(context.as_str())
         .output()
         .await
         .map_err(|e| format!("Failed to execute kubectl: {e}"))?;
@@ -976,7 +981,8 @@ pub async fn list_services(
         .arg("-o")
         .arg("json")
         .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
-        .env("KUBERNETES_CONTEXT", context)
+        .arg("--context")
+        .arg(context.as_str())
         .output()
         .await
         .map_err(|e| format!("Failed to execute kubectl: {e}"))?;
@@ -1133,7 +1139,8 @@ pub async fn list_deployments(
         .arg("-o")
         .arg("json")
         .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
-        .env("KUBERNETES_CONTEXT", context)
+        .arg("--context")
+        .arg(context.as_str())
         .output()
         .await
         .map_err(|e| format!("Failed to execute kubectl: {e}"))?;
@@ -1266,7 +1273,8 @@ pub async fn list_statefulsets(
         .arg("-o")
         .arg("json")
         .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
-        .env("KUBERNETES_CONTEXT", context)
+        .arg("--context")
+        .arg(context.as_str())
         .output()
         .await
         .map_err(|e| format!("Failed to execute kubectl: {e}"))?;
@@ -1383,7 +1391,8 @@ pub async fn list_daemonsets(
         .arg("-o")
         .arg("json")
         .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
-        .env("KUBERNETES_CONTEXT", context)
+        .arg("--context")
+        .arg(context.as_str())
         .output()
         .await
         .map_err(|e| format!("Failed to execute kubectl: {e}"))?;
@@ -1547,7 +1556,8 @@ pub async fn get_pod_logs(
         .arg("-c")
         .arg(container_name)
         .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
-        .env("KUBERNETES_CONTEXT", context)
+        .arg("--context")
+        .arg(context.as_str())
         .output()
         .await
         .map_err(|e| format!("Failed to execute kubectl: {e}"))?;
@@ -1596,7 +1606,8 @@ pub async fn scale_deployment(
         .arg("-n")
         .arg(namespace)
         .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
-        .env("KUBERNETES_CONTEXT", context)
+        .arg("--context")
+        .arg(context.as_str())
         .output()
         .await
         .map_err(|e| format!("Failed to execute kubectl: {e}"))?;
@@ -1641,7 +1652,8 @@ pub async fn restart_deployment(
         .arg("-n")
         .arg(namespace)
         .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
-        .env("KUBERNETES_CONTEXT", context)
+        .arg("--context")
+        .arg(context.as_str())
         .output()
         .await
         .map_err(|e| format!("Failed to execute kubectl: {e}"))?;
@@ -1686,7 +1698,8 @@ pub async fn delete_resource(
         .arg("-n")
         .arg(namespace)
         .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
-        .env("KUBERNETES_CONTEXT", context)
+        .arg("--context")
+        .arg(context.as_str())
         .output()
         .await
         .map_err(|e| format!("Failed to execute kubectl: {e}"))?;
@@ -1754,7 +1767,8 @@ pub async fn exec_pod(
     cmd.arg("--").arg(shell_cmd).arg("-c").arg(&command);
 
     cmd.env("KUBECONFIG", temp_path.to_string_lossy().to_string())
-        .env("KUBERNETES_CONTEXT", context);
+        .arg("--context")
+        .arg(context.as_str());
 
     let output = cmd
         .output()
@@ -2014,7 +2028,8 @@ pub async fn list_replicasets(
         .arg("-o")
         .arg("json")
         .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
-        .env("KUBERNETES_CONTEXT", context)
+        .arg("--context")
+        .arg(context.as_str())
         .output()
         .await
         .map_err(|e| format!("Failed to execute kubectl: {e}"))?;
@@ -2131,7 +2146,8 @@ pub async fn list_jobs(
         .arg("-o")
         .arg("json")
         .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
-        .env("KUBERNETES_CONTEXT", context)
+        .arg("--context")
+        .arg(context.as_str())
         .output()
         .await
         .map_err(|e| format!("Failed to execute kubectl: {e}"))?;
@@ -2286,7 +2302,8 @@ pub async fn list_cronjobs(
         .arg("-o")
         .arg("json")
         .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
-        .env("KUBERNETES_CONTEXT", context)
+        .arg("--context")
+        .arg(context.as_str())
         .output()
         .await
         .map_err(|e| format!("Failed to execute kubectl: {e}"))?;
@@ -2412,7 +2429,8 @@ pub async fn list_configmaps(
         .arg("-o")
         .arg("json")
         .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
-        .env("KUBERNETES_CONTEXT", context)
+        .arg("--context")
+        .arg(context.as_str())
         .output()
         .await
         .map_err(|e| format!("Failed to execute kubectl: {e}"))?;
@@ -2509,7 +2527,8 @@ pub async fn list_secrets(
         .arg("-o")
         .arg("json")
         .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
-        .env("KUBERNETES_CONTEXT", context)
+        .arg("--context")
+        .arg(context.as_str())
         .output()
         .await
         .map_err(|e| format!("Failed to execute kubectl: {e}"))?;
@@ -2607,7 +2626,8 @@ pub async fn list_nodes(
         .arg("-o")
         .arg("json")
         .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
-        .env("KUBERNETES_CONTEXT", context)
+        .arg("--context")
+        .arg(context.as_str())
         .output()
         .await
         .map_err(|e| format!("Failed to execute kubectl: {e}"))?;
@@ -2799,7 +2819,8 @@ pub async fn list_events(
         .arg("-o")
         .arg("json")
         .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
-        .env("KUBERNETES_CONTEXT", context)
+        .arg("--context")
+        .arg(context.as_str())
         .output()
         .await
         .map_err(|e| format!("Failed to execute kubectl: {e}"))?;
@@ -2927,7 +2948,8 @@ pub async fn list_ingresses(
         .arg("-o")
         .arg("json")
         .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
-        .env("KUBERNETES_CONTEXT", context)
+        .arg("--context")
+        .arg(context.as_str())
         .output()
         .await
         .map_err(|e| format!("Failed to execute kubectl: {e}"))?;
@@ -3052,7 +3074,8 @@ pub async fn list_persistentvolumeclaims(
         .arg("-o")
         .arg("json")
         .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
-        .env("KUBERNETES_CONTEXT", context)
+        .arg("--context")
+        .arg(context.as_str())
         .output()
         .await
         .map_err(|e| format!("Failed to execute kubectl: {e}"))?;
@@ -3176,7 +3199,8 @@ pub async fn list_persistentvolumes(
         .arg("-o")
         .arg("json")
         .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
-        .env("KUBERNETES_CONTEXT", context)
+        .arg("--context")
+        .arg(context.as_str())
         .output()
         .await
         .map_err(|e| format!("Failed to execute kubectl: {e}"))?;
@@ -3306,7 +3330,8 @@ pub async fn list_serviceaccounts(
         .arg("-o")
         .arg("json")
         .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
-        .env("KUBERNETES_CONTEXT", context)
+        .arg("--context")
+        .arg(context.as_str())
         .output()
         .await
         .map_err(|e| format!("Failed to execute kubectl: {e}"))?;
@@ -3403,7 +3428,8 @@ pub async fn list_roles(
         .arg("-o")
         .arg("json")
         .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
-        .env("KUBERNETES_CONTEXT", context)
+        .arg("--context")
+        .arg(context.as_str())
         .output()
         .await
         .map_err(|e| format!("Failed to execute kubectl: {e}"))?;
@@ -3487,7 +3513,8 @@ pub async fn list_clusterroles(
         .arg("-o")
         .arg("json")
         .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
-        .env("KUBERNETES_CONTEXT", context)
+        .arg("--context")
+        .arg(context.as_str())
         .output()
         .await
         .map_err(|e| format!("Failed to execute kubectl: {e}"))?;
@@ -3566,7 +3593,8 @@ pub async fn list_rolebindings(
         .arg("-o")
         .arg("json")
         .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
-        .env("KUBERNETES_CONTEXT", context)
+        .arg("--context")
+        .arg(context.as_str())
         .output()
         .await
         .map_err(|e| format!("Failed to execute kubectl: {e}"))?;
@@ -3661,7 +3689,8 @@ pub async fn list_clusterrolebindings(
         .arg("-o")
         .arg("json")
         .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
-        .env("KUBERNETES_CONTEXT", context)
+        .arg("--context")
+        .arg(context.as_str())
         .output()
         .await
         .map_err(|e| format!("Failed to execute kubectl: {e}"))?;
@@ -3751,7 +3780,8 @@ pub async fn list_horizontalpodautoscalers(
         .arg("-o")
         .arg("json")
         .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
-        .env("KUBERNETES_CONTEXT", context)
+        .arg("--context")
+        .arg(context.as_str())
         .output()
         .await
         .map_err(|e| format!("Failed to execute kubectl: {e}"))?;
@@ -3863,7 +3893,8 @@ pub async fn list_storageclasses(
         .arg("-o")
         .arg("json")
         .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
-        .env("KUBERNETES_CONTEXT", context)
+        .arg("--context")
+        .arg(context.as_str())
         .output()
         .await
         .map_err(|e| format!("Failed to execute kubectl: {e}"))?;
@@ -3972,7 +4003,8 @@ pub async fn list_networkpolicies(
         .arg("-o")
         .arg("json")
         .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
-        .env("KUBERNETES_CONTEXT", context)
+        .arg("--context")
+        .arg(context.as_str())
         .output()
         .await
         .map_err(|e| format!("Failed to execute kubectl: {e}"))?;
@@ -4082,7 +4114,8 @@ pub async fn list_resourcequotas(
         .arg("-o")
         .arg("json")
         .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
-        .env("KUBERNETES_CONTEXT", context)
+        .arg("--context")
+        .arg(context.as_str())
         .output()
         .await
         .map_err(|e| format!("Failed to execute kubectl: {e}"))?;
@@ -4202,7 +4235,8 @@ pub async fn list_limitranges(
         .arg("-o")
         .arg("json")
         .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
-        .env("KUBERNETES_CONTEXT", context)
+        .arg("--context")
+        .arg(context.as_str())
         .output()
         .await
         .map_err(|e| format!("Failed to execute kubectl: {e}"))?;
@@ -4293,7 +4327,8 @@ pub async fn cordon_node(
         .arg("cordon")
         .arg(node_name)
         .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
-        .env("KUBERNETES_CONTEXT", context)
+        .arg("--context")
+        .arg(context.as_str())
         .output()
         .await
         .map_err(|e| format!("Failed to execute kubectl: {e}"))?;
@@ -4333,7 +4368,8 @@ pub async fn uncordon_node(
         .arg("uncordon")
         .arg(node_name)
         .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
-        .env("KUBERNETES_CONTEXT", context)
+        .arg("--context")
+        .arg(context.as_str())
         .output()
         .await
         .map_err(|e| format!("Failed to execute kubectl: {e}"))?;
@@ -4376,7 +4412,8 @@ pub async fn drain_node(
         .arg("--delete-emptydir-data")
         .arg("--force")
         .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
-        .env("KUBERNETES_CONTEXT", context)
+        .arg("--context")
+        .arg(context.as_str())
         .output()
         .await
         .map_err(|e| format!("Failed to execute kubectl: {e}"))?;
@@ -4421,7 +4458,8 @@ pub async fn rollback_deployment(
         .arg("-n")
         .arg(namespace)
         .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
-        .env("KUBERNETES_CONTEXT", context)
+        .arg("--context")
+        .arg(context.as_str())
         .output()
         .await
         .map_err(|e| format!("Failed to execute kubectl: {e}"))?;
@@ -4466,7 +4504,8 @@ pub async fn create_resource(
         .arg("-n")
         .arg(namespace)
         .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
-        .env("KUBERNETES_CONTEXT", context)
+        .arg("--context")
+        .arg(context.as_str())
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
@@ -4528,7 +4567,8 @@ pub async fn edit_resource(
         .arg("-n")
         .arg(namespace)
         .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
-        .env("KUBERNETES_CONTEXT", context)
+        .arg("--context")
+        .arg(context.as_str())
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());

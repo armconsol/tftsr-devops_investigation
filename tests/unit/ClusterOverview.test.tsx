@@ -178,14 +178,20 @@ describe("ClusterOverview", () => {
     });
   });
 
-  it("falls back gracefully when clusterName prop is not provided", async () => {
+  it("hides the subtitle when clusterName prop is not provided (never shows UUID)", async () => {
     mockInvoke.mockImplementation(() => Promise.resolve([]));
 
-    render(<ClusterOverview clusterId="cluster-1" />);
+    render(<ClusterOverview clusterId="019e9ff0-b6a4-78e1-a566-7a0c05e32577" />);
 
     await waitFor(() => {
-      const header = screen.getByTestId("cluster-name-header");
-      expect(header).toBeInTheDocument();
+      // Heading still present
+      expect(screen.getByText("Cluster Overview")).toBeInTheDocument();
+      // UUID must NOT be rendered anywhere
+      expect(
+        screen.queryByText("019e9ff0-b6a4-78e1-a566-7a0c05e32577")
+      ).not.toBeInTheDocument();
+      // Subtitle element should not exist when no name is passed
+      expect(screen.queryByTestId("cluster-name-header")).not.toBeInTheDocument();
     });
   });
 });
