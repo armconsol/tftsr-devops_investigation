@@ -74,7 +74,7 @@ export function PiiDiffViewer({
                     }`}
                   >
                     <span
-                      className={`inline-block h-4 w-4 rounded-full bg-white transition-transform ${
+                      className={`inline-block h-4 w-4 rounded-full bg-background transition-transform ${
                         isApproved(span) ? "translate-x-4" : "translate-x-0.5"
                       }`}
                     />
