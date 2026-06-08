@@ -41,6 +41,7 @@ CI, chore, and build changes are excluded.
 - **classifier**: Fix 3 safety bugs, extract const arrays, make tier UI dynamic
 - **kube**: Correct kubectl context, dialog close, icon visibility, cluster name
 - **kube**: Use current-context for kubectl auth; fix SelectValue label display
+- **kube**: Switch to --kubeconfig flag; add Test Connection diagnostic
 
 ### Documentation
 - **kubernetes**: Add comment about dynamic port allocation limitation
