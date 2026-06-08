@@ -360,9 +360,9 @@ export default function LogUpload() {
           </div>
 
           {/* PII warning for images */}
-          <div className="bg-amber-50 border border-amber-200 rounded-md p-3">
-            <AlertTriangle className="w-5 h-5 text-amber-600 inline mr-2" />
-            <span className="text-sm text-amber-800">
+          <div className="bg-amber-50 border border-amber-200 rounded-md p-3 dark:bg-amber-900/20 dark:border-amber-700">
+            <AlertTriangle className="w-5 h-5 text-amber-600 dark:text-amber-400 inline mr-2" />
+            <span className="text-sm text-amber-800 dark:text-amber-300">
               ⚠️ PII cannot be automatically redacted from images. Use at your own risk.
             </span>
           </div>

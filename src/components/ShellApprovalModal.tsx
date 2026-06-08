@@ -94,7 +94,7 @@ export function ShellApprovalModal() {
           {/* Tier Badge */}
           <div className="flex items-center gap-2">
             <span className="text-sm text-muted-foreground">Safety Tier:</span>
-            <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-300">
+            <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-300 dark:bg-yellow-900/40 dark:text-yellow-300 dark:border-yellow-700">
               Tier {request.tier}
             </Badge>
           </div>

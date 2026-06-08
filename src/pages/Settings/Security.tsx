@@ -153,7 +153,7 @@ export default function Security() {
                 }`}
               >
                 <span
-                  className={`inline-block h-5 w-5 rounded-full bg-white transition-transform ${
+                  className={`inline-block h-5 w-5 rounded-full bg-background transition-transform ${
                     pii_enabled_patterns[pattern.id] ? "translate-x-5" : "translate-x-0.5"
                   }`}
                 />

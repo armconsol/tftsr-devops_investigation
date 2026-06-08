@@ -49,7 +49,7 @@ export function ImageGallery({ images, onDelete, showWarning = true }: ImageGall
   return (
     <div className="space-y-4">
       {showWarning && (
-        <div className="bg-amber-100 border border-amber-300 text-amber-800 p-3 rounded-md flex items-center gap-2">
+        <div className="bg-amber-100 border border-amber-300 text-amber-800 dark:bg-amber-900/20 dark:border-amber-700 dark:text-amber-300 p-3 rounded-md flex items-center gap-2">
           <AlertTriangle className="w-5 h-5 flex-shrink-0" />
           <span className="text-sm">
             ⚠️ PII cannot be automatically redacted from images. Use at your own risk.
@@ -58,7 +58,7 @@ export function ImageGallery({ images, onDelete, showWarning = true }: ImageGall
       )}
 
       {images.some(img => isWebSource(img)) && (
-        <div className="bg-red-100 border border-red-300 text-red-800 p-3 rounded-md flex items-center gap-2">
+        <div className="bg-red-100 border border-red-300 text-red-800 dark:bg-red-900/20 dark:border-red-700 dark:text-red-300 p-3 rounded-md flex items-center gap-2">
           <ExternalLink className="w-5 h-5 flex-shrink-0" />
           <span className="text-sm">
             ⚠️ Some images appear to be from web sources. Ensure you have permission to share.
@@ -68,7 +68,7 @@ export function ImageGallery({ images, onDelete, showWarning = true }: ImageGall
 
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
         {images.map((image) => (
-          <div key={image.id} className="group relative rounded-lg overflow-hidden bg-gray-100 border border-gray-200">
+          <div key={image.id} className="group relative rounded-lg overflow-hidden bg-gray-100 border border-gray-200 dark:bg-muted dark:border-border">
             <button
               onClick={() => {
                 setSelectedImage(image);
@@ -84,10 +84,10 @@ export function ImageGallery({ images, onDelete, showWarning = true }: ImageGall
               />
             </button>
             <div className="p-2">
-              <p className="text-xs text-gray-700 truncate" title={image.file_name}>
+              <p className="text-xs text-gray-700 dark:text-gray-300 truncate" title={image.file_name}>
                 {image.file_name}
               </p>
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-gray-500 dark:text-gray-400">
                 {image.is_paste ? "Paste" : "Upload"} · {(image.file_size / 1024).toFixed(1)} KB
               </p>
             </div>
@@ -97,7 +97,7 @@ export function ImageGallery({ images, onDelete, showWarning = true }: ImageGall
                   e.stopPropagation();
                   onDelete(image);
                 }}
-                className="absolute top-1 right-1 p-1 bg-white/80 hover:bg-white rounded-md text-gray-600 hover:text-red-600 transition-colors opacity-0 group-hover:opacity-100"
+                className="absolute top-1 right-1 p-1 bg-white/80 hover:bg-white dark:bg-background/80 dark:hover:bg-background rounded-md text-gray-600 dark:text-gray-400 hover:text-red-600 dark:hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100"
                 title="Delete image"
               >
                 <X className="w-4 h-4" />
@@ -117,12 +117,12 @@ export function ImageGallery({ images, onDelete, showWarning = true }: ImageGall
         >
           <div
             ref={modalRef}
-            className="bg-white rounded-lg overflow-hidden max-w-4xl max-h-[90vh] flex flex-col"
+            className="bg-white dark:bg-card rounded-lg overflow-hidden max-w-4xl max-h-[90vh] flex flex-col"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="bg-gray-100 p-4 flex items-center justify-between border-b">
+            <div className="bg-gray-100 dark:bg-muted p-4 flex items-center justify-between border-b">
               <div className="flex items-center gap-2">
-                <ImageIcon className="w-5 h-5 text-gray-600" />
+                <ImageIcon className="w-5 h-5 text-gray-600 dark:text-gray-400" />
                 <h3 className="font-medium">{selectedImage.file_name}</h3>
               </div>
               <button
@@ -130,7 +130,7 @@ export function ImageGallery({ images, onDelete, showWarning = true }: ImageGall
                   setIsModalOpen(false);
                   setSelectedImage(null);
                 }}
-                className="p-2 hover:bg-gray-200 rounded-lg transition-colors"
+                className="p-2 hover:bg-gray-200 dark:hover:bg-muted/80 rounded-lg transition-colors"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -142,16 +142,16 @@ export function ImageGallery({ images, onDelete, showWarning = true }: ImageGall
                 className="max-w-full max-h-[60vh] object-contain"
               />
             </div>
-            <div className="bg-gray-50 p-4 border-t text-sm space-y-2">
+            <div className="bg-gray-50 dark:bg-card p-4 border-t text-sm space-y-2">
               <div className="flex gap-4">
                 <div>
-                  <span className="text-gray-500">Type:</span> {selectedImage.mime_type}
+                  <span className="text-gray-500 dark:text-gray-400">Type:</span> {selectedImage.mime_type}
                 </div>
                 <div>
-                  <span className="text-gray-500">Size:</span> {(selectedImage.file_size / 1024).toFixed(2)} KB
+                  <span className="text-gray-500 dark:text-gray-400">Size:</span> {(selectedImage.file_size / 1024).toFixed(2)} KB
                 </div>
                 <div>
-                  <span className="text-gray-500">Source:</span> {selectedImage.is_paste ? "Paste" : "File"}
+                  <span className="text-gray-500 dark:text-gray-400">Source:</span> {selectedImage.is_paste ? "Paste" : "File"}
                 </div>
               </div>
             </div>
