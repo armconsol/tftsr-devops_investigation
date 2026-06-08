@@ -199,12 +199,84 @@ pub async fn connect_cluster_from_kubeconfig(
     Ok(())
 }
 
+/// Detect the authentication method used by a kubeconfig for a given context.
+///
+/// Returns a human-readable string describing the auth type and any relevant
+/// warnings (e.g. exec plugin binary name, file-path cert references).
+fn detect_auth_method(kubeconfig: &str, context_name: &str) -> String {
+    let yaml: serde_yaml::Value = match serde_yaml::from_str(kubeconfig) {
+        Ok(v) => v,
+        Err(_) => return "unknown (YAML parse error)".to_string(),
+    };
+
+    // Resolve the user name for this context.
+    let user_name = yaml
+        .get("contexts")
+        .and_then(|c| c.as_sequence())
+        .and_then(|contexts| {
+            contexts.iter().find(|ctx| {
+                ctx.get("name").and_then(|n| n.as_str()) == Some(context_name)
+            })
+        })
+        .and_then(|ctx| ctx.get("context"))
+        .and_then(|c| c.get("user"))
+        .and_then(|u| u.as_str())
+        .unwrap_or(context_name)
+        .to_string();
+
+    let user_entry = yaml
+        .get("users")
+        .and_then(|u| u.as_sequence())
+        .and_then(|users| {
+            users.iter().find(|u| {
+                u.get("name").and_then(|n| n.as_str()) == Some(user_name.as_str())
+            })
+        })
+        .and_then(|u| u.get("user"));
+
+    let Some(user) = user_entry else {
+        return format!("unknown (user '{user_name}' not found in kubeconfig)");
+    };
+
+    if let Some(exec) = user.get("exec") {
+        let cmd = exec
+            .get("command")
+            .and_then(|c| c.as_str())
+            .unwrap_or("unknown");
+        return format!(
+            "exec plugin (command: \"{cmd}\") — the plugin binary must be in PATH when the app runs"
+        );
+    }
+
+    if user.get("token").is_some() {
+        return "bearer token (inline)".to_string();
+    }
+
+    if user.get("client-certificate-data").is_some() {
+        return "client certificate (inline base64)".to_string();
+    }
+
+    if let Some(cert_path) = user.get("client-certificate").and_then(|c| c.as_str()) {
+        return format!("client certificate (file: {cert_path}) — file must exist on this machine");
+    }
+
+    if user.get("username").is_some() {
+        return "basic auth (username/password)".to_string();
+    }
+
+    "unknown".to_string()
+}
+
 /// Diagnostic: test a kubeconfig's ability to reach the cluster.
 ///
-/// Returns a human-readable summary including the context name, kubectl binary
-/// path, exit code, and the full stdout/stderr from `kubectl cluster-info`.
-/// This command is safe to call at any time — it writes a temp file, tests the
-/// connection, then deletes the file regardless of the outcome.
+/// Runs two staged checks:
+///   1. Connectivity — `kubectl get --raw=/healthz` (no auth required)
+///   2. Authentication — `kubectl cluster-info` (requires valid credentials)
+///
+/// Also detects the auth method used by the context so the caller knows whether
+/// an exec plugin or external certificate file might be missing.
+/// This command is safe to call at any time — it writes a temp file, runs the
+/// tests, then deletes the file regardless of the outcome.
 #[tauri::command]
 pub async fn test_kubectl_connection(
     cluster_id: String,
@@ -229,8 +301,30 @@ pub async fn test_kubectl_connection(
         .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
 
     let kubectl_path = locate_kubectl()?;
+    let auth_method = detect_auth_method(kubeconfig_content.as_ref(), &context);
 
-    let output = Command::new(&kubectl_path)
+    // Stage 1: basic connectivity — /healthz requires no authentication.
+    let healthz = Command::new(&kubectl_path)
+        .arg("get")
+        .arg("--raw=/healthz")
+        .arg("--kubeconfig")
+        .arg(&temp_path)
+        .output()
+        .await
+        .map_err(|e| format!("Failed to execute kubectl: {e}"))?;
+
+    let healthz_ok = healthz.status.success();
+    let healthz_body = String::from_utf8_lossy(&healthz.stdout).trim().to_string();
+    let healthz_err = String::from_utf8_lossy(&healthz.stderr).trim().to_string();
+    let connectivity_line = if healthz_ok {
+        format!("OK  ({})", if healthz_body.is_empty() { "cluster reachable" } else { &healthz_body })
+    } else {
+        let hint = if healthz_err.is_empty() { "no stderr" } else { healthz_err.lines().last().unwrap_or(&healthz_err) };
+        format!("FAIL  — {hint}")
+    };
+
+    // Stage 2: authenticated cluster-info.
+    let auth_output = Command::new(&kubectl_path)
         .arg("cluster-info")
         .arg("--context")
         .arg(context.as_str())
@@ -240,17 +334,22 @@ pub async fn test_kubectl_connection(
         .await
         .map_err(|e| format!("Failed to execute kubectl: {e}"))?;
 
-    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-    let exit_code = output.status.code().unwrap_or(-1);
+    let stdout = String::from_utf8_lossy(&auth_output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&auth_output.stderr).to_string();
+    let exit_code = auth_output.status.code().unwrap_or(-1);
 
     Ok(format!(
-        "Context:  {context}\nKubectl:  {kubectl}\nExit:     {exit}\n\n--- stdout ---\n{stdout}\n--- stderr ---\n{stderr}",
+        "Context:       {context}\nKubectl:       {kubectl}\nAuth method:   {auth}\n\n\
+         ── Stage 1: Connectivity (/healthz, no auth) ──\n{connectivity}\n\n\
+         ── Stage 2: Authentication (kubectl cluster-info) ──\nExit:     {exit}\n\n\
+         --- stdout ---\n{stdout}\n--- stderr ---\n{stderr}",
         context = context,
         kubectl = kubectl_path.display(),
+        auth = auth_method,
+        connectivity = connectivity_line,
         exit = exit_code,
-        stdout = if stdout.is_empty() { "(none)" } else { &stdout },
-        stderr = if stderr.is_empty() { "(none)" } else { &stderr },
+        stdout = if stdout.is_empty() { "(none)\n" } else { &stdout },
+        stderr = if stderr.is_empty() { "(none)\n" } else { &stderr },
     ))
 }
 
