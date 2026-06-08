@@ -117,6 +117,16 @@ fn extract_context(content: &str) -> Result<String, String> {
     let value: serde_yaml::Value =
         serde_yaml::from_str(content).map_err(|e| format!("Invalid kubeconfig YAML: {}", e))?;
 
+    // Prefer current-context — this is what kubectl uses by default and what the
+    // user intends when they upload their kubeconfig. Falling back to contexts[0]
+    // picks the wrong entry when the file has multiple contexts.
+    if let Some(current) = value.get("current-context").and_then(|c| c.as_str()) {
+        if !current.is_empty() {
+            return Ok(current.to_string());
+        }
+    }
+
+    // No current-context set — fall back to the first context in the list
     let contexts = value
         .get("contexts")
         .and_then(|c| c.as_sequence())
@@ -126,8 +136,9 @@ fn extract_context(content: &str) -> Result<String, String> {
         return Err("No contexts found in kubeconfig".to_string());
     }
 
-    let first_context = contexts[0].get("name").and_then(|n| n.as_str());
-    first_context
+    contexts[0]
+        .get("name")
+        .and_then(|n| n.as_str())
         .map(|s| s.to_string())
         .ok_or_else(|| "Context name not found".to_string())
 }

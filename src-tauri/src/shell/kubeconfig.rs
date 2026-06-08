@@ -30,6 +30,26 @@ pub async fn auto_detect_kubeconfig(_state: &AppState) -> Result<(), String> {
     Err("Kubeconfig auto-detection not yet implemented".to_string())
 }
 
+/// Return the `current-context` value from a kubeconfig YAML, if set.
+/// Uses simple line scanning so it stays consistent with `parse_kubeconfig_contexts`.
+pub fn extract_current_context_name(content: &str) -> Option<String> {
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("current-context:") {
+            let val = trimmed
+                .trim_start_matches("current-context:")
+                .trim()
+                .trim_matches('"')
+                .trim_matches('\'')
+                .to_string();
+            if !val.is_empty() {
+                return Some(val);
+            }
+        }
+    }
+    None
+}
+
 pub fn parse_kubeconfig_contexts(content: &str) -> Result<Vec<KubeconfigContext>, String> {
     // Parse YAML kubeconfig file
     // Simple string parsing to extract contexts and cluster URLs

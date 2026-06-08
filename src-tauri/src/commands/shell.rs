@@ -41,11 +41,24 @@ pub async fn upload_kubeconfig(
     // Generate ID
     let id = uuid::Uuid::now_v7().to_string();
 
-    // Parse kubeconfig to extract context
+    // Parse kubeconfig to extract context.
+    // Use current-context to select the right entry — the user's kubeconfig may
+    // have multiple contexts and current-context is the one kubectl defaults to.
     let contexts = crate::shell::kubeconfig::parse_kubeconfig_contexts(&content)?;
-    let context = contexts
-        .first()
-        .ok_or_else(|| "No contexts found in kubeconfig".to_string())?;
+
+    let current_context_name = crate::shell::kubeconfig::extract_current_context_name(&content);
+
+    let context = if let Some(ref current) = current_context_name {
+        contexts
+            .iter()
+            .find(|c| &c.name == current)
+            .or_else(|| contexts.first())
+            .ok_or_else(|| "No contexts found in kubeconfig".to_string())?
+    } else {
+        contexts
+            .first()
+            .ok_or_else(|| "No contexts found in kubeconfig".to_string())?
+    };
 
     // Encrypt content
     let encrypted_content = crate::integrations::auth::encrypt_token(&content)?;
