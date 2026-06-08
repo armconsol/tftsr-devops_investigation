@@ -40,6 +40,7 @@ CI, chore, and build changes are excluded.
 - **kube**: Bridge kubeconfig storage to in-memory cluster map and fix UI issues
 - **classifier**: Fix 3 safety bugs, extract const arrays, make tier UI dynamic
 - **kube**: Correct kubectl context, dialog close, icon visibility, cluster name
+- **kube**: Use current-context for kubectl auth; fix SelectValue label display
 
 ### Documentation
 - **kubernetes**: Add comment about dynamic port allocation limitation
