@@ -25,6 +25,30 @@ impl Drop for TempFileCleanup {
     }
 }
 
+/// Write kubeconfig content to a temp file with owner-only permissions (0600 on Unix).
+/// Kubeconfig files contain cluster credentials and must never be world-readable.
+fn write_secure_temp_file(path: &std::path::Path, content: &str) -> Result<(), String> {
+    #[cfg(unix)]
+    {
+        use std::io::Write;
+        use std::os::unix::fs::OpenOptionsExt;
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(0o600)
+            .open(path)
+            .map_err(|e| format!("Failed to create kubeconfig temp file: {e}"))?;
+        file.write_all(content.as_bytes())
+            .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))
+    }
+    #[cfg(not(unix))]
+    {
+        std::fs::write(path, content)
+            .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ClusterInfo {
     pub id: String,
@@ -199,12 +223,84 @@ pub async fn connect_cluster_from_kubeconfig(
     Ok(())
 }
 
+/// Detect the authentication method used by a kubeconfig for a given context.
+///
+/// Returns a human-readable string describing the auth type and any relevant
+/// warnings (e.g. exec plugin binary name, file-path cert references).
+fn detect_auth_method(kubeconfig: &str, context_name: &str) -> String {
+    let yaml: serde_yaml::Value = match serde_yaml::from_str(kubeconfig) {
+        Ok(v) => v,
+        Err(_) => return "unknown (YAML parse error)".to_string(),
+    };
+
+    // Resolve the user name for this context.
+    let user_name = yaml
+        .get("contexts")
+        .and_then(|c| c.as_sequence())
+        .and_then(|contexts| {
+            contexts.iter().find(|ctx| {
+                ctx.get("name").and_then(|n| n.as_str()) == Some(context_name)
+            })
+        })
+        .and_then(|ctx| ctx.get("context"))
+        .and_then(|c| c.get("user"))
+        .and_then(|u| u.as_str())
+        .unwrap_or(context_name)
+        .to_string();
+
+    let user_entry = yaml
+        .get("users")
+        .and_then(|u| u.as_sequence())
+        .and_then(|users| {
+            users.iter().find(|u| {
+                u.get("name").and_then(|n| n.as_str()) == Some(user_name.as_str())
+            })
+        })
+        .and_then(|u| u.get("user"));
+
+    let Some(user) = user_entry else {
+        return format!("unknown (user '{user_name}' not found in kubeconfig)");
+    };
+
+    if let Some(exec) = user.get("exec") {
+        let cmd = exec
+            .get("command")
+            .and_then(|c| c.as_str())
+            .unwrap_or("unknown");
+        return format!(
+            "exec plugin (command: \"{cmd}\") — the plugin binary must be in PATH when the app runs"
+        );
+    }
+
+    if user.get("token").is_some() {
+        return "bearer token (inline)".to_string();
+    }
+
+    if user.get("client-certificate-data").is_some() {
+        return "client certificate (inline base64)".to_string();
+    }
+
+    if let Some(cert_path) = user.get("client-certificate").and_then(|c| c.as_str()) {
+        return format!("client certificate (file: {cert_path}) — file must exist on this machine");
+    }
+
+    if user.get("username").is_some() {
+        return "basic auth (username/password)".to_string();
+    }
+
+    "unknown".to_string()
+}
+
 /// Diagnostic: test a kubeconfig's ability to reach the cluster.
 ///
-/// Returns a human-readable summary including the context name, kubectl binary
-/// path, exit code, and the full stdout/stderr from `kubectl cluster-info`.
-/// This command is safe to call at any time — it writes a temp file, tests the
-/// connection, then deletes the file regardless of the outcome.
+/// Runs two staged checks:
+///   1. Connectivity — `kubectl get --raw=/healthz` (no auth required)
+///   2. Authentication — `kubectl cluster-info` (requires valid credentials)
+///
+/// Also detects the auth method used by the context so the caller knows whether
+/// an exec plugin or external certificate file might be missing.
+/// This command is safe to call at any time — it writes a temp file, runs the
+/// tests, then deletes the file regardless of the outcome.
 #[tauri::command]
 pub async fn test_kubectl_connection(
     cluster_id: String,
@@ -225,12 +321,34 @@ pub async fn test_kubectl_connection(
     let temp_path = temp_dir.join(format!("kubeconfig-{}-diag.yaml", cluster_id));
     let _cleanup = TempFileCleanup(temp_path.clone());
 
-    std::fs::write(&temp_path, kubeconfig_content.as_ref())
+    write_secure_temp_file(&temp_path, kubeconfig_content.as_ref())
         .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
 
     let kubectl_path = locate_kubectl()?;
+    let auth_method = detect_auth_method(kubeconfig_content.as_ref(), &context);
 
-    let output = Command::new(&kubectl_path)
+    // Stage 1: basic connectivity — /healthz requires no authentication.
+    let healthz = Command::new(&kubectl_path)
+        .arg("get")
+        .arg("--raw=/healthz")
+        .arg("--kubeconfig")
+        .arg(&temp_path)
+        .output()
+        .await
+        .map_err(|e| format!("Failed to execute kubectl: {e}"))?;
+
+    let healthz_ok = healthz.status.success();
+    let healthz_body = String::from_utf8_lossy(&healthz.stdout).trim().to_string();
+    let healthz_err = String::from_utf8_lossy(&healthz.stderr).trim().to_string();
+    let connectivity_line = if healthz_ok {
+        format!("OK  ({})", if healthz_body.is_empty() { "cluster reachable" } else { &healthz_body })
+    } else {
+        let hint = if healthz_err.is_empty() { "no stderr" } else { healthz_err.lines().last().unwrap_or(&healthz_err) };
+        format!("FAIL  — {hint}")
+    };
+
+    // Stage 2: authenticated cluster-info.
+    let auth_output = Command::new(&kubectl_path)
         .arg("cluster-info")
         .arg("--context")
         .arg(context.as_str())
@@ -240,17 +358,22 @@ pub async fn test_kubectl_connection(
         .await
         .map_err(|e| format!("Failed to execute kubectl: {e}"))?;
 
-    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-    let exit_code = output.status.code().unwrap_or(-1);
+    let stdout = String::from_utf8_lossy(&auth_output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&auth_output.stderr).to_string();
+    let exit_code = auth_output.status.code().unwrap_or(-1);
 
     Ok(format!(
-        "Context:  {context}\nKubectl:  {kubectl}\nExit:     {exit}\n\n--- stdout ---\n{stdout}\n--- stderr ---\n{stderr}",
+        "Context:       {context}\nKubectl:       {kubectl}\nAuth method:   {auth}\n\n\
+         ── Stage 1: Connectivity (/healthz, no auth) ──\n{connectivity}\n\n\
+         ── Stage 2: Authentication (kubectl cluster-info) ──\nExit:     {exit}\n\n\
+         --- stdout ---\n{stdout}\n--- stderr ---\n{stderr}",
         context = context,
         kubectl = kubectl_path.display(),
+        auth = auth_method,
+        connectivity = connectivity_line,
         exit = exit_code,
-        stdout = if stdout.is_empty() { "(none)" } else { &stdout },
-        stderr = if stderr.is_empty() { "(none)" } else { &stderr },
+        stdout = if stdout.is_empty() { "(none)\n" } else { &stdout },
+        stderr = if stderr.is_empty() { "(none)\n" } else { &stderr },
     ))
 }
 
@@ -327,7 +450,7 @@ pub async fn test_cluster_connection(
     let temp_path = temp_dir.join(format!("kubeconfig-{}.yaml", cluster_id));
     let _cleanup = TempFileCleanup(temp_path.clone());
 
-    std::fs::write(&temp_path, kubeconfig_content)
+    write_secure_temp_file(&temp_path, kubeconfig_content)
         .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
 
     // Run kubectl cluster-info
@@ -377,7 +500,7 @@ pub async fn discover_pods(
     let temp_path = temp_dir.join(format!("kubeconfig-{}-pods.yaml", cluster_id));
     let _cleanup = TempFileCleanup(temp_path.clone());
 
-    std::fs::write(&temp_path, kubeconfig_content)
+    write_secure_temp_file(&temp_path, kubeconfig_content)
         .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
 
     // Run kubectl get pods with full JSON output
@@ -506,7 +629,7 @@ pub async fn start_port_forward(
     let temp_dir = std::env::temp_dir();
     let temp_path = temp_dir.join(format!("kubeconfig-{}.yaml", request.cluster_id));
 
-    std::fs::write(&temp_path, kubeconfig_content.as_ref())
+    write_secure_temp_file(&temp_path, kubeconfig_content.as_ref())
         .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
 
     // Build kubectl command
@@ -829,7 +952,7 @@ pub async fn list_namespaces(
     let temp_path = temp_dir.join(format!("kubeconfig-{}-namespaces.yaml", cluster_id));
     let _cleanup = TempFileCleanup(temp_path.clone());
 
-    std::fs::write(&temp_path, kubeconfig_content)
+    write_secure_temp_file(&temp_path, kubeconfig_content)
         .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
 
     let kubectl_path = locate_kubectl()?;
@@ -912,7 +1035,7 @@ pub async fn list_pods(
     let temp_path = temp_dir.join(format!("kubeconfig-{}-pods.yaml", cluster_id));
     let _cleanup = TempFileCleanup(temp_path.clone());
 
-    std::fs::write(&temp_path, kubeconfig_content)
+    write_secure_temp_file(&temp_path, kubeconfig_content)
         .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
 
     let kubectl_path = locate_kubectl()?;
@@ -1036,7 +1159,7 @@ pub async fn list_services(
     let temp_path = temp_dir.join(format!("kubeconfig-{}-services.yaml", cluster_id));
     let _cleanup = TempFileCleanup(temp_path.clone());
 
-    std::fs::write(&temp_path, kubeconfig_content)
+    write_secure_temp_file(&temp_path, kubeconfig_content)
         .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
 
     let kubectl_path = locate_kubectl()?;
@@ -1195,7 +1318,7 @@ pub async fn list_deployments(
     let temp_path = temp_dir.join(format!("kubeconfig-{}-deployments.yaml", cluster_id));
     let _cleanup = TempFileCleanup(temp_path.clone());
 
-    std::fs::write(&temp_path, kubeconfig_content)
+    write_secure_temp_file(&temp_path, kubeconfig_content)
         .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
 
     let kubectl_path = locate_kubectl()?;
@@ -1330,7 +1453,7 @@ pub async fn list_statefulsets(
     let temp_path = temp_dir.join(format!("kubeconfig-{}-statefulsets.yaml", cluster_id));
     let _cleanup = TempFileCleanup(temp_path.clone());
 
-    std::fs::write(&temp_path, kubeconfig_content)
+    write_secure_temp_file(&temp_path, kubeconfig_content)
         .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
 
     let kubectl_path = locate_kubectl()?;
@@ -1449,7 +1572,7 @@ pub async fn list_daemonsets(
     let temp_path = temp_dir.join(format!("kubeconfig-{}-daemonsets.yaml", cluster_id));
     let _cleanup = TempFileCleanup(temp_path.clone());
 
-    std::fs::write(&temp_path, kubeconfig_content)
+    write_secure_temp_file(&temp_path, kubeconfig_content)
         .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
 
     let kubectl_path = locate_kubectl()?;
@@ -1618,7 +1741,7 @@ pub async fn get_pod_logs(
     let temp_path = temp_dir.join(format!("kubeconfig-{}-logs.yaml", cluster_id));
     let _cleanup = TempFileCleanup(temp_path.clone());
 
-    std::fs::write(&temp_path, kubeconfig_content)
+    write_secure_temp_file(&temp_path, kubeconfig_content)
         .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
 
     let kubectl_path = locate_kubectl()?;
@@ -1668,7 +1791,7 @@ pub async fn scale_deployment(
     let temp_path = temp_dir.join(format!("kubeconfig-{}-scale.yaml", cluster_id));
     let _cleanup = TempFileCleanup(temp_path.clone());
 
-    std::fs::write(&temp_path, kubeconfig_content)
+    write_secure_temp_file(&temp_path, kubeconfig_content)
         .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
 
     let kubectl_path = locate_kubectl()?;
@@ -1716,7 +1839,7 @@ pub async fn restart_deployment(
     let temp_path = temp_dir.join(format!("kubeconfig-{}-restart.yaml", cluster_id));
     let _cleanup = TempFileCleanup(temp_path.clone());
 
-    std::fs::write(&temp_path, kubeconfig_content)
+    write_secure_temp_file(&temp_path, kubeconfig_content)
         .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
 
     let kubectl_path = locate_kubectl()?;
@@ -1764,7 +1887,7 @@ pub async fn delete_resource(
     let temp_path = temp_dir.join(format!("kubeconfig-{}-delete.yaml", cluster_id));
     let _cleanup = TempFileCleanup(temp_path.clone());
 
-    std::fs::write(&temp_path, kubeconfig_content)
+    write_secure_temp_file(&temp_path, kubeconfig_content)
         .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
 
     let kubectl_path = locate_kubectl()?;
@@ -1813,7 +1936,7 @@ pub async fn exec_pod(
     let temp_path = temp_dir.join(format!("kubeconfig-{}-exec.yaml", cluster_id));
     let _cleanup = TempFileCleanup(temp_path.clone());
 
-    std::fs::write(&temp_path, kubeconfig_content)
+    write_secure_temp_file(&temp_path, kubeconfig_content)
         .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
 
     let kubectl_path = locate_kubectl()?;
@@ -2092,7 +2215,7 @@ pub async fn list_replicasets(
     let temp_path = temp_dir.join(format!("kubeconfig-{}-replicasets.yaml", cluster_id));
     let _cleanup = TempFileCleanup(temp_path.clone());
 
-    std::fs::write(&temp_path, kubeconfig_content)
+    write_secure_temp_file(&temp_path, kubeconfig_content)
         .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
 
     let kubectl_path = locate_kubectl()?;
@@ -2211,7 +2334,7 @@ pub async fn list_jobs(
     let temp_path = temp_dir.join(format!("kubeconfig-{}-jobs.yaml", cluster_id));
     let _cleanup = TempFileCleanup(temp_path.clone());
 
-    std::fs::write(&temp_path, kubeconfig_content)
+    write_secure_temp_file(&temp_path, kubeconfig_content)
         .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
 
     let kubectl_path = locate_kubectl()?;
@@ -2368,7 +2491,7 @@ pub async fn list_cronjobs(
     let temp_path = temp_dir.join(format!("kubeconfig-{}-cronjobs.yaml", cluster_id));
     let _cleanup = TempFileCleanup(temp_path.clone());
 
-    std::fs::write(&temp_path, kubeconfig_content)
+    write_secure_temp_file(&temp_path, kubeconfig_content)
         .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
 
     let kubectl_path = locate_kubectl()?;
@@ -2496,7 +2619,7 @@ pub async fn list_configmaps(
     let temp_path = temp_dir.join(format!("kubeconfig-{}-configmaps.yaml", cluster_id));
     let _cleanup = TempFileCleanup(temp_path.clone());
 
-    std::fs::write(&temp_path, kubeconfig_content)
+    write_secure_temp_file(&temp_path, kubeconfig_content)
         .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
 
     let kubectl_path = locate_kubectl()?;
@@ -2595,7 +2718,7 @@ pub async fn list_secrets(
     let temp_path = temp_dir.join(format!("kubeconfig-{}-secrets.yaml", cluster_id));
     let _cleanup = TempFileCleanup(temp_path.clone());
 
-    std::fs::write(&temp_path, kubeconfig_content)
+    write_secure_temp_file(&temp_path, kubeconfig_content)
         .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
 
     let kubectl_path = locate_kubectl()?;
@@ -2700,7 +2823,7 @@ pub async fn list_nodes(
     let temp_path = temp_dir.join(format!("kubeconfig-{}-nodes.yaml", cluster_id));
     let _cleanup = TempFileCleanup(temp_path.clone());
 
-    std::fs::write(&temp_path, kubeconfig_content)
+    write_secure_temp_file(&temp_path, kubeconfig_content)
         .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
 
     let kubectl_path = locate_kubectl()?;
@@ -2889,7 +3012,7 @@ pub async fn list_events(
     let temp_path = temp_dir.join(format!("kubeconfig-{}-events.yaml", cluster_id));
     let _cleanup = TempFileCleanup(temp_path.clone());
 
-    std::fs::write(&temp_path, kubeconfig_content)
+    write_secure_temp_file(&temp_path, kubeconfig_content)
         .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
 
     let kubectl_path = locate_kubectl()?;
@@ -3019,7 +3142,7 @@ pub async fn list_ingresses(
     let temp_path = temp_dir.join(format!("kubeconfig-{}-ingresses.yaml", cluster_id));
     let _cleanup = TempFileCleanup(temp_path.clone());
 
-    std::fs::write(&temp_path, kubeconfig_content)
+    write_secure_temp_file(&temp_path, kubeconfig_content)
         .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
 
     let kubectl_path = locate_kubectl()?;
@@ -3146,7 +3269,7 @@ pub async fn list_persistentvolumeclaims(
     let temp_path = temp_dir.join(format!("kubeconfig-{}-pvcs.yaml", cluster_id));
     let _cleanup = TempFileCleanup(temp_path.clone());
 
-    std::fs::write(&temp_path, kubeconfig_content)
+    write_secure_temp_file(&temp_path, kubeconfig_content)
         .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
 
     let kubectl_path = locate_kubectl()?;
@@ -3277,7 +3400,7 @@ pub async fn list_persistentvolumes(
     let temp_path = temp_dir.join(format!("kubeconfig-{}-pvs.yaml", cluster_id));
     let _cleanup = TempFileCleanup(temp_path.clone());
 
-    std::fs::write(&temp_path, kubeconfig_content)
+    write_secure_temp_file(&temp_path, kubeconfig_content)
         .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
 
     let kubectl_path = locate_kubectl()?;
@@ -3404,7 +3527,7 @@ pub async fn list_serviceaccounts(
     let temp_path = temp_dir.join(format!("kubeconfig-{}-sas.yaml", cluster_id));
     let _cleanup = TempFileCleanup(temp_path.clone());
 
-    std::fs::write(&temp_path, kubeconfig_content)
+    write_secure_temp_file(&temp_path, kubeconfig_content)
         .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
 
     let kubectl_path = locate_kubectl()?;
@@ -3503,7 +3626,7 @@ pub async fn list_roles(
     let temp_path = temp_dir.join(format!("kubeconfig-{}-roles.yaml", cluster_id));
     let _cleanup = TempFileCleanup(temp_path.clone());
 
-    std::fs::write(&temp_path, kubeconfig_content)
+    write_secure_temp_file(&temp_path, kubeconfig_content)
         .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
 
     let kubectl_path = locate_kubectl()?;
@@ -3594,7 +3717,7 @@ pub async fn list_clusterroles(
     let temp_path = temp_dir.join(format!("kubeconfig-{}-clusterroles.yaml", cluster_id));
     let _cleanup = TempFileCleanup(temp_path.clone());
 
-    std::fs::write(&temp_path, kubeconfig_content)
+    write_secure_temp_file(&temp_path, kubeconfig_content)
         .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
 
     let kubectl_path = locate_kubectl()?;
@@ -3670,7 +3793,7 @@ pub async fn list_rolebindings(
     let temp_path = temp_dir.join(format!("kubeconfig-{}-rolebindings.yaml", cluster_id));
     let _cleanup = TempFileCleanup(temp_path.clone());
 
-    std::fs::write(&temp_path, kubeconfig_content)
+    write_secure_temp_file(&temp_path, kubeconfig_content)
         .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
 
     let kubectl_path = locate_kubectl()?;
@@ -3772,7 +3895,7 @@ pub async fn list_clusterrolebindings(
     ));
     let _cleanup = TempFileCleanup(temp_path.clone());
 
-    std::fs::write(&temp_path, kubeconfig_content)
+    write_secure_temp_file(&temp_path, kubeconfig_content)
         .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
 
     let kubectl_path = locate_kubectl()?;
@@ -3859,7 +3982,7 @@ pub async fn list_horizontalpodautoscalers(
     let temp_path = temp_dir.join(format!("kubeconfig-{}-hpas.yaml", cluster_id));
     let _cleanup = TempFileCleanup(temp_path.clone());
 
-    std::fs::write(&temp_path, kubeconfig_content)
+    write_secure_temp_file(&temp_path, kubeconfig_content)
         .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
 
     let kubectl_path = locate_kubectl()?;
@@ -3978,7 +4101,7 @@ pub async fn list_storageclasses(
     let temp_path = temp_dir.join(format!("kubeconfig-{}-storageclasses.yaml", cluster_id));
     let _cleanup = TempFileCleanup(temp_path.clone());
 
-    std::fs::write(&temp_path, kubeconfig_content)
+    write_secure_temp_file(&temp_path, kubeconfig_content)
         .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
 
     let kubectl_path = locate_kubectl()?;
@@ -4084,7 +4207,7 @@ pub async fn list_networkpolicies(
     let temp_path = temp_dir.join(format!("kubeconfig-{}-networkpolicies.yaml", cluster_id));
     let _cleanup = TempFileCleanup(temp_path.clone());
 
-    std::fs::write(&temp_path, kubeconfig_content)
+    write_secure_temp_file(&temp_path, kubeconfig_content)
         .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
 
     let kubectl_path = locate_kubectl()?;
@@ -4196,7 +4319,7 @@ pub async fn list_resourcequotas(
     let temp_path = temp_dir.join(format!("kubeconfig-{}-resourcequotas.yaml", cluster_id));
     let _cleanup = TempFileCleanup(temp_path.clone());
 
-    std::fs::write(&temp_path, kubeconfig_content)
+    write_secure_temp_file(&temp_path, kubeconfig_content)
         .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
 
     let kubectl_path = locate_kubectl()?;
@@ -4318,7 +4441,7 @@ pub async fn list_limitranges(
     let temp_path = temp_dir.join(format!("kubeconfig-{}-limitranges.yaml", cluster_id));
     let _cleanup = TempFileCleanup(temp_path.clone());
 
-    std::fs::write(&temp_path, kubeconfig_content)
+    write_secure_temp_file(&temp_path, kubeconfig_content)
         .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
 
     let kubectl_path = locate_kubectl()?;
@@ -4418,7 +4541,7 @@ pub async fn cordon_node(
     let temp_path = temp_dir.join(format!("kubeconfig-{}-cordon.yaml", cluster_id));
     let _cleanup = TempFileCleanup(temp_path.clone());
 
-    std::fs::write(&temp_path, kubeconfig_content)
+    write_secure_temp_file(&temp_path, kubeconfig_content)
         .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
 
     let kubectl_path = locate_kubectl()?;
@@ -4460,7 +4583,7 @@ pub async fn uncordon_node(
     let temp_path = temp_dir.join(format!("kubeconfig-{}-uncordon.yaml", cluster_id));
     let _cleanup = TempFileCleanup(temp_path.clone());
 
-    std::fs::write(&temp_path, kubeconfig_content)
+    write_secure_temp_file(&temp_path, kubeconfig_content)
         .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
 
     let kubectl_path = locate_kubectl()?;
@@ -4502,7 +4625,7 @@ pub async fn drain_node(
     let temp_path = temp_dir.join(format!("kubeconfig-{}-drain.yaml", cluster_id));
     let _cleanup = TempFileCleanup(temp_path.clone());
 
-    std::fs::write(&temp_path, kubeconfig_content)
+    write_secure_temp_file(&temp_path, kubeconfig_content)
         .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
 
     let kubectl_path = locate_kubectl()?;
@@ -4548,7 +4671,7 @@ pub async fn rollback_deployment(
     let temp_path = temp_dir.join(format!("kubeconfig-{}-rollback.yaml", cluster_id));
     let _cleanup = TempFileCleanup(temp_path.clone());
 
-    std::fs::write(&temp_path, kubeconfig_content)
+    write_secure_temp_file(&temp_path, kubeconfig_content)
         .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
 
     let kubectl_path = locate_kubectl()?;
@@ -4596,7 +4719,7 @@ pub async fn create_resource(
     let temp_path = temp_dir.join(format!("kubeconfig-{}-create.yaml", cluster_id));
     let _cleanup = TempFileCleanup(temp_path.clone());
 
-    std::fs::write(&temp_path, kubeconfig_content)
+    write_secure_temp_file(&temp_path, kubeconfig_content)
         .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
 
     let kubectl_path = locate_kubectl()?;
@@ -4660,7 +4783,7 @@ pub async fn edit_resource(
     let temp_path = temp_dir.join(format!("kubeconfig-{}-edit.yaml", cluster_id));
     let _cleanup = TempFileCleanup(temp_path.clone());
 
-    std::fs::write(&temp_path, kubeconfig_content)
+    write_secure_temp_file(&temp_path, kubeconfig_content)
         .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
 
     let kubectl_path = locate_kubectl()?;

@@ -42,6 +42,7 @@ CI, chore, and build changes are excluded.
 - **kube**: Correct kubectl context, dialog close, icon visibility, cluster name
 - **kube**: Use current-context for kubectl auth; fix SelectValue label display
 - **kube**: Switch to --kubeconfig flag; add Test Connection diagnostic
+- **kube**: Add two-stage diagnostics to test_kubectl_connection
 
 ### Documentation
 - **kubernetes**: Add comment about dynamic port allocation limitation
@@ -61,6 +62,9 @@ CI, chore, and build changes are excluded.
 - **kubernetes**: Implement Phase 3 - detail views and cluster management
 - **kubernetes**: Implement Phase 7 - real-time updates
 - **kubernetes**: Implement Lens Desktop v5 feature-parity UI
+
+### Security
+- **kube**: Restrict temp kubeconfig files to owner-only permissions
 
 ## [1.1.0] — 2026-06-06
 
