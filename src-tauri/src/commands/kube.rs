@@ -199,6 +199,61 @@ pub async fn connect_cluster_from_kubeconfig(
     Ok(())
 }
 
+/// Diagnostic: test a kubeconfig's ability to reach the cluster.
+///
+/// Returns a human-readable summary including the context name, kubectl binary
+/// path, exit code, and the full stdout/stderr from `kubectl cluster-info`.
+/// This command is safe to call at any time — it writes a temp file, tests the
+/// connection, then deletes the file regardless of the outcome.
+#[tauri::command]
+pub async fn test_kubectl_connection(
+    cluster_id: String,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    let (kubeconfig_content, context) = {
+        let clusters = state.clusters.lock().await;
+        let cluster = clusters.get(&cluster_id).ok_or_else(|| {
+            format!(
+                "Cluster {} not found in session — try re-selecting the cluster",
+                cluster_id
+            )
+        })?;
+        (cluster.kubeconfig_content.clone(), cluster.context.clone())
+    };
+
+    let temp_dir = std::env::temp_dir();
+    let temp_path = temp_dir.join(format!("kubeconfig-{}-diag.yaml", cluster_id));
+    let _cleanup = TempFileCleanup(temp_path.clone());
+
+    std::fs::write(&temp_path, kubeconfig_content.as_ref())
+        .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
+
+    let kubectl_path = locate_kubectl()?;
+
+    let output = Command::new(&kubectl_path)
+        .arg("cluster-info")
+        .arg("--context")
+        .arg(context.as_str())
+        .arg("--kubeconfig")
+        .arg(&temp_path)
+        .output()
+        .await
+        .map_err(|e| format!("Failed to execute kubectl: {e}"))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    let exit_code = output.status.code().unwrap_or(-1);
+
+    Ok(format!(
+        "Context:  {context}\nKubectl:  {kubectl}\nExit:     {exit}\n\n--- stdout ---\n{stdout}\n--- stderr ---\n{stderr}",
+        context = context,
+        kubectl = kubectl_path.display(),
+        exit = exit_code,
+        stdout = if stdout.is_empty() { "(none)" } else { &stdout },
+        stderr = if stderr.is_empty() { "(none)" } else { &stderr },
+    ))
+}
+
 #[tauri::command]
 pub async fn remove_cluster(id: String, state: State<'_, AppState>) -> Result<(), String> {
     // Check existence in memory BEFORE touching the DB
@@ -280,7 +335,8 @@ pub async fn test_cluster_connection(
 
     let output = Command::new(kubectl_path)
         .arg("cluster-info")
-        .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
+        .arg("--kubeconfig")
+        .arg(&temp_path)
         .arg("--context")
         .arg(context.as_str())
         .output()
@@ -334,7 +390,8 @@ pub async fn discover_pods(
         .arg(&namespace)
         .arg("-o")
         .arg("json")
-        .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
+        .arg("--kubeconfig")
+        .arg(&temp_path)
         .arg("--context")
         .arg(context.as_str())
         .output()
@@ -473,7 +530,8 @@ pub async fn start_port_forward(
         .args(&args)
         .arg("--context")
         .arg(cluster.context.as_str())
-        .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
+        .arg("--kubeconfig")
+        .arg(&temp_path)
         .spawn()
         .map_err(|e| format!("Failed to spawn kubectl: {e}"))?;
 
@@ -781,7 +839,8 @@ pub async fn list_namespaces(
         .arg("namespaces")
         .arg("-o")
         .arg("json")
-        .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
+        .arg("--kubeconfig")
+        .arg(&temp_path)
         .arg("--context")
         .arg(context.as_str())
         .output()
@@ -868,7 +927,8 @@ pub async fn list_pods(
     let output = kubectl_cmd
         .arg("-o")
         .arg("json")
-        .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
+        .arg("--kubeconfig")
+        .arg(&temp_path)
         .arg("--context")
         .arg(context.as_str())
         .output()
@@ -991,7 +1051,8 @@ pub async fn list_services(
     let output = kubectl_cmd
         .arg("-o")
         .arg("json")
-        .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
+        .arg("--kubeconfig")
+        .arg(&temp_path)
         .arg("--context")
         .arg(context.as_str())
         .output()
@@ -1149,7 +1210,8 @@ pub async fn list_deployments(
     let output = kubectl_cmd
         .arg("-o")
         .arg("json")
-        .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
+        .arg("--kubeconfig")
+        .arg(&temp_path)
         .arg("--context")
         .arg(context.as_str())
         .output()
@@ -1283,7 +1345,8 @@ pub async fn list_statefulsets(
     let output = kubectl_cmd
         .arg("-o")
         .arg("json")
-        .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
+        .arg("--kubeconfig")
+        .arg(&temp_path)
         .arg("--context")
         .arg(context.as_str())
         .output()
@@ -1401,7 +1464,8 @@ pub async fn list_daemonsets(
     let output = kubectl_cmd
         .arg("-o")
         .arg("json")
-        .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
+        .arg("--kubeconfig")
+        .arg(&temp_path)
         .arg("--context")
         .arg(context.as_str())
         .output()
@@ -1566,7 +1630,8 @@ pub async fn get_pod_logs(
         .arg(namespace)
         .arg("-c")
         .arg(container_name)
-        .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
+        .arg("--kubeconfig")
+        .arg(&temp_path)
         .arg("--context")
         .arg(context.as_str())
         .output()
@@ -1616,7 +1681,8 @@ pub async fn scale_deployment(
         .arg(replicas.to_string())
         .arg("-n")
         .arg(namespace)
-        .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
+        .arg("--kubeconfig")
+        .arg(&temp_path)
         .arg("--context")
         .arg(context.as_str())
         .output()
@@ -1662,7 +1728,8 @@ pub async fn restart_deployment(
         .arg(deployment_name)
         .arg("-n")
         .arg(namespace)
-        .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
+        .arg("--kubeconfig")
+        .arg(&temp_path)
         .arg("--context")
         .arg(context.as_str())
         .output()
@@ -1708,7 +1775,8 @@ pub async fn delete_resource(
         .arg(resource_name)
         .arg("-n")
         .arg(namespace)
-        .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
+        .arg("--kubeconfig")
+        .arg(&temp_path)
         .arg("--context")
         .arg(context.as_str())
         .output()
@@ -1777,7 +1845,8 @@ pub async fn exec_pod(
 
     cmd.arg("--").arg(shell_cmd).arg("-c").arg(&command);
 
-    cmd.env("KUBECONFIG", temp_path.to_string_lossy().to_string())
+    cmd.arg("--kubeconfig")
+        .arg(&temp_path)
         .arg("--context")
         .arg(context.as_str());
 
@@ -2038,7 +2107,8 @@ pub async fn list_replicasets(
     let output = kubectl_cmd
         .arg("-o")
         .arg("json")
-        .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
+        .arg("--kubeconfig")
+        .arg(&temp_path)
         .arg("--context")
         .arg(context.as_str())
         .output()
@@ -2156,7 +2226,8 @@ pub async fn list_jobs(
     let output = kubectl_cmd
         .arg("-o")
         .arg("json")
-        .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
+        .arg("--kubeconfig")
+        .arg(&temp_path)
         .arg("--context")
         .arg(context.as_str())
         .output()
@@ -2312,7 +2383,8 @@ pub async fn list_cronjobs(
     let output = kubectl_cmd
         .arg("-o")
         .arg("json")
-        .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
+        .arg("--kubeconfig")
+        .arg(&temp_path)
         .arg("--context")
         .arg(context.as_str())
         .output()
@@ -2439,7 +2511,8 @@ pub async fn list_configmaps(
     let output = kubectl_cmd
         .arg("-o")
         .arg("json")
-        .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
+        .arg("--kubeconfig")
+        .arg(&temp_path)
         .arg("--context")
         .arg(context.as_str())
         .output()
@@ -2537,7 +2610,8 @@ pub async fn list_secrets(
     let output = kubectl_cmd
         .arg("-o")
         .arg("json")
-        .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
+        .arg("--kubeconfig")
+        .arg(&temp_path)
         .arg("--context")
         .arg(context.as_str())
         .output()
@@ -2636,7 +2710,8 @@ pub async fn list_nodes(
         .arg("nodes")
         .arg("-o")
         .arg("json")
-        .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
+        .arg("--kubeconfig")
+        .arg(&temp_path)
         .arg("--context")
         .arg(context.as_str())
         .output()
@@ -2829,7 +2904,8 @@ pub async fn list_events(
     let output = kubectl_cmd
         .arg("-o")
         .arg("json")
-        .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
+        .arg("--kubeconfig")
+        .arg(&temp_path)
         .arg("--context")
         .arg(context.as_str())
         .output()
@@ -2958,7 +3034,8 @@ pub async fn list_ingresses(
     let output = kubectl_cmd
         .arg("-o")
         .arg("json")
-        .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
+        .arg("--kubeconfig")
+        .arg(&temp_path)
         .arg("--context")
         .arg(context.as_str())
         .output()
@@ -3084,7 +3161,8 @@ pub async fn list_persistentvolumeclaims(
     let output = kubectl_cmd
         .arg("-o")
         .arg("json")
-        .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
+        .arg("--kubeconfig")
+        .arg(&temp_path)
         .arg("--context")
         .arg(context.as_str())
         .output()
@@ -3209,7 +3287,8 @@ pub async fn list_persistentvolumes(
         .arg("persistentvolumes")
         .arg("-o")
         .arg("json")
-        .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
+        .arg("--kubeconfig")
+        .arg(&temp_path)
         .arg("--context")
         .arg(context.as_str())
         .output()
@@ -3340,7 +3419,8 @@ pub async fn list_serviceaccounts(
     let output = kubectl_cmd
         .arg("-o")
         .arg("json")
-        .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
+        .arg("--kubeconfig")
+        .arg(&temp_path)
         .arg("--context")
         .arg(context.as_str())
         .output()
@@ -3438,7 +3518,8 @@ pub async fn list_roles(
     let output = kubectl_cmd
         .arg("-o")
         .arg("json")
-        .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
+        .arg("--kubeconfig")
+        .arg(&temp_path)
         .arg("--context")
         .arg(context.as_str())
         .output()
@@ -3523,7 +3604,8 @@ pub async fn list_clusterroles(
         .arg("clusterroles")
         .arg("-o")
         .arg("json")
-        .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
+        .arg("--kubeconfig")
+        .arg(&temp_path)
         .arg("--context")
         .arg(context.as_str())
         .output()
@@ -3603,7 +3685,8 @@ pub async fn list_rolebindings(
     let output = kubectl_cmd
         .arg("-o")
         .arg("json")
-        .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
+        .arg("--kubeconfig")
+        .arg(&temp_path)
         .arg("--context")
         .arg(context.as_str())
         .output()
@@ -3699,7 +3782,8 @@ pub async fn list_clusterrolebindings(
         .arg("clusterrolebindings")
         .arg("-o")
         .arg("json")
-        .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
+        .arg("--kubeconfig")
+        .arg(&temp_path)
         .arg("--context")
         .arg(context.as_str())
         .output()
@@ -3790,7 +3874,8 @@ pub async fn list_horizontalpodautoscalers(
     let output = kubectl_cmd
         .arg("-o")
         .arg("json")
-        .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
+        .arg("--kubeconfig")
+        .arg(&temp_path)
         .arg("--context")
         .arg(context.as_str())
         .output()
@@ -3903,7 +3988,8 @@ pub async fn list_storageclasses(
         .arg("storageclasses")
         .arg("-o")
         .arg("json")
-        .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
+        .arg("--kubeconfig")
+        .arg(&temp_path)
         .arg("--context")
         .arg(context.as_str())
         .output()
@@ -4013,7 +4099,8 @@ pub async fn list_networkpolicies(
     let output = kubectl_cmd
         .arg("-o")
         .arg("json")
-        .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
+        .arg("--kubeconfig")
+        .arg(&temp_path)
         .arg("--context")
         .arg(context.as_str())
         .output()
@@ -4124,7 +4211,8 @@ pub async fn list_resourcequotas(
     let output = kubectl_cmd
         .arg("-o")
         .arg("json")
-        .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
+        .arg("--kubeconfig")
+        .arg(&temp_path)
         .arg("--context")
         .arg(context.as_str())
         .output()
@@ -4245,7 +4333,8 @@ pub async fn list_limitranges(
     let output = kubectl_cmd
         .arg("-o")
         .arg("json")
-        .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
+        .arg("--kubeconfig")
+        .arg(&temp_path)
         .arg("--context")
         .arg(context.as_str())
         .output()
@@ -4337,7 +4426,8 @@ pub async fn cordon_node(
     let output = Command::new(kubectl_path)
         .arg("cordon")
         .arg(node_name)
-        .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
+        .arg("--kubeconfig")
+        .arg(&temp_path)
         .arg("--context")
         .arg(context.as_str())
         .output()
@@ -4378,7 +4468,8 @@ pub async fn uncordon_node(
     let output = Command::new(kubectl_path)
         .arg("uncordon")
         .arg(node_name)
-        .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
+        .arg("--kubeconfig")
+        .arg(&temp_path)
         .arg("--context")
         .arg(context.as_str())
         .output()
@@ -4422,7 +4513,8 @@ pub async fn drain_node(
         .arg("--ignore-daemonsets")
         .arg("--delete-emptydir-data")
         .arg("--force")
-        .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
+        .arg("--kubeconfig")
+        .arg(&temp_path)
         .arg("--context")
         .arg(context.as_str())
         .output()
@@ -4468,7 +4560,8 @@ pub async fn rollback_deployment(
         .arg(deployment_name)
         .arg("-n")
         .arg(namespace)
-        .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
+        .arg("--kubeconfig")
+        .arg(&temp_path)
         .arg("--context")
         .arg(context.as_str())
         .output()
@@ -4514,7 +4607,8 @@ pub async fn create_resource(
         .arg("-")
         .arg("-n")
         .arg(namespace)
-        .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
+        .arg("--kubeconfig")
+        .arg(&temp_path)
         .arg("--context")
         .arg(context.as_str())
         .stdin(Stdio::piped())
@@ -4577,7 +4671,8 @@ pub async fn edit_resource(
         .arg("-")
         .arg("-n")
         .arg(namespace)
-        .env("KUBECONFIG", temp_path.to_string_lossy().to_string())
+        .arg("--kubeconfig")
+        .arg(&temp_path)
         .arg("--context")
         .arg(context.as_str())
         .stdin(Stdio::piped())
