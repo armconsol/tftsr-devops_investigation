@@ -42,7 +42,9 @@ CI, chore, and build changes are excluded.
 - **kube**: Correct kubectl context, dialog close, icon visibility, cluster name
 - **kube**: Use current-context for kubectl auth; fix SelectValue label display
 - **kube**: Switch to --kubeconfig flag; add Test Connection diagnostic
+- **ui**: Correct font contrast and background colors in dark mode
 - **kube**: Add two-stage diagnostics to test_kubectl_connection
+- **ci**: Cargo fmt kube.rs + switch pr-review to qwen3-coder-next
 
 ### Documentation
 - **kubernetes**: Add comment about dynamic port allocation limitation
@@ -62,6 +64,10 @@ CI, chore, and build changes are excluded.
 - **kubernetes**: Implement Phase 3 - detail views and cluster management
 - **kubernetes**: Implement Phase 7 - real-time updates
 - **kubernetes**: Implement Lens Desktop v5 feature-parity UI
+- **kube**: Add TypeScript types and command stubs for all new K8s resources
+- **kube**: Nav restructure, action menus, new resource lists, advanced components
+- **kube**: Implement 44 new Rust K8s commands + helm binary support
+- **kube**: Merge backend — 44 Rust commands, helm binary, 363 tests
 
 ### Security
 - **kube**: Restrict temp kubeconfig files to owner-only permissions
