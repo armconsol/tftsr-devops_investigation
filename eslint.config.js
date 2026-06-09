@@ -36,7 +36,7 @@ const tsBase = {
 
 export default [
   {
-    ignores: ["dist/", "node_modules/", "src-tauri/target/**", "target/**", "coverage/", "tailwind.config.ts"],
+    ignores: ["dist/", "node_modules/", "src-tauri/target/**", "target/**", "coverage/", "tailwind.config.ts", ".claude/"],
   },
   {
     files: ["src/**/*.{ts,tsx}"],

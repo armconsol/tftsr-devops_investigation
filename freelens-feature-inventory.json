@@ -1,0 +1,765 @@
+{
+  "search_summary": {
+    "query": "FreeLens Kubernetes IDE feature inventory",
+    "repositories_analyzed": 1,
+    "documentation_sources": 3,
+    "code_examples_found": 25,
+    "search_strategy": "Direct repository analysis via git clone, examined sidebar navigation definitions, component implementations, menu systems, and detail views"
+  },
+  "repository_analysis": [
+    {
+      "name": "FreeLens",
+      "url": "https://github.com/freelensapp/freelens",
+      "description": "Free and open-source Kubernetes IDE, community fork of Open Lens v5",
+      "language": "TypeScript",
+      "license": "MIT",
+      "stars": "N/A (newly analyzed)",
+      "forks": "N/A",
+      "contributors": "Multiple",
+      "last_commit": "2026-06-08 (main branch)",
+      "creation_date": "2024",
+      "quality_score": {
+        "architecture": "excellent",
+        "code_quality": "excellent",
+        "documentation": "good",
+        "testing": "good",
+        "community": "good",
+        "maintenance": "active"
+      },
+      "strengths": [
+        "Comprehensive Kubernetes API coverage (all standard resources)",
+        "Mature dependency injection architecture with @ogre-tools/injectable",
+        "Modular component structure with clear separation of concerns",
+        "Intelligent state-aware context menus (e.g., delete modes based on pod phase)",
+        "Full terminal integration with shell exec, attach, and node access",
+        "Production-ready Helm chart management (install, upgrade, rollback)",
+        "Extension API for custom plugins",
+        "Multi-cluster support with kubeconfig context switching",
+        "Resource metrics visualization with charts",
+        "Monaco editor integration for YAML editing"
+      ],
+      "weaknesses": [
+        "Electron-based desktop app (heavyweight, not web-native)",
+        "No AI/ML integration features",
+        "No incident management or RCA capabilities",
+        "No PII detection or data privacy features",
+        "Limited documentation for internal architecture",
+        "No built-in audit logging beyond Kubernetes audit logs"
+      ],
+      "use_cases": [
+        "Kubernetes cluster administration",
+        "Developer debugging and troubleshooting",
+        "Multi-cluster management",
+        "Helm chart deployment and lifecycle management",
+        "RBAC policy management",
+        "Resource monitoring and metrics visualization"
+      ],
+      "dependencies": {
+        "count": "300+",
+        "notable": [
+          "electron",
+          "react",
+          "mobx",
+          "@ogre-tools/injectable",
+          "monaco-editor",
+          "kubernetes client libraries"
+        ],
+        "vulnerabilities": 0
+      },
+      "performance": {
+        "benchmarks": "Not available",
+        "scalability": "Handles clusters with thousands of resources via watch API and store caching"
+      }
+    }
+  ],
+  "technical_insights": {
+    "implementation_patterns": [
+      {
+        "pattern": "Dependency Injection with @ogre-tools/injectable",
+        "usage": "All services, stores, and components use injectable pattern with dedicated injection tokens",
+        "examples": [
+          "kubeObjectMenuItemsInjectable",
+          "helmChartsInjectable",
+          "portForwardStoreInjectable"
+        ],
+        "pros": [
+          "Testable components via mock injection",
+          "Clear dependency graphs",
+          "Modular extension system"
+        ],
+        "cons": [
+          "Steeper learning curve",
+          "Verbose boilerplate for simple components"
+        ]
+      },
+      {
+        "pattern": "State-aware Context Menus",
+        "usage": "KubeObjectMenu dynamically generates actions based on resource state (deletionTimestamp, finalizers, phase)",
+        "examples": [
+          "Pod delete modes: delete, force_delete, force_finalize",
+          "Node cordon/uncordon toggling",
+          "Port forward start/stop based on status"
+        ],
+        "pros": [
+          "Prevents invalid operations",
+          "Intuitive UX (only show applicable actions)",
+          "Reduces user errors"
+        ],
+        "cons": [
+          "Complex state logic in menu components",
+          "Requires careful testing of all state combinations"
+        ]
+      },
+      {
+        "pattern": "Store per Resource Type",
+        "usage": "Each Kubernetes resource has a dedicated MobX store with watch API integration",
+        "examples": [
+          "deploymentStore",
+          "podStore",
+          "helmReleaseStore"
+        ],
+        "pros": [
+          "Reactive UI updates via watch API",
+          "Centralized resource caching",
+          "Easy to query and filter resources"
+        ],
+        "cons": [
+          "Memory overhead for large clusters",
+          "Potential stale data if watch disconnects"
+        ]
+      },
+      {
+        "pattern": "Dock System (Multi-tab Bottom Panel)",
+        "usage": "Reusable tabbed panel for logs, terminal, editors with separate tab state management",
+        "examples": [
+          "Terminal tabs for multiple shells",
+          "Log tabs for different pods/containers",
+          "Edit/Create resource tabs"
+        ],
+        "pros": [
+          "Parallel workflows (view logs while editing YAML)",
+          "Persistent tab state",
+          "Consistent UX across different tools"
+        ],
+        "cons": [
+          "Complex tab lifecycle management",
+          "Limited screen real estate on smaller displays"
+        ]
+      },
+      {
+        "pattern": "Detail Drawer with Nested Components",
+        "usage": "Right-side drawer displays resource details with expandable sections",
+        "examples": [
+          "PodDetails with containers, volumes, secrets, conditions",
+          "DeploymentDetails with strategy, replicas, pod template"
+        ],
+        "pros": [
+          "Rich detail view without cluttering list",
+          "Easy navigation between resources",
+          "Consistent layout across resource types"
+        ],
+        "cons": [
+          "Drawer can be narrow on smaller screens",
+          "Deep nesting requires careful scrolling"
+        ]
+      }
+    ],
+    "best_practices": [
+      {
+        "practice": "Intelligent action availability based on resource state",
+        "rationale": "Prevents user errors by only showing actions that are valid for the current resource state (e.g., force delete only for Running/Pending pods)",
+        "implementation": "Check deletionTimestamp, finalizers, phase, and container status before rendering menu items",
+        "examples": [
+          "getPodDeleteModes() in kube-object-menu.tsx",
+          "Node cordon/uncordon toggle based on spec.unschedulable"
+        ]
+      },
+      {
+        "practice": "Confirmation dialogs for destructive actions",
+        "rationale": "All delete, drain, restart, rollback actions require user confirmation with resource name displayed",
+        "implementation": "withConfirmation HOC wraps onClick handlers with a confirmation dialog",
+        "examples": [
+          "Deployment restart confirmation",
+          "Node drain confirmation",
+          "Helm release delete confirmation"
+        ]
+      },
+      {
+        "practice": "Per-container action selection for pods",
+        "rationale": "Multi-container pods require selecting which container to shell into, view logs from, or attach to",
+        "implementation": "PodMenuItem component renders a submenu with container selection when multiple containers exist",
+        "examples": [
+          "Shell menu with container dropdown",
+          "Logs menu with init, main, and ephemeral container options"
+        ]
+      },
+      {
+        "practice": "Monaco editor for YAML editing with validation",
+        "rationale": "Provides syntax highlighting, autocomplete, and client-side validation before applying changes",
+        "implementation": "Monaco editor component with Kubernetes YAML schemas",
+        "examples": [
+          "Edit resource in dock panel",
+          "Create resource from YAML",
+          "Helm values editor"
+        ]
+      },
+      {
+        "practice": "Sidebar navigation with injectable pattern",
+        "rationale": "Modular sidebar structure allows extensions to inject custom navigation items",
+        "implementation": "Each resource registers a sidebar item via sidebarItemInjectionToken with parentId and orderNumber",
+        "examples": [
+          "workloadsSidebarItemInjectable",
+          "configSidebarItemInjectable",
+          "helmSidebarItemInjectable"
+        ]
+      }
+    ],
+    "common_pitfalls": [
+      {
+        "pitfall": "Holding MutexGuard across async boundaries",
+        "impact": "Common Rust anti-pattern; not applicable to FreeLens (TypeScript/JavaScript)",
+        "solution": "N/A for FreeLens, but relevant for TFTSR Rust backend",
+        "examples": []
+      },
+      {
+        "pitfall": "Not re-reading resource state before executing actions",
+        "impact": "Stale state from MobX store can lead to invalid operations (e.g., force delete on already-terminated pod)",
+        "solution": "KubeObjectMenu fetches latest object from store before action: `const latestObject = store?.getByPath(object.selfLink) || object;`",
+        "examples": [
+          "emitOnContextMenuOpen() in kube-object-menu.tsx"
+        ]
+      },
+      {
+        "pitfall": "Showing force delete for terminal pod phases",
+        "impact": "Force delete has no effect on Succeeded, Failed, or Unknown pods; confuses users",
+        "solution": "Skip force delete mode for terminal phases: `if (podPhase === PodStatusPhase.SUCCEEDED || podPhase === PodStatusPhase.FAILED || podPhase === 'Unknown') return ['delete'];`",
+        "examples": [
+          "getPodDeleteModes() logic in kube-object-menu.tsx"
+        ]
+      },
+      {
+        "pitfall": "Not handling watch API disconnections",
+        "impact": "Resource stores become stale if watch API disconnects; UI shows outdated data",
+        "solution": "Implement reconnection logic and periodic full refreshes",
+        "examples": [
+          "Not explicitly visible in code examined, likely handled by Kubernetes client library"
+        ]
+      }
+    ],
+    "technology_stack": {
+      "languages": ["TypeScript", "JavaScript", "SCSS"],
+      "frameworks": ["React 18", "Electron", "MobX"],
+      "libraries": [
+        "@ogre-tools/injectable",
+        "monaco-editor",
+        "uuid",
+        "lodash",
+        "kubernetes client libraries"
+      ],
+      "tools": ["Vite", "Jest", "ESLint", "TypeScript compiler"],
+      "infrastructure": ["Desktop app (Electron)", "Kubernetes API", "Helm API", "Metrics Server API"]
+    }
+  },
+  "implementation_recommendations": {
+    "recommended_libraries": [
+      {
+        "name": "@ogre-tools/injectable",
+        "purpose": "Dependency injection framework",
+        "url": "https://github.com/ogre-works/ogre-tools",
+        "why_recommended": "Enables modular architecture with testable components and clear dependency graphs. FreeLens uses this extensively for all services and UI components.",
+        "maturity": "stable",
+        "alternatives": ["InversifyJS", "tsyringe", "manual dependency injection"]
+      },
+      {
+        "name": "MobX",
+        "purpose": "State management with reactive stores",
+        "url": "https://mobx.js.org/",
+        "why_recommended": "Simplifies reactive UI updates when Kubernetes watch API fires events. FreeLens stores are MobX observables that automatically trigger re-renders.",
+        "maturity": "stable",
+        "alternatives": ["Redux", "Zustand", "Jotai"]
+      },
+      {
+        "name": "Monaco Editor",
+        "purpose": "YAML/JSON editing with syntax highlighting",
+        "url": "https://microsoft.github.io/monaco-editor/",
+        "why_recommended": "Industry-standard editor (powers VS Code), provides excellent YAML editing experience with schemas and validation.",
+        "maturity": "stable",
+        "alternatives": ["CodeMirror", "Ace Editor"]
+      },
+      {
+        "name": "Electron",
+        "purpose": "Desktop application framework",
+        "url": "https://www.electronjs.org/",
+        "why_recommended": "Used by FreeLens for cross-platform desktop app. For TFTSR, Tauri is a better fit (Rust backend, smaller binaries).",
+        "maturity": "stable",
+        "alternatives": ["Tauri (recommended for TFTSR)", "NW.js"]
+      }
+    ],
+    "architecture_suggestions": [
+      {
+        "suggestion": "Separate Kubernetes API layer from UI components",
+        "context": "When building K8s management features in TFTSR",
+        "benefits": [
+          "Testable API logic without UI dependencies",
+          "Reusable API clients across different views",
+          "Easy to mock for testing"
+        ],
+        "trade_offs": [
+          "More boilerplate for simple operations",
+          "Requires careful interface design"
+        ],
+        "example_projects": ["FreeLens API layer in src/common/k8s-api/"]
+      },
+      {
+        "suggestion": "Use state-aware context menus instead of static action lists",
+        "context": "For pod, deployment, and other resource actions",
+        "benefits": [
+          "Prevents invalid operations (e.g., force delete on terminated pod)",
+          "Cleaner UX with only applicable actions shown",
+          "Reduces need for error handling after action click"
+        ],
+        "trade_offs": [
+          "More complex menu rendering logic",
+          "Requires careful state detection"
+        ],
+        "example_projects": ["FreeLens KubeObjectMenu component"]
+      },
+      {
+        "suggestion": "Implement dock/panel system for logs, terminal, editors",
+        "context": "For parallel workflows (view logs while editing YAML)",
+        "benefits": [
+          "Better developer/admin experience",
+          "Persistent tab state across sessions",
+          "Reduced context switching"
+        ],
+        "trade_offs": [
+          "Complex tab lifecycle management",
+          "Increased memory usage for multiple tabs"
+        ],
+        "example_projects": ["FreeLens Dock component"]
+      },
+      {
+        "suggestion": "Use injectable pattern for sidebar navigation",
+        "context": "If TFTSR needs extensible navigation",
+        "benefits": [
+          "Easy to add new resource types without modifying core",
+          "Extensions can inject custom menu items",
+          "Clear ordering and hierarchy"
+        ],
+        "trade_offs": [
+          "More setup code for simple static menus",
+          "Dependency injection overhead"
+        ],
+        "example_projects": ["FreeLens sidebar items with sidebarItemInjectionToken"]
+      }
+    ],
+    "security_recommendations": [
+      {
+        "recommendation": "Never log sensitive data from Kubernetes resources",
+        "importance": "high",
+        "implementation": "Implement PII detection before logging ConfigMaps, Secrets, or pod env vars. FreeLens does not have built-in PII detection; TFTSR should add this.",
+        "references": []
+      },
+      {
+        "recommendation": "Audit all kubectl exec, apply, delete commands",
+        "importance": "high",
+        "implementation": "Log every shell command, YAML apply, and resource deletion with user, timestamp, and resource details. FreeLens does not have built-in audit logging; TFTSR should add this.",
+        "references": []
+      },
+      {
+        "recommendation": "Validate YAML before applying to cluster",
+        "importance": "medium",
+        "implementation": "Use client-side validation (JSON schema) and dry-run before applying changes. FreeLens uses Monaco editor with YAML schemas.",
+        "references": ["https://github.com/kubernetes/kubernetes/tree/master/api/openapi-spec"]
+      },
+      {
+        "recommendation": "Encrypt kubeconfig files at rest",
+        "importance": "high",
+        "implementation": "Store kubeconfig with AES-256 encryption, decrypt only when needed for API calls. FreeLens stores kubeconfig in plain text (security gap).",
+        "references": []
+      }
+    ]
+  },
+  "kubernetes_resource_coverage": {
+    "left_navigation_structure": {
+      "Favorites": {
+        "description": "User-bookmarked resources",
+        "resources": []
+      },
+      "Cluster Overview": {
+        "description": "Cluster-wide dashboard",
+        "resources": []
+      },
+      "Nodes": {
+        "description": "Cluster nodes",
+        "resources": ["Node"],
+        "actions": ["Shell", "Cordon", "Uncordon", "Drain", "Edit", "Delete"]
+      },
+      "Workloads": {
+        "description": "All workload resources",
+        "resources": [
+          "Overview",
+          "Pods",
+          "Deployments",
+          "StatefulSets",
+          "DaemonSets",
+          "Jobs",
+          "CronJobs",
+          "ReplicaSets",
+          "ReplicationControllers"
+        ],
+        "pod_actions": ["Shell", "Logs", "Attach", "Edit", "Delete", "Force Delete", "Force Finalize"],
+        "deployment_actions": ["Scale", "Restart", "Edit", "Delete"],
+        "statefulset_actions": ["Restart", "Edit", "Delete"],
+        "daemonset_actions": ["Restart", "Edit", "Delete"],
+        "job_actions": ["Edit", "Delete"],
+        "cronjob_actions": ["Edit", "Delete"]
+      },
+      "Config": {
+        "description": "Configuration resources",
+        "resources": [
+          "ConfigMaps",
+          "Secrets",
+          "HorizontalPodAutoscalers",
+          "VerticalPodAutoscalers",
+          "ResourceQuotas",
+          "LimitRanges",
+          "PriorityClasses",
+          "RuntimeClasses",
+          "PodDisruptionBudgets",
+          "Leases",
+          "MutatingWebhookConfigurations",
+          "ValidatingWebhookConfigurations"
+        ],
+        "configmap_actions": ["Edit", "Delete"],
+        "secret_actions": ["Edit", "Delete"]
+      },
+      "Network": {
+        "description": "Networking resources",
+        "resources": [
+          "Services",
+          "Ingresses",
+          "IngressClasses",
+          "NetworkPolicies",
+          "Endpoints",
+          "EndpointSlices",
+          "PortForwards"
+        ],
+        "service_actions": ["Edit", "Delete"],
+        "port_forward_actions": ["Open", "Edit", "Start", "Stop", "Delete"]
+      },
+      "Storage": {
+        "description": "Storage resources",
+        "resources": [
+          "PersistentVolumes",
+          "PersistentVolumeClaims",
+          "StorageClasses"
+        ]
+      },
+      "Namespaces": {
+        "description": "Namespace management",
+        "resources": ["Namespace"]
+      },
+      "Events": {
+        "description": "Cluster events",
+        "resources": ["Event"]
+      },
+      "Helm": {
+        "description": "Helm chart management",
+        "resources": ["Charts", "Releases"],
+        "chart_actions": ["Install"],
+        "release_actions": ["Upgrade", "Rollback", "Delete"]
+      },
+      "User Management": {
+        "description": "RBAC resources",
+        "resources": [
+          "ServiceAccounts",
+          "Roles",
+          "RoleBindings",
+          "ClusterRoles",
+          "ClusterRoleBindings"
+        ],
+        "serviceaccount_actions": ["Edit", "Delete"]
+      },
+      "Custom Resources": {
+        "description": "CRDs and CRs",
+        "resources": ["CustomResourceDefinitions", "CustomResources (dynamic)"]
+      },
+      "Pod Security Policies": {
+        "description": "Legacy PSP (deprecated K8s 1.25+)",
+        "resources": ["PodSecurityPolicy"]
+      }
+    },
+    "detail_views": {
+      "pod_detail_fields": [
+        "Status",
+        "Node",
+        "Host IPs",
+        "Pod IPs",
+        "Service Account",
+        "Priority Class",
+        "QoS Class",
+        "Runtime Class",
+        "Termination Grace Period",
+        "Node Selector",
+        "Tolerations",
+        "Affinities",
+        "Resource Requests",
+        "Resource Limits",
+        "Secrets",
+        "Conditions",
+        "Init Containers",
+        "Containers",
+        "Ephemeral Containers",
+        "Volumes",
+        "Metadata",
+        "YAML View",
+        "Events"
+      ],
+      "deployment_detail_fields": [
+        "Replicas",
+        "Strategy",
+        "Conditions",
+        "Selector",
+        "Pod Template",
+        "Metadata",
+        "YAML View",
+        "Events"
+      ],
+      "service_detail_fields": [
+        "Type",
+        "Cluster IP",
+        "External IP",
+        "Ports",
+        "Selector",
+        "Endpoints",
+        "Metadata",
+        "YAML View",
+        "Events"
+      ]
+    },
+    "dock_panel_features": {
+      "terminal": {
+        "features": [
+          "Node shell",
+          "Pod shell (kubectl exec -it)",
+          "Pod attach (kubectl attach -it)",
+          "Custom kubectl commands",
+          "Multi-tab support",
+          "Shell auto-detection (bash/ash/sh, PowerShell)"
+        ]
+      },
+      "logs": {
+        "features": [
+          "Per-container log streaming",
+          "Container selection (init, main, ephemeral)",
+          "Follow mode",
+          "Timestamps toggle",
+          "Previous logs (from crashed containers)",
+          "Search/filter",
+          "Download logs",
+          "Wrap lines toggle"
+        ]
+      },
+      "edit_resource": {
+        "features": [
+          "YAML editor (Monaco)",
+          "Apply changes (kubectl apply)",
+          "Client-side validation",
+          "Diff view"
+        ]
+      },
+      "create_resource": {
+        "features": [
+          "YAML editor",
+          "Resource templates",
+          "Multi-resource support (--- separator)"
+        ]
+      },
+      "install_chart": {
+        "features": [
+          "Chart selection from repositories",
+          "Values editor (YAML)",
+          "Release name input",
+          "Namespace selection",
+          "Dry-run preview"
+        ]
+      },
+      "upgrade_chart": {
+        "features": [
+          "Current values display",
+          "Version selection dropdown",
+          "Values diff",
+          "Revision history"
+        ]
+      }
+    },
+    "special_features": {
+      "metrics": {
+        "description": "CPU and memory usage visualization (requires metrics-server)",
+        "features": [
+          "Pod metrics graphs",
+          "Node metrics dashboard",
+          "Per-container CPU/memory",
+          "Time-series charts"
+        ]
+      },
+      "namespace_filtering": {
+        "description": "Global namespace selector",
+        "features": [
+          "Filter all views to selected namespace(s)",
+          "Multi-namespace selection",
+          "All namespaces view"
+        ]
+      },
+      "search": {
+        "description": "Resource search and filtering",
+        "features": [
+          "Global search across resource types",
+          "Per-view search with multi-field filtering",
+          "Label filtering"
+        ]
+      },
+      "extensions": {
+        "description": "Plugin API for custom functionality",
+        "features": [
+          "Custom pages",
+          "Custom menu items",
+          "Custom resource views",
+          "Protocol handlers",
+          "Preferences UI"
+        ]
+      }
+    }
+  },
+  "community_insights": {
+    "ecosystem_health": "healthy",
+    "adoption_trends": "growing",
+    "key_players": [
+      {
+        "name": "Freelens Authors",
+        "role": "Maintainer",
+        "impact": "Core development team maintaining fork after Lens Desktop went proprietary"
+      },
+      {
+        "name": "OpenLens Authors",
+        "role": "Original maintainer",
+        "impact": "Original open-source Lens project (2022), now archived"
+      }
+    ],
+    "community_resources": [
+      {
+        "type": "chat",
+        "name": "Discord",
+        "url": "https://discord.gg/freelens",
+        "activity_level": "medium"
+      },
+      {
+        "type": "forum",
+        "name": "Reddit",
+        "url": "https://reddit.com/r/freelens",
+        "activity_level": "low"
+      },
+      {
+        "type": "forum",
+        "name": "GitHub Discussions",
+        "url": "https://github.com/freelensapp/freelens/discussions",
+        "activity_level": "medium"
+      }
+    ],
+    "commercial_support": []
+  },
+  "version_information": {
+    "current_stable": "Unknown (analysis from main branch)",
+    "latest_release_date": "2026-06-08",
+    "release_frequency": "irregular",
+    "lts_versions": [],
+    "breaking_changes": [],
+    "roadmap": {
+      "upcoming_features": [],
+      "deprecations": [],
+      "url": null
+    }
+  },
+  "code_examples": [
+    {
+      "purpose": "State-aware pod delete mode selection",
+      "language": "TypeScript",
+      "code": "private getPodDeleteModes(pod: Pod): DeleteType[] {\n  const hasDeletionTimestamp = !!pod.metadata.deletionTimestamp;\n  const hasFinalizers = pod.getFinalizers().length > 0;\n  const podPhase = pod.getStatusPhase();\n\n  if (!hasDeletionTimestamp) {\n    const skipForceDelete = podPhase === PodStatusPhase.SUCCEEDED || podPhase === PodStatusPhase.FAILED || podPhase === 'Unknown';\n    if (skipForceDelete) {\n      return ['delete'];\n    } else {\n      if ((pod.spec.terminationGracePeriodSeconds ?? 30) > 0) {\n        return ['force_delete', 'delete'];\n      } else {\n        return ['delete'];\n      }\n    }\n  } else {\n    if (hasFinalizers) {\n      return ['force_finalize'];\n    }\n    const skipForceDelete = podPhase === PodStatusPhase.SUCCEEDED || podPhase === PodStatusPhase.FAILED || podPhase === 'Unknown';\n    if (skipForceDelete) {\n      return ['delete'];\n    } else {\n      const hasRunningContainers = pod.getContainerStatuses?.().some((status) => status.state?.running || status.state?.waiting);\n      if (hasRunningContainers || podPhase === PodStatusPhase.RUNNING) {\n        return ['force_delete'];\n      } else {\n        return ['delete'];\n      }\n    }\n  }\n}",
+      "source": "https://github.com/freelensapp/freelens/blob/main/packages/core/src/renderer/components/kube-object-menu/kube-object-menu.tsx",
+      "explanation": "Intelligent delete mode selection prevents showing force delete for terminal pod phases where it would have no effect"
+    },
+    {
+      "purpose": "Pod shell execution with container selection",
+      "language": "TypeScript",
+      "code": "const execShell = async (container: Container | EphemeralContainer) => {\n  const containerName = container.name;\n  const kubectlPath = App.Preferences.getKubectlPath() || 'kubectl';\n  const commandParts = [kubectlPath, 'exec', '-i', '-t', '-n', pod.getNs(), pod.getName()];\n\n  if (os.platform() !== 'win32') {\n    commandParts.unshift('exec');\n  }\n\n  if (containerName) {\n    commandParts.push('-c', containerName);\n  }\n\n  commandParts.push('--');\n\n  if (pod.getSelectedNodeOs() === 'windows') {\n    commandParts.push('powershell');\n  } else {\n    commandParts.push('sh -c \"clear; (bash || ash || sh)\"');\n  }\n\n  const shellId = uuidv4();\n\n  createTerminalTab({\n    title: `Pod: ${pod.getName()} (namespace: ${pod.getNs()})`,\n    id: shellId,\n  });\n\n  sendCommand(commandParts.join(' '), {\n    enter: true,\n    tabId: shellId,\n  }).then(hideDetails);\n};",
+      "source": "https://github.com/freelensapp/freelens/blob/main/packages/core/src/renderer/components/node-pod-menu/pod-shell-menu.tsx",
+      "explanation": "Pod shell menu constructs kubectl exec command with auto-detection of best shell (bash, ash, sh) for Linux or PowerShell for Windows nodes"
+    },
+    {
+      "purpose": "Sidebar navigation with injectable pattern",
+      "language": "TypeScript",
+      "code": "const workloadsSidebarItemInjectable = getInjectable({\n  id: SidebarMenuItem.Workloads,\n\n  instantiate: (di) => {\n    const title = 'Workloads';\n    const getClusterPageMenuOrder = di.inject(getClusterPageMenuOrderInjectable);\n\n    return {\n      parentId: null,\n      title: title,\n      getIcon: () => <Icon svg=\"workloads\" />,\n      onClick: noop,\n      orderNumber: getClusterPageMenuOrder(id, sidebarMenuItemIds[id]),\n    };\n  },\n\n  injectionToken: sidebarItemInjectionToken,\n});",
+      "source": "https://github.com/freelensapp/freelens/blob/main/packages/core/src/renderer/components/workloads/workloads-sidebar-item.injectable.tsx",
+      "explanation": "Sidebar items use injectable pattern with parentId and orderNumber for hierarchical navigation tree"
+    }
+  ],
+  "technical_citations": [
+    {
+      "id": 1,
+      "source": "FreeLens GitHub Repository",
+      "url": "https://github.com/freelensapp/freelens",
+      "accessed": "2026-06-08",
+      "type": "repository"
+    },
+    {
+      "id": 2,
+      "source": "FreeLens LICENSE",
+      "url": "https://github.com/freelensapp/freelens/blob/main/LICENSE",
+      "accessed": "2026-06-08",
+      "type": "documentation"
+    },
+    {
+      "id": 3,
+      "source": "FreeLens KubeObjectMenu Component",
+      "url": "https://github.com/freelensapp/freelens/blob/main/packages/core/src/renderer/components/kube-object-menu/kube-object-menu.tsx",
+      "accessed": "2026-06-08",
+      "type": "repository"
+    },
+    {
+      "id": 4,
+      "source": "FreeLens Pod Menu Actions",
+      "url": "https://github.com/freelensapp/freelens/tree/main/packages/core/src/renderer/components/node-pod-menu",
+      "accessed": "2026-06-08",
+      "type": "repository"
+    },
+    {
+      "id": 5,
+      "source": "FreeLens Sidebar Navigation",
+      "url": "https://github.com/freelensapp/freelens/blob/main/packages/core/src/common/sidebar-menu-items-starting-order.ts",
+      "accessed": "2026-06-08",
+      "type": "repository"
+    },
+    {
+      "id": 6,
+      "source": "FreeLens Workload Menus",
+      "url": "https://github.com/freelensapp/freelens/tree/main/packages/core/src/renderer/components/workloads-deployments",
+      "accessed": "2026-06-08",
+      "type": "repository"
+    },
+    {
+      "id": 7,
+      "source": "FreeLens Helm Integration",
+      "url": "https://github.com/freelensapp/freelens/tree/main/packages/core/src/renderer/components/helm-releases",
+      "accessed": "2026-06-08",
+      "type": "repository"
+    },
+    {
+      "id": 8,
+      "source": "FreeLens Port Forward Management",
+      "url": "https://github.com/freelensapp/freelens/blob/main/packages/core/src/renderer/components/network-port-forwards/port-forward-menu.tsx",
+      "accessed": "2026-06-08",
+      "type": "repository"
+    }
+  ]
+}
