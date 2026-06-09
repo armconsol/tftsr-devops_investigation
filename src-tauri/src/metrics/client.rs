@@ -139,9 +139,18 @@ pub fn parse_node_metrics(json_output: &str) -> Result<Vec<NodeMetrics>> {
             .unwrap_or("0")
             .to_string();
 
-        // Calculate percentages (simplified - would need capacity from kubectl get nodes)
-        let cpu_percent = 0.0; // TODO: Calculate from capacity
-        let memory_percent = 0.0; // TODO: Calculate from capacity
+        // Calculate percentages (simplified - would need capacity from kubectl get nodes).
+        //
+        // TODO(metrics): Populate these from node `status.capacity` once we add
+        // a second kubectl call to fetch node capacity. The metrics-server JSON
+        // returned by `kubectl top nodes` only reports raw `usage` (cpu in
+        // nanocores, memory in Ki), not the node's allocatable totals, so we
+        // cannot compute a real percentage from this response alone.
+        // Until that work is done these are reported as 0.0 and the frontend
+        // hides the percent column. Tracking issue: see Telemetry/Metrics
+        // backlog in the project tracker.
+        let cpu_percent = 0.0;
+        let memory_percent = 0.0;
 
         metrics.push(NodeMetrics {
             name,

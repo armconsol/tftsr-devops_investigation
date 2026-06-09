@@ -202,6 +202,26 @@ impl SessionManager {
     ) -> Result<()> {
         let mut poll_interval = interval(Duration::from_millis(50));
 
+        // Explicit cleanup helper invoked on every exit path. While
+        // `PtySession::Drop` already best-effort kills the child, doing it here
+        // first lets us log the outcome and surface failures via tracing.
+        // After this returns, the PtySession is consumed and dropped, releasing
+        // the master/slave PTY handles.
+        let cleanup = |pty: &mut PtySession, session_id: &str, reason: &str| {
+            debug!(
+                "Cleaning up PTY for session {} (reason: {})",
+                session_id, reason
+            );
+            if pty.is_alive() {
+                if let Err(e) = pty.kill() {
+                    warn!(
+                        "Failed to kill PTY child for session {} during cleanup: {}",
+                        session_id, e
+                    );
+                }
+            }
+        };
+
         loop {
             tokio::select! {
                 // Read from PTY stdout/stderr
@@ -209,6 +229,7 @@ impl SessionManager {
                     if !pty_session.is_alive() {
                         debug!("Session {} PTY process exited", session_id);
                         let _ = app_handle.emit(&format!("terminal-closed-{}", session_id), ());
+                        cleanup(&mut pty_session, &session_id, "process exited");
                         break;
                     }
 
@@ -225,6 +246,7 @@ impl SessionManager {
                         Err(e) => {
                             error!("Failed to read from PTY for session {}: {}", session_id, e);
                             let _ = app_handle.emit(&format!("terminal-error-{}", session_id), e.to_string());
+                            cleanup(&mut pty_session, &session_id, "read error");
                             break;
                         }
                     }
@@ -235,6 +257,7 @@ impl SessionManager {
                     if let Err(e) = pty_session.write(&data) {
                         error!("Failed to write to PTY for session {}: {}", session_id, e);
                         let _ = app_handle.emit(&format!("terminal-error-{}", session_id), e.to_string());
+                        cleanup(&mut pty_session, &session_id, "write error");
                         break;
                     }
                 }
@@ -244,12 +267,26 @@ impl SessionManager {
                     match cmd {
                         ControlCommand::Resize { rows, cols } => {
                             if let Err(e) = pty_session.resize(rows, cols) {
-                                warn!("Failed to resize PTY for session {}: {}", session_id, e);
+                                // A failed resize means the PTY is in an
+                                // unrecoverable state (master fd closed, slave
+                                // signal failed, etc.). Surface the error to
+                                // the frontend and terminate the session
+                                // rather than continuing with a stale layout.
+                                error!(
+                                    "Failed to resize PTY for session {}: {}. Terminating session.",
+                                    session_id, e
+                                );
+                                let _ = app_handle.emit(
+                                    &format!("terminal-error-{}", session_id),
+                                    format!("PTY resize failed; session terminated: {e}"),
+                                );
+                                cleanup(&mut pty_session, &session_id, "resize error");
+                                break;
                             }
                         }
                         ControlCommand::Terminate => {
                             info!("Session {} received terminate command", session_id);
-                            let _ = pty_session.kill();
+                            cleanup(&mut pty_session, &session_id, "terminate command");
                             break;
                         }
                     }

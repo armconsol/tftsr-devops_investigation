@@ -12,7 +12,7 @@
 use anyhow::{Context, Result};
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 use std::io::{Read, Write};
-use tracing::debug;
+use tracing::{debug, warn};
 
 /// PTY session handle with I/O streams
 pub struct PtySession {
@@ -81,11 +81,15 @@ impl PtySession {
             args.push(c.to_string());
         }
 
-        // Use FreeLens-style shell fallback command
+        // Use FreeLens-style shell fallback command.
+        // We deliberately omit `clear` from the chain: when a container image
+        // lacks `clear` (or `tput`), running it would print a non-fatal but
+        // confusing error to the user. The frontend terminal is responsible
+        // for clearing on connect.
         args.push("--".to_string());
         args.push("sh".to_string());
         args.push("-c".to_string());
-        args.push("clear; (bash || ash || sh)".to_string());
+        args.push("bash || ash || sh".to_string());
 
         let mut env = Vec::new();
         if let Some(kubeconfig) = kubeconfig_path {
@@ -199,9 +203,12 @@ impl PtySession {
 
 impl Drop for PtySession {
     fn drop(&mut self) {
-        // Best-effort cleanup
+        // Best-effort cleanup. Log kill failures rather than swallowing them so
+        // operators can detect leaked child processes during diagnostics.
         if self.is_alive() {
-            let _ = self.kill();
+            if let Err(e) = self.kill() {
+                warn!("PTY session Drop: failed to kill child process: {e:#}");
+            }
         }
         debug!("PTY session dropped");
     }

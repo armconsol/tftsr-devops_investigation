@@ -12,6 +12,41 @@ use rusqlite::params;
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
+/// RAII guard for a temp kubeconfig file. Removes the file when dropped
+/// unless `disarm()` has been called — used on the error path of session
+/// start so the file isn't leaked if kubectl resolution or session
+/// registration fails after we've written it. On the success path we call
+/// `disarm()` and the PTY session itself becomes responsible for the file's
+/// lifetime (it lives in `std::env::temp_dir()` which is OS-cleaned).
+struct KubeconfigGuard {
+    path: Option<std::path::PathBuf>,
+}
+
+impl KubeconfigGuard {
+    fn new(path: std::path::PathBuf) -> Self {
+        Self { path: Some(path) }
+    }
+
+    /// Transfer ownership: caller is now responsible for the file.
+    /// Returns the path string for use with the PTY session.
+    fn disarm(mut self) -> String {
+        let path = self.path.take().expect("KubeconfigGuard already disarmed");
+        path.to_string_lossy().into_owned()
+    }
+}
+
+impl Drop for KubeconfigGuard {
+    fn drop(&mut self) {
+        if let Some(path) = self.path.take() {
+            if let Err(e) = std::fs::remove_file(&path) {
+                if e.kind() != std::io::ErrorKind::NotFound {
+                    tracing::warn!("Failed to remove temp kubeconfig {}: {}", path.display(), e);
+                }
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CommandExecution {
     pub id: String,
@@ -279,8 +314,9 @@ pub async fn start_pty_exec_session(
     pod: String,
     container: Option<String>,
 ) -> Result<String, String> {
-    // Get active kubeconfig
-    let kubeconfig_path = {
+    // Get active kubeconfig — the guard ensures the temp file is removed
+    // if anything between here and `disarm()` fails.
+    let kubeconfig_guard: Option<KubeconfigGuard> = {
         let db = state.db.lock().map_err(|e| e.to_string())?;
         let mut stmt = db
             .prepare("SELECT encrypted_content FROM kubeconfig_files WHERE is_active = 1 LIMIT 1")
@@ -298,15 +334,18 @@ pub async fn start_pty_exec_session(
             std::fs::write(&temp_path, content)
                 .map_err(|e| format!("Failed to write kubeconfig: {e}"))?;
 
-            Some(temp_path.to_string_lossy().to_string())
+            Some(KubeconfigGuard::new(temp_path))
         } else {
             None
         }
     };
 
-    // Locate kubectl
+    // Locate kubectl — if this fails, the guard cleans up the temp kubeconfig.
     let kubectl_path =
         crate::shell::kubectl::locate_kubectl().map_err(|e| format!("kubectl not found: {e}"))?;
+
+    // Transfer ownership: PTY session now owns the temp file's lifetime.
+    let kubeconfig_path = kubeconfig_guard.map(|g| g.disarm());
 
     // Start session
     let params = crate::shell::session::SessionParams {
@@ -337,8 +376,9 @@ pub async fn start_pty_attach_session(
     pod: String,
     container: Option<String>,
 ) -> Result<String, String> {
-    // Get active kubeconfig
-    let kubeconfig_path = {
+    // Get active kubeconfig — the guard ensures the temp file is removed
+    // if anything between here and `disarm()` fails.
+    let kubeconfig_guard: Option<KubeconfigGuard> = {
         let db = state.db.lock().map_err(|e| e.to_string())?;
         let mut stmt = db
             .prepare("SELECT encrypted_content FROM kubeconfig_files WHERE is_active = 1 LIMIT 1")
@@ -356,15 +396,18 @@ pub async fn start_pty_attach_session(
             std::fs::write(&temp_path, content)
                 .map_err(|e| format!("Failed to write kubeconfig: {e}"))?;
 
-            Some(temp_path.to_string_lossy().to_string())
+            Some(KubeconfigGuard::new(temp_path))
         } else {
             None
         }
     };
 
-    // Locate kubectl
+    // Locate kubectl — if this fails, the guard cleans up the temp kubeconfig.
     let kubectl_path =
         crate::shell::kubectl::locate_kubectl().map_err(|e| format!("kubectl not found: {e}"))?;
+
+    // Transfer ownership: PTY session now owns the temp file's lifetime.
+    let kubeconfig_path = kubeconfig_guard.map(|g| g.disarm());
 
     // Start session
     let params = crate::shell::session::SessionParams {

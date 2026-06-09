@@ -6418,66 +6418,6 @@ pub async fn list_custom_resources(
     parse_custom_resources_json(&output_str)
 }
 
-/// Simple JSONPath-like extractor for custom resource fields.
-/// Supports basic paths like .status.phase, .spec.replicas, .metadata.labels['app']
-#[allow(dead_code)]
-fn extract_json_path_value(item: &Value, json_path: &str) -> String {
-    // Remove leading dot if present
-    let path = json_path.strip_prefix('.').unwrap_or(json_path);
-
-    // Split path by dots and traverse
-    let parts: Vec<&str> = path.split('.').collect();
-    let mut current = item;
-
-    for part in parts {
-        // Handle array access like status[0] or map access like labels['app']
-        if let Some(bracket_start) = part.find('[') {
-            let field = &part[..bracket_start];
-            current = match current.get(field) {
-                Some(v) => v,
-                None => return "N/A".to_string(),
-            };
-
-            // Extract index or key from brackets
-            if let Some(bracket_end) = part.find(']') {
-                let accessor = &part[bracket_start + 1..bracket_end];
-                current = if accessor.starts_with('\'') || accessor.starts_with('"') {
-                    // Map key access
-                    let key = accessor.trim_matches(|c| c == '\'' || c == '"');
-                    match current.get(key) {
-                        Some(v) => v,
-                        None => return "N/A".to_string(),
-                    }
-                } else {
-                    // Array index access
-                    match accessor.parse::<usize>() {
-                        Ok(idx) => match current.as_array().and_then(|a| a.get(idx)) {
-                            Some(v) => v,
-                            None => return "N/A".to_string(),
-                        },
-                        Err(_) => return "N/A".to_string(),
-                    }
-                };
-            }
-        } else {
-            current = match current.get(part) {
-                Some(v) => v,
-                None => return "N/A".to_string(),
-            };
-        }
-    }
-
-    // Convert final value to string
-    match current {
-        Value::String(s) => s.clone(),
-        Value::Number(n) => n.to_string(),
-        Value::Bool(b) => b.to_string(),
-        Value::Null => "".to_string(),
-        Value::Array(a) => format!("[{} items]", a.len()),
-        Value::Object(_) => "{object}".to_string(),
-    }
-}
-
 fn parse_custom_resources_json(json_str: &str) -> Result<Vec<CustomResourceInfo>, String> {
     let value: Value = serde_json::from_str(json_str)
         .map_err(|e| format!("Failed to parse kubectl JSON output: {}", e))?;
