@@ -127,6 +127,19 @@ vi.mock("@/components/Kubernetes/Hotbar", () => ({
   ),
 }));
 
+vi.mock("@/components/Kubernetes/WorkloadOverview", () => ({
+  WorkloadOverview: ({ resources }: { resources: { pods: unknown[]; deployments: unknown[]; statefulsets: unknown[]; daemonsets: unknown[]; jobs: unknown[]; cronjobs: unknown[] } }) => (
+    <div data-testid="workload-overview">
+      <span data-testid="pod-count">{resources.pods.length}</span>
+      <span data-testid="deployment-count">{resources.deployments.length}</span>
+      <span data-testid="statefulset-count">{resources.statefulsets.length}</span>
+      <span data-testid="daemonset-count">{resources.daemonsets.length}</span>
+      <span data-testid="job-count">{resources.jobs.length}</span>
+      <span data-testid="cronjob-count">{resources.cronjobs.length}</span>
+    </div>
+  ),
+}));
+
 type MockedInvoke = ReturnType<typeof vi.fn>;
 
 const mockInvoke = invoke as unknown as MockedInvoke;
@@ -502,6 +515,135 @@ describe("KubernetesPage", () => {
       // After refresh click, no new call is expected for "overview" section (ClusterOverview
       // handles its own data), but the handler should not throw
       expect(mockInvoke.mock.calls.length).toBeGreaterThanOrEqual(callsBefore);
+    });
+  });
+
+  describe("WorkloadOverview data loading", () => {
+    beforeEach(() => {
+      mockInvoke.mockImplementation((cmd: string) => {
+        if (cmd === "list_kubeconfigs") return Promise.resolve(MOCK_KUBECONFIGS);
+        if (cmd === "list_namespaces") return Promise.resolve(MOCK_NAMESPACES);
+        if (cmd === "list_port_forwards") return Promise.resolve([]);
+        if (cmd === "list_pods") return Promise.resolve([{ name: "pod-1", namespace: "default", status: "Running", ready: "1/1", restarts: 0, age: "1d", node: "node-1", ip: "10.0.0.1" }]);
+        if (cmd === "list_deployments") return Promise.resolve([{ name: "deploy-1", namespace: "default", ready: "1/1", up_to_date: 1, available: 1, age: "1d" }]);
+        if (cmd === "list_statefulsets") return Promise.resolve([]);
+        if (cmd === "list_daemonsets") return Promise.resolve([]);
+        if (cmd === "list_jobs") return Promise.resolve([]);
+        if (cmd === "list_cronjobs") return Promise.resolve([]);
+        return Promise.resolve([]);
+      });
+    });
+
+    it("renders WorkloadOverview when workloads_overview section is active", async () => {
+      renderPage();
+
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: "Overview" })).toBeInTheDocument();
+      });
+
+      fireEvent.click(screen.getByRole("button", { name: "Overview" }));
+
+      await waitFor(() => {
+        expect(screen.getByTestId("workload-overview")).toBeInTheDocument();
+      });
+    });
+
+    it("calls list_pods, list_deployments, list_statefulsets, list_daemonsets, list_jobs, list_cronjobs when workloads_overview is active", async () => {
+      renderPage();
+
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: "Overview" })).toBeInTheDocument();
+      });
+
+      fireEvent.click(screen.getByRole("button", { name: "Overview" }));
+
+      await waitFor(() => {
+        expect(mockInvoke).toHaveBeenCalledWith("list_pods", expect.anything());
+        expect(mockInvoke).toHaveBeenCalledWith("list_deployments", expect.anything());
+        expect(mockInvoke).toHaveBeenCalledWith("list_statefulsets", expect.anything());
+        expect(mockInvoke).toHaveBeenCalledWith("list_daemonsets", expect.anything());
+        expect(mockInvoke).toHaveBeenCalledWith("list_jobs", expect.anything());
+        expect(mockInvoke).toHaveBeenCalledWith("list_cronjobs", expect.anything());
+      });
+    });
+
+    it("passes fetched resource counts to WorkloadOverview", async () => {
+      renderPage();
+
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: "Overview" })).toBeInTheDocument();
+      });
+
+      fireEvent.click(screen.getByRole("button", { name: "Overview" }));
+
+      await waitFor(() => {
+        expect(screen.getByTestId("workload-overview")).toBeInTheDocument();
+        expect(screen.getByTestId("pod-count").textContent).toBe("1");
+        expect(screen.getByTestId("deployment-count").textContent).toBe("1");
+      });
+    });
+  });
+
+  describe("Connection error banner", () => {
+    it("shows a connection error banner when connectClusterFromKubeconfig fails", async () => {
+      mockInvoke.mockImplementation((cmd: string) => {
+        if (cmd === "list_kubeconfigs") return Promise.resolve(MOCK_KUBECONFIGS);
+        if (cmd === "list_port_forwards") return Promise.resolve([]);
+        if (cmd === "connect_cluster_from_kubeconfig") return Promise.reject(new Error("connection refused"));
+        return Promise.resolve([]);
+      });
+
+      renderPage();
+
+      await waitFor(() => {
+        expect(screen.getByText(/cluster connection failed/i)).toBeInTheDocument();
+      });
+    });
+
+    it("dismisses the error banner when Dismiss is clicked", async () => {
+      mockInvoke.mockImplementation((cmd: string) => {
+        if (cmd === "list_kubeconfigs") return Promise.resolve(MOCK_KUBECONFIGS);
+        if (cmd === "list_port_forwards") return Promise.resolve([]);
+        if (cmd === "connect_cluster_from_kubeconfig") return Promise.reject(new Error("connection refused"));
+        return Promise.resolve([]);
+      });
+
+      renderPage();
+
+      await waitFor(() => {
+        expect(screen.getByText(/cluster connection failed/i)).toBeInTheDocument();
+      });
+
+      fireEvent.click(screen.getByRole("button", { name: /dismiss/i }));
+
+      await waitFor(() => {
+        expect(screen.queryByText(/cluster connection failed/i)).not.toBeInTheDocument();
+      });
+    });
+  });
+
+  describe("Double-connect prevention", () => {
+    it("calls connectClusterFromKubeconfig only once on mount even when store updates", async () => {
+      mockInvoke.mockImplementation((cmd: string) => {
+        if (cmd === "list_kubeconfigs") return Promise.resolve(MOCK_KUBECONFIGS);
+        if (cmd === "list_namespaces") return Promise.resolve(MOCK_NAMESPACES);
+        if (cmd === "list_port_forwards") return Promise.resolve([]);
+        return Promise.resolve([]);
+      });
+
+      renderPage();
+
+      await waitFor(() => {
+        expect(useKubernetesStore.getState().selectedClusterId).toBe("kc-1");
+      });
+
+      // Allow any re-renders to settle
+      await waitFor(() => {
+        const connectCalls = mockInvoke.mock.calls.filter(
+          ([cmd]) => cmd === "connect_cluster_from_kubeconfig"
+        );
+        expect(connectCalls.length).toBe(1);
+      });
     });
   });
 });

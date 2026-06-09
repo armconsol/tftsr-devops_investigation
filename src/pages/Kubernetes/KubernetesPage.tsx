@@ -437,8 +437,10 @@ export function KubernetesPage() {
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [isPortForwardFormOpen, setIsPortForwardFormOpen] = useState(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
+  const [connectionError, setConnectionError] = useState<string | null>(null);
 
   const lastLoadedRef = useRef<{ section: ActiveSection; clusterId: string; namespace: string } | null>(null);
+  const initializedRef = useRef(false);
 
   // ── Initial data load ──────────────────────────────────────────────────────
 
@@ -451,12 +453,20 @@ export function KubernetesPage() {
       setKubeconfigs(kubeconfigsData);
       setPortForwards(portForwardsData);
 
-      const activeConfig = kubeconfigsData.find((c) => c.is_active);
-      if (activeConfig && !selectedClusterId) {
-        await connectClusterFromKubeconfigCmd(activeConfig.id).catch(() => {});
-        setSelectedCluster(activeConfig.id);
-      } else if (selectedClusterId) {
-        await connectClusterFromKubeconfigCmd(selectedClusterId).catch(() => {});
+      if (!initializedRef.current) {
+        initializedRef.current = true;
+        const activeConfig = kubeconfigsData.find((c) => c.is_active);
+        const targetId = selectedClusterId ?? activeConfig?.id;
+        if (targetId) {
+          const err = await connectClusterFromKubeconfigCmd(targetId)
+            .then(() => null)
+            .catch((e: unknown) => e);
+          if (err) {
+            setConnectionError(err instanceof Error ? err.message : String(err));
+          } else {
+            setSelectedCluster(targetId);
+          }
+        }
       }
     } catch (err) {
       console.error("Failed to load initial Kubernetes data:", err);
@@ -481,11 +491,7 @@ export function KubernetesPage() {
 
   const loadResourceData = useCallback(
     async (section: ActiveSection, clusterId: string, namespace: string) => {
-      if (
-        section === "cluster_overview" ||
-        section === "portforwarding" ||
-        section === "workloads_overview"
-      ) {
+      if (section === "cluster_overview" || section === "portforwarding") {
         return;
       }
 
@@ -494,6 +500,29 @@ export function KubernetesPage() {
       setIsLoadingResources(true);
       try {
         switch (section) {
+          case "workloads_overview": {
+            const [pods, deployments, statefulsets, daemonsets, jobs, cronjobs] =
+              await Promise.allSettled([
+                listPodsCmd(clusterId, ns),
+                listDeploymentsCmd(clusterId, ns),
+                listStatefulsetsCmd(clusterId, ns),
+                listDaemonsetsCmd(clusterId, ns),
+                listJobsCmd(clusterId, ns),
+                listCronjobsCmd(clusterId, ns),
+              ]).then((results) =>
+                results.map((r) => (r.status === "fulfilled" ? r.value : []))
+              );
+            setResources((r) => ({
+              ...r,
+              pods: pods as PodInfo[],
+              deployments: deployments as DeploymentInfo[],
+              statefulsets: statefulsets as StatefulSetInfo[],
+              daemonsets: daemonsets as DaemonSetInfo[],
+              jobs: jobs as JobInfo[],
+              cronjobs: cronjobs as CronJobInfo[],
+            }));
+            break;
+          }
           case "pods":
             await listPodsCmd(clusterId, ns).then((data) =>
               setResources((r) => ({ ...r, pods: data }))
@@ -1130,6 +1159,13 @@ export function KubernetesPage() {
           </div>
         )}
       </div>
+
+      {connectionError && (
+        <div className="flex items-center gap-2 px-4 py-2 bg-destructive/10 border-b border-destructive/20 text-destructive text-sm">
+          <span>Cluster connection failed: {connectionError}</span>
+          <button className="ml-auto underline" onClick={() => setConnectionError(null)}>Dismiss</button>
+        </div>
+      )}
 
       {/* Main layout: sidebar + content */}
       <div className="flex flex-1 overflow-hidden">
