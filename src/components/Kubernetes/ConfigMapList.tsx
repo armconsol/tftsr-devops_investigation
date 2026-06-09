@@ -19,7 +19,7 @@ type ActiveModal =
   | { type: "delete"; cm: ConfigMapInfo }
   | null;
 
-export function ConfigMapList({ configmaps, clusterId, namespace, onRefresh }: ConfigMapListProps) {
+export function ConfigMapList({ configmaps, clusterId, namespace: _namespace, onRefresh }: ConfigMapListProps) {
   const [activeModal, setActiveModal] = useState<ActiveModal>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -27,7 +27,7 @@ export function ConfigMapList({ configmaps, clusterId, namespace, onRefresh }: C
   const openEdit = async (cm: ConfigMapInfo) => {
     setActionError(null);
     try {
-      const yaml = await getResourceYamlCmd(clusterId, "configmaps", namespace, cm.name);
+      const yaml = await getResourceYamlCmd(clusterId, "configmaps", cm.namespace, cm.name);
       setActiveModal({ type: "edit", cm, yaml });
     } catch (err) {
       setActionError(err instanceof Error ? err.message : String(err));
@@ -38,7 +38,7 @@ export function ConfigMapList({ configmaps, clusterId, namespace, onRefresh }: C
     if (activeModal?.type !== "delete") return;
     setIsDeleting(true);
     try {
-      await deleteResourceCmd(clusterId, "configmaps", namespace, activeModal.cm.name);
+      await deleteResourceCmd(clusterId, "configmaps", activeModal.cm.namespace, activeModal.cm.name);
       setActiveModal(null);
       onRefresh?.();
     } finally {
@@ -104,7 +104,7 @@ export function ConfigMapList({ configmaps, clusterId, namespace, onRefresh }: C
         <EditResourceModal
           isOpen
           clusterId={clusterId}
-          namespace={namespace}
+          namespace={activeModal.cm.namespace}
           resourceType="configmaps"
           resourceName={activeModal.cm.name}
           initialYaml={activeModal.yaml}

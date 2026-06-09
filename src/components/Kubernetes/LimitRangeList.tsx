@@ -19,7 +19,7 @@ type ActiveModal =
   | { type: "delete"; lr: LimitRangeInfo }
   | null;
 
-export function LimitRangeList({ limitranges, clusterId, namespace, onRefresh }: LimitRangeListProps) {
+export function LimitRangeList({ limitranges, clusterId, namespace: _namespace, onRefresh }: LimitRangeListProps) {
   const [activeModal, setActiveModal] = useState<ActiveModal>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -27,7 +27,7 @@ export function LimitRangeList({ limitranges, clusterId, namespace, onRefresh }:
   const openEdit = async (lr: LimitRangeInfo) => {
     setActionError(null);
     try {
-      const yaml = await getResourceYamlCmd(clusterId, "limitranges", namespace, lr.name);
+      const yaml = await getResourceYamlCmd(clusterId, "limitranges", lr.namespace, lr.name);
       setActiveModal({ type: "edit", lr, yaml });
     } catch (err) {
       setActionError(err instanceof Error ? err.message : String(err));
@@ -38,7 +38,7 @@ export function LimitRangeList({ limitranges, clusterId, namespace, onRefresh }:
     if (activeModal?.type !== "delete") return;
     setIsDeleting(true);
     try {
-      await deleteResourceCmd(clusterId, "limitranges", namespace, activeModal.lr.name);
+      await deleteResourceCmd(clusterId, "limitranges", activeModal.lr.namespace, activeModal.lr.name);
       setActiveModal(null);
       onRefresh?.();
     } finally {
@@ -104,7 +104,7 @@ export function LimitRangeList({ limitranges, clusterId, namespace, onRefresh }:
         <EditResourceModal
           isOpen
           clusterId={clusterId}
-          namespace={namespace}
+          namespace={activeModal.lr.namespace}
           resourceType="limitranges"
           resourceName={activeModal.lr.name}
           initialYaml={activeModal.yaml}

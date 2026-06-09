@@ -25,12 +25,9 @@ export function PVCList({
   pvcs,
   clusterId,
   _clusterId,
-  namespace,
-  _namespace,
   onRefresh,
 }: PVCListProps) {
   const cid = clusterId ?? _clusterId ?? "";
-  const ns = namespace ?? _namespace ?? "";
   const [activeModal, setActiveModal] = useState<ActiveModal>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -38,7 +35,7 @@ export function PVCList({
   const openEdit = async (pvc: PersistentVolumeClaimInfo) => {
     setActionError(null);
     try {
-      const yaml = await getResourceYamlCmd(cid, "persistentvolumeclaims", ns, pvc.name);
+      const yaml = await getResourceYamlCmd(cid, "persistentvolumeclaims", pvc.namespace, pvc.name);
       setActiveModal({ type: "edit", pvc, yaml });
     } catch (err) {
       setActionError(err instanceof Error ? err.message : String(err));
@@ -49,7 +46,7 @@ export function PVCList({
     if (activeModal?.type !== "delete") return;
     setIsDeleting(true);
     try {
-      await deleteResourceCmd(cid, "persistentvolumeclaims", ns, activeModal.pvc.name);
+      await deleteResourceCmd(cid, "persistentvolumeclaims", activeModal.pvc.namespace, activeModal.pvc.name);
       setActiveModal(null);
       onRefresh?.();
     } finally {
@@ -121,7 +118,7 @@ export function PVCList({
         <EditResourceModal
           isOpen
           clusterId={cid}
-          namespace={ns}
+          namespace={activeModal.pvc.namespace}
           resourceType="persistentvolumeclaims"
           resourceName={activeModal.pvc.name}
           initialYaml={activeModal.yaml}

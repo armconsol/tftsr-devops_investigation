@@ -17,6 +17,7 @@ const mockInvoke = invoke as MockedInvoke;
 
 const mockPod: PodInfo = {
   name: "nginx-abc123",
+  namespace: "default",
   status: "Running",
   ready: "2/2",
   age: "3h",

@@ -20,6 +20,13 @@ lazy_static! {
     static ref NAME_PATTERN_REGEX: Regex = Regex::new(r"^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$").unwrap();
 }
 
+static KUBECONFIG_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+fn unique_kubeconfig_path(cluster_id: impl AsRef<str>) -> std::path::PathBuf {
+    let n = KUBECONFIG_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    std::env::temp_dir().join(format!("kubeconfig-{}-{}.yaml", cluster_id.as_ref(), n))
+}
+
 struct TempFileCleanup(std::path::PathBuf);
 impl Drop for TempFileCleanup {
     fn drop(&mut self) {
@@ -84,6 +91,7 @@ pub struct PortForwardResponse {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PodInfo {
     pub name: String,
+    pub namespace: String,
     pub status: String,
     pub ready: String,
     pub age: String,
@@ -319,8 +327,7 @@ pub async fn test_kubectl_connection(
         (cluster.kubeconfig_content.clone(), cluster.context.clone())
     };
 
-    let temp_dir = std::env::temp_dir();
-    let temp_path = temp_dir.join(format!("kubeconfig-{}-diag.yaml", cluster_id));
+    let temp_path = unique_kubeconfig_path(cluster_id);
     let _cleanup = TempFileCleanup(temp_path.clone());
 
     write_secure_temp_file(&temp_path, kubeconfig_content.as_ref())
@@ -467,8 +474,7 @@ pub async fn test_cluster_connection(
     let context = &cluster.context;
 
     // Write kubeconfig to temp file and ensure cleanup even on panic
-    let temp_dir = std::env::temp_dir();
-    let temp_path = temp_dir.join(format!("kubeconfig-{}.yaml", cluster_id));
+    let temp_path = unique_kubeconfig_path(&cluster_id);
     let _cleanup = TempFileCleanup(temp_path.clone());
 
     write_secure_temp_file(&temp_path, kubeconfig_content)
@@ -517,8 +523,7 @@ pub async fn discover_pods(
     let context = &cluster.context;
 
     // Write kubeconfig to temp file and ensure cleanup even on panic
-    let temp_dir = std::env::temp_dir();
-    let temp_path = temp_dir.join(format!("kubeconfig-{}-pods.yaml", cluster_id));
+    let temp_path = unique_kubeconfig_path(cluster_id);
     let _cleanup = TempFileCleanup(temp_path.clone());
 
     write_secure_temp_file(&temp_path, kubeconfig_content)
@@ -647,8 +652,7 @@ pub async fn start_port_forward(
     );
 
     // Write kubeconfig to temp file
-    let temp_dir = std::env::temp_dir();
-    let temp_path = temp_dir.join(format!("kubeconfig-{}.yaml", request.cluster_id));
+    let temp_path = unique_kubeconfig_path(&request.cluster_id);
 
     write_secure_temp_file(&temp_path, kubeconfig_content.as_ref())
         .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
@@ -969,8 +973,7 @@ pub async fn list_namespaces(
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
 
-    let temp_dir = std::env::temp_dir();
-    let temp_path = temp_dir.join(format!("kubeconfig-{}-namespaces.yaml", cluster_id));
+    let temp_path = unique_kubeconfig_path(cluster_id);
     let _cleanup = TempFileCleanup(temp_path.clone());
 
     write_secure_temp_file(&temp_path, kubeconfig_content)
@@ -1052,8 +1055,7 @@ pub async fn list_pods(
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
 
-    let temp_dir = std::env::temp_dir();
-    let temp_path = temp_dir.join(format!("kubeconfig-{}-pods.yaml", cluster_id));
+    let temp_path = unique_kubeconfig_path(cluster_id);
     let _cleanup = TempFileCleanup(temp_path.clone());
 
     write_secure_temp_file(&temp_path, kubeconfig_content)
@@ -1106,6 +1108,13 @@ fn parse_pods_json(json_str: &str) -> Result<Vec<PodInfo>, String> {
             .unwrap_or("unknown")
             .to_string();
 
+        let namespace = item
+            .get("metadata")
+            .and_then(|m| m.get("namespace"))
+            .and_then(|n| n.as_str())
+            .unwrap_or("default")
+            .to_string();
+
         let status = item
             .get("status")
             .and_then(|s| s.get("phase"))
@@ -1152,6 +1161,7 @@ fn parse_pods_json(json_str: &str) -> Result<Vec<PodInfo>, String> {
 
         pods.push(PodInfo {
             name,
+            namespace,
             status,
             ready,
             age,
@@ -1176,8 +1186,7 @@ pub async fn list_services(
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
 
-    let temp_dir = std::env::temp_dir();
-    let temp_path = temp_dir.join(format!("kubeconfig-{}-services.yaml", cluster_id));
+    let temp_path = unique_kubeconfig_path(cluster_id);
     let _cleanup = TempFileCleanup(temp_path.clone());
 
     write_secure_temp_file(&temp_path, kubeconfig_content)
@@ -1335,8 +1344,7 @@ pub async fn list_deployments(
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
 
-    let temp_dir = std::env::temp_dir();
-    let temp_path = temp_dir.join(format!("kubeconfig-{}-deployments.yaml", cluster_id));
+    let temp_path = unique_kubeconfig_path(cluster_id);
     let _cleanup = TempFileCleanup(temp_path.clone());
 
     write_secure_temp_file(&temp_path, kubeconfig_content)
@@ -1470,8 +1478,7 @@ pub async fn list_statefulsets(
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
 
-    let temp_dir = std::env::temp_dir();
-    let temp_path = temp_dir.join(format!("kubeconfig-{}-statefulsets.yaml", cluster_id));
+    let temp_path = unique_kubeconfig_path(cluster_id);
     let _cleanup = TempFileCleanup(temp_path.clone());
 
     write_secure_temp_file(&temp_path, kubeconfig_content)
@@ -1589,8 +1596,7 @@ pub async fn list_daemonsets(
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
 
-    let temp_dir = std::env::temp_dir();
-    let temp_path = temp_dir.join(format!("kubeconfig-{}-daemonsets.yaml", cluster_id));
+    let temp_path = unique_kubeconfig_path(cluster_id);
     let _cleanup = TempFileCleanup(temp_path.clone());
 
     write_secure_temp_file(&temp_path, kubeconfig_content)
@@ -1758,8 +1764,7 @@ pub async fn get_pod_logs(
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
 
-    let temp_dir = std::env::temp_dir();
-    let temp_path = temp_dir.join(format!("kubeconfig-{}-logs.yaml", cluster_id));
+    let temp_path = unique_kubeconfig_path(cluster_id);
     let _cleanup = TempFileCleanup(temp_path.clone());
 
     write_secure_temp_file(&temp_path, kubeconfig_content)
@@ -1808,8 +1813,7 @@ pub async fn scale_deployment(
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
 
-    let temp_dir = std::env::temp_dir();
-    let temp_path = temp_dir.join(format!("kubeconfig-{}-scale.yaml", cluster_id));
+    let temp_path = unique_kubeconfig_path(cluster_id);
     let _cleanup = TempFileCleanup(temp_path.clone());
 
     write_secure_temp_file(&temp_path, kubeconfig_content)
@@ -1856,8 +1860,7 @@ pub async fn restart_deployment(
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
 
-    let temp_dir = std::env::temp_dir();
-    let temp_path = temp_dir.join(format!("kubeconfig-{}-restart.yaml", cluster_id));
+    let temp_path = unique_kubeconfig_path(cluster_id);
     let _cleanup = TempFileCleanup(temp_path.clone());
 
     write_secure_temp_file(&temp_path, kubeconfig_content)
@@ -1904,8 +1907,7 @@ pub async fn delete_resource(
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
 
-    let temp_dir = std::env::temp_dir();
-    let temp_path = temp_dir.join(format!("kubeconfig-{}-delete.yaml", cluster_id));
+    let temp_path = unique_kubeconfig_path(cluster_id);
     let _cleanup = TempFileCleanup(temp_path.clone());
 
     write_secure_temp_file(&temp_path, kubeconfig_content)
@@ -1953,8 +1955,7 @@ pub async fn exec_pod(
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
 
-    let temp_dir = std::env::temp_dir();
-    let temp_path = temp_dir.join(format!("kubeconfig-{}-exec.yaml", cluster_id));
+    let temp_path = unique_kubeconfig_path(cluster_id);
     let _cleanup = TempFileCleanup(temp_path.clone());
 
     write_secure_temp_file(&temp_path, kubeconfig_content)
@@ -2232,8 +2233,7 @@ pub async fn list_replicasets(
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
 
-    let temp_dir = std::env::temp_dir();
-    let temp_path = temp_dir.join(format!("kubeconfig-{}-replicasets.yaml", cluster_id));
+    let temp_path = unique_kubeconfig_path(cluster_id);
     let _cleanup = TempFileCleanup(temp_path.clone());
 
     write_secure_temp_file(&temp_path, kubeconfig_content)
@@ -2351,8 +2351,7 @@ pub async fn list_jobs(
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
 
-    let temp_dir = std::env::temp_dir();
-    let temp_path = temp_dir.join(format!("kubeconfig-{}-jobs.yaml", cluster_id));
+    let temp_path = unique_kubeconfig_path(cluster_id);
     let _cleanup = TempFileCleanup(temp_path.clone());
 
     write_secure_temp_file(&temp_path, kubeconfig_content)
@@ -2508,8 +2507,7 @@ pub async fn list_cronjobs(
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
 
-    let temp_dir = std::env::temp_dir();
-    let temp_path = temp_dir.join(format!("kubeconfig-{}-cronjobs.yaml", cluster_id));
+    let temp_path = unique_kubeconfig_path(cluster_id);
     let _cleanup = TempFileCleanup(temp_path.clone());
 
     write_secure_temp_file(&temp_path, kubeconfig_content)
@@ -2636,8 +2634,7 @@ pub async fn list_configmaps(
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
 
-    let temp_dir = std::env::temp_dir();
-    let temp_path = temp_dir.join(format!("kubeconfig-{}-configmaps.yaml", cluster_id));
+    let temp_path = unique_kubeconfig_path(cluster_id);
     let _cleanup = TempFileCleanup(temp_path.clone());
 
     write_secure_temp_file(&temp_path, kubeconfig_content)
@@ -2735,8 +2732,7 @@ pub async fn list_secrets(
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
 
-    let temp_dir = std::env::temp_dir();
-    let temp_path = temp_dir.join(format!("kubeconfig-{}-secrets.yaml", cluster_id));
+    let temp_path = unique_kubeconfig_path(cluster_id);
     let _cleanup = TempFileCleanup(temp_path.clone());
 
     write_secure_temp_file(&temp_path, kubeconfig_content)
@@ -2840,8 +2836,7 @@ pub async fn list_nodes(
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
 
-    let temp_dir = std::env::temp_dir();
-    let temp_path = temp_dir.join(format!("kubeconfig-{}-nodes.yaml", cluster_id));
+    let temp_path = unique_kubeconfig_path(cluster_id);
     let _cleanup = TempFileCleanup(temp_path.clone());
 
     write_secure_temp_file(&temp_path, kubeconfig_content)
@@ -3029,8 +3024,7 @@ pub async fn list_events(
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
 
-    let temp_dir = std::env::temp_dir();
-    let temp_path = temp_dir.join(format!("kubeconfig-{}-events.yaml", cluster_id));
+    let temp_path = unique_kubeconfig_path(cluster_id);
     let _cleanup = TempFileCleanup(temp_path.clone());
 
     write_secure_temp_file(&temp_path, kubeconfig_content)
@@ -3159,8 +3153,7 @@ pub async fn list_ingresses(
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
 
-    let temp_dir = std::env::temp_dir();
-    let temp_path = temp_dir.join(format!("kubeconfig-{}-ingresses.yaml", cluster_id));
+    let temp_path = unique_kubeconfig_path(cluster_id);
     let _cleanup = TempFileCleanup(temp_path.clone());
 
     write_secure_temp_file(&temp_path, kubeconfig_content)
@@ -3286,8 +3279,7 @@ pub async fn list_persistentvolumeclaims(
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
 
-    let temp_dir = std::env::temp_dir();
-    let temp_path = temp_dir.join(format!("kubeconfig-{}-pvcs.yaml", cluster_id));
+    let temp_path = unique_kubeconfig_path(cluster_id);
     let _cleanup = TempFileCleanup(temp_path.clone());
 
     write_secure_temp_file(&temp_path, kubeconfig_content)
@@ -3417,8 +3409,7 @@ pub async fn list_persistentvolumes(
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
 
-    let temp_dir = std::env::temp_dir();
-    let temp_path = temp_dir.join(format!("kubeconfig-{}-pvs.yaml", cluster_id));
+    let temp_path = unique_kubeconfig_path(cluster_id);
     let _cleanup = TempFileCleanup(temp_path.clone());
 
     write_secure_temp_file(&temp_path, kubeconfig_content)
@@ -3544,8 +3535,7 @@ pub async fn list_serviceaccounts(
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
 
-    let temp_dir = std::env::temp_dir();
-    let temp_path = temp_dir.join(format!("kubeconfig-{}-sas.yaml", cluster_id));
+    let temp_path = unique_kubeconfig_path(cluster_id);
     let _cleanup = TempFileCleanup(temp_path.clone());
 
     write_secure_temp_file(&temp_path, kubeconfig_content)
@@ -3643,8 +3633,7 @@ pub async fn list_roles(
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
 
-    let temp_dir = std::env::temp_dir();
-    let temp_path = temp_dir.join(format!("kubeconfig-{}-roles.yaml", cluster_id));
+    let temp_path = unique_kubeconfig_path(cluster_id);
     let _cleanup = TempFileCleanup(temp_path.clone());
 
     write_secure_temp_file(&temp_path, kubeconfig_content)
@@ -3734,8 +3723,7 @@ pub async fn list_clusterroles(
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
 
-    let temp_dir = std::env::temp_dir();
-    let temp_path = temp_dir.join(format!("kubeconfig-{}-clusterroles.yaml", cluster_id));
+    let temp_path = unique_kubeconfig_path(cluster_id);
     let _cleanup = TempFileCleanup(temp_path.clone());
 
     write_secure_temp_file(&temp_path, kubeconfig_content)
@@ -3810,8 +3798,7 @@ pub async fn list_rolebindings(
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
 
-    let temp_dir = std::env::temp_dir();
-    let temp_path = temp_dir.join(format!("kubeconfig-{}-rolebindings.yaml", cluster_id));
+    let temp_path = unique_kubeconfig_path(cluster_id);
     let _cleanup = TempFileCleanup(temp_path.clone());
 
     write_secure_temp_file(&temp_path, kubeconfig_content)
@@ -3909,11 +3896,7 @@ pub async fn list_clusterrolebindings(
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
 
-    let temp_dir = std::env::temp_dir();
-    let temp_path = temp_dir.join(format!(
-        "kubeconfig-{}-clusterrolebindings.yaml",
-        cluster_id
-    ));
+    let temp_path = unique_kubeconfig_path(cluster_id);
     let _cleanup = TempFileCleanup(temp_path.clone());
 
     write_secure_temp_file(&temp_path, kubeconfig_content)
@@ -3999,8 +3982,7 @@ pub async fn list_horizontalpodautoscalers(
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
 
-    let temp_dir = std::env::temp_dir();
-    let temp_path = temp_dir.join(format!("kubeconfig-{}-hpas.yaml", cluster_id));
+    let temp_path = unique_kubeconfig_path(cluster_id);
     let _cleanup = TempFileCleanup(temp_path.clone());
 
     write_secure_temp_file(&temp_path, kubeconfig_content)
@@ -4118,8 +4100,7 @@ pub async fn list_storageclasses(
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
 
-    let temp_dir = std::env::temp_dir();
-    let temp_path = temp_dir.join(format!("kubeconfig-{}-storageclasses.yaml", cluster_id));
+    let temp_path = unique_kubeconfig_path(cluster_id);
     let _cleanup = TempFileCleanup(temp_path.clone());
 
     write_secure_temp_file(&temp_path, kubeconfig_content)
@@ -4224,8 +4205,7 @@ pub async fn list_networkpolicies(
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
 
-    let temp_dir = std::env::temp_dir();
-    let temp_path = temp_dir.join(format!("kubeconfig-{}-networkpolicies.yaml", cluster_id));
+    let temp_path = unique_kubeconfig_path(cluster_id);
     let _cleanup = TempFileCleanup(temp_path.clone());
 
     write_secure_temp_file(&temp_path, kubeconfig_content)
@@ -4336,8 +4316,7 @@ pub async fn list_resourcequotas(
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
 
-    let temp_dir = std::env::temp_dir();
-    let temp_path = temp_dir.join(format!("kubeconfig-{}-resourcequotas.yaml", cluster_id));
+    let temp_path = unique_kubeconfig_path(cluster_id);
     let _cleanup = TempFileCleanup(temp_path.clone());
 
     write_secure_temp_file(&temp_path, kubeconfig_content)
@@ -4458,8 +4437,7 @@ pub async fn list_limitranges(
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
 
-    let temp_dir = std::env::temp_dir();
-    let temp_path = temp_dir.join(format!("kubeconfig-{}-limitranges.yaml", cluster_id));
+    let temp_path = unique_kubeconfig_path(cluster_id);
     let _cleanup = TempFileCleanup(temp_path.clone());
 
     write_secure_temp_file(&temp_path, kubeconfig_content)
@@ -4558,8 +4536,7 @@ pub async fn cordon_node(
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
 
-    let temp_dir = std::env::temp_dir();
-    let temp_path = temp_dir.join(format!("kubeconfig-{}-cordon.yaml", cluster_id));
+    let temp_path = unique_kubeconfig_path(cluster_id);
     let _cleanup = TempFileCleanup(temp_path.clone());
 
     write_secure_temp_file(&temp_path, kubeconfig_content)
@@ -4600,8 +4577,7 @@ pub async fn uncordon_node(
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
 
-    let temp_dir = std::env::temp_dir();
-    let temp_path = temp_dir.join(format!("kubeconfig-{}-uncordon.yaml", cluster_id));
+    let temp_path = unique_kubeconfig_path(cluster_id);
     let _cleanup = TempFileCleanup(temp_path.clone());
 
     write_secure_temp_file(&temp_path, kubeconfig_content)
@@ -4642,8 +4618,7 @@ pub async fn drain_node(
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
 
-    let temp_dir = std::env::temp_dir();
-    let temp_path = temp_dir.join(format!("kubeconfig-{}-drain.yaml", cluster_id));
+    let temp_path = unique_kubeconfig_path(cluster_id);
     let _cleanup = TempFileCleanup(temp_path.clone());
 
     write_secure_temp_file(&temp_path, kubeconfig_content)
@@ -4688,8 +4663,7 @@ pub async fn rollback_deployment(
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
 
-    let temp_dir = std::env::temp_dir();
-    let temp_path = temp_dir.join(format!("kubeconfig-{}-rollback.yaml", cluster_id));
+    let temp_path = unique_kubeconfig_path(cluster_id);
     let _cleanup = TempFileCleanup(temp_path.clone());
 
     write_secure_temp_file(&temp_path, kubeconfig_content)
@@ -4736,8 +4710,7 @@ pub async fn create_resource(
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
 
-    let temp_dir = std::env::temp_dir();
-    let temp_path = temp_dir.join(format!("kubeconfig-{}-create.yaml", cluster_id));
+    let temp_path = unique_kubeconfig_path(cluster_id);
     let _cleanup = TempFileCleanup(temp_path.clone());
 
     write_secure_temp_file(&temp_path, kubeconfig_content)
@@ -4800,8 +4773,7 @@ pub async fn edit_resource(
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
 
-    let temp_dir = std::env::temp_dir();
-    let temp_path = temp_dir.join(format!("kubeconfig-{}-edit.yaml", cluster_id));
+    let temp_path = unique_kubeconfig_path(cluster_id);
     let _cleanup = TempFileCleanup(temp_path.clone());
 
     write_secure_temp_file(&temp_path, kubeconfig_content)
@@ -5050,8 +5022,7 @@ pub async fn list_replicationcontrollers(
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
 
-    let temp_dir = std::env::temp_dir();
-    let temp_path = temp_dir.join(format!("kubeconfig-{}-rcs.yaml", cluster_id));
+    let temp_path = unique_kubeconfig_path(cluster_id);
     let _cleanup = TempFileCleanup(temp_path.clone());
 
     write_secure_temp_file(&temp_path, kubeconfig_content)
@@ -5175,8 +5146,7 @@ pub async fn list_poddisruptionbudgets(
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
 
-    let temp_dir = std::env::temp_dir();
-    let temp_path = temp_dir.join(format!("kubeconfig-{}-pdbs.yaml", cluster_id));
+    let temp_path = unique_kubeconfig_path(cluster_id);
     let _cleanup = TempFileCleanup(temp_path.clone());
 
     write_secure_temp_file(&temp_path, kubeconfig_content)
@@ -5291,8 +5261,7 @@ pub async fn list_priorityclasses(
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
 
-    let temp_dir = std::env::temp_dir();
-    let temp_path = temp_dir.join(format!("kubeconfig-{}-priorityclasses.yaml", cluster_id));
+    let temp_path = unique_kubeconfig_path(cluster_id);
     let _cleanup = TempFileCleanup(temp_path.clone());
 
     write_secure_temp_file(&temp_path, kubeconfig_content)
@@ -5389,8 +5358,7 @@ pub async fn list_runtimeclasses(
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
 
-    let temp_dir = std::env::temp_dir();
-    let temp_path = temp_dir.join(format!("kubeconfig-{}-runtimeclasses.yaml", cluster_id));
+    let temp_path = unique_kubeconfig_path(cluster_id);
     let _cleanup = TempFileCleanup(temp_path.clone());
 
     write_secure_temp_file(&temp_path, kubeconfig_content)
@@ -5475,8 +5443,7 @@ pub async fn list_leases(
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
 
-    let temp_dir = std::env::temp_dir();
-    let temp_path = temp_dir.join(format!("kubeconfig-{}-leases.yaml", cluster_id));
+    let temp_path = unique_kubeconfig_path(cluster_id);
     let _cleanup = TempFileCleanup(temp_path.clone());
 
     write_secure_temp_file(&temp_path, kubeconfig_content)
@@ -5578,8 +5545,7 @@ pub async fn list_mutatingwebhookconfigurations(
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
 
-    let temp_dir = std::env::temp_dir();
-    let temp_path = temp_dir.join(format!("kubeconfig-{}-mwhc.yaml", cluster_id));
+    let temp_path = unique_kubeconfig_path(cluster_id);
     let _cleanup = TempFileCleanup(temp_path.clone());
 
     write_secure_temp_file(&temp_path, kubeconfig_content)
@@ -5669,8 +5635,7 @@ pub async fn list_validatingwebhookconfigurations(
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
 
-    let temp_dir = std::env::temp_dir();
-    let temp_path = temp_dir.join(format!("kubeconfig-{}-vwhc.yaml", cluster_id));
+    let temp_path = unique_kubeconfig_path(cluster_id);
     let _cleanup = TempFileCleanup(temp_path.clone());
 
     write_secure_temp_file(&temp_path, kubeconfig_content)
@@ -5761,8 +5726,7 @@ pub async fn list_endpoints(
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
 
-    let temp_dir = std::env::temp_dir();
-    let temp_path = temp_dir.join(format!("kubeconfig-{}-endpoints.yaml", cluster_id));
+    let temp_path = unique_kubeconfig_path(cluster_id);
     let _cleanup = TempFileCleanup(temp_path.clone());
 
     write_secure_temp_file(&temp_path, kubeconfig_content)
@@ -5877,8 +5841,7 @@ pub async fn list_endpointslices(
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
 
-    let temp_dir = std::env::temp_dir();
-    let temp_path = temp_dir.join(format!("kubeconfig-{}-endpointslices.yaml", cluster_id));
+    let temp_path = unique_kubeconfig_path(cluster_id);
     let _cleanup = TempFileCleanup(temp_path.clone());
 
     write_secure_temp_file(&temp_path, kubeconfig_content)
@@ -6000,8 +5963,7 @@ pub async fn list_ingressclasses(
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
 
-    let temp_dir = std::env::temp_dir();
-    let temp_path = temp_dir.join(format!("kubeconfig-{}-ingressclasses.yaml", cluster_id));
+    let temp_path = unique_kubeconfig_path(cluster_id);
     let _cleanup = TempFileCleanup(temp_path.clone());
 
     write_secure_temp_file(&temp_path, kubeconfig_content)
@@ -6101,8 +6063,7 @@ pub async fn list_namespaces_resource(
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
 
-    let temp_dir = std::env::temp_dir();
-    let temp_path = temp_dir.join(format!("kubeconfig-{}-nsres.yaml", cluster_id));
+    let temp_path = unique_kubeconfig_path(cluster_id);
     let _cleanup = TempFileCleanup(temp_path.clone());
 
     write_secure_temp_file(&temp_path, kubeconfig_content)
@@ -6187,8 +6148,7 @@ pub async fn list_crds(
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
 
-    let temp_dir = std::env::temp_dir();
-    let temp_path = temp_dir.join(format!("kubeconfig-{}-crds.yaml", cluster_id));
+    let temp_path = unique_kubeconfig_path(cluster_id);
     let _cleanup = TempFileCleanup(temp_path.clone());
 
     write_secure_temp_file(&temp_path, kubeconfig_content)
@@ -6312,8 +6272,7 @@ pub async fn list_custom_resources(
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
 
-    let temp_dir = std::env::temp_dir();
-    let temp_path = temp_dir.join(format!("kubeconfig-{}-cr.yaml", cluster_id));
+    let temp_path = unique_kubeconfig_path(&cluster_id);
     let _cleanup = TempFileCleanup(temp_path.clone());
 
     write_secure_temp_file(&temp_path, kubeconfig_content)
@@ -6439,8 +6398,7 @@ pub async fn force_delete_resource(
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
 
-    let temp_dir = std::env::temp_dir();
-    let temp_path = temp_dir.join(format!("kubeconfig-{}-force-delete.yaml", cluster_id));
+    let temp_path = unique_kubeconfig_path(&cluster_id);
     let _cleanup = TempFileCleanup(temp_path.clone());
 
     write_secure_temp_file(&temp_path, kubeconfig_content)
@@ -6498,8 +6456,7 @@ pub async fn describe_resource(
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
 
-    let temp_dir = std::env::temp_dir();
-    let temp_path = temp_dir.join(format!("kubeconfig-{}-describe.yaml", cluster_id));
+    let temp_path = unique_kubeconfig_path(cluster_id);
     let _cleanup = TempFileCleanup(temp_path.clone());
 
     write_secure_temp_file(&temp_path, kubeconfig_content)
@@ -6553,8 +6510,7 @@ pub async fn get_resource_yaml(
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
 
-    let temp_dir = std::env::temp_dir();
-    let temp_path = temp_dir.join(format!("kubeconfig-{}-getyaml.yaml", cluster_id));
+    let temp_path = unique_kubeconfig_path(cluster_id);
     let _cleanup = TempFileCleanup(temp_path.clone());
 
     write_secure_temp_file(&temp_path, kubeconfig_content)
@@ -6608,8 +6564,7 @@ pub async fn attach_pod(
 
     let session_id = uuid::Uuid::now_v7().to_string();
 
-    let temp_dir = std::env::temp_dir();
-    let temp_path = temp_dir.join(format!("kubeconfig-{}-attach.yaml", cluster_id));
+    let temp_path = unique_kubeconfig_path(&cluster_id);
     let _cleanup = TempFileCleanup(temp_path.clone());
 
     write_secure_temp_file(&temp_path, kubeconfig_content)
@@ -6676,8 +6631,7 @@ pub async fn restart_statefulset(
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
 
-    let temp_dir = std::env::temp_dir();
-    let temp_path = temp_dir.join(format!("kubeconfig-{}-restart-sts.yaml", cluster_id));
+    let temp_path = unique_kubeconfig_path(cluster_id);
     let _cleanup = TempFileCleanup(temp_path.clone());
 
     write_secure_temp_file(&temp_path, kubeconfig_content)
@@ -6724,8 +6678,7 @@ pub async fn restart_daemonset(
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
 
-    let temp_dir = std::env::temp_dir();
-    let temp_path = temp_dir.join(format!("kubeconfig-{}-restart-ds.yaml", cluster_id));
+    let temp_path = unique_kubeconfig_path(cluster_id);
     let _cleanup = TempFileCleanup(temp_path.clone());
 
     write_secure_temp_file(&temp_path, kubeconfig_content)
@@ -6773,8 +6726,7 @@ pub async fn scale_statefulset(
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
 
-    let temp_dir = std::env::temp_dir();
-    let temp_path = temp_dir.join(format!("kubeconfig-{}-scale-sts.yaml", cluster_id));
+    let temp_path = unique_kubeconfig_path(cluster_id);
     let _cleanup = TempFileCleanup(temp_path.clone());
 
     write_secure_temp_file(&temp_path, kubeconfig_content)
@@ -6822,8 +6774,7 @@ pub async fn scale_replicaset(
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
 
-    let temp_dir = std::env::temp_dir();
-    let temp_path = temp_dir.join(format!("kubeconfig-{}-scale-rs.yaml", cluster_id));
+    let temp_path = unique_kubeconfig_path(cluster_id);
     let _cleanup = TempFileCleanup(temp_path.clone());
 
     write_secure_temp_file(&temp_path, kubeconfig_content)
@@ -6871,8 +6822,7 @@ pub async fn scale_replicationcontroller(
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
 
-    let temp_dir = std::env::temp_dir();
-    let temp_path = temp_dir.join(format!("kubeconfig-{}-scale-rc.yaml", cluster_id));
+    let temp_path = unique_kubeconfig_path(cluster_id);
     let _cleanup = TempFileCleanup(temp_path.clone());
 
     write_secure_temp_file(&temp_path, kubeconfig_content)
@@ -6919,8 +6869,7 @@ pub async fn suspend_cronjob(
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
 
-    let temp_dir = std::env::temp_dir();
-    let temp_path = temp_dir.join(format!("kubeconfig-{}-suspend-cj.yaml", cluster_id));
+    let temp_path = unique_kubeconfig_path(cluster_id);
     let _cleanup = TempFileCleanup(temp_path.clone());
 
     write_secure_temp_file(&temp_path, kubeconfig_content)
@@ -6968,8 +6917,7 @@ pub async fn resume_cronjob(
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
 
-    let temp_dir = std::env::temp_dir();
-    let temp_path = temp_dir.join(format!("kubeconfig-{}-resume-cj.yaml", cluster_id));
+    let temp_path = unique_kubeconfig_path(cluster_id);
     let _cleanup = TempFileCleanup(temp_path.clone());
 
     write_secure_temp_file(&temp_path, kubeconfig_content)
@@ -7017,8 +6965,7 @@ pub async fn trigger_cronjob(
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
 
-    let temp_dir = std::env::temp_dir();
-    let temp_path = temp_dir.join(format!("kubeconfig-{}-trigger-cj.yaml", cluster_id));
+    let temp_path = unique_kubeconfig_path(cluster_id);
     let _cleanup = TempFileCleanup(temp_path.clone());
 
     write_secure_temp_file(&temp_path, kubeconfig_content)
@@ -7069,8 +7016,7 @@ pub async fn create_namespace(
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
 
-    let temp_dir = std::env::temp_dir();
-    let temp_path = temp_dir.join(format!("kubeconfig-{}-create-ns.yaml", cluster_id));
+    let temp_path = unique_kubeconfig_path(&cluster_id);
     let _cleanup = TempFileCleanup(temp_path.clone());
 
     write_secure_temp_file(&temp_path, kubeconfig_content)
@@ -7116,8 +7062,7 @@ pub async fn delete_namespace(
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
 
-    let temp_dir = std::env::temp_dir();
-    let temp_path = temp_dir.join(format!("kubeconfig-{}-delete-ns.yaml", cluster_id));
+    let temp_path = unique_kubeconfig_path(&cluster_id);
     let _cleanup = TempFileCleanup(temp_path.clone());
 
     write_secure_temp_file(&temp_path, kubeconfig_content)
@@ -7189,8 +7134,7 @@ pub async fn stream_pod_logs(
 
     let (kubeconfig_arc, context) = kubeconfig_content;
 
-    let temp_dir = std::env::temp_dir();
-    let temp_path = temp_dir.join(format!("kubeconfig-{}-stream.yaml", config.cluster_id));
+    let temp_path = unique_kubeconfig_path(config.cluster_id);
 
     write_secure_temp_file(&temp_path, kubeconfig_arc.as_ref())
         .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
@@ -7514,8 +7458,7 @@ pub async fn helm_list_releases(
 
     let (kubeconfig_arc, context) = kubeconfig_content;
 
-    let temp_dir = std::env::temp_dir();
-    let temp_path = temp_dir.join(format!("kubeconfig-{}-helm-list.yaml", cluster_id));
+    let temp_path = unique_kubeconfig_path(cluster_id);
     let _cleanup = TempFileCleanup(temp_path.clone());
 
     write_secure_temp_file(&temp_path, kubeconfig_arc.as_ref())
@@ -7638,8 +7581,7 @@ pub async fn helm_uninstall(
 
     let (kubeconfig_arc, context) = kubeconfig_content;
 
-    let temp_dir = std::env::temp_dir();
-    let temp_path = temp_dir.join(format!("kubeconfig-{}-helm-uninstall.yaml", cluster_id));
+    let temp_path = unique_kubeconfig_path(&cluster_id);
     let _cleanup = TempFileCleanup(temp_path.clone());
 
     write_secure_temp_file(&temp_path, kubeconfig_arc.as_ref())
@@ -7690,8 +7632,7 @@ pub async fn helm_rollback(
 
     let (kubeconfig_arc, context) = kubeconfig_content;
 
-    let temp_dir = std::env::temp_dir();
-    let temp_path = temp_dir.join(format!("kubeconfig-{}-helm-rollback.yaml", cluster_id));
+    let temp_path = unique_kubeconfig_path(&cluster_id);
     let _cleanup = TempFileCleanup(temp_path.clone());
 
     write_secure_temp_file(&temp_path, kubeconfig_arc.as_ref())
@@ -7908,5 +7849,15 @@ mod new_command_tests {
         let json = r#"{"items":[]}"#;
         let result = parse_crds_json(json).unwrap();
         assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_unique_kubeconfig_path_produces_distinct_paths() {
+        let path1 = unique_kubeconfig_path("test-cluster");
+        let path2 = unique_kubeconfig_path("test-cluster");
+        assert_ne!(
+            path1, path2,
+            "successive calls must return distinct paths to prevent concurrent-call race conditions"
+        );
     }
 }

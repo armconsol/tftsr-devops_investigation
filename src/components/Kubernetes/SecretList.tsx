@@ -25,12 +25,9 @@ export function SecretList({
   secrets,
   clusterId,
   _clusterId,
-  namespace,
-  _namespace,
   onRefresh,
 }: SecretListProps) {
   const cid = clusterId ?? _clusterId ?? "";
-  const ns = namespace ?? _namespace ?? "";
   const [activeModal, setActiveModal] = useState<ActiveModal>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -38,7 +35,7 @@ export function SecretList({
   const openEdit = async (secret: SecretInfo) => {
     setActionError(null);
     try {
-      const yaml = await getResourceYamlCmd(cid, "secrets", ns, secret.name);
+      const yaml = await getResourceYamlCmd(cid, "secrets", secret.namespace, secret.name);
       setActiveModal({ type: "edit", secret, yaml });
     } catch (err) {
       setActionError(err instanceof Error ? err.message : String(err));
@@ -49,7 +46,7 @@ export function SecretList({
     if (activeModal?.type !== "delete") return;
     setIsDeleting(true);
     try {
-      await deleteResourceCmd(cid, "secrets", ns, activeModal.secret.name);
+      await deleteResourceCmd(cid, "secrets", activeModal.secret.namespace, activeModal.secret.name);
       setActiveModal(null);
       onRefresh?.();
     } finally {
@@ -117,7 +114,7 @@ export function SecretList({
         <EditResourceModal
           isOpen
           clusterId={cid}
-          namespace={ns}
+          namespace={activeModal.secret.namespace}
           resourceType="secrets"
           resourceName={activeModal.secret.name}
           initialYaml={activeModal.yaml}

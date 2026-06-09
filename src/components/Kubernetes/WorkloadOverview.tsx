@@ -135,7 +135,7 @@ export function WorkloadOverview({ resources }: WorkloadOverviewProps) {
               </div>
               {pods.length - runningPods - pendingPods - failedPods > 0 && (
                 <div className="flex items-center gap-2">
-                  <span className="inline-block w-3 h-3 rounded-full bg-gray-400" />
+                  <span className="inline-block w-3 h-3 rounded-full bg-muted-foreground" />
                   <span>Other: {pods.length - runningPods - pendingPods - failedPods}</span>
                 </div>
               )}

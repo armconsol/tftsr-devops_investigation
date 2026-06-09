@@ -25,12 +25,9 @@ export function IngressList({
   ingresses,
   clusterId,
   _clusterId,
-  namespace,
-  _namespace,
   onRefresh,
 }: IngressListProps) {
   const cid = clusterId ?? _clusterId ?? "";
-  const ns = namespace ?? _namespace ?? "";
   const [activeModal, setActiveModal] = useState<ActiveModal>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -38,7 +35,7 @@ export function IngressList({
   const openEdit = async (ingress: IngressInfo) => {
     setActionError(null);
     try {
-      const yaml = await getResourceYamlCmd(cid, "ingresses", ns, ingress.name);
+      const yaml = await getResourceYamlCmd(cid, "ingresses", ingress.namespace, ingress.name);
       setActiveModal({ type: "edit", ingress, yaml });
     } catch (err) {
       setActionError(err instanceof Error ? err.message : String(err));
@@ -49,7 +46,7 @@ export function IngressList({
     if (activeModal?.type !== "delete") return;
     setIsDeleting(true);
     try {
-      await deleteResourceCmd(cid, "ingresses", ns, activeModal.ingress.name);
+      await deleteResourceCmd(cid, "ingresses", activeModal.ingress.namespace, activeModal.ingress.name);
       setActiveModal(null);
       onRefresh?.();
     } finally {
@@ -119,7 +116,7 @@ export function IngressList({
         <EditResourceModal
           isOpen
           clusterId={cid}
-          namespace={ns}
+          namespace={activeModal.ingress.namespace}
           resourceType="ingresses"
           resourceName={activeModal.ingress.name}
           initialYaml={activeModal.yaml}

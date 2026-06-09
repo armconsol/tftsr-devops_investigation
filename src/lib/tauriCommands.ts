@@ -795,6 +795,7 @@ export interface PortForwardResponse {
 
 export interface PodInfo {
   name: string;
+  namespace: string;
   status: string;
   ready: string;
   age: string;
