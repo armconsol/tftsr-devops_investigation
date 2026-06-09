@@ -1344,11 +1344,28 @@ export interface HelmRelease {
 
 // ─── Custom Resource / CRD Types ─────────────────────────────────────────────
 
+export interface PrinterColumn {
+  name: string;
+  json_path: string;
+  type: string;
+  description?: string;
+  priority: number;
+}
+
+export interface CrdVersion {
+  name: string;
+  served: boolean;
+  storage: boolean;
+  printer_columns: PrinterColumn[];
+}
+
 export interface CrdInfo {
   name: string;
   group: string;
   version: string;
+  versions: CrdVersion[];
   kind: string;
+  plural: string;
   scope: string;
   age: string;
 }
@@ -1357,6 +1374,7 @@ export interface CustomResourceInfo {
   name: string;
   namespace: string;
   age: string;
+  additional_columns: Record<string, string>;
 }
 
 // ─── Resource Actions ─────────────────────────────────────────────────────────

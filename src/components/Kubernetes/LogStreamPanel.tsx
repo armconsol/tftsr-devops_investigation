@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { Download, Search, Square, Trash2, Play } from "lucide-react";
+import { Download, Search, Square, Trash2, Play, ChevronUp, ChevronDown, DownloadCloud } from "lucide-react";
+import Ansi from "ansi-to-react";
 import {
   Dialog,
   DialogContent,
@@ -40,12 +41,15 @@ export function LogStreamPanel({
   const [streaming, setStreaming] = useState(false);
   const [search, setSearch] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [currentMatchIndex, setCurrentMatchIndex] = useState(0);
 
   const streamIdRef = useRef<string | null>(null);
   const unlistenRef = useRef<UnlistenFn | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
+  const matchRefs = useRef<(HTMLDivElement | null)[]>([]);
 
   const stopStream = useCallback(async () => {
+    // Critical: Always unlisten FIRST to prevent memory leaks
     if (unlistenRef.current) {
       unlistenRef.current();
       unlistenRef.current = null;
@@ -61,17 +65,30 @@ export function LogStreamPanel({
     setStreaming(false);
   }, []);
 
+  // Cleanup on unmount - use synchronous cleanup for immediate effect
+  useEffect(() => {
+    return () => {
+      // Synchronous cleanup to ensure unlisten is called immediately
+      if (unlistenRef.current) {
+        unlistenRef.current();
+        unlistenRef.current = null;
+      }
+      // Fire-and-forget cleanup for backend stream
+      if (streamIdRef.current) {
+        stopLogStreamCmd(streamIdRef.current).catch(() => {
+          // best-effort
+        });
+        streamIdRef.current = null;
+      }
+    };
+  }, []);
+
+  // Stop stream when dialog closes
   useEffect(() => {
     if (!open) {
       void stopStream();
     }
   }, [open, stopStream]);
-
-  useEffect(() => {
-    return () => {
-      void stopStream();
-    };
-  }, [stopStream]);
 
   useEffect(() => {
     if (follow && streaming && bottomRef.current) {
@@ -115,15 +132,56 @@ export function LogStreamPanel({
     }
   };
 
-  const handleDownload = () => {
-    const content = lines.join("\n");
+  const handleDownloadVisible = () => {
+    const content = displayLines.join("\n");
     const blob = new Blob([content], { type: "text/plain" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `${podName}-${selectedContainer}-logs.txt`;
+    a.download = `${podName}-${selectedContainer}-visible-logs.txt`;
     a.click();
     URL.revokeObjectURL(url);
+  };
+
+  const handleDownloadAll = async () => {
+    try {
+      // Fetch all logs from the beginning
+      const streamId = await streamPodLogsCmd({
+        cluster_id: clusterId,
+        namespace,
+        pod_name: podName,
+        container_name: selectedContainer,
+        follow: false,
+        timestamps,
+        tail_lines: 0, // Get all logs
+      });
+
+      const allLines: string[] = [];
+      const unlisten = await listen<{ stream_id: string; line: string }>(
+        "pod-log-line",
+        (event) => {
+          if (event.payload.stream_id !== streamId) return;
+          allLines.push(event.payload.line);
+        }
+      );
+
+      // Wait for logs to complete (timeout after 10 seconds)
+      await new Promise((resolve) => setTimeout(resolve, 10000));
+      unlisten();
+
+      const content = allLines.join("\n");
+      const blob = new Blob([content], { type: "text/plain" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${podName}-${selectedContainer}-all-logs.txt`;
+      a.click();
+      URL.revokeObjectURL(url);
+
+      await stopLogStreamCmd(streamId);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
   };
 
   const handleClear = () => {
@@ -134,6 +192,37 @@ export function LogStreamPanel({
     search.trim() === "" ? lines : lines.filter((l) => l.includes(search));
 
   const displayLines = search.trim() !== "" ? filteredLines : lines;
+
+  const matchingLineIndices = search.trim() !== ""
+    ? lines.map((line, i) => (line.includes(search) ? i : -1)).filter((i) => i !== -1)
+    : [];
+
+  const goToNextMatch = () => {
+    if (matchingLineIndices.length === 0) return;
+    const nextIndex = (currentMatchIndex + 1) % matchingLineIndices.length;
+    setCurrentMatchIndex(nextIndex);
+    const lineIndex = matchingLineIndices[nextIndex];
+    if (lineIndex !== undefined && matchRefs.current[lineIndex]) {
+      matchRefs.current[lineIndex]?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  };
+
+  const goToPreviousMatch = () => {
+    if (matchingLineIndices.length === 0) return;
+    const prevIndex = currentMatchIndex === 0
+      ? matchingLineIndices.length - 1
+      : currentMatchIndex - 1;
+    setCurrentMatchIndex(prevIndex);
+    const lineIndex = matchingLineIndices[prevIndex];
+    if (lineIndex !== undefined && matchRefs.current[lineIndex]) {
+      matchRefs.current[lineIndex]?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  };
+
+  // Reset match index when search changes
+  useEffect(() => {
+    setCurrentMatchIndex(0);
+  }, [search]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -209,9 +298,13 @@ export function LogStreamPanel({
                   Stop
                 </Button>
               )}
-              <Button size="sm" variant="outline" onClick={handleDownload} disabled={lines.length === 0}>
+              <Button size="sm" variant="outline" onClick={handleDownloadVisible} disabled={lines.length === 0}>
                 <Download className="h-3.5 w-3.5 mr-1" />
-                Download
+                Download Visible
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => void handleDownloadAll()} disabled={lines.length === 0}>
+                <DownloadCloud className="h-3.5 w-3.5 mr-1" />
+                Download All
               </Button>
               <Button size="sm" variant="ghost" onClick={handleClear} disabled={lines.length === 0}>
                 <Trash2 className="h-3.5 w-3.5 mr-1" />
@@ -221,14 +314,41 @@ export function LogStreamPanel({
           </div>
 
           {/* Search bar */}
-          <div className="relative">
-            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Filter log lines…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="pl-9"
-            />
+          <div className="flex items-center gap-2">
+            <div className="relative flex-1">
+              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Filter log lines…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="pl-9"
+              />
+            </div>
+            {search.trim() !== "" && matchingLineIndices.length > 0 && (
+              <div className="flex items-center gap-1">
+                <span className="text-xs text-muted-foreground whitespace-nowrap">
+                  {currentMatchIndex + 1} / {matchingLineIndices.length}
+                </span>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={goToPreviousMatch}
+                  aria-label="Previous match"
+                  className="h-8 w-8 p-0"
+                >
+                  <ChevronUp className="h-4 w-4" />
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={goToNextMatch}
+                  aria-label="Next match"
+                  className="h-8 w-8 p-0"
+                >
+                  <ChevronDown className="h-4 w-4" />
+                </Button>
+              </div>
+            )}
           </div>
 
           {error && (
@@ -248,20 +368,27 @@ export function LogStreamPanel({
                 {(search.trim() !== "" ? lines : displayLines).map((line, i) => {
                   const matches = search.trim() !== "" && line.includes(search);
                   const visible = search.trim() === "" || matches;
+                  const isCurrentMatch = matches && matchingLineIndices[currentMatchIndex] === i;
                   return (
                     <div
                       key={i}
+                      ref={(el) => {
+                        if (matches) {
+                          matchRefs.current[i] = el;
+                        }
+                      }}
                       className={[
                         "whitespace-pre-wrap break-all leading-5",
                         !visible ? "opacity-40" : "",
+                        isCurrentMatch ? "bg-amber-500/20 border-l-2 border-amber-500 pl-2" : "",
                       ]
                         .filter(Boolean)
                         .join(" ")}
                     >
                       {matches && search.trim() !== "" ? (
-                        highlightMatch(line, search)
+                        highlightMatchWithAnsi(line, search)
                       ) : (
-                        line
+                        <Ansi>{line}</Ansi>
                       )}
                     </div>
                   );
@@ -281,14 +408,17 @@ export function LogStreamPanel({
   );
 }
 
-function highlightMatch(line: string, search: string): React.ReactNode {
+function highlightMatchWithAnsi(line: string, search: string): React.ReactNode {
   const idx = line.indexOf(search);
-  if (idx === -1) return line;
+  if (idx === -1) return <Ansi>{line}</Ansi>;
+
   return (
     <>
-      {line.slice(0, idx)}
-      <mark className="bg-amber-400/30 text-amber-200 rounded-sm px-0.5">{line.slice(idx, idx + search.length)}</mark>
-      {line.slice(idx + search.length)}
+      <Ansi>{line.slice(0, idx)}</Ansi>
+      <mark className="bg-amber-400/30 text-amber-200 rounded-sm px-0.5">
+        <Ansi>{line.slice(idx, idx + search.length)}</Ansi>
+      </mark>
+      <Ansi>{line.slice(idx + search.length)}</Ansi>
     </>
   );
 }

@@ -24,10 +24,21 @@ export function YamlEditor({
 }: YamlEditorProps) {
   const [value, setValue] = React.useState(content);
   const [isLoading, setIsLoading] = React.useState(true);
+  const [isMonacoReady, setIsMonacoReady] = React.useState(false);
 
   React.useEffect(() => {
-    setValue(content);
-  }, [content]);
+    // Only update value when Monaco is ready to prevent race condition
+    if (isMonacoReady) {
+      setValue(content);
+    }
+  }, [content, isMonacoReady]);
+
+  // Initialize value when Monaco mounts
+  React.useEffect(() => {
+    if (isMonacoReady && content) {
+      setValue(content);
+    }
+  }, [isMonacoReady, content]);
 
   const handleChange = (v: string | undefined) => {
     const next = v ?? "";
@@ -51,7 +62,7 @@ export function YamlEditor({
       >
         {isLoading && (
           <div className="flex items-center justify-center h-full bg-[#1e1e1e]">
-            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" role="status" />
           </div>
         )}
         <Editor
@@ -59,7 +70,10 @@ export function YamlEditor({
           theme="vs-dark"
           value={value}
           onChange={handleChange}
-          onMount={() => setIsLoading(false)}
+          onMount={() => {
+            setIsLoading(false);
+            setIsMonacoReady(true);
+          }}
           options={{
             minimap: { enabled: false },
             scrollBeyondLastLine: false,

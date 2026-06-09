@@ -1,11 +1,12 @@
 import React, { useState } from "react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui";
-import { Pencil, Trash2 } from "lucide-react";
+import { Pencil, Trash2, Eye } from "lucide-react";
 import type { SecretInfo } from "@/lib/tauriCommands";
 import { deleteResourceCmd, getResourceYamlCmd } from "@/lib/tauriCommands";
 import { ResourceActionMenu } from "./ResourceActionMenu";
 import { ConfirmDeleteDialog } from "./ConfirmDeleteDialog";
 import { EditResourceModal } from "./EditResourceModal";
+import { SecretDataModal } from "./SecretDataModal";
 
 interface SecretListProps {
   secrets: SecretInfo[];
@@ -17,6 +18,7 @@ interface SecretListProps {
 }
 
 type ActiveModal =
+  | { type: "view"; secret: SecretInfo; yaml: string }
   | { type: "edit"; secret: SecretInfo; yaml: string }
   | { type: "delete"; secret: SecretInfo }
   | null;
@@ -31,6 +33,16 @@ export function SecretList({
   const [activeModal, setActiveModal] = useState<ActiveModal>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+
+  const openView = async (secret: SecretInfo) => {
+    setActionError(null);
+    try {
+      const yaml = await getResourceYamlCmd(cid, "secrets", secret.namespace, secret.name);
+      setActiveModal({ type: "view", secret, yaml });
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : String(err));
+    }
+  };
 
   const openEdit = async (secret: SecretInfo) => {
     setActionError(null);
@@ -90,6 +102,11 @@ export function SecretList({
                     <ResourceActionMenu
                       actions={[
                         {
+                          label: "View Data",
+                          icon: Eye,
+                          onClick: () => openView(secret),
+                        },
+                        {
                           label: "Edit",
                           icon: Pencil,
                           onClick: () => openEdit(secret),
@@ -109,6 +126,15 @@ export function SecretList({
           </TableBody>
         </Table>
       </div>
+
+      {activeModal?.type === "view" && (
+        <SecretDataModal
+          open
+          onOpenChange={(o) => { if (!o) setActiveModal(null); }}
+          secretName={activeModal.secret.name}
+          secretYaml={activeModal.yaml}
+        />
+      )}
 
       {activeModal?.type === "edit" && (
         <EditResourceModal

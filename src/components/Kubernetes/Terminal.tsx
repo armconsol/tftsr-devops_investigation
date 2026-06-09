@@ -2,8 +2,16 @@ import React from "react";
 import { Terminal as XTerminal, type ITerminalOptions } from "xterm";
 import { FitAddon } from "xterm-addon-fit";
 import { WebLinksAddon } from "xterm-addon-web-links";
-import { Terminal as TerminalIcon, X, Plus } from "lucide-react";
+import { Terminal as TerminalIcon, X, Plus, Settings } from "lucide-react";
 import { execPodCmd } from "@/lib/tauriCommands";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  Button,
+  Input,
+} from "@/components/ui";
 
 interface TerminalSession {
   id: string;
@@ -22,17 +30,49 @@ interface TerminalProps {
   containerName?: string;
 }
 
-const XTERM_OPTIONS: ITerminalOptions = {
-  cursorBlink: true,
-  theme: {
-    background: "#0f172a",
-    foreground: "#4ade80",
-    cursor: "#4ade80",
-  },
+interface TerminalSettings {
+  copyOnSelect: boolean;
+  fontFamily: string;
+  fontSize: number;
+}
+
+const DEFAULT_SETTINGS: TerminalSettings = {
+  copyOnSelect: false,
   fontFamily: '"JetBrains Mono", "Fira Code", monospace',
   fontSize: 13,
-  convertEol: true,
 };
+
+const STORAGE_KEY = "terminal-settings";
+
+function loadSettings(): TerminalSettings {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (stored) {
+      return { ...DEFAULT_SETTINGS, ...JSON.parse(stored) };
+    }
+  } catch {
+    // Ignore parse errors
+  }
+  return DEFAULT_SETTINGS;
+}
+
+function saveSettings(settings: TerminalSettings): void {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
+}
+
+function makeXtermOptions(settings: TerminalSettings): ITerminalOptions {
+  return {
+    cursorBlink: true,
+    theme: {
+      background: "#0f172a",
+      foreground: "#4ade80",
+      cursor: "#4ade80",
+    },
+    fontFamily: settings.fontFamily,
+    fontSize: settings.fontSize,
+    convertEol: true,
+  };
+}
 
 function makeSessionId() {
   return `session-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
@@ -46,6 +86,8 @@ export function Terminal({ clusterId, namespace, podName, containerName }: Termi
   const [sessions, setSessions] = React.useState<TerminalSession[]>([]);
   const [activeSessionId, setActiveSessionId] = React.useState<string | null>(null);
   const [sessionShells, setSessionShells] = React.useState<Record<string, string>>({});
+  const [settings, setSettings] = React.useState<TerminalSettings>(loadSettings());
+  const [settingsOpen, setSettingsOpen] = React.useState(false);
 
   const terminalRefs = React.useRef<Record<string, XTerminal>>({});
   const fitAddonRefs = React.useRef<Record<string, FitAddon>>({});

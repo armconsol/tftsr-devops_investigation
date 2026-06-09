@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui";
-import { Scale, RotateCcw, Pencil, Trash2 } from "lucide-react";
+import { Scale, RotateCcw, Pencil, Trash2, FileText } from "lucide-react";
 import type { StatefulSetInfo } from "@/lib/tauriCommands";
 import {
   scaleStatefulsetCmd,
@@ -12,6 +12,7 @@ import { ResourceActionMenu } from "./ResourceActionMenu";
 import { ConfirmDeleteDialog } from "./ConfirmDeleteDialog";
 import { ScaleModal } from "./ScaleModal";
 import { EditResourceModal } from "./EditResourceModal";
+import { WorkloadLogsModal } from "./WorkloadLogsModal";
 
 interface StatefulSetListProps {
   statefulsets: StatefulSetInfo[];
@@ -23,6 +24,7 @@ interface StatefulSetListProps {
 type ActiveModal =
   | { type: "scale"; ss: StatefulSetInfo }
   | { type: "restart"; ss: StatefulSetInfo }
+  | { type: "logs"; ss: StatefulSetInfo }
   | { type: "edit"; ss: StatefulSetInfo; yaml: string }
   | { type: "delete"; ss: StatefulSetInfo }
   | null;
@@ -112,6 +114,11 @@ export function StatefulSetList({ statefulsets, clusterId, namespace: _namespace
                           onClick: () => setActiveModal({ type: "restart", ss }),
                         },
                         {
+                          label: "Logs",
+                          icon: FileText,
+                          onClick: () => setActiveModal({ type: "logs", ss }),
+                        },
+                        {
                           label: "Edit",
                           icon: Pencil,
                           onClick: () => openEdit(ss),
@@ -131,6 +138,18 @@ export function StatefulSetList({ statefulsets, clusterId, namespace: _namespace
           </TableBody>
         </Table>
       </div>
+
+      {activeModal?.type === "logs" && (
+        <WorkloadLogsModal
+          open
+          onOpenChange={(o) => { if (!o) setActiveModal(null); }}
+          clusterId={clusterId}
+          namespace={activeModal.ss.namespace}
+          workloadType="statefulset"
+          workloadName={activeModal.ss.name}
+          labels={activeModal.ss.labels}
+        />
+      )}
 
       {activeModal?.type === "scale" && (
         <ScaleModal

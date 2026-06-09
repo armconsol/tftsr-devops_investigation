@@ -101,6 +101,8 @@ pub struct AppState {
     pub watchers: Arc<Mutex<HashMap<String, tokio::sync::mpsc::Receiver<serde_json::Value>>>>,
     /// Active pod log streaming tasks: stream_id -> abort handle
     pub log_streams: Arc<TokioMutex<HashMap<String, tokio::task::AbortHandle>>>,
+    /// PTY session manager for interactive shells
+    pub pty_sessions: Arc<crate::shell::SessionManager>,
 }
 
 /// Determine the application data directory.

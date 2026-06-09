@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui";
-import { Scale, Pencil, Trash2 } from "lucide-react";
+import { Scale, Pencil, Trash2, FileText } from "lucide-react";
 import type { ReplicaSetInfo } from "@/lib/tauriCommands";
 import {
   scaleReplicasetCmd,
@@ -11,6 +11,7 @@ import { ResourceActionMenu } from "./ResourceActionMenu";
 import { ConfirmDeleteDialog } from "./ConfirmDeleteDialog";
 import { ScaleModal } from "./ScaleModal";
 import { EditResourceModal } from "./EditResourceModal";
+import { WorkloadLogsModal } from "./WorkloadLogsModal";
 
 interface ReplicaSetListProps {
   replicaSets: ReplicaSetInfo[];
@@ -23,6 +24,7 @@ interface ReplicaSetListProps {
 
 type ActiveModal =
   | { type: "scale"; rs: ReplicaSetInfo }
+  | { type: "logs"; rs: ReplicaSetInfo }
   | { type: "edit"; rs: ReplicaSetInfo; yaml: string }
   | { type: "delete"; rs: ReplicaSetInfo }
   | null;
@@ -107,6 +109,11 @@ export function ReplicaSetList({
                           onClick: () => setActiveModal({ type: "scale", rs }),
                         },
                         {
+                          label: "Logs",
+                          icon: FileText,
+                          onClick: () => setActiveModal({ type: "logs", rs }),
+                        },
+                        {
                           label: "Edit",
                           icon: Pencil,
                           onClick: () => openEdit(rs),
@@ -126,6 +133,18 @@ export function ReplicaSetList({
           </TableBody>
         </Table>
       </div>
+
+      {activeModal?.type === "logs" && (
+        <WorkloadLogsModal
+          open
+          onOpenChange={(o) => { if (!o) setActiveModal(null); }}
+          clusterId={cid}
+          namespace={activeModal.rs.namespace}
+          workloadType="replicaset"
+          workloadName={activeModal.rs.name}
+          labels={activeModal.rs.labels}
+        />
+      )}
 
       {activeModal?.type === "scale" && (
         <ScaleModal

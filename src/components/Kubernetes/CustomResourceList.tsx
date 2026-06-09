@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { RefreshCw } from "lucide-react";
 import { listCustomResourcesCmd } from "@/lib/tauriCommands";
-import type { CustomResourceInfo } from "@/lib/tauriCommands";
+import type { CustomResourceInfo, PrinterColumn } from "@/lib/tauriCommands";
 
 interface CustomResourceListProps {
   clusterId: string;
@@ -10,6 +10,7 @@ interface CustomResourceListProps {
   version: string;
   resource: string;
   kind: string;
+  printerColumns?: PrinterColumn[];
 }
 
 export function CustomResourceList({
@@ -19,6 +20,7 @@ export function CustomResourceList({
   version,
   resource,
   kind,
+  printerColumns = [],
 }: CustomResourceListProps) {
   const [items, setItems] = useState<CustomResourceInfo[]>([]);
   const [loading, setLoading] = useState(false);
@@ -68,6 +70,9 @@ export function CustomResourceList({
 
   const showNamespace = items.some((item) => item.namespace !== "");
 
+  // Filter printer columns by priority (0 = always show, higher = less important)
+  const visibleColumns = printerColumns.filter((col) => col.priority === 0);
+
   return (
     <div className="rounded-md border overflow-hidden">
       <table className="w-full text-sm">
@@ -77,6 +82,11 @@ export function CustomResourceList({
             {showNamespace && (
               <th className="text-left px-4 py-2 font-medium">Namespace</th>
             )}
+            {visibleColumns.map((col) => (
+              <th key={col.name} className="text-left px-4 py-2 font-medium" title={col.description}>
+                {col.name}
+              </th>
+            ))}
             <th className="text-left px-4 py-2 font-medium">Age</th>
           </tr>
         </thead>
@@ -90,6 +100,11 @@ export function CustomResourceList({
               {showNamespace && (
                 <td className="px-4 py-2 text-muted-foreground">{item.namespace || "—"}</td>
               )}
+              {visibleColumns.map((col) => (
+                <td key={col.name} className="px-4 py-2 text-muted-foreground">
+                  {item.additional_columns[col.name] || "—"}
+                </td>
+              ))}
               <td className="px-4 py-2 text-muted-foreground">{item.age}</td>
             </tr>
           ))}

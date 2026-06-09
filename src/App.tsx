@@ -78,6 +78,15 @@ export default function App() {
     };
   }, []);
 
+  // Apply dark mode class to html element for proper CSS cascade
+  useEffect(() => {
+    if (theme === "dark") {
+      document.documentElement.classList.add("dark");
+    } else {
+      document.documentElement.classList.remove("dark");
+    }
+  }, [theme]);
+
   // Load providers and auto-test active provider on startup
   useEffect(() => {
     const initializeProviders = async () => {
@@ -102,7 +111,7 @@ export default function App() {
   }, [setProviders, getActiveProvider]);
 
   return (
-    <div className={theme === "dark" ? "dark" : ""}>
+    <>
       <ShellApprovalModal />
       <div className="grid h-screen" style={{ gridTemplateColumns: collapsed ? "64px 1fr" : "240px 1fr" }}>
         {/* Sidebar */}
@@ -205,6 +214,6 @@ export default function App() {
           </Routes>
         </main>
       </div>
-    </div>
+    </>
   );
 }

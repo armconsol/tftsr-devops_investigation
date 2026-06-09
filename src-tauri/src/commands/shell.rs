@@ -253,3 +253,198 @@ pub async fn check_kubectl_installed(_state: State<'_, AppState>) -> Result<Kube
 pub fn get_classifier_rules() -> crate::shell::classifier::ClassifierRules {
     crate::shell::classifier::CommandClassifier::get_rules()
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PTY Session Management Commands
+// ═══════════════════════════════════════════════════════════════════════════
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PtySessionInfo {
+    pub id: String,
+    pub cluster_id: String,
+    pub namespace: String,
+    pub pod: String,
+    pub container: Option<String>,
+    pub session_type: String,
+    pub created_at: String,
+}
+
+/// Start an interactive kubectl exec session with PTY support
+#[tauri::command]
+pub async fn start_pty_exec_session(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    cluster_id: String,
+    namespace: String,
+    pod: String,
+    container: Option<String>,
+) -> Result<String, String> {
+    // Get active kubeconfig
+    let kubeconfig_path = {
+        let db = state.db.lock().map_err(|e| e.to_string())?;
+        let mut stmt = db
+            .prepare("SELECT encrypted_content FROM kubeconfig_files WHERE is_active = 1 LIMIT 1")
+            .map_err(|e| format!("Failed to query active kubeconfig: {e}"))?;
+
+        let encrypted: Option<String> = stmt
+            .query_row([], |row| row.get(0))
+            .ok();
+
+        if let Some(enc) = encrypted {
+            let content = crate::integrations::auth::decrypt_token(&enc)
+                .map_err(|e| format!("Failed to decrypt kubeconfig: {e}"))?;
+
+            // Write to temp file
+            let temp_path = std::env::temp_dir().join(format!("kubeconfig-{}.yaml", uuid::Uuid::now_v7()));
+            std::fs::write(&temp_path, content)
+                .map_err(|e| format!("Failed to write kubeconfig: {e}"))?;
+
+            Some(temp_path.to_string_lossy().to_string())
+        } else {
+            None
+        }
+    };
+
+    // Locate kubectl
+    let kubectl_path = crate::shell::kubectl::locate_kubectl()
+        .map_err(|e| format!("kubectl not found: {e}"))?;
+
+    // Start session
+    let session_id = state
+        .pty_sessions
+        .start_exec_session(
+            app,
+            cluster_id,
+            namespace,
+            pod,
+            container,
+            kubectl_path.to_string_lossy().to_string(),
+            kubeconfig_path,
+        )
+        .await
+        .map_err(|e| format!("Failed to start exec session: {e}"))?;
+
+    Ok(session_id)
+}
+
+/// Start an interactive kubectl attach session with PTY support
+#[tauri::command]
+pub async fn start_pty_attach_session(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    cluster_id: String,
+    namespace: String,
+    pod: String,
+    container: Option<String>,
+) -> Result<String, String> {
+    // Get active kubeconfig
+    let kubeconfig_path = {
+        let db = state.db.lock().map_err(|e| e.to_string())?;
+        let mut stmt = db
+            .prepare("SELECT encrypted_content FROM kubeconfig_files WHERE is_active = 1 LIMIT 1")
+            .map_err(|e| format!("Failed to query active kubeconfig: {e}"))?;
+
+        let encrypted: Option<String> = stmt
+            .query_row([], |row| row.get(0))
+            .ok();
+
+        if let Some(enc) = encrypted {
+            let content = crate::integrations::auth::decrypt_token(&enc)
+                .map_err(|e| format!("Failed to decrypt kubeconfig: {e}"))?;
+
+            // Write to temp file
+            let temp_path = std::env::temp_dir().join(format!("kubeconfig-{}.yaml", uuid::Uuid::now_v7()));
+            std::fs::write(&temp_path, content)
+                .map_err(|e| format!("Failed to write kubeconfig: {e}"))?;
+
+            Some(temp_path.to_string_lossy().to_string())
+        } else {
+            None
+        }
+    };
+
+    // Locate kubectl
+    let kubectl_path = crate::shell::kubectl::locate_kubectl()
+        .map_err(|e| format!("kubectl not found: {e}"))?;
+
+    // Start session
+    let session_id = state
+        .pty_sessions
+        .start_attach_session(
+            app,
+            cluster_id,
+            namespace,
+            pod,
+            container,
+            kubectl_path.to_string_lossy().to_string(),
+            kubeconfig_path,
+        )
+        .await
+        .map_err(|e| format!("Failed to start attach session: {e}"))?;
+
+    Ok(session_id)
+}
+
+/// Send stdin data to a PTY session
+#[tauri::command]
+pub async fn send_pty_stdin(
+    state: State<'_, AppState>,
+    session_id: String,
+    data: Vec<u8>,
+) -> Result<(), String> {
+    state
+        .pty_sessions
+        .send_stdin(&session_id, data)
+        .await
+        .map_err(|e| format!("Failed to send stdin: {e}"))
+}
+
+/// Resize a PTY session
+#[tauri::command]
+pub async fn resize_pty_session(
+    state: State<'_, AppState>,
+    session_id: String,
+    rows: u16,
+    cols: u16,
+) -> Result<(), String> {
+    state
+        .pty_sessions
+        .resize_session(&session_id, rows, cols)
+        .await
+        .map_err(|e| format!("Failed to resize session: {e}"))
+}
+
+/// Terminate a PTY session
+#[tauri::command]
+pub async fn terminate_pty_session(
+    state: State<'_, AppState>,
+    session_id: String,
+) -> Result<(), String> {
+    state
+        .pty_sessions
+        .terminate_session(&session_id)
+        .await
+        .map_err(|e| format!("Failed to terminate session: {e}"))
+}
+
+/// List all active PTY sessions
+#[tauri::command]
+pub async fn list_pty_sessions(state: State<'_, AppState>) -> Result<Vec<PtySessionInfo>, String> {
+    let sessions = state.pty_sessions.list_sessions().await;
+
+    Ok(sessions
+        .into_iter()
+        .map(|s| PtySessionInfo {
+            id: s.id,
+            cluster_id: s.cluster_id,
+            namespace: s.namespace,
+            pod: s.pod,
+            container: s.container,
+            session_type: match s.session_type {
+                crate::shell::SessionType::Exec => "exec".to_string(),
+                crate::shell::SessionType::Attach => "attach".to_string(),
+            },
+            created_at: s.created_at.to_rfc3339(),
+        })
+        .collect())
+}

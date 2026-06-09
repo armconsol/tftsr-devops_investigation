@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui";
-import { PauseCircle, PlayCircle, Play, Pencil, Trash2 } from "lucide-react";
+import { PauseCircle, PlayCircle, Play, Pencil, Trash2, FileText } from "lucide-react";
 import type { CronJobInfo } from "@/lib/tauriCommands";
 import {
   suspendCronjobCmd,
@@ -12,6 +12,7 @@ import {
 import { ResourceActionMenu } from "./ResourceActionMenu";
 import { ConfirmDeleteDialog } from "./ConfirmDeleteDialog";
 import { EditResourceModal } from "./EditResourceModal";
+import { WorkloadLogsModal } from "./WorkloadLogsModal";
 
 interface CronJobListProps {
   cronJobs: CronJobInfo[];
@@ -23,6 +24,7 @@ interface CronJobListProps {
 }
 
 type ActiveModal =
+  | { type: "logs"; cj: CronJobInfo }
   | { type: "edit"; cj: CronJobInfo; yaml: string }
   | { type: "delete"; cj: CronJobInfo }
   | null;
@@ -156,6 +158,11 @@ export function CronJobList({
                           onClick: () => handleTrigger(cj),
                         },
                         {
+                          label: "Logs",
+                          icon: FileText,
+                          onClick: () => setActiveModal({ type: "logs", cj }),
+                        },
+                        {
                           label: "Edit",
                           icon: Pencil,
                           onClick: () => openEdit(cj),
@@ -175,6 +182,18 @@ export function CronJobList({
           </TableBody>
         </Table>
       </div>
+
+      {activeModal?.type === "logs" && (
+        <WorkloadLogsModal
+          open
+          onOpenChange={(o) => { if (!o) setActiveModal(null); }}
+          clusterId={cid}
+          namespace={activeModal.cj.namespace}
+          workloadType="cronjob"
+          workloadName={activeModal.cj.name}
+          labels={activeModal.cj.labels}
+        />
+      )}
 
       {activeModal?.type === "edit" && (
         <EditResourceModal

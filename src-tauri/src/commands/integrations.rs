@@ -331,6 +331,7 @@ pub async fn initiate_oauth(
         let refresh_registry = app_state.refresh_registry.clone();
         let watchers = app_state.watchers.clone();
         let log_streams = app_state.log_streams.clone();
+        let pty_sessions = app_state.pty_sessions.clone();
 
         tokio::spawn(async move {
             let app_state_for_callback = AppState {
@@ -345,6 +346,7 @@ pub async fn initiate_oauth(
                 refresh_registry,
                 watchers,
                 log_streams,
+                pty_sessions,
             };
             while let Some(callback) = callback_rx.recv().await {
                 tracing::info!("Received OAuth callback for state: {}", callback.state);

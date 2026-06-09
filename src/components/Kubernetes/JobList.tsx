@@ -1,11 +1,12 @@
 import React, { useState } from "react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui";
-import { Pencil, Trash2 } from "lucide-react";
+import { Pencil, Trash2, FileText } from "lucide-react";
 import type { JobInfo } from "@/lib/tauriCommands";
 import { deleteResourceCmd, getResourceYamlCmd } from "@/lib/tauriCommands";
 import { ResourceActionMenu } from "./ResourceActionMenu";
 import { ConfirmDeleteDialog } from "./ConfirmDeleteDialog";
 import { EditResourceModal } from "./EditResourceModal";
+import { WorkloadLogsModal } from "./WorkloadLogsModal";
 
 interface JobListProps {
   jobs: JobInfo[];
@@ -17,6 +18,7 @@ interface JobListProps {
 }
 
 type ActiveModal =
+  | { type: "logs"; job: JobInfo }
   | { type: "edit"; job: JobInfo; yaml: string }
   | { type: "delete"; job: JobInfo }
   | null;
@@ -96,6 +98,11 @@ export function JobList({
                     <ResourceActionMenu
                       actions={[
                         {
+                          label: "Logs",
+                          icon: FileText,
+                          onClick: () => setActiveModal({ type: "logs", job }),
+                        },
+                        {
                           label: "Edit",
                           icon: Pencil,
                           onClick: () => openEdit(job),
@@ -115,6 +122,18 @@ export function JobList({
           </TableBody>
         </Table>
       </div>
+
+      {activeModal?.type === "logs" && (
+        <WorkloadLogsModal
+          open
+          onOpenChange={(o) => { if (!o) setActiveModal(null); }}
+          clusterId={cid}
+          namespace={activeModal.job.namespace}
+          workloadType="job"
+          workloadName={activeModal.job.name}
+          labels={activeModal.job.labels}
+        />
+      )}
 
       {activeModal?.type === "edit" && (
         <EditResourceModal

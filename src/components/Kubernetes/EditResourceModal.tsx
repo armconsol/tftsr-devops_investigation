@@ -46,11 +46,16 @@ export function EditResourceModal({
   const [yamlContent, setYamlContent] = React.useState(initialYaml);
   const [isLoading, setIsLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+  const [yamlReady, setYamlReady] = React.useState(false);
 
   React.useEffect(() => {
     setName(resourceName);
     setCurrentNamespace(namespace);
     setYamlContent(initialYaml);
+    // Mark YAML as ready once we have content
+    if (initialYaml) {
+      setYamlReady(true);
+    }
   }, [resourceName, namespace, initialYaml]);
 
   const handleSubmit = async () => {
@@ -129,12 +134,18 @@ export function EditResourceModal({
             <TabsContent value="yaml">
               <div className="space-y-2">
                 <Label>Resource YAML</Label>
-                <YamlEditor
-                  height="300px"
-                  showControls={false}
-                  content={yamlContent}
-                  onChange={setYamlContent}
-                />
+                {yamlReady ? (
+                  <YamlEditor
+                    height="300px"
+                    showControls={false}
+                    content={yamlContent}
+                    onChange={setYamlContent}
+                  />
+                ) : (
+                  <div className="flex items-center justify-center h-[300px] bg-muted rounded-md">
+                    <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                  </div>
+                )}
               </div>
             </TabsContent>
           </div>

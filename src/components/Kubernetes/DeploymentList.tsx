@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui";
-import { Scale, RotateCcw, Undo2, Pencil, Trash2 } from "lucide-react";
+import { Scale, RotateCcw, Undo2, Pencil, Trash2, FileText } from "lucide-react";
 import type { DeploymentInfo } from "@/lib/tauriCommands";
 import {
   scaleDeploymentCmd,
@@ -13,6 +13,7 @@ import { ResourceActionMenu } from "./ResourceActionMenu";
 import { ConfirmDeleteDialog } from "./ConfirmDeleteDialog";
 import { ScaleModal } from "./ScaleModal";
 import { EditResourceModal } from "./EditResourceModal";
+import { WorkloadLogsModal } from "./WorkloadLogsModal";
 
 interface DeploymentListProps {
   deployments: DeploymentInfo[];
@@ -25,6 +26,7 @@ type ActiveModal =
   | { type: "scale"; deployment: DeploymentInfo }
   | { type: "restart"; deployment: DeploymentInfo }
   | { type: "rollback"; deployment: DeploymentInfo }
+  | { type: "logs"; deployment: DeploymentInfo }
   | { type: "edit"; deployment: DeploymentInfo; yaml: string }
   | { type: "delete"; deployment: DeploymentInfo }
   | null;
@@ -137,6 +139,11 @@ export function DeploymentList({ deployments, clusterId, namespace: _namespace, 
                           onClick: () => setActiveModal({ type: "rollback", deployment }),
                         },
                         {
+                          label: "Logs",
+                          icon: FileText,
+                          onClick: () => setActiveModal({ type: "logs", deployment }),
+                        },
+                        {
                           label: "Edit",
                           icon: Pencil,
                           onClick: () => openEdit(deployment),
@@ -156,6 +163,18 @@ export function DeploymentList({ deployments, clusterId, namespace: _namespace, 
           </TableBody>
         </Table>
       </div>
+
+      {activeModal?.type === "logs" && (
+        <WorkloadLogsModal
+          open
+          onOpenChange={(o) => { if (!o) setActiveModal(null); }}
+          clusterId={clusterId}
+          namespace={activeModal.deployment.namespace}
+          workloadType="deployment"
+          workloadName={activeModal.deployment.name}
+          labels={activeModal.deployment.labels}
+        />
+      )}
 
       {activeModal?.type === "scale" && (
         <ScaleModal

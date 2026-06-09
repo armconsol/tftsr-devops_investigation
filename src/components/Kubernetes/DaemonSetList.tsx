@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui";
-import { RotateCcw, Pencil, Trash2 } from "lucide-react";
+import { RotateCcw, Pencil, Trash2, FileText } from "lucide-react";
 import type { DaemonSetInfo } from "@/lib/tauriCommands";
 import {
   restartDaemonsetCmd,
@@ -10,6 +10,7 @@ import {
 import { ResourceActionMenu } from "./ResourceActionMenu";
 import { ConfirmDeleteDialog } from "./ConfirmDeleteDialog";
 import { EditResourceModal } from "./EditResourceModal";
+import { WorkloadLogsModal } from "./WorkloadLogsModal";
 
 interface DaemonSetListProps {
   daemonsets: DaemonSetInfo[];
@@ -20,6 +21,7 @@ interface DaemonSetListProps {
 
 type ActiveModal =
   | { type: "restart"; ds: DaemonSetInfo }
+  | { type: "logs"; ds: DaemonSetInfo }
   | { type: "edit"; ds: DaemonSetInfo; yaml: string }
   | { type: "delete"; ds: DaemonSetInfo }
   | null;
@@ -110,6 +112,11 @@ export function DaemonSetList({ daemonsets, clusterId, namespace: _namespace, on
                           onClick: () => setActiveModal({ type: "restart", ds }),
                         },
                         {
+                          label: "Logs",
+                          icon: FileText,
+                          onClick: () => setActiveModal({ type: "logs", ds }),
+                        },
+                        {
                           label: "Edit",
                           icon: Pencil,
                           onClick: () => openEdit(ds),
@@ -129,6 +136,18 @@ export function DaemonSetList({ daemonsets, clusterId, namespace: _namespace, on
           </TableBody>
         </Table>
       </div>
+
+      {activeModal?.type === "logs" && (
+        <WorkloadLogsModal
+          open
+          onOpenChange={(o) => { if (!o) setActiveModal(null); }}
+          clusterId={clusterId}
+          namespace={activeModal.ds.namespace}
+          workloadType="daemonset"
+          workloadName={activeModal.ds.name}
+          labels={activeModal.ds.labels}
+        />
+      )}
 
       {activeModal?.type === "restart" && (
         <ConfirmDeleteDialog

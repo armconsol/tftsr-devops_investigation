@@ -6,7 +6,7 @@ import type { PodInfo } from "@/lib/tauriCommands";
 import { deleteResourceCmd, forceDeleteResourceCmd, getResourceYamlCmd } from "@/lib/tauriCommands";
 import { ResourceActionMenu } from "./ResourceActionMenu";
 import { ConfirmDeleteDialog } from "./ConfirmDeleteDialog";
-import { LogsModal } from "./LogsModal";
+import { LogStreamPanel } from "./LogStreamPanel";
 import { ShellExecModal } from "./ShellExecModal";
 import { AttachModal } from "./AttachModal";
 import { EditResourceModal } from "./EditResourceModal";
@@ -166,7 +166,7 @@ export function PodList({ pods, clusterId, namespace, onRefresh }: PodListProps)
       </div>
 
       {activeModal?.type === "logs" && (
-        <LogsModal
+        <LogStreamPanel
           open
           onOpenChange={(o) => { if (!o) setActiveModal(null); }}
           clusterId={clusterId}

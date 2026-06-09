@@ -305,7 +305,7 @@ export function SelectContent({
     <div
       ref={contentRef}
       className={cn(
-        "absolute z-50 max-h-60 w-full overflow-auto rounded-md border bg-card p-1 shadow-md",
+        "absolute z-50 max-h-60 w-full overflow-auto rounded-md border bg-card text-foreground p-1 shadow-md",
         flipUpward ? "bottom-full mb-1" : "top-full mt-1",
         className
       )}
