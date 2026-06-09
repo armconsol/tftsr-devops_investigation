@@ -14,6 +14,8 @@ const mockTerminalInstance = {
   onData: vi.fn((cb: (data: string) => void) => {
     onDataHandlers.push(cb);
   }),
+  onSelectionChange: vi.fn(),
+  getSelection: vi.fn(() => "selected text"),
   loadAddon: vi.fn(),
   options: {} as Record<string, unknown>,
 };

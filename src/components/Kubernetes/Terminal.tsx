@@ -154,13 +154,26 @@ export function Terminal({ clusterId, namespace, podName, containerName }: Termi
     (sessionId: string, session: TerminalSession, element: HTMLDivElement) => {
       if (terminalRefs.current[sessionId]) return;
 
-      const term = new XTerminal(XTERM_OPTIONS);
+      const xtermOptions = makeXtermOptions(settings);
+      const term = new XTerminal(xtermOptions);
       const fitAddon = new FitAddon();
       const webLinksAddon = new WebLinksAddon();
 
       term.loadAddon(fitAddon);
       term.loadAddon(webLinksAddon);
       term.open(element);
+
+      // Copy-on-select functionality
+      if (settings.copyOnSelect) {
+        term.onSelectionChange(() => {
+          const selection = term.getSelection();
+          if (selection) {
+            navigator.clipboard.writeText(selection).catch(() => {
+              // Ignore clipboard errors
+            });
+          }
+        });
+      }
 
       try { fitAddon.fit(); } catch { /* first-frame race — safe to ignore */ }
 
@@ -211,7 +224,7 @@ export function Terminal({ clusterId, namespace, podName, containerName }: Termi
         }
       });
     },
-    [] // sessionShellsRef is a ref — stable reference, safe to omit
+    [settings] // Include settings to rebuild terminals with new config
   );
 
   // ── callback ref: fires when a container div is set/unset ──────────────────
@@ -258,6 +271,23 @@ export function Terminal({ clusterId, namespace, podName, containerName }: Termi
   const setShell = (sessionId: string, shell: string) => {
     sessionShellsRef.current = { ...sessionShellsRef.current, [sessionId]: shell };
     setSessionShells((prev) => ({ ...prev, [sessionId]: shell }));
+  };
+
+  const updateSettings = (newSettings: Partial<TerminalSettings>) => {
+    const updated = { ...settings, ...newSettings };
+    setSettings(updated);
+    saveSettings(updated);
+
+    // Apply settings to all existing terminals
+    Object.entries(terminalRefs.current).forEach(([, term]) => {
+      term.options.fontFamily = updated.fontFamily;
+      term.options.fontSize = updated.fontSize;
+    });
+
+    // Fit all terminals after font changes
+    Object.values(fitAddonRefs.current).forEach((fa) => {
+      try { fa.fit(); } catch { /* ignore */ }
+    });
   };
 
   // ── empty state ─────────────────────────────────────────────────────────────
@@ -324,6 +354,13 @@ export function Terminal({ clusterId, namespace, podName, containerName }: Termi
               <option value="sh">sh</option>
               <option value="zsh">zsh</option>
             </select>
+            <button
+              aria-label="settings"
+              onClick={() => setSettingsOpen(true)}
+              className="p-1.5 text-slate-400 hover:text-green-400 transition-colors"
+            >
+              <Settings className="w-4 h-4" />
+            </button>
           </div>
         )}
       </div>
@@ -342,6 +379,71 @@ export function Terminal({ clusterId, namespace, podName, containerName }: Termi
           </div>
         ))}
       </div>
+
+      {/* Settings Dialog */}
+      <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Terminal Settings</DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <label htmlFor="copy-on-select" className="text-sm font-medium">
+                Copy on Select
+              </label>
+              <input
+                id="copy-on-select"
+                type="checkbox"
+                checked={settings.copyOnSelect}
+                onChange={(e) => updateSettings({ copyOnSelect: e.target.checked })}
+                className="rounded border-input"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label htmlFor="font-family" className="text-sm font-medium block">
+                Font Family
+              </label>
+              <Input
+                id="font-family"
+                type="text"
+                value={settings.fontFamily}
+                onChange={(e) => updateSettings({ fontFamily: e.target.value })}
+                placeholder="e.g., monospace, Courier New"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label htmlFor="font-size" className="text-sm font-medium block">
+                Font Size
+              </label>
+              <Input
+                id="font-size"
+                type="number"
+                min={8}
+                max={24}
+                value={settings.fontSize}
+                onChange={(e) => updateSettings({ fontSize: Number(e.target.value) })}
+              />
+            </div>
+
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setSettingsOpen(false)}>
+                Close
+              </Button>
+              <Button
+                onClick={() => {
+                  updateSettings(DEFAULT_SETTINGS);
+                  setSettingsOpen(false);
+                }}
+              >
+                Reset to Defaults
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -10,7 +10,7 @@ import { useEffect, useState, RefObject } from "react";
  */
 export function useSmartPosition(
   open: boolean,
-  contentRef: RefObject<HTMLElement>
+  contentRef: RefObject<HTMLElement | null>
 ): boolean {
   const [flipUpward, setFlipUpward] = useState(false);
 

@@ -9,7 +9,6 @@ import {
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui";
 import { Button } from "@/components/ui";
 import { Eye, EyeOff, Copy, Check } from "lucide-react";
-import * as yaml from "js-yaml";
 
 interface SecretDataModalProps {
   open: boolean;
@@ -28,8 +27,37 @@ export function SecretDataModal({ open, onOpenChange, secretName, secretYaml }: 
 
   const secretData = useMemo<SecretData>(() => {
     try {
-      const parsed = yaml.load(secretYaml) as { data?: SecretData };
-      return parsed.data ?? {};
+      // Simple YAML parsing for the data section
+      // Find the data: section and extract key-value pairs
+      const lines = secretYaml.split("\n");
+      const dataIndex = lines.findIndex(line => line.trim() === "data:");
+
+      if (dataIndex === -1) {
+        return {};
+      }
+
+      const result: SecretData = {};
+      const dataIndent = lines[dataIndex].search(/\S/);
+
+      for (let i = dataIndex + 1; i < lines.length; i++) {
+        const line = lines[i];
+        const trimmed = line.trim();
+
+        // Stop if we hit another top-level key
+        if (line.search(/\S/) <= dataIndent && trimmed && !trimmed.startsWith("#")) {
+          break;
+        }
+
+        // Parse key: value pairs
+        const match = trimmed.match(/^([^:]+):\s*(.*)$/);
+        if (match && match[1] && match[2]) {
+          const key = match[1].trim();
+          const value = match[2].trim();
+          result[key] = value;
+        }
+      }
+
+      return result;
     } catch (err) {
       console.error("Failed to parse secret YAML:", err);
       return {};

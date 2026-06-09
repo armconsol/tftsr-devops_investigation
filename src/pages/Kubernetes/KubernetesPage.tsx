@@ -73,6 +73,7 @@ import {
   WorkloadOverview,
   CrdList,
 } from "@/components/Kubernetes";
+import { BottomPanel } from "@/components/BottomPanel";
 import type {
   KubeconfigInfo,
   NamespaceInfo,
@@ -1145,8 +1146,8 @@ export function KubernetesPage() {
         </div>
       )}
 
-      {/* Main layout: sidebar + content */}
-      <div className="flex flex-1 overflow-hidden">
+      {/* Main layout: sidebar + content (top area of CSS grid) */}
+      <div className="flex flex-1 overflow-hidden min-h-0">
         {/* Sidebar */}
         <aside className="w-56 shrink-0 border-r bg-card overflow-y-auto flex flex-col">
           {NAV_ENTRIES.map((entry) => {
@@ -1229,6 +1230,10 @@ export function KubernetesPage() {
           {renderContent()}
         </main>
       </div>
+
+      {/* Bottom dock panel — DevTools-style. Opens via store (e.g. via context menus,
+          ResourceActionMenu, etc.). When closed, renders nothing. */}
+      <BottomPanel />
 
       {/* Command Palette */}
       <CommandPalette

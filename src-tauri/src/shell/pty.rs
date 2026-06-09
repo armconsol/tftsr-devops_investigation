@@ -12,7 +12,6 @@
 use anyhow::{Context, Result};
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 use std::io::{Read, Write};
-use std::sync::Arc;
 use tracing::debug;
 
 /// PTY session handle with I/O streams
@@ -21,8 +20,6 @@ pub struct PtySession {
     pair: portable_pty::PtyPair,
     /// Child process handle
     child: Box<dyn portable_pty::Child + Send + Sync>,
-    /// Buffer for reading from PTY
-    read_buffer: Arc<Mutex<Vec<u8>>>,
 }
 
 impl PtySession {
@@ -58,7 +55,6 @@ impl PtySession {
         Ok(Self {
             pair,
             child,
-            read_buffer: Arc::new(Mutex::new(Vec::with_capacity(8192))),
         })
     }
 

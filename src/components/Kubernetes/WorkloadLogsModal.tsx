@@ -15,6 +15,12 @@ interface WorkloadLogsModalProps {
   labels: Record<string, string>;
 }
 
+// Placeholder for future label filtering - pods don't currently expose labels in PodInfo
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+function matchesPodLabels(_pod: PodInfo, _labels: Record<string, string>): boolean {
+  return true;
+}
+
 export function WorkloadLogsModal({
   open,
   onOpenChange,
@@ -22,7 +28,7 @@ export function WorkloadLogsModal({
   namespace,
   workloadType,
   workloadName,
-  labels,
+  labels: _labels,
 }: WorkloadLogsModalProps) {
   const [pods, setPods] = useState<PodInfo[]>([]);
   const [selectedPod, setSelectedPod] = useState<string>("");
@@ -42,24 +48,13 @@ export function WorkloadLogsModal({
       try {
         const allPods = await listPodsCmd(clusterId, namespace);
 
-        // Filter pods by label selector
-        const matchingPods = allPods.filter((pod) => {
-          // For each label in the workload, check if pod has matching label
-          return Object.entries(labels).every(([key, value]) => {
-            // Check pod labels - we need to fetch this from the pod metadata
-            // For now, we'll use a simpler approach: match by name prefix
-            return true; // TODO: proper label matching when pod labels are available
-          });
-        });
-
-        // If no label matching available, try to match by name pattern
-        const filteredPods = matchingPods.length > 0 ? matchingPods : allPods.filter((pod) => {
-          // Common naming patterns:
-          // deployment: <name>-<hash>-<random>
-          // statefulset: <name>-<ordinal>
-          // daemonset: <name>-<random>
-          // job: <name>-<random>
-          // cronjob: <cronjob-name>-<timestamp>-<random>
+        // Match by name pattern - pod naming conventions:
+        // deployment: <name>-<hash>-<random>
+        // statefulset: <name>-<ordinal>
+        // daemonset: <name>-<random>
+        // job: <name>-<random>
+        // cronjob: <cronjob-name>-<timestamp>-<random>
+        const filteredPods = allPods.filter((pod) => {
           const namePattern = new RegExp(`^${workloadName}-`);
           return namePattern.test(pod.name);
         });
@@ -79,7 +74,7 @@ export function WorkloadLogsModal({
     };
 
     fetchPods();
-  }, [open, clusterId, namespace, workloadName, labels]);
+  }, [open, clusterId, namespace, workloadName]);
 
   // Fetch logs when pod/container selection changes
   useEffect(() => {
@@ -135,7 +130,7 @@ export function WorkloadLogsModal({
                 </SelectTrigger>
                 <SelectContent>
                   {pods.length === 0 ? (
-                    <SelectItem value="__none__" disabled>
+                    <SelectItem value="__none__">
                       No pods found
                     </SelectItem>
                   ) : (
@@ -151,22 +146,27 @@ export function WorkloadLogsModal({
 
             <div className="flex-1">
               <label className="text-sm font-medium mb-2 block">Container</label>
-              <Select
-                value={selectedContainer}
-                onValueChange={setSelectedContainer}
-                disabled={!selectedPodData}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select container" />
+              {selectedPodData ? (
+                <Select
+                  value={selectedContainer}
+                  onValueChange={setSelectedContainer}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select container" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {selectedPodData.containers.map((container) => (
+                      <SelectItem key={container} value={container}>
+                        {container}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <SelectTrigger disabled>
+                  <SelectValue placeholder="Select pod first" />
                 </SelectTrigger>
-                <SelectContent>
-                  {selectedPodData?.containers.map((container) => (
-                    <SelectItem key={container} value={container}>
-                      {container}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              )}
             </div>
 
             <div className="w-32">

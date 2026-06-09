@@ -86,9 +86,9 @@ describe("PodList – LogStreamPanel integration", () => {
     const logsAction = await screen.findByText("Logs");
     fireEvent.click(logsAction);
 
-    // Verify pod name in dialog
+    // Verify dialog title contains pod name
     await waitFor(() => {
-      expect(screen.getByText(/test-pod/i)).toBeInTheDocument();
+      expect(screen.getByText(/Log Stream — test-pod/i)).toBeInTheDocument();
     });
 
     // Verify container dropdown shows containers

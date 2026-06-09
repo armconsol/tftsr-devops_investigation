@@ -8,8 +8,8 @@ import type { PodInfo } from "@/lib/tauriCommands";
 vi.mock("@tauri-apps/api/core");
 
 // Silence console.error noise from modal portals in jsdom
-vi.mock("@/components/Kubernetes/LogsModal", () => ({
-  LogsModal: ({ namespace }: { namespace: string }) => (
+vi.mock("@/components/Kubernetes/LogStreamPanel", () => ({
+  LogStreamPanel: ({ namespace }: { namespace: string }) => (
     <div data-testid="logs-modal" data-namespace={namespace} />
   ),
 }));
