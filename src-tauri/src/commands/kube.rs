@@ -6402,6 +6402,7 @@ pub async fn list_custom_resources(
 
 /// Simple JSONPath-like extractor for custom resource fields.
 /// Supports basic paths like .status.phase, .spec.replicas, .metadata.labels['app']
+#[allow(dead_code)]
 fn extract_json_path_value(item: &Value, json_path: &str) -> String {
     // Remove leading dot if present
     let path = json_path.strip_prefix('.').unwrap_or(json_path);

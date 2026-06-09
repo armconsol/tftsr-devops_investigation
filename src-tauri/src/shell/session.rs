@@ -48,9 +48,25 @@ pub enum ControlCommand {
     Terminate,
 }
 
+/// Parameters for starting a session
+pub struct SessionParams {
+    pub cluster_id: String,
+    pub namespace: String,
+    pub pod: String,
+    pub container: Option<String>,
+    pub kubectl_path: String,
+    pub kubeconfig_path: Option<String>,
+}
+
 /// Global session registry
 pub struct SessionManager {
     sessions: Arc<RwLock<HashMap<String, SessionInfo>>>,
+}
+
+impl Default for SessionManager {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl SessionManager {
@@ -64,32 +80,24 @@ impl SessionManager {
     pub async fn start_exec_session(
         &self,
         app_handle: AppHandle,
-        cluster_id: String,
-        namespace: String,
-        pod: String,
-        container: Option<String>,
-        kubectl_path: String,
-        kubeconfig_path: Option<String>,
+        params: SessionParams,
     ) -> Result<String> {
         let session_id = Uuid::now_v7().to_string();
 
         // Spawn PTY session
         let pty_session = PtySession::spawn_kubectl_exec(
-            &kubectl_path,
-            &namespace,
-            &pod,
-            container.as_deref(),
-            kubeconfig_path.as_deref(),
+            &params.kubectl_path,
+            &params.namespace,
+            &params.pod,
+            params.container.as_deref(),
+            params.kubeconfig_path.as_deref(),
         )
         .context("Failed to spawn kubectl exec session")?;
 
         self.register_session(
             app_handle,
             session_id.clone(),
-            cluster_id,
-            namespace,
-            pod,
-            container,
+            params,
             SessionType::Exec,
             pty_session,
         )
@@ -102,32 +110,24 @@ impl SessionManager {
     pub async fn start_attach_session(
         &self,
         app_handle: AppHandle,
-        cluster_id: String,
-        namespace: String,
-        pod: String,
-        container: Option<String>,
-        kubectl_path: String,
-        kubeconfig_path: Option<String>,
+        params: SessionParams,
     ) -> Result<String> {
         let session_id = Uuid::now_v7().to_string();
 
         // Spawn PTY session
         let pty_session = PtySession::spawn_kubectl_attach(
-            &kubectl_path,
-            &namespace,
-            &pod,
-            container.as_deref(),
-            kubeconfig_path.as_deref(),
+            &params.kubectl_path,
+            &params.namespace,
+            &params.pod,
+            params.container.as_deref(),
+            params.kubeconfig_path.as_deref(),
         )
         .context("Failed to spawn kubectl attach session")?;
 
         self.register_session(
             app_handle,
             session_id.clone(),
-            cluster_id,
-            namespace,
-            pod,
-            container,
+            params,
             SessionType::Attach,
             pty_session,
         )
@@ -141,10 +141,7 @@ impl SessionManager {
         &self,
         app_handle: AppHandle,
         session_id: String,
-        cluster_id: String,
-        namespace: String,
-        pod: String,
-        container: Option<String>,
+        params: SessionParams,
         session_type: SessionType,
         pty_session: PtySession,
     ) -> Result<()> {
@@ -153,10 +150,10 @@ impl SessionManager {
 
         let info = SessionInfo {
             id: session_id.clone(),
-            cluster_id,
-            namespace,
-            pod,
-            container,
+            cluster_id: params.cluster_id,
+            namespace: params.namespace,
+            pod: params.pod,
+            container: params.container,
             session_type,
             created_at: chrono::Utc::now(),
             stdin_tx,

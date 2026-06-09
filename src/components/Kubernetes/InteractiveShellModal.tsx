@@ -43,7 +43,7 @@ export function InteractiveShellModal({
   const terminalRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<XTerminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
-  const [sessionId, setSessionId] = useState<string | null>(null);
+  const sessionIdRef = useRef<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const unlistenOutputRef = useRef<UnlistenFn | null>(null);
   const unlistenClosedRef = useRef<UnlistenFn | null>(null);
@@ -81,7 +81,7 @@ export function InteractiveShellModal({
           pod,
           container
         );
-        setSessionId(sid);
+        sessionIdRef.current = sid;
 
         // Listen for output from backend
         const unlistenOutput = await listen<number[]>(
@@ -144,8 +144,8 @@ export function InteractiveShellModal({
       if (unlistenErrorRef.current) {
         unlistenErrorRef.current();
       }
-      if (sessionId) {
-        terminatePtySessionCmd(sessionId).catch(console.error);
+      if (sessionIdRef.current) {
+        terminatePtySessionCmd(sessionIdRef.current).catch(console.error);
       }
       term.dispose();
       fitAddon.dispose();
@@ -169,8 +169,8 @@ export function InteractiveShellModal({
   }, []);
 
   const handleClose = () => {
-    if (sessionId) {
-      terminatePtySessionCmd(sessionId).catch(console.error);
+    if (sessionIdRef.current) {
+      terminatePtySessionCmd(sessionIdRef.current).catch(console.error);
     }
     onClose();
   };

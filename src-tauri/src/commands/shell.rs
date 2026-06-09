@@ -310,17 +310,18 @@ pub async fn start_pty_exec_session(
         .map_err(|e| format!("kubectl not found: {e}"))?;
 
     // Start session
+    let params = crate::shell::session::SessionParams {
+        cluster_id,
+        namespace,
+        pod,
+        container,
+        kubectl_path: kubectl_path.to_string_lossy().to_string(),
+        kubeconfig_path,
+    };
+
     let session_id = state
         .pty_sessions
-        .start_exec_session(
-            app,
-            cluster_id,
-            namespace,
-            pod,
-            container,
-            kubectl_path.to_string_lossy().to_string(),
-            kubeconfig_path,
-        )
+        .start_exec_session(app, params)
         .await
         .map_err(|e| format!("Failed to start exec session: {e}"))?;
 
@@ -368,17 +369,18 @@ pub async fn start_pty_attach_session(
         .map_err(|e| format!("kubectl not found: {e}"))?;
 
     // Start session
+    let params = crate::shell::session::SessionParams {
+        cluster_id,
+        namespace,
+        pod,
+        container,
+        kubectl_path: kubectl_path.to_string_lossy().to_string(),
+        kubeconfig_path,
+    };
+
     let session_id = state
         .pty_sessions
-        .start_attach_session(
-            app,
-            cluster_id,
-            namespace,
-            pod,
-            container,
-            kubectl_path.to_string_lossy().to_string(),
-            kubeconfig_path,
-        )
+        .start_attach_session(app, params)
         .await
         .map_err(|e| format!("Failed to start attach session: {e}"))?;
 
