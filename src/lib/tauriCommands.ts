@@ -800,6 +800,9 @@ export interface PodInfo {
   ready: string;
   age: string;
   containers: string[];
+  restarts?: number;
+  ip?: string;
+  node?: string;
 }
 
 export interface ClusterConnectionState {
