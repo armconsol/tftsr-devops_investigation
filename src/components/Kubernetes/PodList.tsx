@@ -7,8 +7,8 @@ import { deleteResourceCmd, forceDeleteResourceCmd, getResourceYamlCmd } from "@
 import { ResourceActionMenu } from "./ResourceActionMenu";
 import { ConfirmDeleteDialog } from "./ConfirmDeleteDialog";
 import { LogStreamPanel } from "./LogStreamPanel";
-import { ShellExecModal } from "./ShellExecModal";
-import { AttachModal } from "./AttachModal";
+import { InteractiveShellModal } from "./InteractiveShellModal";
+import { InteractiveAttachModal } from "./InteractiveAttachModal";
 import { EditResourceModal } from "./EditResourceModal";
 
 interface PodListProps {
@@ -177,24 +177,22 @@ export function PodList({ pods, clusterId, namespace, onRefresh }: PodListProps)
       )}
 
       {activeModal?.type === "shell" && (
-        <ShellExecModal
-          open
-          onOpenChange={(o) => { if (!o) setActiveModal(null); }}
+        <InteractiveShellModal
           clusterId={clusterId}
           namespace={activeModal.pod.namespace}
-          podName={activeModal.pod.name}
-          containers={activeModal.pod.containers}
+          pod={activeModal.pod.name}
+          container={activeModal.pod.containers[0]}
+          onClose={() => setActiveModal(null)}
         />
       )}
 
       {activeModal?.type === "attach" && (
-        <AttachModal
-          open
-          onOpenChange={(o) => { if (!o) setActiveModal(null); }}
+        <InteractiveAttachModal
           clusterId={clusterId}
           namespace={activeModal.pod.namespace}
-          podName={activeModal.pod.name}
-          containers={activeModal.pod.containers}
+          pod={activeModal.pod.name}
+          container={activeModal.pod.containers[0]}
+          onClose={() => setActiveModal(null)}
         />
       )}
 
