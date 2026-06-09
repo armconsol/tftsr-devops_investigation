@@ -45,10 +45,17 @@ CI, chore, and build changes are excluded.
 - **ui**: Correct font contrast and background colors in dark mode
 - **kube**: Add two-stage diagnostics to test_kubectl_connection
 - **ci**: Cargo fmt kube.rs + switch pr-review to qwen3-coder-next
+- **kube**: Unique temp kubeconfig paths — eliminate concurrent-call race condition
+- **ui**: Replace hardcoded colors with semantic Tailwind vars for dark mode
+- **kube**: WorkloadOverview loads data; single connect on mount; visible error on failure
+- **kube**: Add namespace to PodInfo; pod actions use pod.namespace not filter
+- **kube**: Network/config/storage list actions use item.namespace not filter prop
+- **kube**: Workload list actions use item.namespace not filter prop
 
 ### Documentation
 - **kubernetes**: Add comment about dynamic port allocation limitation
 - Update documentation for Kubernetes Management UI
+- Add ticket summary for kube action namespace and stability fixes
 
 ### Features
 - **kube**: Add Kubernetes management GUI components
