@@ -52,7 +52,7 @@ pub async fn get_pod_metrics(
     }
 
     let json_output = &output.stdout;
-    crate::metrics::client::parse_pod_metrics(&json_output)
+    crate::metrics::client::parse_pod_metrics(json_output)
         .map_err(|e| format!("Failed to parse pod metrics: {e}"))
 }
 
@@ -103,6 +103,6 @@ pub async fn get_node_metrics(
     }
 
     let json_output = &output.stdout;
-    crate::metrics::client::parse_node_metrics(&json_output)
+    crate::metrics::client::parse_node_metrics(json_output)
         .map_err(|e| format!("Failed to parse node metrics: {e}"))
 }

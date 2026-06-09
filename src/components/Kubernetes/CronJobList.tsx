@@ -1,6 +1,6 @@
 import React, { useState } from "react";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui";
-import { PauseCircle, PlayCircle, Play, Pencil, Trash2, FileText } from "lucide-react";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, Button } from "@/components/ui";
+import { PauseCircle, PlayCircle, Play, Pencil, Trash2, FileText, Settings } from "lucide-react";
 import type { CronJobInfo } from "@/lib/tauriCommands";
 import {
   suspendCronjobCmd,
@@ -13,6 +13,9 @@ import { ResourceActionMenu } from "./ResourceActionMenu";
 import { ConfirmDeleteDialog } from "./ConfirmDeleteDialog";
 import { EditResourceModal } from "./EditResourceModal";
 import { WorkloadLogsModal } from "./WorkloadLogsModal";
+import { useColumnConfig } from "@/hooks/useColumnConfig";
+import { DEFAULT_COLUMNS } from "@/config/defaultColumns";
+import { ColumnConfigModal } from "@/components/tables/ColumnConfigModal";
 
 interface CronJobListProps {
   cronJobs: CronJobInfo[];
@@ -39,6 +42,11 @@ export function CronJobList({
   const [activeModal, setActiveModal] = useState<ActiveModal>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [showColumnConfig, setShowColumnConfig] = useState(false);
+
+  // Configurable columns
+  const columnConfig = useColumnConfig("cronjobs", DEFAULT_COLUMNS.cronjobs);
+  const { isColumnVisible } = columnConfig;
 
   const openEdit = async (cj: CronJobInfo) => {
     setActionError(null);
@@ -102,18 +110,32 @@ export function CronJobList({
       {actionError && (
         <p className="mb-2 text-sm text-destructive">{actionError}</p>
       )}
+      <div className="flex items-center justify-between mb-2">
+        <div className="text-sm text-muted-foreground">
+          {cronJobs.length} {cronJobs.length === 1 ? "cron job" : "cron jobs"}
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setShowColumnConfig(true)}
+          className="flex items-center gap-1"
+        >
+          <Settings className="h-3.5 w-3.5" />
+          Columns
+        </Button>
+      </div>
       <div className="overflow-x-auto">
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>Namespace</TableHead>
-              <TableHead>Schedule</TableHead>
-              <TableHead>Active</TableHead>
-              <TableHead>Last Schedule</TableHead>
-              <TableHead>Age</TableHead>
-              <TableHead>Labels</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
+              {isColumnVisible("name") && <TableHead>Name</TableHead>}
+              {isColumnVisible("namespace") && <TableHead>Namespace</TableHead>}
+              {isColumnVisible("schedule") && <TableHead>Schedule</TableHead>}
+              {isColumnVisible("active") && <TableHead>Active</TableHead>}
+              {isColumnVisible("lastSchedule") && <TableHead>Last Schedule</TableHead>}
+              {isColumnVisible("age") && <TableHead>Age</TableHead>}
+              {isColumnVisible("labels") && <TableHead>Labels</TableHead>}
+              {isColumnVisible("actions") && <TableHead className="text-right">Actions</TableHead>}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -126,18 +148,27 @@ export function CronJobList({
             ) : (
               cronJobs.map((cj) => (
                 <TableRow key={`${cj.name}-${cj.namespace}`}>
-                  <TableCell className="font-medium">{cj.name}</TableCell>
-                  <TableCell>{cj.namespace}</TableCell>
-                  <TableCell>{cj.schedule}</TableCell>
-                  <TableCell>{cj.active}</TableCell>
-                  <TableCell>{cj.last_schedule}</TableCell>
-                  <TableCell className="text-muted-foreground">{cj.age}</TableCell>
-                  <TableCell>
-                    {Object.entries(cj.labels)
-                      .map(([k, v]) => `${k}=${v}`)
-                      .join(", ")}
-                  </TableCell>
-                  <TableCell className="text-right">
+                  {isColumnVisible("name") && (
+                    <TableCell className="font-medium">{cj.name}</TableCell>
+                  )}
+                  {isColumnVisible("namespace") && (
+                    <TableCell className="text-muted-foreground">{cj.namespace}</TableCell>
+                  )}
+                  {isColumnVisible("schedule") && <TableCell>{cj.schedule}</TableCell>}
+                  {isColumnVisible("active") && <TableCell>{cj.active}</TableCell>}
+                  {isColumnVisible("lastSchedule") && <TableCell>{cj.last_schedule}</TableCell>}
+                  {isColumnVisible("age") && (
+                    <TableCell className="text-muted-foreground">{cj.age}</TableCell>
+                  )}
+                  {isColumnVisible("labels") && (
+                    <TableCell>
+                      {Object.entries(cj.labels)
+                        .map(([k, v]) => `${k}=${v}`)
+                        .join(", ")}
+                    </TableCell>
+                  )}
+                  {isColumnVisible("actions") && (
+                    <TableCell className="text-right">
                     <ResourceActionMenu
                       actions={[
                         {
@@ -175,7 +206,8 @@ export function CronJobList({
                         },
                       ]}
                     />
-                  </TableCell>
+                    </TableCell>
+                  )}
                 </TableRow>
               ))
             )}
@@ -217,6 +249,23 @@ export function CronJobList({
           onConfirm={handleDelete}
         />
       )}
+
+      <ColumnConfigModal
+        open={showColumnConfig}
+        onOpenChange={setShowColumnConfig}
+        resourceType="CronJobs"
+        columnConfig={columnConfig}
+        columnLabels={{
+          name: "Name",
+          namespace: "Namespace",
+          schedule: "Schedule",
+          active: "Active",
+          lastSchedule: "Last Schedule",
+          age: "Age",
+          labels: "Labels",
+          actions: "Actions",
+        }}
+      />
     </>
   );
 }
