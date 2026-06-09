@@ -286,16 +286,15 @@ pub async fn start_pty_exec_session(
             .prepare("SELECT encrypted_content FROM kubeconfig_files WHERE is_active = 1 LIMIT 1")
             .map_err(|e| format!("Failed to query active kubeconfig: {e}"))?;
 
-        let encrypted: Option<String> = stmt
-            .query_row([], |row| row.get(0))
-            .ok();
+        let encrypted: Option<String> = stmt.query_row([], |row| row.get(0)).ok();
 
         if let Some(enc) = encrypted {
             let content = crate::integrations::auth::decrypt_token(&enc)
                 .map_err(|e| format!("Failed to decrypt kubeconfig: {e}"))?;
 
             // Write to temp file
-            let temp_path = std::env::temp_dir().join(format!("kubeconfig-{}.yaml", uuid::Uuid::now_v7()));
+            let temp_path =
+                std::env::temp_dir().join(format!("kubeconfig-{}.yaml", uuid::Uuid::now_v7()));
             std::fs::write(&temp_path, content)
                 .map_err(|e| format!("Failed to write kubeconfig: {e}"))?;
 
@@ -306,8 +305,8 @@ pub async fn start_pty_exec_session(
     };
 
     // Locate kubectl
-    let kubectl_path = crate::shell::kubectl::locate_kubectl()
-        .map_err(|e| format!("kubectl not found: {e}"))?;
+    let kubectl_path =
+        crate::shell::kubectl::locate_kubectl().map_err(|e| format!("kubectl not found: {e}"))?;
 
     // Start session
     let params = crate::shell::session::SessionParams {
@@ -345,16 +344,15 @@ pub async fn start_pty_attach_session(
             .prepare("SELECT encrypted_content FROM kubeconfig_files WHERE is_active = 1 LIMIT 1")
             .map_err(|e| format!("Failed to query active kubeconfig: {e}"))?;
 
-        let encrypted: Option<String> = stmt
-            .query_row([], |row| row.get(0))
-            .ok();
+        let encrypted: Option<String> = stmt.query_row([], |row| row.get(0)).ok();
 
         if let Some(enc) = encrypted {
             let content = crate::integrations::auth::decrypt_token(&enc)
                 .map_err(|e| format!("Failed to decrypt kubeconfig: {e}"))?;
 
             // Write to temp file
-            let temp_path = std::env::temp_dir().join(format!("kubeconfig-{}.yaml", uuid::Uuid::now_v7()));
+            let temp_path =
+                std::env::temp_dir().join(format!("kubeconfig-{}.yaml", uuid::Uuid::now_v7()));
             std::fs::write(&temp_path, content)
                 .map_err(|e| format!("Failed to write kubeconfig: {e}"))?;
 
@@ -365,8 +363,8 @@ pub async fn start_pty_attach_session(
     };
 
     // Locate kubectl
-    let kubectl_path = crate::shell::kubectl::locate_kubectl()
-        .map_err(|e| format!("kubectl not found: {e}"))?;
+    let kubectl_path =
+        crate::shell::kubectl::locate_kubectl().map_err(|e| format!("kubectl not found: {e}"))?;
 
     // Start session
     let params = crate::shell::session::SessionParams {

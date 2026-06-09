@@ -263,9 +263,7 @@ impl SessionManager {
     /// Send stdin data to a session
     pub async fn send_stdin(&self, session_id: &str, data: Vec<u8>) -> Result<()> {
         let sessions = self.sessions.read().await;
-        let session = sessions
-            .get(session_id)
-            .context("Session not found")?;
+        let session = sessions.get(session_id).context("Session not found")?;
 
         session
             .stdin_tx
@@ -278,9 +276,7 @@ impl SessionManager {
     /// Resize a session's PTY
     pub async fn resize_session(&self, session_id: &str, rows: u16, cols: u16) -> Result<()> {
         let sessions = self.sessions.read().await;
-        let session = sessions
-            .get(session_id)
-            .context("Session not found")?;
+        let session = sessions.get(session_id).context("Session not found")?;
 
         session
             .control_tx
@@ -293,9 +289,7 @@ impl SessionManager {
     /// Terminate a session
     pub async fn terminate_session(&self, session_id: &str) -> Result<()> {
         let sessions = self.sessions.read().await;
-        let session = sessions
-            .get(session_id)
-            .context("Session not found")?;
+        let session = sessions.get(session_id).context("Session not found")?;
 
         session
             .control_tx

@@ -1513,3 +1513,53 @@ export const listCrdsCmd = (clusterId: string) =>
 
 export const listCustomResourcesCmd = (clusterId: string, group: string, version: string, resource: string, namespace: string) =>
   invoke<CustomResourceInfo[]>("list_custom_resources", { clusterId, group, version, resource, namespace });
+
+// ─── PTY Terminal Commands ────────────────────────────────────────────────────
+
+export interface PtySessionInfo {
+  session_id: string;
+  cluster_id: string;
+  namespace: string;
+  pod_name: string;
+  container_name: string | null;
+  session_type: "exec" | "attach";
+}
+
+export const startPtyExecSessionCmd = (
+  clusterId: string,
+  namespace: string,
+  podName: string,
+  containerName: string | null,
+  shell: string
+) =>
+  invoke<string>("start_pty_exec_session", {
+    clusterId,
+    namespace,
+    podName,
+    containerName,
+    shell,
+  });
+
+export const startPtyAttachSessionCmd = (
+  clusterId: string,
+  namespace: string,
+  podName: string,
+  containerName: string | null
+) =>
+  invoke<string>("start_pty_attach_session", {
+    clusterId,
+    namespace,
+    podName,
+    containerName,
+  });
+
+export const sendPtyStdinCmd = (sessionId: string, data: string) =>
+  invoke<void>("send_pty_stdin", { sessionId, data });
+
+export const resizePtySessionCmd = (sessionId: string, rows: number, cols: number) =>
+  invoke<void>("resize_pty_session", { sessionId, rows, cols });
+
+export const terminatePtySessionCmd = (sessionId: string) =>
+  invoke<void>("terminate_pty_session", { sessionId });
+
+export const listPtySessionsCmd = () => invoke<PtySessionInfo[]>("list_pty_sessions", {});

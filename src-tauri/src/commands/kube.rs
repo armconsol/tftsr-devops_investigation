@@ -6268,7 +6268,10 @@ fn parse_crds_json(json_str: &str) -> Result<Vec<CrdInfo>, String> {
                     .filter_map(|ver| {
                         let version_name = ver.get("name").and_then(|n| n.as_str())?.to_string();
                         let served = ver.get("served").and_then(|s| s.as_bool()).unwrap_or(true);
-                        let storage = ver.get("storage").and_then(|s| s.as_bool()).unwrap_or(false);
+                        let storage = ver
+                            .get("storage")
+                            .and_then(|s| s.as_bool())
+                            .unwrap_or(false);
 
                         // Parse printer columns for this version
                         let printer_columns: Vec<PrinterColumn> = ver
@@ -6277,11 +6280,26 @@ fn parse_crds_json(json_str: &str) -> Result<Vec<CrdInfo>, String> {
                             .map(|cols| {
                                 cols.iter()
                                     .filter_map(|col| {
-                                        let col_name = col.get("name").and_then(|n| n.as_str())?.to_string();
-                                        let json_path = col.get("jsonPath").and_then(|j| j.as_str())?.to_string();
-                                        let column_type = col.get("type").and_then(|t| t.as_str()).unwrap_or("string").to_string();
-                                        let description = col.get("description").and_then(|d| d.as_str()).map(|s| s.to_string());
-                                        let priority = col.get("priority").and_then(|p| p.as_i64()).unwrap_or(0) as i32;
+                                        let col_name =
+                                            col.get("name").and_then(|n| n.as_str())?.to_string();
+                                        let json_path = col
+                                            .get("jsonPath")
+                                            .and_then(|j| j.as_str())?
+                                            .to_string();
+                                        let column_type = col
+                                            .get("type")
+                                            .and_then(|t| t.as_str())
+                                            .unwrap_or("string")
+                                            .to_string();
+                                        let description = col
+                                            .get("description")
+                                            .and_then(|d| d.as_str())
+                                            .map(|s| s.to_string());
+                                        let priority = col
+                                            .get("priority")
+                                            .and_then(|p| p.as_i64())
+                                            .unwrap_or(0)
+                                            as i32;
 
                                         Some(PrinterColumn {
                                             name: col_name,

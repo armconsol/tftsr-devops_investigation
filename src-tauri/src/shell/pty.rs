@@ -50,12 +50,13 @@ impl PtySession {
             .spawn_command(cmd)
             .context("Failed to spawn command in PTY")?;
 
-        debug!("PTY session spawned: {} (PID: {:?})", command, child.process_id());
+        debug!(
+            "PTY session spawned: {} (PID: {:?})",
+            command,
+            child.process_id()
+        );
 
-        Ok(Self {
-            pair,
-            child,
-        })
+        Ok(Self { pair, child })
     }
 
     /// Spawn kubectl exec session
@@ -126,7 +127,11 @@ impl PtySession {
 
     /// Write data to PTY stdin
     pub fn write(&mut self, data: &[u8]) -> Result<()> {
-        let mut writer = self.pair.master.take_writer().context("PTY writer unavailable")?;
+        let mut writer = self
+            .pair
+            .master
+            .take_writer()
+            .context("PTY writer unavailable")?;
         writer
             .write_all(data)
             .context("Failed to write to PTY stdin")?;
@@ -136,7 +141,11 @@ impl PtySession {
 
     /// Read available data from PTY stdout/stderr (non-blocking)
     pub fn read(&mut self) -> Result<Vec<u8>> {
-        let mut reader = self.pair.master.try_clone_reader().context("PTY reader unavailable")?;
+        let mut reader = self
+            .pair
+            .master
+            .try_clone_reader()
+            .context("PTY reader unavailable")?;
         let mut buffer = vec![0u8; 4096];
 
         // Non-blocking read with timeout
@@ -175,12 +184,16 @@ impl PtySession {
 
     /// Kill the child process
     pub fn kill(&mut self) -> Result<()> {
-        self.child.kill().context("Failed to kill PTY child process")
+        self.child
+            .kill()
+            .context("Failed to kill PTY child process")
     }
 
     /// Wait for the child process to exit
     pub fn wait(&mut self) -> Result<portable_pty::ExitStatus> {
-        self.child.wait().context("Failed to wait for PTY child process")
+        self.child
+            .wait()
+            .context("Failed to wait for PTY child process")
     }
 }
 
@@ -214,8 +227,10 @@ mod tests {
         let output_str = String::from_utf8_lossy(&output);
 
         // Should contain "hello"
-        assert!(output_str.contains("hello") || output_str.is_empty(),
-                "Expected output to contain 'hello' or be empty (timing issue)");
+        assert!(
+            output_str.contains("hello") || output_str.is_empty(),
+            "Expected output to contain 'hello' or be empty (timing issue)"
+        );
     }
 
     #[test]
@@ -241,8 +256,10 @@ mod tests {
 
         // Output should contain our test data (cat echoes it back)
         let output_str = String::from_utf8_lossy(&output);
-        assert!(output_str.contains("test input") || output_str.is_empty(),
-                "Expected output to contain 'test input' or be empty (timing issue)");
+        assert!(
+            output_str.contains("test input") || output_str.is_empty(),
+            "Expected output to contain 'test input' or be empty (timing issue)"
+        );
     }
 
     #[test]
@@ -303,7 +320,9 @@ mod tests {
         let output_str = String::from_utf8_lossy(&output);
 
         // Should contain our test value
-        assert!(output_str.contains("test_value") || output_str.is_empty(),
-                "Expected output to contain 'test_value' or be empty (timing issue)");
+        assert!(
+            output_str.contains("test_value") || output_str.is_empty(),
+            "Expected output to contain 'test_value' or be empty (timing issue)"
+        );
     }
 }
