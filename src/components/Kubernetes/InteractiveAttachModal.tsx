@@ -29,8 +29,6 @@ const XTERM_OPTIONS: ITerminalOptions = {
   fontFamily: '"JetBrains Mono", "Fira Code", monospace',
   fontSize: 13,
   convertEol: true,
-  rows: 24,
-  cols: 80,
 };
 
 export function InteractiveAttachModal({
@@ -79,7 +77,7 @@ export function InteractiveAttachModal({
           clusterId,
           namespace,
           pod,
-          container
+          container || ""
         );
         sessionIdRef.current = sid;
 
@@ -111,8 +109,7 @@ export function InteractiveAttachModal({
         // Handle user input
         term.onData((data) => {
           if (sid) {
-            const bytes = Array.from(new TextEncoder().encode(data));
-            sendPtyStdinCmd(sid, bytes).catch((err) => {
+            sendPtyStdinCmd(sid, data).catch((err) => {
               term.write(`\r\n\x1b[31mError sending input: ${err}\x1b[0m\r\n`);
             });
           }
