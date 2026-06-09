@@ -1,6 +1,6 @@
 import React, { useState } from "react";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui";
-import { Scale, Pencil, Trash2, FileText } from "lucide-react";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, Button } from "@/components/ui";
+import { Scale, Pencil, Trash2, FileText, Settings } from "lucide-react";
 import type { ReplicationControllerInfo } from "@/lib/tauriCommands";
 import {
   scaleReplicationcontrollerCmd,
@@ -12,6 +12,9 @@ import { ConfirmDeleteDialog } from "./ConfirmDeleteDialog";
 import { ScaleModal } from "./ScaleModal";
 import { EditResourceModal } from "./EditResourceModal";
 import { WorkloadLogsModal } from "./WorkloadLogsModal";
+import { useColumnConfig } from "@/hooks/useColumnConfig";
+import { DEFAULT_COLUMNS } from "@/config/defaultColumns";
+import { ColumnConfigModal } from "@/components/tables/ColumnConfigModal";
 
 interface ReplicationControllerListProps {
   items: ReplicationControllerInfo[];
@@ -36,6 +39,11 @@ export function ReplicationControllerList({
   const [activeModal, setActiveModal] = useState<ActiveModal>(null);
   const [isActing, setIsActing] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [showColumnConfig, setShowColumnConfig] = useState(false);
+
+  // Configurable columns
+  const columnConfig = useColumnConfig("replicationcontrollers", DEFAULT_COLUMNS.replicationcontrollers);
+  const { isColumnVisible } = columnConfig;
 
   const openEdit = async (rc: ReplicationControllerInfo) => {
     setActionError(null);
@@ -69,17 +77,31 @@ export function ReplicationControllerList({
       {actionError && (
         <p className="mb-2 text-sm text-destructive">{actionError}</p>
       )}
+      <div className="flex items-center justify-between mb-2">
+        <div className="text-sm text-muted-foreground">
+          {items.length} {items.length === 1 ? "replication controller" : "replication controllers"}
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setShowColumnConfig(true)}
+          className="flex items-center gap-1"
+        >
+          <Settings className="h-3.5 w-3.5" />
+          Columns
+        </Button>
+      </div>
       <div className="overflow-x-auto">
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>Namespace</TableHead>
-              <TableHead>Desired</TableHead>
-              <TableHead>Current</TableHead>
-              <TableHead>Ready</TableHead>
-              <TableHead>Age</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
+              {isColumnVisible("name") && <TableHead>Name</TableHead>}
+              {isColumnVisible("namespace") && <TableHead>Namespace</TableHead>}
+              {isColumnVisible("desired") && <TableHead>Desired</TableHead>}
+              {isColumnVisible("current") && <TableHead>Current</TableHead>}
+              {isColumnVisible("ready") && <TableHead>Ready</TableHead>}
+              {isColumnVisible("age") && <TableHead>Age</TableHead>}
+              {isColumnVisible("actions") && <TableHead className="text-right">Actions</TableHead>}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -92,13 +114,20 @@ export function ReplicationControllerList({
             ) : (
               items.map((rc) => (
                 <TableRow key={`${rc.name}-${rc.namespace}`}>
-                  <TableCell className="font-medium">{rc.name}</TableCell>
-                  <TableCell className="text-muted-foreground">{rc.namespace}</TableCell>
-                  <TableCell>{rc.desired}</TableCell>
-                  <TableCell>{rc.current}</TableCell>
-                  <TableCell>{rc.ready}</TableCell>
-                  <TableCell className="text-muted-foreground">{rc.age}</TableCell>
-                  <TableCell className="text-right">
+                  {isColumnVisible("name") && (
+                    <TableCell className="font-medium">{rc.name}</TableCell>
+                  )}
+                  {isColumnVisible("namespace") && (
+                    <TableCell className="text-muted-foreground">{rc.namespace}</TableCell>
+                  )}
+                  {isColumnVisible("desired") && <TableCell>{rc.desired}</TableCell>}
+                  {isColumnVisible("current") && <TableCell>{rc.current}</TableCell>}
+                  {isColumnVisible("ready") && <TableCell>{rc.ready}</TableCell>}
+                  {isColumnVisible("age") && (
+                    <TableCell className="text-muted-foreground">{rc.age}</TableCell>
+                  )}
+                  {isColumnVisible("actions") && (
+                    <TableCell className="text-right">
                     <ResourceActionMenu
                       actions={[
                         {
@@ -124,7 +153,8 @@ export function ReplicationControllerList({
                         },
                       ]}
                     />
-                  </TableCell>
+                    </TableCell>
+                  )}
                 </TableRow>
               ))
             )}
@@ -182,6 +212,22 @@ export function ReplicationControllerList({
           onConfirm={handleDelete}
         />
       )}
+
+      <ColumnConfigModal
+        open={showColumnConfig}
+        onOpenChange={setShowColumnConfig}
+        resourceType="ReplicationControllers"
+        columnConfig={columnConfig}
+        columnLabels={{
+          name: "Name",
+          namespace: "Namespace",
+          desired: "Desired",
+          current: "Current",
+          ready: "Ready",
+          age: "Age",
+          actions: "Actions",
+        }}
+      />
     </>
   );
 }
