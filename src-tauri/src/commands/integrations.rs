@@ -330,6 +330,7 @@ pub async fn initiate_oauth(
         let port_forwards = app_state.port_forwards.clone();
         let refresh_registry = app_state.refresh_registry.clone();
         let watchers = app_state.watchers.clone();
+        let log_streams = app_state.log_streams.clone();
 
         tokio::spawn(async move {
             let app_state_for_callback = AppState {
@@ -343,6 +344,7 @@ pub async fn initiate_oauth(
                 port_forwards,
                 refresh_registry,
                 watchers,
+                log_streams,
             };
             while let Some(callback) = callback_rx.recv().await {
                 tracing::info!("Received OAuth callback for state: {}", callback.state);

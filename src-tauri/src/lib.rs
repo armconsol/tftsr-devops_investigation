@@ -45,6 +45,7 @@ pub fn run() {
         port_forwards: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
         refresh_registry: Arc::new(tokio::sync::Mutex::new(crate::kube::RefreshRegistry::new())),
         watchers: Arc::new(Mutex::new(std::collections::HashMap::new())),
+        log_streams: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
     };
     let stronghold_salt = format!(
         "tftsr-stronghold-salt-v1-{:x}",
@@ -232,6 +233,46 @@ pub fn run() {
             commands::kube::rollback_deployment,
             commands::kube::create_resource,
             commands::kube::edit_resource,
+            // Phase 4: Additional Resource Discovery
+            commands::kube::list_replicationcontrollers,
+            commands::kube::list_poddisruptionbudgets,
+            commands::kube::list_priorityclasses,
+            commands::kube::list_runtimeclasses,
+            commands::kube::list_leases,
+            commands::kube::list_mutatingwebhookconfigurations,
+            commands::kube::list_validatingwebhookconfigurations,
+            commands::kube::list_endpoints,
+            commands::kube::list_endpointslices,
+            commands::kube::list_ingressclasses,
+            commands::kube::list_namespaces_resource,
+            commands::kube::list_crds,
+            commands::kube::list_custom_resources,
+            // Phase 5: Action Commands
+            commands::kube::force_delete_resource,
+            commands::kube::describe_resource,
+            commands::kube::get_resource_yaml,
+            commands::kube::attach_pod,
+            commands::kube::restart_statefulset,
+            commands::kube::restart_daemonset,
+            commands::kube::scale_statefulset,
+            commands::kube::scale_replicaset,
+            commands::kube::scale_replicationcontroller,
+            commands::kube::suspend_cronjob,
+            commands::kube::resume_cronjob,
+            commands::kube::trigger_cronjob,
+            commands::kube::create_namespace,
+            commands::kube::delete_namespace,
+            // Phase 6: Log Streaming
+            commands::kube::stream_pod_logs,
+            commands::kube::stop_log_stream,
+            // Phase 7: Helm Commands
+            commands::kube::helm_list_repos,
+            commands::kube::helm_add_repo,
+            commands::kube::helm_update_repos,
+            commands::kube::helm_search_repo,
+            commands::kube::helm_list_releases,
+            commands::kube::helm_uninstall,
+            commands::kube::helm_rollback,
         ])
         .run(tauri::generate_context!())
         .expect("Error running Troubleshooting and RCA Assistant application");

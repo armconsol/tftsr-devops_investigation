@@ -10,6 +10,10 @@ import {
   RefreshCw,
   Plus,
   Package,
+  Settings2,
+  Box,
+  Bell,
+  Puzzle,
 } from "lucide-react";
 import { useKubernetesStore } from "@/stores/kubernetesStore";
 import {
@@ -54,6 +58,18 @@ import {
   NetworkPolicyList,
   ResourceQuotaList,
   LimitRangeList,
+  ReplicationControllerList,
+  PodDisruptionBudgetList,
+  PriorityClassList,
+  RuntimeClassList,
+  LeaseList,
+  MutatingWebhookList,
+  ValidatingWebhookList,
+  EndpointList,
+  EndpointSliceList,
+  IngressClassList,
+  NamespaceList,
+  WorkloadOverview,
 } from "@/components/Kubernetes";
 import type {
   KubeconfigInfo,
@@ -84,6 +100,19 @@ import type {
   NetworkPolicyInfo,
   ResourceQuotaInfo,
   LimitRangeInfo,
+  ReplicationControllerInfo,
+  PodDisruptionBudgetInfo,
+  PriorityClassInfo,
+  RuntimeClassInfo,
+  LeaseInfo,
+  WebhookConfigInfo,
+  EndpointInfo,
+  EndpointSliceInfo,
+  IngressClassInfo,
+  NamespaceResourceInfo,
+  HelmChart,
+  HelmRelease,
+  CrdInfo,
 } from "@/lib/tauriCommands";
 import {
   listKubeconfigsCmd,
@@ -119,108 +148,181 @@ import {
   listNetworkpoliciesCmd,
   listResourcequotasCmd,
   listLimitrangesCmd,
+  listReplicationcontrollersCmd,
+  listPoddisruptionbudgetsCmd,
+  listPriorityclassesCmd,
+  listRuntimeclassesCmd,
+  listLeasesCmd,
+  listMutatingwebhookconfigurationsCmd,
+  listValidatingwebhookconfigurationsCmd,
+  listEndpointsCmd,
+  listEndpointslicesCmd,
+  listIngressclassesCmd,
+  listNamespacesResourceCmd,
+  helmSearchRepoCmd,
+  helmListReleasesCmd,
+  listCrdsCmd,
 } from "@/lib/tauriCommands";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type ActiveSection =
-  | "overview"
+  | "cluster_overview"
+  | "nodes"
+  | "workloads_overview"
   | "pods"
   | "deployments"
   | "daemonsets"
   | "statefulsets"
   | "replicasets"
+  | "replicationcontrollers"
   | "jobs"
   | "cronjobs"
-  | "services"
-  | "ingresses"
   | "configmaps"
   | "secrets"
+  | "resourcequotas"
+  | "limitranges"
   | "hpas"
+  | "poddisruptionbudgets"
+  | "priorityclasses"
+  | "runtimeclasses"
+  | "leases"
+  | "mutatingwebhooks"
+  | "validatingwebhooks"
+  | "services"
+  | "endpointslices"
+  | "endpoints"
+  | "ingresses"
+  | "ingressclasses"
+  | "networkpolicies"
+  | "portforwarding"
   | "pvcs"
   | "pvs"
-  | "serviceaccounts"
-  | "roles"
-  | "clusterroles"
-  | "rolebindings"
-  | "clusterrolebindings"
-  | "nodes"
-  | "events"
-  | "portforwarding"
   | "storageclasses"
-  | "networkpolicies"
-  | "resourcequotas"
-  | "limitranges";
+  | "namespaces"
+  | "events"
+  | "helm_charts"
+  | "helm_releases"
+  | "serviceaccounts"
+  | "clusterroles"
+  | "roles"
+  | "clusterrolebindings"
+  | "rolebindings"
+  | "crds";
 
 interface NavItem {
   id: ActiveSection;
   label: string;
 }
 
-interface NavSection {
+interface NavGroup {
+  type: "group";
   label: string;
   icon: React.ElementType;
   items: NavItem[];
 }
 
+interface NavTopLevel {
+  type: "toplevel";
+  id: ActiveSection;
+  label: string;
+  icon: React.ElementType;
+}
+
+type NavEntry = NavGroup | NavTopLevel;
+
 // ─── Nav structure ────────────────────────────────────────────────────────────
 
-const NAV_SECTIONS: NavSection[] = [
+const NAV_ENTRIES: NavEntry[] = [
+  { type: "toplevel", id: "cluster_overview", label: "Cluster", icon: Server },
+  { type: "toplevel", id: "nodes", label: "Nodes", icon: Server },
   {
+    type: "group",
     label: "Workloads",
     icon: Layers,
     items: [
+      { id: "workloads_overview", label: "Overview" },
       { id: "pods", label: "Pods" },
       { id: "deployments", label: "Deployments" },
       { id: "daemonsets", label: "Daemon Sets" },
       { id: "statefulsets", label: "Stateful Sets" },
       { id: "replicasets", label: "Replica Sets" },
+      { id: "replicationcontrollers", label: "Replication Controllers" },
       { id: "jobs", label: "Jobs" },
       { id: "cronjobs", label: "Cron Jobs" },
     ],
   },
   {
-    label: "Services & Networking",
-    icon: Network,
-    items: [
-      { id: "services", label: "Services" },
-      { id: "ingresses", label: "Ingresses" },
-      { id: "networkpolicies", label: "Network Policies" },
-    ],
-  },
-  {
-    label: "Config & Storage",
-    icon: Database,
+    type: "group",
+    label: "Config",
+    icon: Settings2,
     items: [
       { id: "configmaps", label: "Config Maps" },
       { id: "secrets", label: "Secrets" },
-      { id: "hpas", label: "Horizontal Pod Autoscalers" },
-      { id: "pvcs", label: "Persistent Volume Claims" },
-      { id: "pvs", label: "Persistent Volumes" },
-      { id: "storageclasses", label: "Storage Classes" },
       { id: "resourcequotas", label: "Resource Quotas" },
       { id: "limitranges", label: "Limit Ranges" },
+      { id: "hpas", label: "Horizontal Pod Autoscalers" },
+      { id: "poddisruptionbudgets", label: "Pod Disruption Budgets" },
+      { id: "priorityclasses", label: "Priority Classes" },
+      { id: "runtimeclasses", label: "Runtime Classes" },
+      { id: "leases", label: "Leases" },
+      { id: "mutatingwebhooks", label: "Mutating Webhook Configs" },
+      { id: "validatingwebhooks", label: "Validating Webhook Configs" },
     ],
   },
   {
+    type: "group",
+    label: "Network",
+    icon: Network,
+    items: [
+      { id: "services", label: "Services" },
+      { id: "endpointslices", label: "Endpoint Slices" },
+      { id: "endpoints", label: "Endpoints" },
+      { id: "ingresses", label: "Ingresses" },
+      { id: "ingressclasses", label: "Ingress Classes" },
+      { id: "networkpolicies", label: "Network Policies" },
+      { id: "portforwarding", label: "Port Forwarding" },
+    ],
+  },
+  {
+    type: "group",
+    label: "Storage",
+    icon: Database,
+    items: [
+      { id: "pvcs", label: "Persistent Volume Claims" },
+      { id: "pvs", label: "Persistent Volumes" },
+      { id: "storageclasses", label: "Storage Classes" },
+    ],
+  },
+  { type: "toplevel", id: "namespaces", label: "Namespaces", icon: Box },
+  { type: "toplevel", id: "events", label: "Events", icon: Bell },
+  {
+    type: "group",
+    label: "Helm",
+    icon: Package,
+    items: [
+      { id: "helm_charts", label: "Charts" },
+      { id: "helm_releases", label: "Releases" },
+    ],
+  },
+  {
+    type: "group",
     label: "Access Control",
     icon: Shield,
     items: [
       { id: "serviceaccounts", label: "Service Accounts" },
-      { id: "roles", label: "Roles" },
       { id: "clusterroles", label: "Cluster Roles" },
-      { id: "rolebindings", label: "Role Bindings" },
+      { id: "roles", label: "Roles" },
       { id: "clusterrolebindings", label: "Cluster Role Bindings" },
+      { id: "rolebindings", label: "Role Bindings" },
     ],
   },
   {
-    label: "Cluster",
-    icon: Server,
+    type: "group",
+    label: "Custom Resources",
+    icon: Puzzle,
     items: [
-      { id: "overview", label: "Overview" },
-      { id: "nodes", label: "Nodes" },
-      { id: "events", label: "Events" },
-      { id: "portforwarding", label: "Port Forwarding" },
+      { id: "crds", label: "Definitions" },
     ],
   },
 ];
@@ -253,6 +355,20 @@ interface ResourceData {
   networkpolicies: NetworkPolicyInfo[];
   resourcequotas: ResourceQuotaInfo[];
   limitranges: LimitRangeInfo[];
+  replicationcontrollers: ReplicationControllerInfo[];
+  poddisruptionbudgets: PodDisruptionBudgetInfo[];
+  priorityclasses: PriorityClassInfo[];
+  runtimeclasses: RuntimeClassInfo[];
+  leases: LeaseInfo[];
+  mutatingwebhooks: WebhookConfigInfo[];
+  validatingwebhooks: WebhookConfigInfo[];
+  endpoints: EndpointInfo[];
+  endpointslices: EndpointSliceInfo[];
+  ingressclasses: IngressClassInfo[];
+  namespaces_resource: NamespaceResourceInfo[];
+  helm_charts: HelmChart[];
+  helm_releases: HelmRelease[];
+  crds: CrdInfo[];
 }
 
 const EMPTY_RESOURCES: ResourceData = {
@@ -281,6 +397,20 @@ const EMPTY_RESOURCES: ResourceData = {
   networkpolicies: [],
   resourcequotas: [],
   limitranges: [],
+  replicationcontrollers: [],
+  poddisruptionbudgets: [],
+  priorityclasses: [],
+  runtimeclasses: [],
+  leases: [],
+  mutatingwebhooks: [],
+  validatingwebhooks: [],
+  endpoints: [],
+  endpointslices: [],
+  ingressclasses: [],
+  namespaces_resource: [],
+  helm_charts: [],
+  helm_releases: [],
+  crds: [],
 };
 
 // ─── Component ───────────────────────────────────────────────────────────────
@@ -293,20 +423,21 @@ export function KubernetesPage() {
   const [namespaces, setNamespaces] = useState<NamespaceInfo[]>([]);
   const [portForwards, setPortForwards] = useState<PortForwardResponse[]>([]);
   const [resources, setResources] = useState<ResourceData>(EMPTY_RESOURCES);
-  const [activeSection, setActiveSection] = useState<ActiveSection>("overview");
+  const [activeSection, setActiveSection] = useState<ActiveSection>("cluster_overview");
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     Workloads: true,
-    "Services & Networking": true,
-    "Config & Storage": true,
+    Config: true,
+    Network: true,
+    Storage: true,
+    Helm: false,
     "Access Control": true,
-    Cluster: true,
+    "Custom Resources": false,
   });
   const [isLoadingResources, setIsLoadingResources] = useState(false);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [isPortForwardFormOpen, setIsPortForwardFormOpen] = useState(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
 
-  // Track the last loaded section to avoid redundant fetches
   const lastLoadedRef = useRef<{ section: ActiveSection; clusterId: string; namespace: string } | null>(null);
 
   // ── Initial data load ──────────────────────────────────────────────────────
@@ -350,7 +481,13 @@ export function KubernetesPage() {
 
   const loadResourceData = useCallback(
     async (section: ActiveSection, clusterId: string, namespace: string) => {
-      if (section === "overview" || section === "portforwarding") return;
+      if (
+        section === "cluster_overview" ||
+        section === "portforwarding" ||
+        section === "workloads_overview"
+      ) {
+        return;
+      }
 
       const ns = namespace === "all" ? "" : namespace;
 
@@ -358,8 +495,6 @@ export function KubernetesPage() {
       try {
         switch (section) {
           case "pods":
-            setResources((r) => ({ ...r, pods: [] }));
-            setResources((r) => ({ ...r }));
             await listPodsCmd(clusterId, ns).then((data) =>
               setResources((r) => ({ ...r, pods: data }))
             );
@@ -382,6 +517,11 @@ export function KubernetesPage() {
           case "replicasets":
             await listReplicasetsCmd(clusterId, ns).then((data) =>
               setResources((r) => ({ ...r, replicasets: data }))
+            );
+            break;
+          case "replicationcontrollers":
+            await listReplicationcontrollersCmd(clusterId, ns).then((data) =>
+              setResources((r) => ({ ...r, replicationcontrollers: data }))
             );
             break;
           case "jobs":
@@ -482,6 +622,71 @@ export function KubernetesPage() {
           case "limitranges":
             await listLimitrangesCmd(clusterId, ns).then((data) =>
               setResources((r) => ({ ...r, limitranges: data }))
+            );
+            break;
+          case "poddisruptionbudgets":
+            await listPoddisruptionbudgetsCmd(clusterId, ns).then((data) =>
+              setResources((r) => ({ ...r, poddisruptionbudgets: data }))
+            );
+            break;
+          case "priorityclasses":
+            await listPriorityclassesCmd(clusterId).then((data) =>
+              setResources((r) => ({ ...r, priorityclasses: data }))
+            );
+            break;
+          case "runtimeclasses":
+            await listRuntimeclassesCmd(clusterId).then((data) =>
+              setResources((r) => ({ ...r, runtimeclasses: data }))
+            );
+            break;
+          case "leases":
+            await listLeasesCmd(clusterId, ns).then((data) =>
+              setResources((r) => ({ ...r, leases: data }))
+            );
+            break;
+          case "mutatingwebhooks":
+            await listMutatingwebhookconfigurationsCmd(clusterId).then((data) =>
+              setResources((r) => ({ ...r, mutatingwebhooks: data }))
+            );
+            break;
+          case "validatingwebhooks":
+            await listValidatingwebhookconfigurationsCmd(clusterId).then((data) =>
+              setResources((r) => ({ ...r, validatingwebhooks: data }))
+            );
+            break;
+          case "endpoints":
+            await listEndpointsCmd(clusterId, ns).then((data) =>
+              setResources((r) => ({ ...r, endpoints: data }))
+            );
+            break;
+          case "endpointslices":
+            await listEndpointslicesCmd(clusterId, ns).then((data) =>
+              setResources((r) => ({ ...r, endpointslices: data }))
+            );
+            break;
+          case "ingressclasses":
+            await listIngressclassesCmd(clusterId).then((data) =>
+              setResources((r) => ({ ...r, ingressclasses: data }))
+            );
+            break;
+          case "namespaces":
+            await listNamespacesResourceCmd(clusterId).then((data) =>
+              setResources((r) => ({ ...r, namespaces_resource: data }))
+            );
+            break;
+          case "helm_charts":
+            await helmSearchRepoCmd(clusterId, "").then((data) =>
+              setResources((r) => ({ ...r, helm_charts: data }))
+            );
+            break;
+          case "helm_releases":
+            await helmListReleasesCmd(clusterId, ns).then((data) =>
+              setResources((r) => ({ ...r, helm_releases: data }))
+            );
+            break;
+          case "crds":
+            await listCrdsCmd(clusterId).then((data) =>
+              setResources((r) => ({ ...r, crds: data }))
             );
             break;
         }
@@ -593,11 +798,27 @@ export function KubernetesPage() {
       );
     }
 
-    if (activeSection === "overview") {
+    if (activeSection === "cluster_overview") {
       return (
         <ClusterOverview
           clusterId={selectedClusterId}
           clusterName={selectedConfig?.name}
+        />
+      );
+    }
+
+    if (activeSection === "workloads_overview") {
+      return (
+        <WorkloadOverview
+          clusterId={selectedClusterId}
+          resources={{
+            pods: resources.pods,
+            deployments: resources.deployments,
+            statefulsets: resources.statefulsets,
+            daemonsets: resources.daemonsets,
+            jobs: resources.jobs,
+            cronjobs: resources.cronjobs,
+          }}
         />
       );
     }
@@ -647,35 +868,37 @@ export function KubernetesPage() {
       case "statefulsets":
         return <StatefulSetList statefulsets={resources.statefulsets} clusterId={cid} namespace={ns} />;
       case "replicasets":
-        return <ReplicaSetList replicaSets={resources.replicasets} _clusterId={cid} _namespace={ns} />;
+        return <ReplicaSetList replicaSets={resources.replicasets} clusterId={cid} namespace={ns} />;
+      case "replicationcontrollers":
+        return <ReplicationControllerList items={resources.replicationcontrollers} clusterId={cid} namespace={ns} />;
       case "jobs":
-        return <JobList jobs={resources.jobs} _clusterId={cid} _namespace={ns} />;
+        return <JobList jobs={resources.jobs} clusterId={cid} namespace={ns} />;
       case "cronjobs":
-        return <CronJobList cronJobs={resources.cronjobs} _clusterId={cid} _namespace={ns} />;
+        return <CronJobList cronJobs={resources.cronjobs} clusterId={cid} namespace={ns} />;
       case "services":
         return <ServiceList services={resources.services} clusterId={cid} namespace={ns} />;
       case "ingresses":
-        return <IngressList ingresses={resources.ingresses} _clusterId={cid} _namespace={ns} />;
+        return <IngressList ingresses={resources.ingresses} clusterId={cid} namespace={ns} />;
       case "configmaps":
         return <ConfigMapList configmaps={resources.configmaps} clusterId={cid} namespace={ns} />;
       case "secrets":
-        return <SecretList secrets={resources.secrets} _clusterId={cid} _namespace={ns} />;
+        return <SecretList secrets={resources.secrets} clusterId={cid} namespace={ns} />;
       case "hpas":
-        return <HPAList hpas={resources.hpas} _clusterId={cid} _namespace={ns} />;
+        return <HPAList hpas={resources.hpas} clusterId={cid} namespace={ns} />;
       case "pvcs":
-        return <PVCList pvcs={resources.pvcs} _clusterId={cid} _namespace={ns} />;
+        return <PVCList pvcs={resources.pvcs} clusterId={cid} namespace={ns} />;
       case "pvs":
-        return <PVList pvs={resources.pvs} _clusterId={cid} />;
+        return <PVList pvs={resources.pvs} clusterId={cid} />;
       case "serviceaccounts":
-        return <ServiceAccountList serviceAccounts={resources.serviceaccounts} _clusterId={cid} _namespace={ns} />;
+        return <ServiceAccountList serviceAccounts={resources.serviceaccounts} clusterId={cid} namespace={ns} />;
       case "roles":
-        return <RoleList roles={resources.roles} _clusterId={cid} _namespace={ns} />;
+        return <RoleList roles={resources.roles} clusterId={cid} namespace={ns} />;
       case "clusterroles":
-        return <ClusterRoleList clusterRoles={resources.clusterroles} _clusterId={cid} />;
+        return <ClusterRoleList clusterRoles={resources.clusterroles} clusterId={cid} />;
       case "rolebindings":
-        return <RoleBindingList roleBindings={resources.rolebindings} _clusterId={cid} _namespace={ns} />;
+        return <RoleBindingList roleBindings={resources.rolebindings} clusterId={cid} namespace={ns} />;
       case "clusterrolebindings":
-        return <ClusterRoleBindingList clusterRoleBindings={resources.clusterrolebindings} _clusterId={cid} />;
+        return <ClusterRoleBindingList clusterRoleBindings={resources.clusterrolebindings} clusterId={cid} />;
       case "nodes":
         return <NodeList nodes={resources.nodes} clusterId={cid} />;
       case "events":
@@ -688,6 +911,142 @@ export function KubernetesPage() {
         return <ResourceQuotaList resourcequotas={resources.resourcequotas} clusterId={cid} namespace={ns} />;
       case "limitranges":
         return <LimitRangeList limitranges={resources.limitranges} clusterId={cid} namespace={ns} />;
+      case "poddisruptionbudgets":
+        return <PodDisruptionBudgetList items={resources.poddisruptionbudgets} clusterId={cid} namespace={ns} />;
+      case "priorityclasses":
+        return <PriorityClassList items={resources.priorityclasses} clusterId={cid} />;
+      case "runtimeclasses":
+        return <RuntimeClassList items={resources.runtimeclasses} clusterId={cid} />;
+      case "leases":
+        return <LeaseList items={resources.leases} clusterId={cid} namespace={ns} />;
+      case "mutatingwebhooks":
+        return <MutatingWebhookList items={resources.mutatingwebhooks} clusterId={cid} />;
+      case "validatingwebhooks":
+        return <ValidatingWebhookList items={resources.validatingwebhooks} clusterId={cid} />;
+      case "endpoints":
+        return <EndpointList items={resources.endpoints} clusterId={cid} namespace={ns} />;
+      case "endpointslices":
+        return <EndpointSliceList items={resources.endpointslices} clusterId={cid} namespace={ns} />;
+      case "ingressclasses":
+        return <IngressClassList items={resources.ingressclasses} clusterId={cid} />;
+      case "namespaces":
+        return <NamespaceList items={resources.namespaces_resource} clusterId={cid} />;
+      case "helm_charts":
+        return (
+          <div className="p-6">
+            <h2 className="text-xl font-semibold mb-4">Helm Charts</h2>
+            {resources.helm_charts.length === 0 ? (
+              <p className="text-muted-foreground">No charts found. Add a Helm repository to browse charts.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm border-collapse">
+                  <thead>
+                    <tr className="border-b text-muted-foreground text-left">
+                      <th className="px-4 py-3 font-medium">Name</th>
+                      <th className="px-4 py-3 font-medium">Repository</th>
+                      <th className="px-4 py-3 font-medium">Chart Version</th>
+                      <th className="px-4 py-3 font-medium">App Version</th>
+                      <th className="px-4 py-3 font-medium">Description</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {resources.helm_charts.map((chart) => (
+                      <tr key={`${chart.repository}-${chart.name}`} className="border-b hover:bg-muted/30 transition-colors">
+                        <td className="px-4 py-3 font-medium">{chart.name}</td>
+                        <td className="px-4 py-3 text-muted-foreground">{chart.repository}</td>
+                        <td className="px-4 py-3 font-mono text-xs">{chart.chart_version}</td>
+                        <td className="px-4 py-3 font-mono text-xs">{chart.app_version}</td>
+                        <td className="px-4 py-3 text-muted-foreground truncate max-w-xs">{chart.description}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        );
+      case "helm_releases":
+        return (
+          <div className="p-6">
+            <h2 className="text-xl font-semibold mb-4">Helm Releases</h2>
+            {resources.helm_releases.length === 0 ? (
+              <p className="text-muted-foreground">No Helm releases found in this namespace.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm border-collapse">
+                  <thead>
+                    <tr className="border-b text-muted-foreground text-left">
+                      <th className="px-4 py-3 font-medium">Name</th>
+                      <th className="px-4 py-3 font-medium">Namespace</th>
+                      <th className="px-4 py-3 font-medium">Chart</th>
+                      <th className="px-4 py-3 font-medium">App Version</th>
+                      <th className="px-4 py-3 font-medium">Status</th>
+                      <th className="px-4 py-3 font-medium">Updated</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {resources.helm_releases.map((rel) => (
+                      <tr key={`${rel.namespace}-${rel.name}`} className="border-b hover:bg-muted/30 transition-colors">
+                        <td className="px-4 py-3 font-medium">{rel.name}</td>
+                        <td className="px-4 py-3 text-muted-foreground">{rel.namespace}</td>
+                        <td className="px-4 py-3 font-mono text-xs">{rel.chart} {rel.chart_version}</td>
+                        <td className="px-4 py-3 font-mono text-xs">{rel.app_version}</td>
+                        <td className="px-4 py-3">
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                            rel.status === "deployed"
+                              ? "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400"
+                              : rel.status === "failed"
+                              ? "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400"
+                              : "bg-muted text-muted-foreground"
+                          }`}>
+                            {rel.status}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-muted-foreground text-xs">{rel.updated}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        );
+      case "crds":
+        return (
+          <div className="p-6">
+            <h2 className="text-xl font-semibold mb-4">Custom Resource Definitions</h2>
+            {resources.crds.length === 0 ? (
+              <p className="text-muted-foreground">No custom resource definitions found.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm border-collapse">
+                  <thead>
+                    <tr className="border-b text-muted-foreground text-left">
+                      <th className="px-4 py-3 font-medium">Name</th>
+                      <th className="px-4 py-3 font-medium">Group</th>
+                      <th className="px-4 py-3 font-medium">Version</th>
+                      <th className="px-4 py-3 font-medium">Kind</th>
+                      <th className="px-4 py-3 font-medium">Scope</th>
+                      <th className="px-4 py-3 font-medium">Age</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {resources.crds.map((crd) => (
+                      <tr key={crd.name} className="border-b hover:bg-muted/30 transition-colors">
+                        <td className="px-4 py-3 font-medium font-mono text-xs">{crd.name}</td>
+                        <td className="px-4 py-3 text-muted-foreground">{crd.group}</td>
+                        <td className="px-4 py-3 font-mono text-xs">{crd.version}</td>
+                        <td className="px-4 py-3">{crd.kind}</td>
+                        <td className="px-4 py-3 text-muted-foreground">{crd.scope}</td>
+                        <td className="px-4 py-3 text-muted-foreground">{crd.age}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        );
       default:
         return null;
     }
@@ -776,19 +1135,38 @@ export function KubernetesPage() {
       <div className="flex flex-1 overflow-hidden">
         {/* Sidebar */}
         <aside className="w-56 shrink-0 border-r bg-card overflow-y-auto flex flex-col">
-          {NAV_SECTIONS.map((section) => {
-            const Icon = section.icon;
-            const isExpanded = expandedSections[section.label] ?? true;
+          {NAV_ENTRIES.map((entry) => {
+            if (entry.type === "toplevel") {
+              const Icon = entry.icon;
+              return (
+                <button
+                  key={entry.id}
+                  onClick={() => setActiveSection(entry.id)}
+                  aria-label={entry.label}
+                  className={`flex items-center gap-2 w-full px-3 py-2 text-xs font-semibold uppercase tracking-wider transition-colors ${
+                    activeSection === entry.id
+                      ? "bg-primary/10 text-primary border-l-2 border-primary"
+                      : "text-muted-foreground hover:text-foreground hover:bg-accent"
+                  }`}
+                >
+                  <Icon className="w-3.5 h-3.5" />
+                  <span>{entry.label}</span>
+                </button>
+              );
+            }
+
+            const isExpanded = expandedSections[entry.label] ?? true;
+            const Icon = entry.icon;
 
             return (
-              <div key={section.label}>
+              <div key={entry.label}>
                 <button
-                  onClick={() => toggleSection(section.label)}
+                  onClick={() => toggleSection(entry.label)}
                   className="flex items-center justify-between w-full px-3 py-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
                 >
                   <div className="flex items-center gap-2">
                     <Icon className="w-3.5 h-3.5" />
-                    <span>{section.label}</span>
+                    <span>{entry.label}</span>
                   </div>
                   {isExpanded ? (
                     <ChevronDown className="w-3 h-3" />
@@ -799,7 +1177,7 @@ export function KubernetesPage() {
 
                 {isExpanded && (
                   <div className="pb-1">
-                    {section.items.map((item) => (
+                    {entry.items.map((item) => (
                       <button
                         key={item.id}
                         onClick={() => setActiveSection(item.id)}
@@ -866,7 +1244,7 @@ export function KubernetesPage() {
               <p className="text-sm text-muted-foreground">No cluster connected.</p>
             )}
             <p className="text-xs text-muted-foreground pt-2 border-t">
-              Navigate to <strong>Cluster → Events</strong> to view live cluster events.
+              Navigate to <strong>Events</strong> to view live cluster events.
             </p>
           </div>
         </DialogContent>

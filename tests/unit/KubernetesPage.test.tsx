@@ -174,8 +174,9 @@ describe("KubernetesPage", () => {
 
       await waitFor(() => {
         expect(screen.getByText("Workloads")).toBeInTheDocument();
-        expect(screen.getByText("Services & Networking")).toBeInTheDocument();
-        expect(screen.getByText("Config & Storage")).toBeInTheDocument();
+        expect(screen.getByText("Network")).toBeInTheDocument();
+        expect(screen.getByText("Config")).toBeInTheDocument();
+        expect(screen.getByText("Storage")).toBeInTheDocument();
         expect(screen.getByText("Access Control")).toBeInTheDocument();
         expect(screen.getByText("Cluster")).toBeInTheDocument();
       });
@@ -195,7 +196,7 @@ describe("KubernetesPage", () => {
       });
     });
 
-    it("renders all Services & Networking nav items", async () => {
+    it("renders all Network nav items", async () => {
       renderPage();
 
       await waitFor(() => {

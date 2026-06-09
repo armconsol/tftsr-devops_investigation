@@ -99,6 +99,8 @@ pub struct AppState {
     pub refresh_registry: Arc<TokioMutex<crate::kube::RefreshRegistry>>,
     /// Resource watchers: unsubscribe_id -> receiver
     pub watchers: Arc<Mutex<HashMap<String, tokio::sync::mpsc::Receiver<serde_json::Value>>>>,
+    /// Active pod log streaming tasks: stream_id -> abort handle
+    pub log_streams: Arc<TokioMutex<HashMap<String, tokio::task::AbortHandle>>>,
 }
 
 /// Determine the application data directory.

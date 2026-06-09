@@ -1,24 +1,33 @@
 import React, { useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui";
 import { Badge } from "@/components/ui";
-import { Button } from "@/components/ui";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui";
-import { AlertCircle, Terminal } from "lucide-react";
-import { Alert, AlertDescription } from "@/components/ui";
+import { ShieldOff, ShieldCheck, Trash2, Pencil } from "lucide-react";
 import type { NodeInfo } from "@/lib/tauriCommands";
+import {
+  cordonNodeCmd,
+  uncordonNodeCmd,
+  drainNodeCmd,
+  getResourceYamlCmd,
+} from "@/lib/tauriCommands";
+import { ResourceActionMenu } from "./ResourceActionMenu";
+import { ConfirmDeleteDialog } from "./ConfirmDeleteDialog";
+import { EditResourceModal } from "./EditResourceModal";
 
 interface NodeListProps {
   nodes: NodeInfo[];
   clusterId: string;
+  onRefresh?: () => void;
 }
 
-export function NodeList({ nodes, clusterId }: NodeListProps) {
-  const [selectedNode, setSelectedNode] = useState<NodeInfo | null>(null);
-  const [isCordoning, setIsCordoning] = useState(false);
-  const [isUncordoning, setIsUncordoning] = useState(false);
-  const [isDraining, setIsDraining] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+type ActiveModal =
+  | { type: "drain"; node: NodeInfo }
+  | { type: "edit"; node: NodeInfo; yaml: string }
+  | null;
+
+export function NodeList({ nodes, clusterId, onRefresh }: NodeListProps) {
+  const [activeModal, setActiveModal] = useState<ActiveModal>(null);
+  const [isActing, setIsActing] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const getNodeStatusColor = (status: string) => {
     switch (status.toLowerCase()) {
@@ -33,53 +42,59 @@ export function NodeList({ nodes, clusterId }: NodeListProps) {
     }
   };
 
-  const handleCordon = async () => {
-    if (!selectedNode) return;
-    
-    setIsCordoning(true);
-    setError(null);
+  const isSchedulingDisabled = (node: NodeInfo) =>
+    node.status.toLowerCase().includes("schedulingdisabled") ||
+    node.roles.toLowerCase().includes("schedulingdisabled");
+
+  const handleCordon = async (node: NodeInfo) => {
+    setActionError(null);
     try {
-      await invoke<void>("cordon_node", { clusterId, nodeName: selectedNode.name });
-      setSelectedNode(null);
+      await cordonNodeCmd(clusterId, node.name);
+      onRefresh?.();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to cordon node");
-    } finally {
-      setIsCordoning(false);
+      setActionError(err instanceof Error ? err.message : String(err));
     }
   };
 
-  const handleUncordon = async () => {
-    if (!selectedNode) return;
-    
-    setIsUncordoning(true);
-    setError(null);
+  const handleUncordon = async (node: NodeInfo) => {
+    setActionError(null);
     try {
-      await invoke<void>("uncordon_node", { clusterId, nodeName: selectedNode.name });
-      setSelectedNode(null);
+      await uncordonNodeCmd(clusterId, node.name);
+      onRefresh?.();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to uncordon node");
-    } finally {
-      setIsUncordoning(false);
+      setActionError(err instanceof Error ? err.message : String(err));
     }
   };
 
   const handleDrain = async () => {
-    if (!selectedNode) return;
-    
-    setIsDraining(true);
-    setError(null);
+    if (activeModal?.type !== "drain") return;
+    setIsActing(true);
     try {
-      await invoke<void>("drain_node", { clusterId, nodeName: selectedNode.name });
-      setSelectedNode(null);
+      await drainNodeCmd(clusterId, activeModal.node.name);
+      setActiveModal(null);
+      onRefresh?.();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to drain node");
+      setActionError(err instanceof Error ? err.message : String(err));
     } finally {
-      setIsDraining(false);
+      setIsActing(false);
+    }
+  };
+
+  const openEdit = async (node: NodeInfo) => {
+    setActionError(null);
+    try {
+      const yaml = await getResourceYamlCmd(clusterId, "nodes", "", node.name);
+      setActiveModal({ type: "edit", node, yaml });
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : String(err));
     }
   };
 
   return (
     <>
+      {actionError && (
+        <p className="mb-2 text-sm text-destructive">{actionError}</p>
+      )}
       <div className="overflow-x-auto">
         <Table>
           <TableHeader>
@@ -116,14 +131,33 @@ export function NodeList({ nodes, clusterId }: NodeListProps) {
                   <TableCell className="text-sm text-muted-foreground">{node.os_image}</TableCell>
                   <TableCell className="text-sm text-muted-foreground">{node.age}</TableCell>
                   <TableCell className="text-right">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setSelectedNode(node)}
-                      className="text-primary hover:text-primary hover:bg-primary/10"
-                    >
-                      Manage
-                    </Button>
+                    <ResourceActionMenu
+                      actions={[
+                        {
+                          label: "Cordon",
+                          icon: ShieldOff,
+                          hidden: isSchedulingDisabled(node),
+                          onClick: () => handleCordon(node),
+                        },
+                        {
+                          label: "Uncordon",
+                          icon: ShieldCheck,
+                          hidden: !isSchedulingDisabled(node),
+                          onClick: () => handleUncordon(node),
+                        },
+                        {
+                          label: "Drain",
+                          icon: Trash2,
+                          variant: "destructive",
+                          onClick: () => setActiveModal({ type: "drain", node }),
+                        },
+                        {
+                          label: "Edit",
+                          icon: Pencil,
+                          onClick: () => openEdit(node),
+                        },
+                      ]}
+                    />
                   </TableCell>
                 </TableRow>
               ))
@@ -132,101 +166,28 @@ export function NodeList({ nodes, clusterId }: NodeListProps) {
         </Table>
       </div>
 
-      {/* Node Management Dialog */}
-      {selectedNode && (
-        <Dialog open={true} onOpenChange={(open) => {
-          if (!open) {
-            setSelectedNode(null);
-            setError(null);
-          }
-        }}>
-          <DialogContent className="max-w-2xl">
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2">
-                <Terminal className="w-5 h-5" />
-                Manage Node: {selectedNode.name}
-              </DialogTitle>
-            </DialogHeader>
+      {activeModal?.type === "drain" && (
+        <ConfirmDeleteDialog
+          open
+          onOpenChange={(o) => { if (!o) setActiveModal(null); }}
+          resourceType="Node"
+          resourceName={activeModal.node.name}
+          isLoading={isActing}
+          onConfirm={handleDrain}
+          variant="force-delete"
+        />
+      )}
 
-            <div className="space-y-4 py-4">
-              {/* Node Details */}
-              <div className="grid grid-cols-2 gap-4 p-4 bg-muted rounded-lg">
-                <div>
-                  <p className="text-xs font-medium text-muted-foreground">Status</p>
-                  <p className="font-semibold">{selectedNode.status}</p>
-                </div>
-                <div>
-                  <p className="text-xs font-medium text-muted-foreground">Roles</p>
-                  <p className="font-semibold">{selectedNode.roles}</p>
-                </div>
-                <div>
-                  <p className="text-xs font-medium text-muted-foreground">Version</p>
-                  <p className="font-semibold">{selectedNode.version}</p>
-                </div>
-                <div>
-                  <p className="text-xs font-medium text-muted-foreground">OS Image</p>
-                  <p className="font-semibold">{selectedNode.os_image}</p>
-                </div>
-                <div>
-                  <p className="text-xs font-medium text-muted-foreground">Kernel</p>
-                  <p className="font-semibold">{selectedNode.kernel_version}</p>
-                </div>
-                <div>
-                  <p className="text-xs font-medium text-muted-foreground">Kubelet</p>
-                  <p className="font-semibold">{selectedNode.kubelet_version}</p>
-                </div>
-                <div>
-                  <p className="text-xs font-medium text-muted-foreground">Internal IP</p>
-                  <p className="font-semibold font-mono">{selectedNode.internal_ip}</p>
-                </div>
-                {selectedNode.external_ip && (
-                  <div>
-                    <p className="text-xs font-medium text-muted-foreground">External IP</p>
-                    <p className="font-semibold font-mono">{selectedNode.external_ip}</p>
-                  </div>
-                )}
-              </div>
-
-              {/* Action Buttons */}
-              <div className="space-y-3">
-                {selectedNode.roles.toLowerCase().includes("schedulingdisabled") ? (
-                  <Button
-                    onClick={handleUncordon}
-                    disabled={isUncordoning}
-                    className="w-full"
-                  >
-                    {isUncordoning ? "Uncordoning..." : "Uncordon Node"}
-                  </Button>
-                ) : (
-                  <Button
-                    onClick={handleCordon}
-                    variant="outline"
-                    disabled={isCordoning}
-                    className="w-full"
-                  >
-                    {isCordoning ? "Cordoning..." : "Cordon Node"}
-                  </Button>
-                )}
-
-                <Button
-                  onClick={handleDrain}
-                  variant="destructive"
-                  disabled={isDraining}
-                  className="w-full"
-                >
-                  {isDraining ? "Draining..." : "Drain Node"}
-                </Button>
-              </div>
-
-              {error && (
-                <Alert variant="destructive">
-                  <AlertCircle className="h-4 w-4" />
-                  <AlertDescription>{error}</AlertDescription>
-                </Alert>
-              )}
-            </div>
-          </DialogContent>
-        </Dialog>
+      {activeModal?.type === "edit" && (
+        <EditResourceModal
+          isOpen
+          clusterId={clusterId}
+          namespace=""
+          resourceType="nodes"
+          resourceName={activeModal.node.name}
+          initialYaml={activeModal.yaml}
+          onClose={() => { setActiveModal(null); onRefresh?.(); }}
+        />
       )}
     </>
   );
