@@ -91,6 +91,7 @@ pub struct PortForwardResponse {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PodInfo {
     pub name: String,
+    pub namespace: String,
     pub status: String,
     pub ready: String,
     pub age: String,
@@ -1107,6 +1108,13 @@ fn parse_pods_json(json_str: &str) -> Result<Vec<PodInfo>, String> {
             .unwrap_or("unknown")
             .to_string();
 
+        let namespace = item
+            .get("metadata")
+            .and_then(|m| m.get("namespace"))
+            .and_then(|n| n.as_str())
+            .unwrap_or("default")
+            .to_string();
+
         let status = item
             .get("status")
             .and_then(|s| s.get("phase"))
@@ -1153,6 +1161,7 @@ fn parse_pods_json(json_str: &str) -> Result<Vec<PodInfo>, String> {
 
         pods.push(PodInfo {
             name,
+            namespace,
             status,
             ready,
             age,

@@ -32,6 +32,9 @@ export function PodList({ pods, clusterId, namespace, onRefresh }: PodListProps)
   const [isDeleting, setIsDeleting] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
 
+  // namespace prop is retained for API compatibility (parent uses it to drive list fetches)
+  void namespace;
+
   const getPodStatusColor = (status: string) => {
     switch (status.toLowerCase()) {
       case "running":
@@ -52,7 +55,7 @@ export function PodList({ pods, clusterId, namespace, onRefresh }: PodListProps)
   const openEdit = async (pod: PodInfo) => {
     setEditError(null);
     try {
-      const yaml = await getResourceYamlCmd(clusterId, "pods", namespace, pod.name);
+      const yaml = await getResourceYamlCmd(clusterId, "pods", pod.namespace, pod.name);
       setActiveModal({ type: "edit", pod, yaml });
     } catch (err) {
       setEditError(err instanceof Error ? err.message : String(err));
@@ -65,9 +68,9 @@ export function PodList({ pods, clusterId, namespace, onRefresh }: PodListProps)
     setIsDeleting(true);
     try {
       if (force) {
-        await forceDeleteResourceCmd(clusterId, "pods", namespace, modal.pod.name);
+        await forceDeleteResourceCmd(clusterId, "pods", modal.pod.namespace, modal.pod.name);
       } else {
-        await deleteResourceCmd(clusterId, "pods", namespace, modal.pod.name);
+        await deleteResourceCmd(clusterId, "pods", modal.pod.namespace, modal.pod.name);
       }
       setActiveModal(null);
       onRefresh?.();
@@ -167,7 +170,7 @@ export function PodList({ pods, clusterId, namespace, onRefresh }: PodListProps)
           open
           onOpenChange={(o) => { if (!o) setActiveModal(null); }}
           clusterId={clusterId}
-          namespace={namespace}
+          namespace={activeModal.pod.namespace}
           podName={activeModal.pod.name}
           containers={activeModal.pod.containers}
         />
@@ -178,7 +181,7 @@ export function PodList({ pods, clusterId, namespace, onRefresh }: PodListProps)
           open
           onOpenChange={(o) => { if (!o) setActiveModal(null); }}
           clusterId={clusterId}
-          namespace={namespace}
+          namespace={activeModal.pod.namespace}
           podName={activeModal.pod.name}
           containers={activeModal.pod.containers}
         />
@@ -189,7 +192,7 @@ export function PodList({ pods, clusterId, namespace, onRefresh }: PodListProps)
           open
           onOpenChange={(o) => { if (!o) setActiveModal(null); }}
           clusterId={clusterId}
-          namespace={namespace}
+          namespace={activeModal.pod.namespace}
           podName={activeModal.pod.name}
           containers={activeModal.pod.containers}
         />
@@ -199,7 +202,7 @@ export function PodList({ pods, clusterId, namespace, onRefresh }: PodListProps)
         <EditResourceModal
           isOpen
           clusterId={clusterId}
-          namespace={namespace}
+          namespace={activeModal.pod.namespace}
           resourceType="pods"
           resourceName={activeModal.pod.name}
           initialYaml={activeModal.yaml}
