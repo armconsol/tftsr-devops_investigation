@@ -32,7 +32,7 @@ export function PortForwardList({ portForwards, onStart, onStop, onDelete }: Por
       case "active":
         return "bg-green-500/15 text-green-600 dark:text-green-400 border-green-500/20";
       case "stopped":
-        return "bg-gray-500/15 text-gray-600 dark:text-gray-400 border-gray-500/20";
+        return "bg-muted text-muted-foreground border-border";
       case "error":
         return "bg-red-500/15 text-red-600 dark:text-red-400 border-red-500/20";
       default:
@@ -95,7 +95,7 @@ export function PortForwardList({ portForwards, onStart, onStop, onDelete }: Por
                   </p>
                   <div className="flex items-center gap-2 text-sm text-muted-foreground">
                     <span>Container Ports: {pf.container_ports.join(", ")}</span>
-                    <span className="text-gray-300 dark:text-gray-600">|</span>
+                    <span className="text-muted-foreground/50">|</span>
                     <span>Local Ports: {pf.local_ports.some(p => p > 0) ? pf.local_ports.join(", ") : "pending"}</span>
                   </div>
                 </div>
