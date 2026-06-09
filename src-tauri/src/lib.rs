@@ -6,6 +6,7 @@ pub mod docs;
 pub mod integrations;
 pub mod kube;
 pub mod mcp;
+pub mod metrics;
 pub mod ollama;
 pub mod pii;
 pub mod shell;
@@ -281,6 +282,9 @@ pub fn run() {
             commands::kube::helm_list_releases,
             commands::kube::helm_uninstall,
             commands::kube::helm_rollback,
+            // Kubernetes Metrics
+            commands::metrics::get_pod_metrics,
+            commands::metrics::get_node_metrics,
         ])
         .run(tauri::generate_context!())
         .expect("Error running Troubleshooting and RCA Assistant application");

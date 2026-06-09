@@ -1,6 +1,6 @@
 import React, { useState } from "react";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui";
-import { Scale, RotateCcw, Undo2, Pencil, Trash2, FileText } from "lucide-react";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, Button } from "@/components/ui";
+import { Scale, RotateCcw, Undo2, Pencil, Trash2, FileText, Settings } from "lucide-react";
 import type { DeploymentInfo } from "@/lib/tauriCommands";
 import {
   scaleDeploymentCmd,
@@ -14,6 +14,9 @@ import { ConfirmDeleteDialog } from "./ConfirmDeleteDialog";
 import { ScaleModal } from "./ScaleModal";
 import { EditResourceModal } from "./EditResourceModal";
 import { WorkloadLogsModal } from "./WorkloadLogsModal";
+import { useColumnConfig } from "@/hooks/useColumnConfig";
+import { DEFAULT_COLUMNS } from "@/config/defaultColumns";
+import { ColumnConfigModal } from "@/components/tables/ColumnConfigModal";
 
 interface DeploymentListProps {
   deployments: DeploymentInfo[];
@@ -35,6 +38,11 @@ export function DeploymentList({ deployments, clusterId, namespace: _namespace, 
   const [activeModal, setActiveModal] = useState<ActiveModal>(null);
   const [isActing, setIsActing] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [showColumnConfig, setShowColumnConfig] = useState(false);
+
+  // Configurable columns
+  const columnConfig = useColumnConfig("deployments", DEFAULT_COLUMNS.deployments);
+  const { isColumnVisible } = columnConfig;
 
   const openEdit = async (deployment: DeploymentInfo) => {
     setActionError(null);
@@ -91,17 +99,31 @@ export function DeploymentList({ deployments, clusterId, namespace: _namespace, 
       {actionError && (
         <p className="mb-2 text-sm text-destructive">{actionError}</p>
       )}
+      <div className="flex items-center justify-between mb-2">
+        <div className="text-sm text-muted-foreground">
+          {deployments.length} {deployments.length === 1 ? "deployment" : "deployments"}
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setShowColumnConfig(true)}
+          className="flex items-center gap-1"
+        >
+          <Settings className="h-3.5 w-3.5" />
+          Columns
+        </Button>
+      </div>
       <div className="overflow-x-auto">
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>Ready</TableHead>
-              <TableHead>Up-to-date</TableHead>
-              <TableHead>Available</TableHead>
-              <TableHead>Replicas</TableHead>
-              <TableHead>Age</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
+              {isColumnVisible("name") && <TableHead>Name</TableHead>}
+              {isColumnVisible("namespace") && <TableHead>Namespace</TableHead>}
+              {isColumnVisible("ready") && <TableHead>Ready</TableHead>}
+              {isColumnVisible("upToDate") && <TableHead>Up-to-date</TableHead>}
+              {isColumnVisible("available") && <TableHead>Available</TableHead>}
+              {isColumnVisible("age") && <TableHead>Age</TableHead>}
+              {isColumnVisible("actions") && <TableHead className="text-right">Actions</TableHead>}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -114,13 +136,20 @@ export function DeploymentList({ deployments, clusterId, namespace: _namespace, 
             ) : (
               deployments.map((deployment) => (
                 <TableRow key={deployment.name}>
-                  <TableCell className="font-medium">{deployment.name}</TableCell>
-                  <TableCell>{deployment.ready}</TableCell>
-                  <TableCell>{deployment.up_to_date}</TableCell>
-                  <TableCell>{deployment.available}</TableCell>
-                  <TableCell>{deployment.replicas}</TableCell>
-                  <TableCell className="text-muted-foreground">{deployment.age}</TableCell>
-                  <TableCell className="text-right">
+                  {isColumnVisible("name") && (
+                    <TableCell className="font-medium">{deployment.name}</TableCell>
+                  )}
+                  {isColumnVisible("namespace") && (
+                    <TableCell className="text-muted-foreground">{deployment.namespace}</TableCell>
+                  )}
+                  {isColumnVisible("ready") && <TableCell>{deployment.ready}</TableCell>}
+                  {isColumnVisible("upToDate") && <TableCell>{deployment.up_to_date}</TableCell>}
+                  {isColumnVisible("available") && <TableCell>{deployment.available}</TableCell>}
+                  {isColumnVisible("age") && (
+                    <TableCell className="text-muted-foreground">{deployment.age}</TableCell>
+                  )}
+                  {isColumnVisible("actions") && (
+                    <TableCell className="text-right">
                     <ResourceActionMenu
                       actions={[
                         {
@@ -156,7 +185,8 @@ export function DeploymentList({ deployments, clusterId, namespace: _namespace, 
                         },
                       ]}
                     />
-                  </TableCell>
+                    </TableCell>
+                  )}
                 </TableRow>
               ))
             )}
@@ -238,6 +268,22 @@ export function DeploymentList({ deployments, clusterId, namespace: _namespace, 
           onConfirm={handleDelete}
         />
       )}
+
+      <ColumnConfigModal
+        open={showColumnConfig}
+        onOpenChange={setShowColumnConfig}
+        resourceType="Deployments"
+        columnConfig={columnConfig}
+        columnLabels={{
+          name: "Name",
+          namespace: "Namespace",
+          ready: "Ready",
+          upToDate: "Up-to-date",
+          available: "Available",
+          age: "Age",
+          actions: "Actions",
+        }}
+      />
     </>
   );
 }

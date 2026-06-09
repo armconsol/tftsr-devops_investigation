@@ -11,6 +11,7 @@ import { InteractiveShellModal } from "./InteractiveShellModal";
 import { InteractiveAttachModal } from "./InteractiveAttachModal";
 import { EditResourceModal } from "./EditResourceModal";
 import { useColumnConfig } from "@/hooks/useColumnConfig";
+import { useMetrics } from "@/hooks/useMetrics";
 import { DEFAULT_COLUMNS } from "@/config/defaultColumns";
 import { ColumnConfigModal } from "@/components/tables/ColumnConfigModal";
 import { QuickActionColumn } from "@/components/tables/QuickActionColumn";
@@ -37,12 +38,16 @@ export function PodList({ pods, clusterId, namespace, onRefresh }: PodListProps)
   const [editError, setEditError] = useState<string | null>(null);
   const [showColumnConfig, setShowColumnConfig] = useState(false);
 
-  // namespace prop is retained for API compatibility (parent uses it to drive list fetches)
-  void namespace;
-
   // Configurable columns
   const columnConfig = useColumnConfig("pods", DEFAULT_COLUMNS.pods);
   const { isColumnVisible } = columnConfig;
+
+  // Live pod metrics — only poll when CPU/Memory columns are actually visible.
+  const metricsEnabled = isColumnVisible("cpu") || isColumnVisible("memory");
+  const { getPodMetrics } = useMetrics(
+    metricsEnabled ? clusterId : null,
+    metricsEnabled ? namespace : null
+  );
 
   const getPodStatusColor = (status: string) => {
     switch (status.toLowerCase()) {
@@ -122,18 +127,22 @@ export function PodList({ pods, clusterId, namespace, onRefresh }: PodListProps)
               {isColumnVisible("age") && <TableHead>Age</TableHead>}
               {isColumnVisible("ip") && <TableHead>IP</TableHead>}
               {isColumnVisible("node") && <TableHead>Node</TableHead>}
+              {isColumnVisible("cpu") && <TableHead>CPU</TableHead>}
+              {isColumnVisible("memory") && <TableHead>Memory</TableHead>}
               {isColumnVisible("actions") && <TableHead className="text-right">Actions</TableHead>}
             </TableRow>
           </TableHeader>
           <TableBody>
             {pods.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={9} className="text-center text-muted-foreground">
+                <TableCell colSpan={11} className="text-center text-muted-foreground">
                   No pods found
                 </TableCell>
               </TableRow>
             ) : (
-              pods.map((pod) => (
+              pods.map((pod) => {
+                const podMetrics = metricsEnabled ? getPodMetrics(pod.name) : undefined;
+                return (
                 <TableRow key={pod.name}>
                   {isColumnVisible("name") && (
                     <TableCell className="font-medium">{pod.name}</TableCell>
@@ -158,6 +167,16 @@ export function PodList({ pods, clusterId, namespace, onRefresh }: PodListProps)
                   )}
                   {isColumnVisible("node") && (
                     <TableCell className="text-muted-foreground">{pod.node || "-"}</TableCell>
+                  )}
+                  {isColumnVisible("cpu") && (
+                    <TableCell className="text-muted-foreground font-mono text-xs">
+                      {podMetrics?.cpu ?? "-"}
+                    </TableCell>
+                  )}
+                  {isColumnVisible("memory") && (
+                    <TableCell className="text-muted-foreground font-mono text-xs">
+                      {podMetrics?.memory ?? "-"}
+                    </TableCell>
                   )}
                   {isColumnVisible("actions") && (
                     <TableCell className="text-right">
@@ -204,7 +223,8 @@ export function PodList({ pods, clusterId, namespace, onRefresh }: PodListProps)
                     </TableCell>
                   )}
                 </TableRow>
-              ))
+                );
+              })
             )}
           </TableBody>
         </Table>
@@ -290,6 +310,8 @@ export function PodList({ pods, clusterId, namespace, onRefresh }: PodListProps)
           age: "Age",
           ip: "IP Address",
           node: "Node",
+          cpu: "CPU",
+          memory: "Memory",
           actions: "Actions",
         }}
       />

@@ -1563,3 +1563,33 @@ export const terminatePtySessionCmd = (sessionId: string) =>
   invoke<void>("terminate_pty_session", { sessionId });
 
 export const listPtySessionsCmd = () => invoke<PtySessionInfo[]>("list_pty_sessions", {});
+
+// ─── Metrics ─────────────────────────────────────────────────────────────────
+
+export interface ContainerMetrics {
+  name: string;
+  cpu: string;
+  memory: string;
+}
+
+export interface PodMetrics {
+  name: string;
+  namespace: string;
+  containers: ContainerMetrics[];
+  cpu: string;
+  memory: string;
+}
+
+export interface NodeMetrics {
+  name: string;
+  cpu: string;
+  memory: string;
+  cpu_percent: number;
+  memory_percent: number;
+}
+
+export const getPodMetricsCmd = (clusterId: string, namespace: string) =>
+  invoke<PodMetrics[]>("get_pod_metrics", { clusterId, namespace });
+
+export const getNodeMetricsCmd = (clusterId: string) =>
+  invoke<NodeMetrics[]>("get_node_metrics", { clusterId });
