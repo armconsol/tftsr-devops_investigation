@@ -31,12 +31,9 @@ export function CronJobList({
   cronJobs,
   clusterId,
   _clusterId,
-  namespace,
-  _namespace,
   onRefresh,
 }: CronJobListProps) {
   const cid = clusterId ?? _clusterId ?? "";
-  const ns = namespace ?? _namespace ?? "";
   const [activeModal, setActiveModal] = useState<ActiveModal>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -44,7 +41,7 @@ export function CronJobList({
   const openEdit = async (cj: CronJobInfo) => {
     setActionError(null);
     try {
-      const yaml = await getResourceYamlCmd(cid, "cronjobs", ns, cj.name);
+      const yaml = await getResourceYamlCmd(cid, "cronjobs", cj.namespace, cj.name);
       setActiveModal({ type: "edit", cj, yaml });
     } catch (err) {
       setActionError(err instanceof Error ? err.message : String(err));
@@ -54,7 +51,7 @@ export function CronJobList({
   const handleSuspend = async (cj: CronJobInfo) => {
     setActionError(null);
     try {
-      await suspendCronjobCmd(cid, ns, cj.name);
+      await suspendCronjobCmd(cid, cj.namespace, cj.name);
       onRefresh?.();
     } catch (err) {
       setActionError(err instanceof Error ? err.message : String(err));
@@ -64,7 +61,7 @@ export function CronJobList({
   const handleResume = async (cj: CronJobInfo) => {
     setActionError(null);
     try {
-      await resumeCronjobCmd(cid, ns, cj.name);
+      await resumeCronjobCmd(cid, cj.namespace, cj.name);
       onRefresh?.();
     } catch (err) {
       setActionError(err instanceof Error ? err.message : String(err));
@@ -74,7 +71,7 @@ export function CronJobList({
   const handleTrigger = async (cj: CronJobInfo) => {
     setActionError(null);
     try {
-      await triggerCronjobCmd(cid, ns, cj.name);
+      await triggerCronjobCmd(cid, cj.namespace, cj.name);
       onRefresh?.();
     } catch (err) {
       setActionError(err instanceof Error ? err.message : String(err));
@@ -85,7 +82,7 @@ export function CronJobList({
     if (activeModal?.type !== "delete") return;
     setIsDeleting(true);
     try {
-      await deleteResourceCmd(cid, "cronjobs", ns, activeModal.cj.name);
+      await deleteResourceCmd(cid, "cronjobs", activeModal.cj.namespace, activeModal.cj.name);
       setActiveModal(null);
       onRefresh?.();
     } finally {
@@ -183,7 +180,7 @@ export function CronJobList({
         <EditResourceModal
           isOpen
           clusterId={cid}
-          namespace={ns}
+          namespace={activeModal.cj.namespace}
           resourceType="cronjobs"
           resourceName={activeModal.cj.name}
           initialYaml={activeModal.yaml}

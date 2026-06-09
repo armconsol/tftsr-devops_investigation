@@ -25,12 +25,9 @@ export function RoleList({
   roles,
   clusterId,
   _clusterId,
-  namespace,
-  _namespace,
   onRefresh,
 }: RoleListProps) {
   const cid = clusterId ?? _clusterId ?? "";
-  const ns = namespace ?? _namespace ?? "";
   const [activeModal, setActiveModal] = useState<ActiveModal>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -38,7 +35,7 @@ export function RoleList({
   const openEdit = async (role: RoleInfo) => {
     setActionError(null);
     try {
-      const yaml = await getResourceYamlCmd(cid, "roles", ns, role.name);
+      const yaml = await getResourceYamlCmd(cid, "roles", role.namespace, role.name);
       setActiveModal({ type: "edit", role, yaml });
     } catch (err) {
       setActionError(err instanceof Error ? err.message : String(err));
@@ -49,7 +46,7 @@ export function RoleList({
     if (activeModal?.type !== "delete") return;
     setIsDeleting(true);
     try {
-      await deleteResourceCmd(cid, "roles", ns, activeModal.role.name);
+      await deleteResourceCmd(cid, "roles", activeModal.role.namespace, activeModal.role.name);
       setActiveModal(null);
       onRefresh?.();
     } finally {
@@ -113,7 +110,7 @@ export function RoleList({
         <EditResourceModal
           isOpen
           clusterId={cid}
-          namespace={ns}
+          namespace={activeModal.role.namespace}
           resourceType="roles"
           resourceName={activeModal.role.name}
           initialYaml={activeModal.yaml}

@@ -25,12 +25,9 @@ export function HPAList({
   hpas,
   clusterId,
   _clusterId,
-  namespace,
-  _namespace,
   onRefresh,
 }: HPAListProps) {
   const cid = clusterId ?? _clusterId ?? "";
-  const ns = namespace ?? _namespace ?? "";
   const [activeModal, setActiveModal] = useState<ActiveModal>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -38,7 +35,7 @@ export function HPAList({
   const openEdit = async (hpa: HorizontalPodAutoscalerInfo) => {
     setActionError(null);
     try {
-      const yaml = await getResourceYamlCmd(cid, "horizontalpodautoscalers", ns, hpa.name);
+      const yaml = await getResourceYamlCmd(cid, "horizontalpodautoscalers", hpa.namespace, hpa.name);
       setActiveModal({ type: "edit", hpa, yaml });
     } catch (err) {
       setActionError(err instanceof Error ? err.message : String(err));
@@ -49,7 +46,7 @@ export function HPAList({
     if (activeModal?.type !== "delete") return;
     setIsDeleting(true);
     try {
-      await deleteResourceCmd(cid, "horizontalpodautoscalers", ns, activeModal.hpa.name);
+      await deleteResourceCmd(cid, "horizontalpodautoscalers", activeModal.hpa.namespace, activeModal.hpa.name);
       setActiveModal(null);
       onRefresh?.();
     } finally {
@@ -121,7 +118,7 @@ export function HPAList({
         <EditResourceModal
           isOpen
           clusterId={cid}
-          namespace={ns}
+          namespace={activeModal.hpa.namespace}
           resourceType="horizontalpodautoscalers"
           resourceName={activeModal.hpa.name}
           initialYaml={activeModal.yaml}

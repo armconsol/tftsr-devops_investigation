@@ -25,12 +25,9 @@ export function ServiceAccountList({
   serviceAccounts,
   clusterId,
   _clusterId,
-  namespace,
-  _namespace,
   onRefresh,
 }: ServiceAccountListProps) {
   const cid = clusterId ?? _clusterId ?? "";
-  const ns = namespace ?? _namespace ?? "";
   const [activeModal, setActiveModal] = useState<ActiveModal>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -38,7 +35,7 @@ export function ServiceAccountList({
   const openEdit = async (sa: ServiceAccountInfo) => {
     setActionError(null);
     try {
-      const yaml = await getResourceYamlCmd(cid, "serviceaccounts", ns, sa.name);
+      const yaml = await getResourceYamlCmd(cid, "serviceaccounts", sa.namespace, sa.name);
       setActiveModal({ type: "edit", sa, yaml });
     } catch (err) {
       setActionError(err instanceof Error ? err.message : String(err));
@@ -49,7 +46,7 @@ export function ServiceAccountList({
     if (activeModal?.type !== "delete") return;
     setIsDeleting(true);
     try {
-      await deleteResourceCmd(cid, "serviceaccounts", ns, activeModal.sa.name);
+      await deleteResourceCmd(cid, "serviceaccounts", activeModal.sa.namespace, activeModal.sa.name);
       setActiveModal(null);
       onRefresh?.();
     } finally {
@@ -115,7 +112,7 @@ export function ServiceAccountList({
         <EditResourceModal
           isOpen
           clusterId={cid}
-          namespace={ns}
+          namespace={activeModal.sa.namespace}
           resourceType="serviceaccounts"
           resourceName={activeModal.sa.name}
           initialYaml={activeModal.yaml}

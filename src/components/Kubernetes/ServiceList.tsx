@@ -20,7 +20,7 @@ type ActiveModal =
   | { type: "delete"; svc: ServiceInfo }
   | null;
 
-export function ServiceList({ services, clusterId, namespace, onRefresh }: ServiceListProps) {
+export function ServiceList({ services, clusterId, namespace: _namespace, onRefresh }: ServiceListProps) {
   const [activeModal, setActiveModal] = useState<ActiveModal>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -43,7 +43,7 @@ export function ServiceList({ services, clusterId, namespace, onRefresh }: Servi
   const openEdit = async (svc: ServiceInfo) => {
     setActionError(null);
     try {
-      const yaml = await getResourceYamlCmd(clusterId, "services", namespace, svc.name);
+      const yaml = await getResourceYamlCmd(clusterId, "services", svc.namespace, svc.name);
       setActiveModal({ type: "edit", svc, yaml });
     } catch (err) {
       setActionError(err instanceof Error ? err.message : String(err));
@@ -54,7 +54,7 @@ export function ServiceList({ services, clusterId, namespace, onRefresh }: Servi
     if (activeModal?.type !== "delete") return;
     setIsDeleting(true);
     try {
-      await deleteResourceCmd(clusterId, "services", namespace, activeModal.svc.name);
+      await deleteResourceCmd(clusterId, "services", activeModal.svc.namespace, activeModal.svc.name);
       setActiveModal(null);
       onRefresh?.();
     } finally {
@@ -140,7 +140,7 @@ export function ServiceList({ services, clusterId, namespace, onRefresh }: Servi
         <EditResourceModal
           isOpen
           clusterId={clusterId}
-          namespace={namespace}
+          namespace={activeModal.svc.namespace}
           resourceType="services"
           resourceName={activeModal.svc.name}
           initialYaml={activeModal.yaml}

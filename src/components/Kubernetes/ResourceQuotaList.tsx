@@ -19,7 +19,7 @@ type ActiveModal =
   | { type: "delete"; rq: ResourceQuotaInfo }
   | null;
 
-export function ResourceQuotaList({ resourcequotas, clusterId, namespace, onRefresh }: ResourceQuotaListProps) {
+export function ResourceQuotaList({ resourcequotas, clusterId, namespace: _namespace, onRefresh }: ResourceQuotaListProps) {
   const [activeModal, setActiveModal] = useState<ActiveModal>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -27,7 +27,7 @@ export function ResourceQuotaList({ resourcequotas, clusterId, namespace, onRefr
   const openEdit = async (rq: ResourceQuotaInfo) => {
     setActionError(null);
     try {
-      const yaml = await getResourceYamlCmd(clusterId, "resourcequotas", namespace, rq.name);
+      const yaml = await getResourceYamlCmd(clusterId, "resourcequotas", rq.namespace, rq.name);
       setActiveModal({ type: "edit", rq, yaml });
     } catch (err) {
       setActionError(err instanceof Error ? err.message : String(err));
@@ -38,7 +38,7 @@ export function ResourceQuotaList({ resourcequotas, clusterId, namespace, onRefr
     if (activeModal?.type !== "delete") return;
     setIsDeleting(true);
     try {
-      await deleteResourceCmd(clusterId, "resourcequotas", namespace, activeModal.rq.name);
+      await deleteResourceCmd(clusterId, "resourcequotas", activeModal.rq.namespace, activeModal.rq.name);
       setActiveModal(null);
       onRefresh?.();
     } finally {
@@ -110,7 +110,7 @@ export function ResourceQuotaList({ resourcequotas, clusterId, namespace, onRefr
         <EditResourceModal
           isOpen
           clusterId={clusterId}
-          namespace={namespace}
+          namespace={activeModal.rq.namespace}
           resourceType="resourcequotas"
           resourceName={activeModal.rq.name}
           initialYaml={activeModal.yaml}

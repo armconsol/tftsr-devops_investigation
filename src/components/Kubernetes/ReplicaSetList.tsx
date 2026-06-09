@@ -31,12 +31,9 @@ export function ReplicaSetList({
   replicaSets,
   clusterId,
   _clusterId,
-  namespace,
-  _namespace,
   onRefresh,
 }: ReplicaSetListProps) {
   const cid = clusterId ?? _clusterId ?? "";
-  const ns = namespace ?? _namespace ?? "";
   const [activeModal, setActiveModal] = useState<ActiveModal>(null);
   const [isActing, setIsActing] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -44,7 +41,7 @@ export function ReplicaSetList({
   const openEdit = async (rs: ReplicaSetInfo) => {
     setActionError(null);
     try {
-      const yaml = await getResourceYamlCmd(cid, "replicasets", ns, rs.name);
+      const yaml = await getResourceYamlCmd(cid, "replicasets", rs.namespace, rs.name);
       setActiveModal({ type: "edit", rs, yaml });
     } catch (err) {
       setActionError(err instanceof Error ? err.message : String(err));
@@ -55,7 +52,7 @@ export function ReplicaSetList({
     if (activeModal?.type !== "delete") return;
     setIsActing(true);
     try {
-      await deleteResourceCmd(cid, "replicasets", ns, activeModal.rs.name);
+      await deleteResourceCmd(cid, "replicasets", activeModal.rs.namespace, activeModal.rs.name);
       setActiveModal(null);
       onRefresh?.();
     } finally {
@@ -138,7 +135,7 @@ export function ReplicaSetList({
           resourceName={activeModal.rs.name}
           currentReplicas={activeModal.rs.replicas}
           onScale={(replicas) =>
-            scaleReplicasetCmd(cid, ns, activeModal.rs.name, replicas).then(() => {
+            scaleReplicasetCmd(cid, activeModal.rs.namespace, activeModal.rs.name, replicas).then(() => {
               setActiveModal(null);
               onRefresh?.();
             })
@@ -150,7 +147,7 @@ export function ReplicaSetList({
         <EditResourceModal
           isOpen
           clusterId={cid}
-          namespace={ns}
+          namespace={activeModal.rs.namespace}
           resourceType="replicasets"
           resourceName={activeModal.rs.name}
           initialYaml={activeModal.yaml}

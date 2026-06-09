@@ -25,12 +25,9 @@ export function JobList({
   jobs,
   clusterId,
   _clusterId,
-  namespace,
-  _namespace,
   onRefresh,
 }: JobListProps) {
   const cid = clusterId ?? _clusterId ?? "";
-  const ns = namespace ?? _namespace ?? "";
   const [activeModal, setActiveModal] = useState<ActiveModal>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -38,7 +35,7 @@ export function JobList({
   const openEdit = async (job: JobInfo) => {
     setActionError(null);
     try {
-      const yaml = await getResourceYamlCmd(cid, "jobs", ns, job.name);
+      const yaml = await getResourceYamlCmd(cid, "jobs", job.namespace, job.name);
       setActiveModal({ type: "edit", job, yaml });
     } catch (err) {
       setActionError(err instanceof Error ? err.message : String(err));
@@ -49,7 +46,7 @@ export function JobList({
     if (activeModal?.type !== "delete") return;
     setIsDeleting(true);
     try {
-      await deleteResourceCmd(cid, "jobs", ns, activeModal.job.name);
+      await deleteResourceCmd(cid, "jobs", activeModal.job.namespace, activeModal.job.name);
       setActiveModal(null);
       onRefresh?.();
     } finally {
@@ -123,7 +120,7 @@ export function JobList({
         <EditResourceModal
           isOpen
           clusterId={cid}
-          namespace={ns}
+          namespace={activeModal.job.namespace}
           resourceType="jobs"
           resourceName={activeModal.job.name}
           initialYaml={activeModal.yaml}

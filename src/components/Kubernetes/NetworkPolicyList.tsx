@@ -19,7 +19,7 @@ type ActiveModal =
   | { type: "delete"; np: NetworkPolicyInfo }
   | null;
 
-export function NetworkPolicyList({ networkpolicies, clusterId, namespace, onRefresh }: NetworkPolicyListProps) {
+export function NetworkPolicyList({ networkpolicies, clusterId, namespace: _namespace, onRefresh }: NetworkPolicyListProps) {
   const [activeModal, setActiveModal] = useState<ActiveModal>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -27,7 +27,7 @@ export function NetworkPolicyList({ networkpolicies, clusterId, namespace, onRef
   const openEdit = async (np: NetworkPolicyInfo) => {
     setActionError(null);
     try {
-      const yaml = await getResourceYamlCmd(clusterId, "networkpolicies", namespace, np.name);
+      const yaml = await getResourceYamlCmd(clusterId, "networkpolicies", np.namespace, np.name);
       setActiveModal({ type: "edit", np, yaml });
     } catch (err) {
       setActionError(err instanceof Error ? err.message : String(err));
@@ -38,7 +38,7 @@ export function NetworkPolicyList({ networkpolicies, clusterId, namespace, onRef
     if (activeModal?.type !== "delete") return;
     setIsDeleting(true);
     try {
-      await deleteResourceCmd(clusterId, "networkpolicies", namespace, activeModal.np.name);
+      await deleteResourceCmd(clusterId, "networkpolicies", activeModal.np.namespace, activeModal.np.name);
       setActiveModal(null);
       onRefresh?.();
     } finally {
@@ -106,7 +106,7 @@ export function NetworkPolicyList({ networkpolicies, clusterId, namespace, onRef
         <EditResourceModal
           isOpen
           clusterId={clusterId}
-          namespace={namespace}
+          namespace={activeModal.np.namespace}
           resourceType="networkpolicies"
           resourceName={activeModal.np.name}
           initialYaml={activeModal.yaml}

@@ -25,12 +25,9 @@ export function RoleBindingList({
   roleBindings,
   clusterId,
   _clusterId,
-  namespace,
-  _namespace,
   onRefresh,
 }: RoleBindingListProps) {
   const cid = clusterId ?? _clusterId ?? "";
-  const ns = namespace ?? _namespace ?? "";
   const [activeModal, setActiveModal] = useState<ActiveModal>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -38,7 +35,7 @@ export function RoleBindingList({
   const openEdit = async (rb: RoleBindingInfo) => {
     setActionError(null);
     try {
-      const yaml = await getResourceYamlCmd(cid, "rolebindings", ns, rb.name);
+      const yaml = await getResourceYamlCmd(cid, "rolebindings", rb.namespace, rb.name);
       setActiveModal({ type: "edit", rb, yaml });
     } catch (err) {
       setActionError(err instanceof Error ? err.message : String(err));
@@ -49,7 +46,7 @@ export function RoleBindingList({
     if (activeModal?.type !== "delete") return;
     setIsDeleting(true);
     try {
-      await deleteResourceCmd(cid, "rolebindings", ns, activeModal.rb.name);
+      await deleteResourceCmd(cid, "rolebindings", activeModal.rb.namespace, activeModal.rb.name);
       setActiveModal(null);
       onRefresh?.();
     } finally {
@@ -115,7 +112,7 @@ export function RoleBindingList({
         <EditResourceModal
           isOpen
           clusterId={cid}
-          namespace={ns}
+          namespace={activeModal.rb.namespace}
           resourceType="rolebindings"
           resourceName={activeModal.rb.name}
           initialYaml={activeModal.yaml}
