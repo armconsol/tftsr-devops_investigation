@@ -1239,3 +1239,255 @@ export const createResourceCmd = (clusterId: string, namespace: string, resource
 
 export const editResourceCmd = (clusterId: string, namespace: string, resourceType: string, resourceName: string, yamlContent: string) =>
   invoke<void>("edit_resource", { clusterId, namespace, resourceType, resourceName, yamlContent });
+
+// ─── Missing Resource Types ───────────────────────────────────────────────────
+
+export interface ReplicationControllerInfo {
+  name: string;
+  namespace: string;
+  desired: number;
+  ready: number;
+  current: number;
+  age: string;
+}
+
+export interface PodDisruptionBudgetInfo {
+  name: string;
+  namespace: string;
+  min_available: string;
+  max_unavailable: string;
+  disruptions_allowed: number;
+  age: string;
+}
+
+export interface PriorityClassInfo {
+  name: string;
+  value: number;
+  global_default: boolean;
+  age: string;
+}
+
+export interface RuntimeClassInfo {
+  name: string;
+  handler: string;
+  age: string;
+}
+
+export interface LeaseInfo {
+  name: string;
+  namespace: string;
+  holder: string;
+  age: string;
+}
+
+export interface WebhookConfigInfo {
+  name: string;
+  webhooks: number;
+  age: string;
+}
+
+export interface EndpointInfo {
+  name: string;
+  namespace: string;
+  addresses: string[];
+  ports: string[];
+  age: string;
+}
+
+export interface EndpointSliceInfo {
+  name: string;
+  namespace: string;
+  address_type: string;
+  endpoints: number;
+  ports: string[];
+  age: string;
+}
+
+export interface IngressClassInfo {
+  name: string;
+  controller: string;
+  is_default: boolean;
+  age: string;
+}
+
+export interface NamespaceResourceInfo {
+  name: string;
+  status: string;
+  age: string;
+}
+
+// ─── Helm Types ───────────────────────────────────────────────────────────────
+
+export interface HelmRepository {
+  name: string;
+  url: string;
+}
+
+export interface HelmChart {
+  name: string;
+  chart_version: string;
+  app_version: string;
+  description: string;
+  repository: string;
+}
+
+export interface HelmRelease {
+  name: string;
+  namespace: string;
+  chart: string;
+  chart_version: string;
+  app_version: string;
+  status: string;
+  updated: string;
+}
+
+// ─── Custom Resource / CRD Types ─────────────────────────────────────────────
+
+export interface CrdInfo {
+  name: string;
+  group: string;
+  version: string;
+  kind: string;
+  scope: string;
+  age: string;
+}
+
+export interface CustomResourceInfo {
+  name: string;
+  namespace: string;
+  age: string;
+}
+
+// ─── Resource Actions ─────────────────────────────────────────────────────────
+
+export interface DescribeResponse {
+  output: string;
+}
+
+export interface LogStreamConfig {
+  cluster_id: string;
+  namespace: string;
+  pod_name: string;
+  container_name: string;
+  follow: boolean;
+  timestamps: boolean;
+  tail_lines?: number;
+}
+
+// ─── New Resource List Commands ───────────────────────────────────────────────
+
+export const listReplicationcontrollersCmd = (clusterId: string, namespace: string) =>
+  invoke<ReplicationControllerInfo[]>("list_replicationcontrollers", { clusterId, namespace });
+
+export const listPoddisruptionbudgetsCmd = (clusterId: string, namespace: string) =>
+  invoke<PodDisruptionBudgetInfo[]>("list_poddisruptionbudgets", { clusterId, namespace });
+
+export const listPriorityclassesCmd = (clusterId: string) =>
+  invoke<PriorityClassInfo[]>("list_priorityclasses", { clusterId });
+
+export const listRuntimeclassesCmd = (clusterId: string) =>
+  invoke<RuntimeClassInfo[]>("list_runtimeclasses", { clusterId });
+
+export const listLeasesCmd = (clusterId: string, namespace: string) =>
+  invoke<LeaseInfo[]>("list_leases", { clusterId, namespace });
+
+export const listMutatingwebhookconfigurationsCmd = (clusterId: string) =>
+  invoke<WebhookConfigInfo[]>("list_mutatingwebhookconfigurations", { clusterId });
+
+export const listValidatingwebhookconfigurationsCmd = (clusterId: string) =>
+  invoke<WebhookConfigInfo[]>("list_validatingwebhookconfigurations", { clusterId });
+
+export const listEndpointsCmd = (clusterId: string, namespace: string) =>
+  invoke<EndpointInfo[]>("list_endpoints", { clusterId, namespace });
+
+export const listEndpointslicesCmd = (clusterId: string, namespace: string) =>
+  invoke<EndpointSliceInfo[]>("list_endpointslices", { clusterId, namespace });
+
+export const listIngressclassesCmd = (clusterId: string) =>
+  invoke<IngressClassInfo[]>("list_ingressclasses", { clusterId });
+
+export const listNamespacesResourceCmd = (clusterId: string) =>
+  invoke<NamespaceResourceInfo[]>("list_namespaces_resource", { clusterId });
+
+export const createNamespaceCmd = (clusterId: string, name: string) =>
+  invoke<void>("create_namespace", { clusterId, name });
+
+export const deleteNamespaceCmd = (clusterId: string, name: string) =>
+  invoke<void>("delete_namespace", { clusterId, name });
+
+// ─── Resource Action Commands ─────────────────────────────────────────────────
+
+export const attachPodCmd = (clusterId: string, namespace: string, podName: string, containerName: string) =>
+  invoke<ExecSessionResponse>("attach_pod", { clusterId, namespace, podName, containerName });
+
+export const forceDeleteResourceCmd = (clusterId: string, resourceType: string, namespace: string, resourceName: string) =>
+  invoke<void>("force_delete_resource", { clusterId, resourceType, namespace, resourceName });
+
+export const describeResourceCmd = (clusterId: string, resourceType: string, namespace: string, resourceName: string) =>
+  invoke<DescribeResponse>("describe_resource", { clusterId, resourceType, namespace, resourceName });
+
+export const getResourceYamlCmd = (clusterId: string, resourceType: string, namespace: string, resourceName: string) =>
+  invoke<string>("get_resource_yaml", { clusterId, resourceType, namespace, resourceName });
+
+export const restartStatefulsetCmd = (clusterId: string, namespace: string, name: string) =>
+  invoke<void>("restart_statefulset", { clusterId, namespace, name });
+
+export const restartDaemonsetCmd = (clusterId: string, namespace: string, name: string) =>
+  invoke<void>("restart_daemonset", { clusterId, namespace, name });
+
+export const scaleStatefulsetCmd = (clusterId: string, namespace: string, name: string, replicas: number) =>
+  invoke<void>("scale_statefulset", { clusterId, namespace, name, replicas });
+
+export const scaleReplicasetCmd = (clusterId: string, namespace: string, name: string, replicas: number) =>
+  invoke<void>("scale_replicaset", { clusterId, namespace, name, replicas });
+
+export const scaleReplicationcontrollerCmd = (clusterId: string, namespace: string, name: string, replicas: number) =>
+  invoke<void>("scale_replicationcontroller", { clusterId, namespace, name, replicas });
+
+export const suspendCronjobCmd = (clusterId: string, namespace: string, name: string) =>
+  invoke<void>("suspend_cronjob", { clusterId, namespace, name });
+
+export const resumeCronjobCmd = (clusterId: string, namespace: string, name: string) =>
+  invoke<void>("resume_cronjob", { clusterId, namespace, name });
+
+export const triggerCronjobCmd = (clusterId: string, namespace: string, name: string) =>
+  invoke<void>("trigger_cronjob", { clusterId, namespace, name });
+
+// ─── Log Streaming Commands ───────────────────────────────────────────────────
+
+export const streamPodLogsCmd = (config: LogStreamConfig) =>
+  invoke<string>("stream_pod_logs", { config });
+
+export const stopLogStreamCmd = (streamId: string) =>
+  invoke<void>("stop_log_stream", { streamId });
+
+// ─── Helm Commands ────────────────────────────────────────────────────────────
+
+export const helmListReposCmd = (clusterId: string) =>
+  invoke<HelmRepository[]>("helm_list_repos", { clusterId });
+
+export const helmAddRepoCmd = (clusterId: string, name: string, url: string) =>
+  invoke<void>("helm_add_repo", { clusterId, name, url });
+
+export const helmUpdateReposCmd = (clusterId: string) =>
+  invoke<void>("helm_update_repos", { clusterId });
+
+export const helmSearchRepoCmd = (clusterId: string, query: string) =>
+  invoke<HelmChart[]>("helm_search_repo", { clusterId, query });
+
+export const helmListReleasesCmd = (clusterId: string, namespace: string) =>
+  invoke<HelmRelease[]>("helm_list_releases", { clusterId, namespace });
+
+export const helmUninstallCmd = (clusterId: string, namespace: string, releaseName: string) =>
+  invoke<void>("helm_uninstall", { clusterId, namespace, releaseName });
+
+export const helmRollbackCmd = (clusterId: string, namespace: string, releaseName: string, revision?: number) =>
+  invoke<void>("helm_rollback", { clusterId, namespace, releaseName, revision });
+
+// ─── CRD / Custom Resource Commands ──────────────────────────────────────────
+
+export const listCrdsCmd = (clusterId: string) =>
+  invoke<CrdInfo[]>("list_crds", { clusterId });
+
+export const listCustomResourcesCmd = (clusterId: string, group: string, version: string, resource: string, namespace: string) =>
+  invoke<CustomResourceInfo[]>("list_custom_resources", { clusterId, group, version, resource, namespace });
