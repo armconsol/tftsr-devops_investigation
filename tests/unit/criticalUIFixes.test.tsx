@@ -6,7 +6,6 @@
  * 4. YAML editor loading race condition
  */
 
-import React from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
@@ -219,7 +218,6 @@ describe("Dark mode – text visibility", () => {
     const root = document.documentElement;
     root.classList.add("dark");
 
-    const computedStyle = window.getComputedStyle(root);
     expect(root.classList.contains("dark")).toBe(true);
 
     root.classList.remove("dark");

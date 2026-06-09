@@ -13,13 +13,13 @@ vi.mock("@/components/Kubernetes/LogStreamPanel", () => ({
     <div data-testid="logs-modal" data-namespace={namespace} />
   ),
 }));
-vi.mock("@/components/Kubernetes/ShellExecModal", () => ({
-  ShellExecModal: ({ namespace }: { namespace: string }) => (
+vi.mock("@/components/Kubernetes/InteractiveShellModal", () => ({
+  InteractiveShellModal: ({ namespace }: { namespace: string }) => (
     <div data-testid="shell-modal" data-namespace={namespace} />
   ),
 }));
-vi.mock("@/components/Kubernetes/AttachModal", () => ({
-  AttachModal: ({ namespace }: { namespace: string }) => (
+vi.mock("@/components/Kubernetes/InteractiveAttachModal", () => ({
+  InteractiveAttachModal: ({ namespace }: { namespace: string }) => (
     <div data-testid="attach-modal" data-namespace={namespace} />
   ),
 }));
