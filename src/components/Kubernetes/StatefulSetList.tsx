@@ -27,7 +27,7 @@ type ActiveModal =
   | { type: "delete"; ss: StatefulSetInfo }
   | null;
 
-export function StatefulSetList({ statefulsets, clusterId, namespace, onRefresh }: StatefulSetListProps) {
+export function StatefulSetList({ statefulsets, clusterId, namespace: _namespace, onRefresh }: StatefulSetListProps) {
   const [activeModal, setActiveModal] = useState<ActiveModal>(null);
   const [isActing, setIsActing] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -35,7 +35,7 @@ export function StatefulSetList({ statefulsets, clusterId, namespace, onRefresh 
   const openEdit = async (ss: StatefulSetInfo) => {
     setActionError(null);
     try {
-      const yaml = await getResourceYamlCmd(clusterId, "statefulsets", namespace, ss.name);
+      const yaml = await getResourceYamlCmd(clusterId, "statefulsets", ss.namespace, ss.name);
       setActiveModal({ type: "edit", ss, yaml });
     } catch (err) {
       setActionError(err instanceof Error ? err.message : String(err));
@@ -46,7 +46,7 @@ export function StatefulSetList({ statefulsets, clusterId, namespace, onRefresh 
     if (activeModal?.type !== "restart") return;
     setIsActing(true);
     try {
-      await restartStatefulsetCmd(clusterId, namespace, activeModal.ss.name);
+      await restartStatefulsetCmd(clusterId, activeModal.ss.namespace, activeModal.ss.name);
       setActiveModal(null);
       onRefresh?.();
     } catch (err) {
@@ -60,7 +60,7 @@ export function StatefulSetList({ statefulsets, clusterId, namespace, onRefresh 
     if (activeModal?.type !== "delete") return;
     setIsActing(true);
     try {
-      await deleteResourceCmd(clusterId, "statefulsets", namespace, activeModal.ss.name);
+      await deleteResourceCmd(clusterId, "statefulsets", activeModal.ss.namespace, activeModal.ss.name);
       setActiveModal(null);
       onRefresh?.();
     } finally {
@@ -140,7 +140,7 @@ export function StatefulSetList({ statefulsets, clusterId, namespace, onRefresh 
           resourceName={activeModal.ss.name}
           currentReplicas={activeModal.ss.replicas}
           onScale={(replicas) =>
-            scaleStatefulsetCmd(clusterId, namespace, activeModal.ss.name, replicas).then(() => {
+            scaleStatefulsetCmd(clusterId, activeModal.ss.namespace, activeModal.ss.name, replicas).then(() => {
               setActiveModal(null);
               onRefresh?.();
             })
@@ -164,7 +164,7 @@ export function StatefulSetList({ statefulsets, clusterId, namespace, onRefresh 
         <EditResourceModal
           isOpen
           clusterId={clusterId}
-          namespace={namespace}
+          namespace={activeModal.ss.namespace}
           resourceType="statefulsets"
           resourceName={activeModal.ss.name}
           initialYaml={activeModal.yaml}

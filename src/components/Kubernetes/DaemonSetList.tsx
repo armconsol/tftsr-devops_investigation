@@ -24,7 +24,7 @@ type ActiveModal =
   | { type: "delete"; ds: DaemonSetInfo }
   | null;
 
-export function DaemonSetList({ daemonsets, clusterId, namespace, onRefresh }: DaemonSetListProps) {
+export function DaemonSetList({ daemonsets, clusterId, namespace: _namespace, onRefresh }: DaemonSetListProps) {
   const [activeModal, setActiveModal] = useState<ActiveModal>(null);
   const [isActing, setIsActing] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -32,7 +32,7 @@ export function DaemonSetList({ daemonsets, clusterId, namespace, onRefresh }: D
   const openEdit = async (ds: DaemonSetInfo) => {
     setActionError(null);
     try {
-      const yaml = await getResourceYamlCmd(clusterId, "daemonsets", namespace, ds.name);
+      const yaml = await getResourceYamlCmd(clusterId, "daemonsets", ds.namespace, ds.name);
       setActiveModal({ type: "edit", ds, yaml });
     } catch (err) {
       setActionError(err instanceof Error ? err.message : String(err));
@@ -43,7 +43,7 @@ export function DaemonSetList({ daemonsets, clusterId, namespace, onRefresh }: D
     if (activeModal?.type !== "restart") return;
     setIsActing(true);
     try {
-      await restartDaemonsetCmd(clusterId, namespace, activeModal.ds.name);
+      await restartDaemonsetCmd(clusterId, activeModal.ds.namespace, activeModal.ds.name);
       setActiveModal(null);
       onRefresh?.();
     } catch (err) {
@@ -57,7 +57,7 @@ export function DaemonSetList({ daemonsets, clusterId, namespace, onRefresh }: D
     if (activeModal?.type !== "delete") return;
     setIsActing(true);
     try {
-      await deleteResourceCmd(clusterId, "daemonsets", namespace, activeModal.ds.name);
+      await deleteResourceCmd(clusterId, "daemonsets", activeModal.ds.namespace, activeModal.ds.name);
       setActiveModal(null);
       onRefresh?.();
     } finally {
@@ -146,7 +146,7 @@ export function DaemonSetList({ daemonsets, clusterId, namespace, onRefresh }: D
         <EditResourceModal
           isOpen
           clusterId={clusterId}
-          namespace={namespace}
+          namespace={activeModal.ds.namespace}
           resourceType="daemonsets"
           resourceName={activeModal.ds.name}
           initialYaml={activeModal.yaml}

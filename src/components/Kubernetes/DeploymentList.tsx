@@ -29,7 +29,7 @@ type ActiveModal =
   | { type: "delete"; deployment: DeploymentInfo }
   | null;
 
-export function DeploymentList({ deployments, clusterId, namespace, onRefresh }: DeploymentListProps) {
+export function DeploymentList({ deployments, clusterId, namespace: _namespace, onRefresh }: DeploymentListProps) {
   const [activeModal, setActiveModal] = useState<ActiveModal>(null);
   const [isActing, setIsActing] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -37,7 +37,7 @@ export function DeploymentList({ deployments, clusterId, namespace, onRefresh }:
   const openEdit = async (deployment: DeploymentInfo) => {
     setActionError(null);
     try {
-      const yaml = await getResourceYamlCmd(clusterId, "deployments", namespace, deployment.name);
+      const yaml = await getResourceYamlCmd(clusterId, "deployments", deployment.namespace, deployment.name);
       setActiveModal({ type: "edit", deployment, yaml });
     } catch (err) {
       setActionError(err instanceof Error ? err.message : String(err));
@@ -48,7 +48,7 @@ export function DeploymentList({ deployments, clusterId, namespace, onRefresh }:
     if (activeModal?.type !== "restart") return;
     setIsActing(true);
     try {
-      await restartDeploymentCmd(clusterId, namespace, activeModal.deployment.name);
+      await restartDeploymentCmd(clusterId, activeModal.deployment.namespace, activeModal.deployment.name);
       setActiveModal(null);
       onRefresh?.();
     } catch (err) {
@@ -62,7 +62,7 @@ export function DeploymentList({ deployments, clusterId, namespace, onRefresh }:
     if (activeModal?.type !== "rollback") return;
     setIsActing(true);
     try {
-      await rollbackDeploymentCmd(clusterId, namespace, activeModal.deployment.name);
+      await rollbackDeploymentCmd(clusterId, activeModal.deployment.namespace, activeModal.deployment.name);
       setActiveModal(null);
       onRefresh?.();
     } catch (err) {
@@ -76,7 +76,7 @@ export function DeploymentList({ deployments, clusterId, namespace, onRefresh }:
     if (activeModal?.type !== "delete") return;
     setIsActing(true);
     try {
-      await deleteResourceCmd(clusterId, "deployments", namespace, activeModal.deployment.name);
+      await deleteResourceCmd(clusterId, "deployments", activeModal.deployment.namespace, activeModal.deployment.name);
       setActiveModal(null);
       onRefresh?.();
     } finally {
@@ -165,7 +165,7 @@ export function DeploymentList({ deployments, clusterId, namespace, onRefresh }:
           resourceName={activeModal.deployment.name}
           currentReplicas={activeModal.deployment.replicas}
           onScale={(replicas) =>
-            scaleDeploymentCmd(clusterId, namespace, activeModal.deployment.name, replicas).then(() => {
+            scaleDeploymentCmd(clusterId, activeModal.deployment.namespace, activeModal.deployment.name, replicas).then(() => {
               setActiveModal(null);
               onRefresh?.();
             })
@@ -201,7 +201,7 @@ export function DeploymentList({ deployments, clusterId, namespace, onRefresh }:
         <EditResourceModal
           isOpen
           clusterId={clusterId}
-          namespace={namespace}
+          namespace={activeModal.deployment.namespace}
           resourceType="deployments"
           resourceName={activeModal.deployment.name}
           initialYaml={activeModal.yaml}
