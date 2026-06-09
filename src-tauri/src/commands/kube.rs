@@ -238,9 +238,9 @@ fn detect_auth_method(kubeconfig: &str, context_name: &str) -> String {
         .get("contexts")
         .and_then(|c| c.as_sequence())
         .and_then(|contexts| {
-            contexts.iter().find(|ctx| {
-                ctx.get("name").and_then(|n| n.as_str()) == Some(context_name)
-            })
+            contexts
+                .iter()
+                .find(|ctx| ctx.get("name").and_then(|n| n.as_str()) == Some(context_name))
         })
         .and_then(|ctx| ctx.get("context"))
         .and_then(|c| c.get("user"))
@@ -252,9 +252,9 @@ fn detect_auth_method(kubeconfig: &str, context_name: &str) -> String {
         .get("users")
         .and_then(|u| u.as_sequence())
         .and_then(|users| {
-            users.iter().find(|u| {
-                u.get("name").and_then(|n| n.as_str()) == Some(user_name.as_str())
-            })
+            users
+                .iter()
+                .find(|u| u.get("name").and_then(|n| n.as_str()) == Some(user_name.as_str()))
         })
         .and_then(|u| u.get("user"));
 
@@ -341,9 +341,20 @@ pub async fn test_kubectl_connection(
     let healthz_body = String::from_utf8_lossy(&healthz.stdout).trim().to_string();
     let healthz_err = String::from_utf8_lossy(&healthz.stderr).trim().to_string();
     let connectivity_line = if healthz_ok {
-        format!("OK  ({})", if healthz_body.is_empty() { "cluster reachable" } else { &healthz_body })
+        format!(
+            "OK  ({})",
+            if healthz_body.is_empty() {
+                "cluster reachable"
+            } else {
+                &healthz_body
+            }
+        )
     } else {
-        let hint = if healthz_err.is_empty() { "no stderr" } else { healthz_err.lines().last().unwrap_or(&healthz_err) };
+        let hint = if healthz_err.is_empty() {
+            "no stderr"
+        } else {
+            healthz_err.lines().last().unwrap_or(&healthz_err)
+        };
         format!("FAIL  — {hint}")
     };
 
@@ -372,8 +383,16 @@ pub async fn test_kubectl_connection(
         auth = auth_method,
         connectivity = connectivity_line,
         exit = exit_code,
-        stdout = if stdout.is_empty() { "(none)\n" } else { &stdout },
-        stderr = if stderr.is_empty() { "(none)\n" } else { &stderr },
+        stdout = if stdout.is_empty() {
+            "(none)\n"
+        } else {
+            &stdout
+        },
+        stderr = if stderr.is_empty() {
+            "(none)\n"
+        } else {
+            &stderr
+        },
     ))
 }
 
