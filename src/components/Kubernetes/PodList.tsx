@@ -1,28 +1,36 @@
 import React, { useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui";
 import { Badge } from "@/components/ui";
-import { Button } from "@/components/ui";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui";
-import { Textarea } from "@/components/ui";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui";
-import { Terminal, FileText, RotateCcw } from "lucide-react";
-import { Alert, AlertDescription } from "@/components/ui";
-import type { PodInfo, LogResponse } from "@/lib/tauriCommands";
+import { FileText, Terminal, Link, Pencil, Trash2, Zap } from "lucide-react";
+import type { PodInfo } from "@/lib/tauriCommands";
+import { deleteResourceCmd, forceDeleteResourceCmd, getResourceYamlCmd } from "@/lib/tauriCommands";
+import { ResourceActionMenu } from "./ResourceActionMenu";
+import { ConfirmDeleteDialog } from "./ConfirmDeleteDialog";
+import { LogsModal } from "./LogsModal";
+import { ShellExecModal } from "./ShellExecModal";
+import { AttachModal } from "./AttachModal";
+import { EditResourceModal } from "./EditResourceModal";
 
 interface PodListProps {
   pods: PodInfo[];
   clusterId: string;
   namespace: string;
+  onRefresh?: () => void;
 }
 
-export function PodList({ pods, clusterId, namespace }: PodListProps) {
-  const [selectedPod, setSelectedPod] = useState<PodInfo | null>(null);
-  const [selectedContainer, setSelectedContainer] = useState<string>("");
-  const [logs, setLogs] = useState<string>("");
-  const [isFetchingLogs, setIsFetchingLogs] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
+type ActiveModal =
+  | { type: "logs"; pod: PodInfo }
+  | { type: "shell"; pod: PodInfo }
+  | { type: "attach"; pod: PodInfo }
+  | { type: "edit"; pod: PodInfo; yaml: string }
+  | { type: "delete"; pod: PodInfo }
+  | { type: "force-delete"; pod: PodInfo }
+  | null;
+
+export function PodList({ pods, clusterId, namespace, onRefresh }: PodListProps) {
+  const [activeModal, setActiveModal] = useState<ActiveModal>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
 
   const getPodStatusColor = (status: string) => {
     switch (status.toLowerCase()) {
@@ -41,37 +49,41 @@ export function PodList({ pods, clusterId, namespace }: PodListProps) {
     }
   };
 
-  const fetchLogs = async () => {
-    if (!selectedPod || !selectedContainer) return;
-
-    setIsFetchingLogs(true);
-    setError(null);
+  const openEdit = async (pod: PodInfo) => {
+    setEditError(null);
     try {
-      const response = await invoke<LogResponse>("get_pod_logs", {
-        clusterId,
-        namespace,
-        podName: selectedPod.name,
-        containerName: selectedContainer,
-      });
-      setLogs(response.logs);
+      const yaml = await getResourceYamlCmd(clusterId, "pods", namespace, pod.name);
+      setActiveModal({ type: "edit", pod, yaml });
     } catch (err) {
-      console.error("Failed to fetch logs:", err);
-      setError(err instanceof Error ? err.message : "Failed to fetch logs");
-    } finally {
-      setIsFetchingLogs(false);
+      setEditError(err instanceof Error ? err.message : String(err));
     }
   };
 
-  const handleContainerChange = (container: string) => {
-    setSelectedContainer(container);
-    setLogs("");
-    setError(null);
+  const handleDelete = async (force: boolean) => {
+    const modal = activeModal;
+    if (!modal || (modal.type !== "delete" && modal.type !== "force-delete")) return;
+    setIsDeleting(true);
+    try {
+      if (force) {
+        await forceDeleteResourceCmd(clusterId, "pods", namespace, modal.pod.name);
+      } else {
+        await deleteResourceCmd(clusterId, "pods", namespace, modal.pod.name);
+      }
+      setActiveModal(null);
+      onRefresh?.();
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
-  const containers = selectedPod?.containers ?? [];
+  const currentPod =
+    activeModal && activeModal.type !== "edit" ? activeModal.pod : null;
 
   return (
     <>
+      {editError && (
+        <p className="mb-2 text-sm text-destructive">{editError}</p>
+      )}
       <div className="overflow-x-auto">
         <Table>
           <TableHeader>
@@ -102,91 +114,46 @@ export function PodList({ pods, clusterId, namespace }: PodListProps) {
                   <TableCell>{pod.ready}</TableCell>
                   <TableCell className="text-muted-foreground">{pod.age}</TableCell>
                   <TableCell className="text-right">
-                    <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-                      <Button variant="ghost" size="sm" onClick={() => { setSelectedPod(pod); setIsDialogOpen(true); }}>
-                        <Terminal className="w-4 h-4" />
-                      </Button>
-                      <DialogContent className="max-w-4xl max-h-[80vh] flex flex-col">
-                        <DialogHeader>
-                          <DialogTitle>{pod.name} - {namespace} namespace</DialogTitle>
-                        </DialogHeader>
-                        <div className="flex-1 overflow-y-auto flex flex-col">
-                          {selectedPod && (
-                            <div className="space-y-4">
-                              <div className="flex items-center gap-2">
-                                <span className="text-sm font-medium">Container:</span>
-                                <select
-                                  value={selectedContainer}
-                                  onChange={(e) => handleContainerChange(e.target.value)}
-                                  className="flex h-9 w-32 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
-                                >
-                                  <option value="">Select container...</option>
-                                  {containers.map((container) => (
-                                    <option key={container} value={container}>
-                                      {container}
-                                    </option>
-                                  ))}
-                                </select>
-                                <Button
-                                  onClick={fetchLogs}
-                                  disabled={!selectedContainer || isFetchingLogs}
-                                  size="sm"
-                                >
-                                  {isFetchingLogs ? (
-                                    <>
-                                      <RotateCcw className="w-4 h-4 animate-spin" />
-                                      Loading...
-                                    </>
-                                  ) : (
-                                    <>
-                                      <FileText className="w-4 h-4" />
-                                      Fetch Logs
-                                    </>
-                                  )}
-                                </Button>
-                              </div>
-
-                              {error && (
-                                <Alert variant="destructive">
-                                  <AlertDescription>{error}</AlertDescription>
-                                </Alert>
-                              )}
-
-                              <Tabs value="logs" onValueChange={() => {}}>
-                                <TabsList className="grid grid-cols-2">
-                                  <TabsTrigger value="logs">Logs</TabsTrigger>
-                                  <TabsTrigger value="details">Details</TabsTrigger>
-                                </TabsList>
-                                <div className="flex-1 overflow-auto">
-                                  <TabsContent value="logs" className="h-full">
-                                    <Textarea
-                                      value={logs}
-                                      readOnly
-                                      className="font-mono text-xs h-64"
-                                      placeholder="No logs available. Click 'Fetch Logs' to retrieve."
-                                    />
-                                  </TabsContent>
-                                  <TabsContent value="details" className="h-full">
-                                    <div className="space-y-2 text-sm">
-                                      <div className="grid grid-cols-2 gap-2">
-                                        <div className="text-muted-foreground">Name:</div>
-                                        <div>{selectedPod.name}</div>
-                                        <div className="text-muted-foreground">Status:</div>
-                                        <div>{selectedPod.status}</div>
-                                        <div className="text-muted-foreground">Ready:</div>
-                                        <div>{selectedPod.ready}</div>
-                                        <div className="text-muted-foreground">Age:</div>
-                                        <div>{selectedPod.age}</div>
-                                      </div>
-                                    </div>
-                                  </TabsContent>
-                                </div>
-                              </Tabs>
-                            </div>
-                          )}
-                        </div>
-                      </DialogContent>
-                    </Dialog>
+                    <ResourceActionMenu
+                      actions={[
+                        {
+                          label: "Logs",
+                          icon: FileText,
+                          onClick: () => setActiveModal({ type: "logs", pod }),
+                        },
+                        {
+                          label: "Shell",
+                          icon: Terminal,
+                          onClick: () => setActiveModal({ type: "shell", pod }),
+                        },
+                        {
+                          label: "Attach",
+                          icon: Link,
+                          onClick: () => setActiveModal({ type: "attach", pod }),
+                        },
+                        {
+                          label: "Edit",
+                          icon: Pencil,
+                          onClick: () => openEdit(pod),
+                        },
+                        {
+                          label: "Delete",
+                          icon: Trash2,
+                          variant: "destructive",
+                          onClick: () => setActiveModal({ type: "delete", pod }),
+                        },
+                        {
+                          label: "Force Delete",
+                          icon: Zap,
+                          variant: "destructive",
+                          hidden: !(
+                            pod.status.toLowerCase() === "running" ||
+                            pod.status.toLowerCase() === "pending"
+                          ),
+                          onClick: () => setActiveModal({ type: "force-delete", pod }),
+                        },
+                      ]}
+                    />
                   </TableCell>
                 </TableRow>
               ))
@@ -194,6 +161,74 @@ export function PodList({ pods, clusterId, namespace }: PodListProps) {
           </TableBody>
         </Table>
       </div>
+
+      {activeModal?.type === "logs" && (
+        <LogsModal
+          open
+          onOpenChange={(o) => { if (!o) setActiveModal(null); }}
+          clusterId={clusterId}
+          namespace={namespace}
+          podName={activeModal.pod.name}
+          containers={activeModal.pod.containers}
+        />
+      )}
+
+      {activeModal?.type === "shell" && (
+        <ShellExecModal
+          open
+          onOpenChange={(o) => { if (!o) setActiveModal(null); }}
+          clusterId={clusterId}
+          namespace={namespace}
+          podName={activeModal.pod.name}
+          containers={activeModal.pod.containers}
+        />
+      )}
+
+      {activeModal?.type === "attach" && (
+        <AttachModal
+          open
+          onOpenChange={(o) => { if (!o) setActiveModal(null); }}
+          clusterId={clusterId}
+          namespace={namespace}
+          podName={activeModal.pod.name}
+          containers={activeModal.pod.containers}
+        />
+      )}
+
+      {activeModal?.type === "edit" && (
+        <EditResourceModal
+          isOpen
+          clusterId={clusterId}
+          namespace={namespace}
+          resourceType="pods"
+          resourceName={activeModal.pod.name}
+          initialYaml={activeModal.yaml}
+          onClose={() => { setActiveModal(null); onRefresh?.(); }}
+        />
+      )}
+
+      {activeModal?.type === "delete" && currentPod && (
+        <ConfirmDeleteDialog
+          open
+          onOpenChange={(o) => { if (!o) setActiveModal(null); }}
+          resourceType="Pod"
+          resourceName={currentPod.name}
+          isLoading={isDeleting}
+          onConfirm={() => handleDelete(false)}
+        />
+      )}
+
+      {activeModal?.type === "force-delete" && currentPod && (
+        <ConfirmDeleteDialog
+          open
+          onOpenChange={(o) => { if (!o) setActiveModal(null); }}
+          resourceType="Pod"
+          resourceName={currentPod.name}
+          variant="force-delete"
+          isLoading={isDeleting}
+          onConfirm={() => handleDelete(true)}
+        />
+      )}
     </>
   );
 }

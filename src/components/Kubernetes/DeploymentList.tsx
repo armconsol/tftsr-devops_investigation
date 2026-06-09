@@ -1,89 +1,94 @@
 import React, { useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui";
-import { Button } from "@/components/ui";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui";
-import { Input } from "@/components/ui";
-import { Label } from "@/components/ui";
-import { Alert, AlertDescription } from "@/components/ui";
-import { AlertCircle, RotateCcw, Scale } from "lucide-react";
+import { Scale, RotateCcw, Undo2, Pencil, Trash2 } from "lucide-react";
 import type { DeploymentInfo } from "@/lib/tauriCommands";
+import {
+  scaleDeploymentCmd,
+  restartDeploymentCmd,
+  rollbackDeploymentCmd,
+  deleteResourceCmd,
+  getResourceYamlCmd,
+} from "@/lib/tauriCommands";
+import { ResourceActionMenu } from "./ResourceActionMenu";
+import { ConfirmDeleteDialog } from "./ConfirmDeleteDialog";
+import { ScaleModal } from "./ScaleModal";
+import { EditResourceModal } from "./EditResourceModal";
 
 interface DeploymentListProps {
   deployments: DeploymentInfo[];
   clusterId: string;
   namespace: string;
+  onRefresh?: () => void;
 }
 
-export function DeploymentList({ deployments, clusterId, namespace }: DeploymentListProps) {
-  const [scalingDeployment, setScalingDeployment] = useState<DeploymentInfo | null>(null);
-  const [replicas, setReplicas] = useState<string>("");
-  const [isScaling, setIsScaling] = useState(false);
-  const [scaleError, setScaleError] = useState<string | null>(null);
+type ActiveModal =
+  | { type: "scale"; deployment: DeploymentInfo }
+  | { type: "restart"; deployment: DeploymentInfo }
+  | { type: "rollback"; deployment: DeploymentInfo }
+  | { type: "edit"; deployment: DeploymentInfo; yaml: string }
+  | { type: "delete"; deployment: DeploymentInfo }
+  | null;
 
-  const [restartingDeployment, setRestartingDeployment] = useState<DeploymentInfo | null>(null);
-  const [isRestarting, setIsRestarting] = useState(false);
-  const [restartError, setRestartError] = useState<string | null>(null);
+export function DeploymentList({ deployments, clusterId, namespace, onRefresh }: DeploymentListProps) {
+  const [activeModal, setActiveModal] = useState<ActiveModal>(null);
+  const [isActing, setIsActing] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
 
-  const handleScaleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setReplicas(e.target.value);
-    setScaleError(null);
-  };
-
-  const handleScaleSubmit = async () => {
-    if (!scalingDeployment) return;
-
-    const newReplicas = parseInt(replicas, 10);
-    if (isNaN(newReplicas) || newReplicas < 0) {
-      setScaleError("Invalid replica count");
-      return;
-    }
-
-    setIsScaling(true);
-    setScaleError(null);
-
+  const openEdit = async (deployment: DeploymentInfo) => {
+    setActionError(null);
     try {
-      await invoke<void>("scale_deployment", {
-        clusterId,
-        namespace,
-        deploymentName: scalingDeployment.name,
-        replicas: newReplicas,
-      });
-
-      setScalingDeployment(null);
-      setReplicas("");
+      const yaml = await getResourceYamlCmd(clusterId, "deployments", namespace, deployment.name);
+      setActiveModal({ type: "edit", deployment, yaml });
     } catch (err) {
-      console.error("Failed to scale deployment:", err);
-      setScaleError(err instanceof Error ? err.message : "Failed to scale deployment");
-    } finally {
-      setIsScaling(false);
+      setActionError(err instanceof Error ? err.message : String(err));
     }
   };
 
-  const handleRestartSubmit = async () => {
-    if (!restartingDeployment) return;
-
-    setIsRestarting(true);
-    setRestartError(null);
-
+  const handleRestart = async () => {
+    if (activeModal?.type !== "restart") return;
+    setIsActing(true);
     try {
-      await invoke<void>("restart_deployment", {
-        clusterId,
-        namespace,
-        deploymentName: restartingDeployment.name,
-      });
-
-      setRestartingDeployment(null);
+      await restartDeploymentCmd(clusterId, namespace, activeModal.deployment.name);
+      setActiveModal(null);
+      onRefresh?.();
     } catch (err) {
-      console.error("Failed to restart deployment:", err);
-      setRestartError(err instanceof Error ? err.message : "Failed to restart deployment");
+      setActionError(err instanceof Error ? err.message : String(err));
     } finally {
-      setIsRestarting(false);
+      setIsActing(false);
+    }
+  };
+
+  const handleRollback = async () => {
+    if (activeModal?.type !== "rollback") return;
+    setIsActing(true);
+    try {
+      await rollbackDeploymentCmd(clusterId, namespace, activeModal.deployment.name);
+      setActiveModal(null);
+      onRefresh?.();
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setIsActing(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (activeModal?.type !== "delete") return;
+    setIsActing(true);
+    try {
+      await deleteResourceCmd(clusterId, "deployments", namespace, activeModal.deployment.name);
+      setActiveModal(null);
+      onRefresh?.();
+    } finally {
+      setIsActing(false);
     }
   };
 
   return (
     <>
+      {actionError && (
+        <p className="mb-2 text-sm text-destructive">{actionError}</p>
+      )}
       <div className="overflow-x-auto">
         <Table>
           <TableHeader>
@@ -114,24 +119,36 @@ export function DeploymentList({ deployments, clusterId, namespace }: Deployment
                   <TableCell>{deployment.replicas}</TableCell>
                   <TableCell className="text-muted-foreground">{deployment.age}</TableCell>
                   <TableCell className="text-right">
-                    <div className="flex items-center justify-end gap-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setScalingDeployment(deployment)}
-                      >
-                        <Scale className="w-4 h-4" />
-                        Scale
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setRestartingDeployment(deployment)}
-                      >
-                        <RotateCcw className="w-4 h-4" />
-                        Restart
-                      </Button>
-                    </div>
+                    <ResourceActionMenu
+                      actions={[
+                        {
+                          label: "Scale",
+                          icon: Scale,
+                          onClick: () => setActiveModal({ type: "scale", deployment }),
+                        },
+                        {
+                          label: "Restart",
+                          icon: RotateCcw,
+                          onClick: () => setActiveModal({ type: "restart", deployment }),
+                        },
+                        {
+                          label: "Rollback",
+                          icon: Undo2,
+                          onClick: () => setActiveModal({ type: "rollback", deployment }),
+                        },
+                        {
+                          label: "Edit",
+                          icon: Pencil,
+                          onClick: () => openEdit(deployment),
+                        },
+                        {
+                          label: "Delete",
+                          icon: Trash2,
+                          variant: "destructive",
+                          onClick: () => setActiveModal({ type: "delete", deployment }),
+                        },
+                      ]}
+                    />
                   </TableCell>
                 </TableRow>
               ))
@@ -140,69 +157,68 @@ export function DeploymentList({ deployments, clusterId, namespace }: Deployment
         </Table>
       </div>
 
-      {/* Scale Dialog */}
-      <Dialog open={!!scalingDeployment} onOpenChange={() => setScalingDeployment(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Scale Deployment</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <Label htmlFor="replicas">Replica Count</Label>
-              <Input
-                id="replicas"
-                type="number"
-                value={replicas}
-                onChange={handleScaleChange}
-                placeholder="Enter replica count"
-                min="0"
-              />
-              {scaleError && (
-                <Alert variant="destructive" className="mt-2">
-                  <AlertCircle className="h-4 w-4" />
-                  <AlertDescription>{scaleError}</AlertDescription>
-                </Alert>
-              )}
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setScalingDeployment(null)}>
-              Cancel
-            </Button>
-            <Button onClick={handleScaleSubmit} disabled={isScaling}>
-              {isScaling ? "Scaling..." : "Scale"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {activeModal?.type === "scale" && (
+        <ScaleModal
+          open
+          onOpenChange={(o) => { if (!o) setActiveModal(null); }}
+          resourceType="Deployment"
+          resourceName={activeModal.deployment.name}
+          currentReplicas={activeModal.deployment.replicas}
+          onScale={(replicas) =>
+            scaleDeploymentCmd(clusterId, namespace, activeModal.deployment.name, replicas).then(() => {
+              setActiveModal(null);
+              onRefresh?.();
+            })
+          }
+        />
+      )}
 
-      {/* Restart Dialog */}
-      <Dialog open={!!restartingDeployment} onOpenChange={() => setRestartingDeployment(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Restart Deployment</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <p className="text-sm text-muted-foreground">
-              This will trigger a rolling restart of the deployment.
-            </p>
-            {restartError && (
-              <Alert variant="destructive">
-                <AlertCircle className="h-4 w-4" />
-                <AlertDescription>{restartError}</AlertDescription>
-              </Alert>
-            )}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setRestartingDeployment(null)}>
-              Cancel
-            </Button>
-            <Button onClick={handleRestartSubmit} disabled={isRestarting}>
-              {isRestarting ? "Restarting..." : "Restart"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {activeModal?.type === "restart" && (
+        <ConfirmDeleteDialog
+          open
+          onOpenChange={(o) => { if (!o) setActiveModal(null); }}
+          resourceType="Deployment"
+          resourceName={activeModal.deployment.name}
+          isLoading={isActing}
+          onConfirm={handleRestart}
+          variant="delete"
+        />
+      )}
+
+      {activeModal?.type === "rollback" && (
+        <ConfirmDeleteDialog
+          open
+          onOpenChange={(o) => { if (!o) setActiveModal(null); }}
+          resourceType="Deployment"
+          resourceName={activeModal.deployment.name}
+          isLoading={isActing}
+          onConfirm={handleRollback}
+          variant="delete"
+        />
+      )}
+
+      {activeModal?.type === "edit" && (
+        <EditResourceModal
+          isOpen
+          clusterId={clusterId}
+          namespace={namespace}
+          resourceType="deployments"
+          resourceName={activeModal.deployment.name}
+          initialYaml={activeModal.yaml}
+          onClose={() => { setActiveModal(null); onRefresh?.(); }}
+        />
+      )}
+
+      {activeModal?.type === "delete" && (
+        <ConfirmDeleteDialog
+          open
+          onOpenChange={(o) => { if (!o) setActiveModal(null); }}
+          resourceType="Deployment"
+          resourceName={activeModal.deployment.name}
+          isLoading={isActing}
+          onConfirm={handleDelete}
+        />
+      )}
     </>
   );
 }
