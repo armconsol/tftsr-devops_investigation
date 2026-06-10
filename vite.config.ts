@@ -19,4 +19,14 @@ export default defineConfig(async () => ({
   resolve: {
     alias: { "@": path.resolve(__dirname, "./src") },
   },
+  worker: {
+    format: "es",
+  },
+  optimizeDeps: {
+    include: [
+      "ansi-to-react",
+      "monaco-editor/esm/vs/language/json/json.worker",
+      "monaco-editor/esm/vs/editor/editor.worker",
+    ],
+  },
 }));

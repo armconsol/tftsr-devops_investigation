@@ -69,5 +69,11 @@ function getStatusVariant(status: string): BadgeProps["variant"] {
   if (normalized === "succeeded" || normalized === "completed" || normalized === "bound") {
     return "succeeded";
   }
+  if (normalized.includes("crash") || normalized.includes("error") || normalized.includes("oom") || normalized.includes("backoff")) {
+    return "failed";
+  }
+  if (normalized === "terminating" || normalized === "evicted") {
+    return "destructive";
+  }
   return "unknown";
 }

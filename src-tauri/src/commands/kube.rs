@@ -96,6 +96,9 @@ pub struct PodInfo {
     pub ready: String,
     pub age: String,
     pub containers: Vec<String>,
+    pub restarts: Option<u32>,
+    pub ip: Option<String>,
+    pub node: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1159,6 +1162,31 @@ fn parse_pods_json(json_str: &str) -> Result<Vec<PodInfo>, String> {
             })
             .unwrap_or_default();
 
+        let restarts = item
+            .get("status")
+            .and_then(|s| s.get("containerStatuses"))
+            .and_then(|c| c.as_array())
+            .map(|container_statuses| {
+                container_statuses
+                    .iter()
+                    .map(|c| c.get("restartCount").and_then(|r| r.as_u64()).unwrap_or(0) as u32)
+                    .sum::<u32>()
+            });
+
+        let ip = item
+            .get("status")
+            .and_then(|s| s.get("podIP"))
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string());
+
+        let node = item
+            .get("spec")
+            .and_then(|s| s.get("nodeName"))
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string());
+
         pods.push(PodInfo {
             name,
             namespace,
@@ -1166,6 +1194,9 @@ fn parse_pods_json(json_str: &str) -> Result<Vec<PodInfo>, String> {
             ready,
             age,
             containers,
+            restarts,
+            ip,
+            node,
         });
     }
 

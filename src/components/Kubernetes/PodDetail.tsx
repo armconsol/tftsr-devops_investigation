@@ -4,8 +4,9 @@ import { Badge } from "@/components/ui";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui";
 import { Button } from "@/components/ui";
-import { Copy, X } from "lucide-react";
+import { Copy, Network, X } from "lucide-react";
 import { Loader2 } from "lucide-react";
+import { PortForwardDialog } from "./PortForwardDialog";
 import { YamlEditor } from "./YamlEditor";
 import { getPodLogsCmd } from "@/lib/tauriCommands";
 import type { PodInfo } from "@/lib/tauriCommands";
@@ -23,6 +24,7 @@ export function PodDetail({ clusterId, namespace, pod, onClose }: PodDetailProps
   const [logs, setLogs] = React.useState<string | null>(null);
   const [logsLoading, setLogsLoading] = React.useState(false);
   const [logsError, setLogsError] = React.useState<string | null>(null);
+  const [portForwardOpen, setPortForwardOpen] = React.useState(false);
 
   const fetchLogs = React.useCallback(
     async (containerName: string) => {
@@ -66,10 +68,24 @@ export function PodDetail({ clusterId, namespace, pod, onClose }: PodDetailProps
           <h2 className="text-xl font-semibold">Pod: {pod.name}</h2>
           <Badge variant="outline">{namespace}</Badge>
         </div>
-        <Button variant="ghost" size="sm" onClick={onClose}>
-          <X className="w-4 h-4" />
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={() => setPortForwardOpen(true)}>
+            <Network className="w-4 h-4 mr-1.5" />
+            Port Forward
+          </Button>
+          <Button variant="ghost" size="sm" onClick={onClose}>
+            <X className="w-4 h-4" />
+          </Button>
+        </div>
       </div>
+
+      <PortForwardDialog
+        open={portForwardOpen}
+        onOpenChange={setPortForwardOpen}
+        clusterId={clusterId}
+        namespace={namespace}
+        podName={pod.name}
+      />
 
       <Tabs value={activeTab} onValueChange={handleTabChange}>
         <TabsList className="grid grid-cols-3 mb-4">

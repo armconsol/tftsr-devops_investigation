@@ -1530,14 +1530,13 @@ export const startPtyExecSessionCmd = (
   namespace: string,
   podName: string,
   containerName: string | null,
-  shell: string
+  _shell: string
 ) =>
   invoke<string>("start_pty_exec_session", {
     clusterId,
     namespace,
-    podName,
-    containerName,
-    shell,
+    pod: podName,
+    container: containerName,
   });
 
 export const startPtyAttachSessionCmd = (
@@ -1549,8 +1548,8 @@ export const startPtyAttachSessionCmd = (
   invoke<string>("start_pty_attach_session", {
     clusterId,
     namespace,
-    podName,
-    containerName,
+    pod: podName,
+    container: containerName,
   });
 
 export const sendPtyStdinCmd = (sessionId: string, data: string) =>

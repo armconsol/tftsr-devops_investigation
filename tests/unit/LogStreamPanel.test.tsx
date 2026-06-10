@@ -30,9 +30,6 @@ describe("LogStreamPanel — ANSI color support", () => {
       />
     );
 
-    // Simulate receiving log line with ANSI color codes
-    const logLine = "\x1b[31mError: something went wrong\x1b[0m";
-
     // Component should render the ANSI-colored line
     rerender(
       <LogStreamPanel
