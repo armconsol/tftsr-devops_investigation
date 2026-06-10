@@ -1169,11 +1169,7 @@ fn parse_pods_json(json_str: &str) -> Result<Vec<PodInfo>, String> {
             .map(|container_statuses| {
                 container_statuses
                     .iter()
-                    .map(|c| {
-                        c.get("restartCount")
-                            .and_then(|r| r.as_u64())
-                            .unwrap_or(0) as u32
-                    })
+                    .map(|c| c.get("restartCount").and_then(|r| r.as_u64()).unwrap_or(0) as u32)
                     .sum::<u32>()
             });
 
