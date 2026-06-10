@@ -3,8 +3,9 @@ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui";
 import { Badge } from "@/components/ui";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui";
 import { Button } from "@/components/ui";
-import { X, Loader2 } from "lucide-react";
+import { Network, X, Loader2 } from "lucide-react";
 import { YamlEditor } from "./YamlEditor";
+import { PortForwardDialog } from "./PortForwardDialog";
 import { scaleDeploymentCmd, restartDeploymentCmd, rollbackDeploymentCmd } from "@/lib/tauriCommands";
 import type { DeploymentInfo } from "@/lib/tauriCommands";
 
@@ -18,6 +19,7 @@ interface DeploymentDetailProps {
 export function DeploymentDetail({ clusterId, namespace, deployment, onClose }: DeploymentDetailProps) {
   const [activeTab, setActiveTab] = React.useState("overview");
   const [replicaCount, setReplicaCount] = React.useState(deployment.replicas);
+  const [portForwardOpen, setPortForwardOpen] = React.useState(false);
 
   const [scaleLoading, setScaleLoading] = React.useState(false);
   const [scaleError, setScaleError] = React.useState<string | null>(null);
@@ -74,10 +76,24 @@ export function DeploymentDetail({ clusterId, namespace, deployment, onClose }: 
           <h2 className="text-xl font-semibold">Deployment: {deployment.name}</h2>
           <Badge variant="outline">{namespace}</Badge>
         </div>
-        <Button variant="ghost" size="sm" onClick={onClose}>
-          <X className="w-4 h-4" />
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={() => setPortForwardOpen(true)}>
+            <Network className="w-4 h-4 mr-1.5" />
+            Port Forward
+          </Button>
+          <Button variant="ghost" size="sm" onClick={onClose}>
+            <X className="w-4 h-4" />
+          </Button>
+        </div>
       </div>
+
+      <PortForwardDialog
+        open={portForwardOpen}
+        onOpenChange={setPortForwardOpen}
+        clusterId={clusterId}
+        namespace={namespace}
+        podName={undefined}
+      />
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList className="grid grid-cols-3 mb-4">

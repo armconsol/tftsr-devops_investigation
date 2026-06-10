@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { Play, Square, Trash2, Plus, RefreshCw } from "lucide-react";
 import { useKubernetesStore } from "@/stores/kubernetesStore";
 import {
@@ -17,8 +17,6 @@ import {
   startPortForwardCmd,
   stopPortForwardCmd,
   deletePortForwardCmd,
-  listPodsCmd,
-  listNamespacesCmd,
 } from "@/lib/tauriCommands";
 import { PortForwardForm } from "@/components/Kubernetes";
 
@@ -29,7 +27,7 @@ export function PortForwardPage() {
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const loadPortForwards = async () => {
+  const loadPortForwards = useCallback(async () => {
     if (!selectedClusterId) return;
     setIsLoading(true);
     setError(null);
@@ -41,13 +39,13 @@ export function PortForwardPage() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [selectedClusterId]);
 
   useEffect(() => {
     loadPortForwards();
     const interval = setInterval(loadPortForwards, 5000);
     return () => clearInterval(interval);
-  }, [selectedClusterId]);
+  }, [loadPortForwards]);
 
   const handleStop = async (id: string) => {
     try {

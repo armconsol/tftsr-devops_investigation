@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, Button } from "@/components/ui";
-import { Badge } from "@/components/ui";
+import { StatusBadge } from "@/components/Badge";
 import { FileText, Terminal, Link, Pencil, Trash2, Zap, Settings } from "lucide-react";
 import type { PodInfo } from "@/lib/tauriCommands";
 import { deleteResourceCmd, forceDeleteResourceCmd, getResourceYamlCmd } from "@/lib/tauriCommands";
@@ -14,7 +14,6 @@ import { useColumnConfig } from "@/hooks/useColumnConfig";
 import { useMetrics } from "@/hooks/useMetrics";
 import { DEFAULT_COLUMNS } from "@/config/defaultColumns";
 import { ColumnConfigModal } from "@/components/tables/ColumnConfigModal";
-import { QuickActionColumn } from "@/components/tables/QuickActionColumn";
 
 interface PodListProps {
   pods: PodInfo[];
@@ -48,23 +47,6 @@ export function PodList({ pods, clusterId, namespace, onRefresh }: PodListProps)
     metricsEnabled ? clusterId : null,
     metricsEnabled ? namespace : null
   );
-
-  const getPodStatusColor = (status: string) => {
-    switch (status.toLowerCase()) {
-      case "running":
-        return "bg-green-500";
-      case "pending":
-        return "bg-yellow-500";
-      case "succeeded":
-      case "completed":
-        return "bg-blue-500";
-      case "failed":
-      case "error":
-        return "bg-red-500";
-      default:
-        return "bg-gray-500";
-    }
-  };
 
   const openEdit = async (pod: PodInfo) => {
     setEditError(null);
@@ -152,9 +134,7 @@ export function PodList({ pods, clusterId, namespace, onRefresh }: PodListProps)
                   )}
                   {isColumnVisible("status") && (
                     <TableCell>
-                      <Badge className={`${getPodStatusColor(pod.status)} text-white`}>
-                        {pod.status}
-                      </Badge>
+                      <StatusBadge status={pod.status} />
                     </TableCell>
                   )}
                   {isColumnVisible("ready") && <TableCell>{pod.ready}</TableCell>}

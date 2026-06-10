@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { Download, Search, Square, Trash2, Play, ChevronUp, ChevronDown, DownloadCloud } from "lucide-react";
-import Ansi from "ansi-to-react";
+import AnsiLib from "ansi-to-react";
 import {
   Dialog,
   DialogContent,
@@ -11,6 +11,10 @@ import {
   Input,
 } from "@/components/ui";
 import { streamPodLogsCmd, stopLogStreamCmd } from "@/lib/tauriCommands";
+
+// Handle CJS default export in both dev and production Vite builds
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const Ansi = ((AnsiLib as any).default ?? AnsiLib) as React.ComponentType<{ children: string }>;
 
 interface LogStreamPanelProps {
   clusterId: string;
