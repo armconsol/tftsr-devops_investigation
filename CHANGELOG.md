@@ -51,6 +51,14 @@ CI, chore, and build changes are excluded.
 - **kube**: Add namespace to PodInfo; pod actions use pod.namespace not filter
 - **kube**: Network/config/storage list actions use item.namespace not filter prop
 - **kube**: Workload list actions use item.namespace not filter prop
+- **performance**: Resolve memory leaks and add polish features
+- **ui**: Critical UI fixes - logs, menus, dark mode, YAML
+- **lint**: Remove unused variables in test files
+- Add PTY command bindings and format Rust code
+- **shell**: Resolve TypeScript errors in PTY terminal components
+- **security**: Address automated code review findings
+- **shell**: Delay KubeconfigGuard disarm until after PTY session starts
+- **ci**: Correct Renovate API endpoint for Gitea
 
 ### Documentation
 - **kubernetes**: Add comment about dynamic port allocation limitation
@@ -75,6 +83,14 @@ CI, chore, and build changes are excluded.
 - **kube**: Nav restructure, action menus, new resource lists, advanced components
 - **kube**: Implement 44 new Rust K8s commands + helm binary support
 - **kube**: Merge backend — 44 Rust commands, helm binary, 363 tests
+- **network**: Add dedicated port forwarding management page
+- **workloads**: Add logs action to all 7 workload resource types
+- **config**: Add edit/delete actions to all policy resources and secret viewer
+- **shell**: Implement PTY-based interactive terminals
+- **tables**: Implement configurable columns infrastructure
+- **metrics**: Add frontend metrics integration with Chart.js
+- **metrics**: Implement kubectl top metrics backend
+- **tables**: Roll out configurable columns to all workload lists
 
 ### Security
 - **kube**: Restrict temp kubeconfig files to owner-only permissions
