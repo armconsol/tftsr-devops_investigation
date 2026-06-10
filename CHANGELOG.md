@@ -59,6 +59,9 @@ CI, chore, and build changes are excluded.
 - **security**: Address automated code review findings
 - **shell**: Delay KubeconfigGuard disarm until after PTY session starts
 - **ci**: Correct Renovate API endpoint for Gitea
+- **kube**: Fix PTY param names, ansi-to-react ESM interop, and dark mode badges
+- **kube**: Configure Monaco for offline use and fix pod column data (IP/Node/CPU/Memory)
+- **fmt**: Collapse single-expression restart count closure per rustfmt
 
 ### Documentation
 - **kubernetes**: Add comment about dynamic port allocation limitation
@@ -91,6 +94,7 @@ CI, chore, and build changes are excluded.
 - **metrics**: Add frontend metrics integration with Chart.js
 - **metrics**: Implement kubectl top metrics backend
 - **tables**: Roll out configurable columns to all workload lists
+- **kube**: Add YAML edit action to NamespaceList
 
 ### Security
 - **kube**: Restrict temp kubeconfig files to owner-only permissions
