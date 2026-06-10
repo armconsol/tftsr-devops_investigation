@@ -27,6 +27,15 @@ impl KubeconfigGuard {
         Self { path: Some(path) }
     }
 
+    /// Return the path as a string without transferring ownership.
+    fn path_str(&self) -> String {
+        self.path
+            .as_ref()
+            .expect("KubeconfigGuard path already taken")
+            .to_string_lossy()
+            .into_owned()
+    }
+
     /// Transfer ownership: caller is now responsible for the file.
     /// Returns the path string for use with the PTY session.
     fn disarm(mut self) -> String {
@@ -344,8 +353,9 @@ pub async fn start_pty_exec_session(
     let kubectl_path =
         crate::shell::kubectl::locate_kubectl().map_err(|e| format!("kubectl not found: {e}"))?;
 
-    // Transfer ownership: PTY session now owns the temp file's lifetime.
-    let kubeconfig_path = kubeconfig_guard.map(|g| g.disarm());
+    // Obtain path string without disarming; the guard remains active so the
+    // file is cleaned up if session start fails below.
+    let kubeconfig_path = kubeconfig_guard.as_ref().map(|g| g.path_str());
 
     // Start session
     let params = crate::shell::session::SessionParams {
@@ -362,6 +372,13 @@ pub async fn start_pty_exec_session(
         .start_exec_session(app, params)
         .await
         .map_err(|e| format!("Failed to start exec session: {e}"))?;
+
+    // Session started — disarm the guard so the file outlives this function.
+    // The PTY process needs the kubeconfig for the full session duration;
+    // temp dir is OS-cleaned on reboot.
+    if let Some(g) = kubeconfig_guard {
+        g.disarm();
+    }
 
     Ok(session_id)
 }
@@ -406,8 +423,9 @@ pub async fn start_pty_attach_session(
     let kubectl_path =
         crate::shell::kubectl::locate_kubectl().map_err(|e| format!("kubectl not found: {e}"))?;
 
-    // Transfer ownership: PTY session now owns the temp file's lifetime.
-    let kubeconfig_path = kubeconfig_guard.map(|g| g.disarm());
+    // Obtain path string without disarming; the guard remains active so the
+    // file is cleaned up if session start fails below.
+    let kubeconfig_path = kubeconfig_guard.as_ref().map(|g| g.path_str());
 
     // Start session
     let params = crate::shell::session::SessionParams {
@@ -424,6 +442,11 @@ pub async fn start_pty_attach_session(
         .start_attach_session(app, params)
         .await
         .map_err(|e| format!("Failed to start attach session: {e}"))?;
+
+    // Session started — disarm the guard so the file outlives this function.
+    if let Some(g) = kubeconfig_guard {
+        g.disarm();
+    }
 
     Ok(session_id)
 }
