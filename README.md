@@ -179,6 +179,20 @@ For detailed setup including multiple AWS accounts and Claude Code integration, 
 
 ---
 
+## Keyboard Shortcuts
+
+| Shortcut | Action |
+|---|---|
+| `Ctrl+K` / `Cmd+K` | Open command palette |
+| `Ctrl+R` / `Cmd+R` | Refresh current view |
+| `Ctrl+F` / `Cmd+F` | Focus search |
+| `Shift+?` | Show keyboard shortcuts help |
+| `Escape` | Close modal/dialog/drawer |
+| `Ctrl+↑` / `Cmd+↑` | Navigate up (in lists) |
+| `Ctrl+↓` / `Cmd+↓` | Navigate down (in lists) |
+
+---
+
 ## Triage Workflow
 
 ```

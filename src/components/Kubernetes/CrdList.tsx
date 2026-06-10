@@ -124,8 +124,11 @@ export function CrdList({ clusterId, onSelectCrd }: CrdListProps) {
                             namespace={crd.scope === "Namespaced" ? "" : ""}
                             group={crd.group}
                             version={crd.version}
-                            resource={crd.name.split(".")[0] ?? crd.name}
+                            resource={crd.plural}
                             kind={crd.kind}
+                            printerColumns={
+                              crd.versions.find((v) => v.name === crd.version)?.printer_columns || []
+                            }
                           />
                         </td>
                       </tr>

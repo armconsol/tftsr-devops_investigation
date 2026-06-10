@@ -1,6 +1,6 @@
 import React, { useState } from "react";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui";
-import { RotateCcw, Pencil, Trash2 } from "lucide-react";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, Button } from "@/components/ui";
+import { RotateCcw, Pencil, Trash2, FileText, Settings } from "lucide-react";
 import type { DaemonSetInfo } from "@/lib/tauriCommands";
 import {
   restartDaemonsetCmd,
@@ -10,6 +10,10 @@ import {
 import { ResourceActionMenu } from "./ResourceActionMenu";
 import { ConfirmDeleteDialog } from "./ConfirmDeleteDialog";
 import { EditResourceModal } from "./EditResourceModal";
+import { WorkloadLogsModal } from "./WorkloadLogsModal";
+import { useColumnConfig } from "@/hooks/useColumnConfig";
+import { DEFAULT_COLUMNS } from "@/config/defaultColumns";
+import { ColumnConfigModal } from "@/components/tables/ColumnConfigModal";
 
 interface DaemonSetListProps {
   daemonsets: DaemonSetInfo[];
@@ -20,6 +24,7 @@ interface DaemonSetListProps {
 
 type ActiveModal =
   | { type: "restart"; ds: DaemonSetInfo }
+  | { type: "logs"; ds: DaemonSetInfo }
   | { type: "edit"; ds: DaemonSetInfo; yaml: string }
   | { type: "delete"; ds: DaemonSetInfo }
   | null;
@@ -28,6 +33,11 @@ export function DaemonSetList({ daemonsets, clusterId, namespace: _namespace, on
   const [activeModal, setActiveModal] = useState<ActiveModal>(null);
   const [isActing, setIsActing] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [showColumnConfig, setShowColumnConfig] = useState(false);
+
+  // Configurable columns
+  const columnConfig = useColumnConfig("daemonsets", DEFAULT_COLUMNS.daemonsets);
+  const { isColumnVisible } = columnConfig;
 
   const openEdit = async (ds: DaemonSetInfo) => {
     setActionError(null);
@@ -70,44 +80,72 @@ export function DaemonSetList({ daemonsets, clusterId, namespace: _namespace, on
       {actionError && (
         <p className="mb-2 text-sm text-destructive">{actionError}</p>
       )}
+      <div className="flex items-center justify-between mb-2">
+        <div className="text-sm text-muted-foreground">
+          {daemonsets.length} {daemonsets.length === 1 ? "daemonset" : "daemonsets"}
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setShowColumnConfig(true)}
+          className="flex items-center gap-1"
+        >
+          <Settings className="h-3.5 w-3.5" />
+          Columns
+        </Button>
+      </div>
       <div className="overflow-x-auto">
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>Desired</TableHead>
-              <TableHead>Current</TableHead>
-              <TableHead>Ready</TableHead>
-              <TableHead>Up-to-date</TableHead>
-              <TableHead>Available</TableHead>
-              <TableHead>Age</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
+              {isColumnVisible("name") && <TableHead>Name</TableHead>}
+              {isColumnVisible("namespace") && <TableHead>Namespace</TableHead>}
+              {isColumnVisible("desired") && <TableHead>Desired</TableHead>}
+              {isColumnVisible("current") && <TableHead>Current</TableHead>}
+              {isColumnVisible("ready") && <TableHead>Ready</TableHead>}
+              {isColumnVisible("upToDate") && <TableHead>Up-to-date</TableHead>}
+              {isColumnVisible("available") && <TableHead>Available</TableHead>}
+              {isColumnVisible("age") && <TableHead>Age</TableHead>}
+              {isColumnVisible("actions") && <TableHead className="text-right">Actions</TableHead>}
             </TableRow>
           </TableHeader>
           <TableBody>
             {daemonsets.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={8} className="text-center text-muted-foreground">
+                <TableCell colSpan={9} className="text-center text-muted-foreground">
                   No daemonsets found
                 </TableCell>
               </TableRow>
             ) : (
               daemonsets.map((ds) => (
                 <TableRow key={ds.name}>
-                  <TableCell className="font-medium">{ds.name}</TableCell>
-                  <TableCell>{ds.desired}</TableCell>
-                  <TableCell>{ds.current}</TableCell>
-                  <TableCell>{ds.ready}</TableCell>
-                  <TableCell>{ds.up_to_date}</TableCell>
-                  <TableCell>{ds.available}</TableCell>
-                  <TableCell className="text-muted-foreground">{ds.age}</TableCell>
-                  <TableCell className="text-right">
+                  {isColumnVisible("name") && (
+                    <TableCell className="font-medium">{ds.name}</TableCell>
+                  )}
+                  {isColumnVisible("namespace") && (
+                    <TableCell className="text-muted-foreground">{ds.namespace}</TableCell>
+                  )}
+                  {isColumnVisible("desired") && <TableCell>{ds.desired}</TableCell>}
+                  {isColumnVisible("current") && <TableCell>{ds.current}</TableCell>}
+                  {isColumnVisible("ready") && <TableCell>{ds.ready}</TableCell>}
+                  {isColumnVisible("upToDate") && <TableCell>{ds.up_to_date}</TableCell>}
+                  {isColumnVisible("available") && <TableCell>{ds.available}</TableCell>}
+                  {isColumnVisible("age") && (
+                    <TableCell className="text-muted-foreground">{ds.age}</TableCell>
+                  )}
+                  {isColumnVisible("actions") && (
+                    <TableCell className="text-right">
                     <ResourceActionMenu
                       actions={[
                         {
                           label: "Restart",
                           icon: RotateCcw,
                           onClick: () => setActiveModal({ type: "restart", ds }),
+                        },
+                        {
+                          label: "Logs",
+                          icon: FileText,
+                          onClick: () => setActiveModal({ type: "logs", ds }),
                         },
                         {
                           label: "Edit",
@@ -122,13 +160,26 @@ export function DaemonSetList({ daemonsets, clusterId, namespace: _namespace, on
                         },
                       ]}
                     />
-                  </TableCell>
+                    </TableCell>
+                  )}
                 </TableRow>
               ))
             )}
           </TableBody>
         </Table>
       </div>
+
+      {activeModal?.type === "logs" && (
+        <WorkloadLogsModal
+          open
+          onOpenChange={(o) => { if (!o) setActiveModal(null); }}
+          clusterId={clusterId}
+          namespace={activeModal.ds.namespace}
+          workloadType="daemonset"
+          workloadName={activeModal.ds.name}
+          labels={activeModal.ds.labels}
+        />
+      )}
 
       {activeModal?.type === "restart" && (
         <ConfirmDeleteDialog
@@ -164,6 +215,24 @@ export function DaemonSetList({ daemonsets, clusterId, namespace: _namespace, on
           onConfirm={handleDelete}
         />
       )}
+
+      <ColumnConfigModal
+        open={showColumnConfig}
+        onOpenChange={setShowColumnConfig}
+        resourceType="DaemonSets"
+        columnConfig={columnConfig}
+        columnLabels={{
+          name: "Name",
+          namespace: "Namespace",
+          desired: "Desired",
+          current: "Current",
+          ready: "Ready",
+          upToDate: "Up-to-date",
+          available: "Available",
+          age: "Age",
+          actions: "Actions",
+        }}
+      />
     </>
   );
 }

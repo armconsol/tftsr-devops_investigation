@@ -4988,11 +4988,31 @@ pub struct NamespaceResourceInfo {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PrinterColumn {
+    pub name: String,
+    pub json_path: String,
+    #[serde(rename = "type")]
+    pub column_type: String,
+    pub description: Option<String>,
+    pub priority: i32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CrdVersion {
+    pub name: String,
+    pub served: bool,
+    pub storage: bool,
+    pub printer_columns: Vec<PrinterColumn>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CrdInfo {
     pub name: String,
     pub group: String,
     pub version: String,
+    pub versions: Vec<CrdVersion>,
     pub kind: String,
+    pub plural: String,
     pub scope: String,
     pub age: String,
 }
@@ -5002,6 +5022,7 @@ pub struct CustomResourceInfo {
     pub name: String,
     pub namespace: String,
     pub age: String,
+    pub additional_columns: HashMap<String, String>,
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -6203,14 +6224,15 @@ fn parse_crds_json(json_str: &str) -> Result<Vec<CrdInfo>, String> {
             .unwrap_or("unknown")
             .to_string();
 
-        let version = item
+        let plural = item
             .get("spec")
-            .and_then(|s| s.get("versions"))
-            .and_then(|v| v.as_array())
-            .and_then(|v| v.first())
-            .and_then(|v| v.get("name"))
-            .and_then(|n| n.as_str())
-            .unwrap_or("v1")
+            .and_then(|s| s.get("names"))
+            .and_then(|n| n.get("plural"))
+            .and_then(|p| p.as_str())
+            .unwrap_or_else(|| {
+                // Fallback: use name's first segment
+                name.split('.').next().unwrap_or("unknown")
+            })
             .to_string();
 
         let kind = item
@@ -6235,11 +6257,88 @@ fn parse_crds_json(json_str: &str) -> Result<Vec<CrdInfo>, String> {
             .map(parse_creation_timestamp)
             .unwrap_or("N/A".to_string());
 
+        // Parse all versions with their printer columns
+        let versions: Vec<CrdVersion> = item
+            .get("spec")
+            .and_then(|s| s.get("versions"))
+            .and_then(|v| v.as_array())
+            .map(|versions_array| {
+                versions_array
+                    .iter()
+                    .filter_map(|ver| {
+                        let version_name = ver.get("name").and_then(|n| n.as_str())?.to_string();
+                        let served = ver.get("served").and_then(|s| s.as_bool()).unwrap_or(true);
+                        let storage = ver
+                            .get("storage")
+                            .and_then(|s| s.as_bool())
+                            .unwrap_or(false);
+
+                        // Parse printer columns for this version
+                        let printer_columns: Vec<PrinterColumn> = ver
+                            .get("additionalPrinterColumns")
+                            .and_then(|c| c.as_array())
+                            .map(|cols| {
+                                cols.iter()
+                                    .filter_map(|col| {
+                                        let col_name =
+                                            col.get("name").and_then(|n| n.as_str())?.to_string();
+                                        let json_path = col
+                                            .get("jsonPath")
+                                            .and_then(|j| j.as_str())?
+                                            .to_string();
+                                        let column_type = col
+                                            .get("type")
+                                            .and_then(|t| t.as_str())
+                                            .unwrap_or("string")
+                                            .to_string();
+                                        let description = col
+                                            .get("description")
+                                            .and_then(|d| d.as_str())
+                                            .map(|s| s.to_string());
+                                        let priority = col
+                                            .get("priority")
+                                            .and_then(|p| p.as_i64())
+                                            .unwrap_or(0)
+                                            as i32;
+
+                                        Some(PrinterColumn {
+                                            name: col_name,
+                                            json_path,
+                                            column_type,
+                                            description,
+                                            priority,
+                                        })
+                                    })
+                                    .collect()
+                            })
+                            .unwrap_or_default();
+
+                        Some(CrdVersion {
+                            name: version_name,
+                            served,
+                            storage,
+                            printer_columns,
+                        })
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        // Default version is the first one (or the storage version if available)
+        let version = versions
+            .iter()
+            .find(|v| v.storage)
+            .or_else(|| versions.first())
+            .map(|v| v.name.clone())
+            .unwrap_or_else(|| "v1".to_string());
+
         result.push(CrdInfo {
             name,
             group,
             version,
+            versions,
             kind,
+            plural,
             scope,
             age,
         });
@@ -6351,10 +6450,16 @@ fn parse_custom_resources_json(json_str: &str) -> Result<Vec<CustomResourceInfo>
             .map(parse_creation_timestamp)
             .unwrap_or("N/A".to_string());
 
+        // For now, we don't extract additional columns here as we don't have the CRD spec
+        // The frontend will need to call with the CRD info to get proper column extraction
+        // This is a limitation - ideally we'd pass printer columns to this function
+        let additional_columns = HashMap::new();
+
         result.push(CustomResourceInfo {
             name,
             namespace,
             age,
+            additional_columns,
         });
     }
 

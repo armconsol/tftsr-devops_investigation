@@ -6,6 +6,7 @@ pub mod docs;
 pub mod integrations;
 pub mod kube;
 pub mod mcp;
+pub mod metrics;
 pub mod ollama;
 pub mod pii;
 pub mod shell;
@@ -46,6 +47,7 @@ pub fn run() {
         refresh_registry: Arc::new(tokio::sync::Mutex::new(crate::kube::RefreshRegistry::new())),
         watchers: Arc::new(Mutex::new(std::collections::HashMap::new())),
         log_streams: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
+        pty_sessions: Arc::new(crate::shell::SessionManager::new()),
     };
     let stronghold_salt = format!(
         "tftsr-stronghold-salt-v1-{:x}",
@@ -179,6 +181,13 @@ pub fn run() {
             commands::shell::list_command_executions,
             commands::shell::check_kubectl_installed,
             commands::shell::get_classifier_rules,
+            // PTY Sessions
+            commands::shell::start_pty_exec_session,
+            commands::shell::start_pty_attach_session,
+            commands::shell::send_pty_stdin,
+            commands::shell::resize_pty_session,
+            commands::shell::terminate_pty_session,
+            commands::shell::list_pty_sessions,
             // Kubernetes Management
             commands::kube::add_cluster,
             commands::kube::connect_cluster_from_kubeconfig,
@@ -273,6 +282,9 @@ pub fn run() {
             commands::kube::helm_list_releases,
             commands::kube::helm_uninstall,
             commands::kube::helm_rollback,
+            // Kubernetes Metrics
+            commands::metrics::get_pod_metrics,
+            commands::metrics::get_node_metrics,
         ])
         .run(tauri::generate_context!())
         .expect("Error running Troubleshooting and RCA Assistant application");

@@ -79,11 +79,49 @@ pub struct ApprovalResponse {
     pub decision: String, // "deny", "allow_once", "allow_session"
 }
 
+/// Application-wide shared state injected into every Tauri command via
+/// `State<'_, AppState>`.
+///
+/// # Synchronization expectations
+///
+/// All fields except `app_data_dir` are wrapped in either a `std::sync::Mutex`
+/// or a `tokio::sync::Mutex`. The choice is deliberate and **must** be
+/// preserved by callers:
+///
+/// - **`std::sync::Mutex`** (e.g. `db`, `settings`, `integration_webviews`,
+///   `watchers`): held for short, synchronous critical sections only. **Never
+///   hold a `MutexGuard` across an `.await`** — `MutexGuard` is `!Send` and
+///   the compiler will reject it. The standard pattern is to lock inside a
+///   `{ }` block, take the data needed, drop the guard, then `.await`.
+///
+/// - **`tokio::sync::Mutex`** (e.g. `mcp_connections`, `pending_approvals`,
+///   `clusters`, `port_forwards`, `refresh_registry`, `log_streams`): used
+///   for state that must be held across an `.await` (network calls, channel
+///   operations, etc.). These have an async `lock().await` API.
+///
+/// - **`Arc<crate::shell::SessionManager>`**: the manager itself owns its
+///   internal locking via `RwLock`; callers do not lock the `Arc`.
+///
+/// - **`app_data_dir`**: immutable for the lifetime of the process; safe to
+///   read without synchronization.
+///
+/// All fields are `pub` so command handlers in `commands/*.rs` can clone
+/// individual `Arc`s into spawned tasks without taking the entire `AppState`.
+/// Callers should treat the choice of mutex type as part of the API contract:
+/// changing a `std::sync::Mutex` to a `tokio::sync::Mutex` (or vice-versa) is
+/// a breaking change for every handler that touches the field.
 pub struct AppState {
+    /// Encrypted SQLite (SQLCipher in release) connection. Short-lived locks
+    /// only; never held across `.await`.
     pub db: Arc<Mutex<rusqlite::Connection>>,
+    /// In-memory copy of `AppSettings`. Persisted to disk via the settings
+    /// commands; lock for read/write but never across `.await`.
     pub settings: Arc<Mutex<AppSettings>>,
+    /// Resolved data directory (`~/.local/share/tftsr` on Linux, etc.).
+    /// Immutable for the process lifetime — no locking needed.
     pub app_data_dir: PathBuf,
-    /// Track open integration webview windows by service name -> window label
+    /// Track open integration webview windows by service name -> window label.
+    /// Short-lived `std::sync::Mutex`.
     pub integration_webviews: Arc<Mutex<HashMap<String, String>>>,
     /// Live MCP server connections: server_id -> connection
     pub mcp_connections:
@@ -101,6 +139,8 @@ pub struct AppState {
     pub watchers: Arc<Mutex<HashMap<String, tokio::sync::mpsc::Receiver<serde_json::Value>>>>,
     /// Active pod log streaming tasks: stream_id -> abort handle
     pub log_streams: Arc<TokioMutex<HashMap<String, tokio::task::AbortHandle>>>,
+    /// PTY session manager for interactive shells
+    pub pty_sessions: Arc<crate::shell::SessionManager>,
 }
 
 /// Determine the application data directory.

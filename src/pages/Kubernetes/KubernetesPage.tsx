@@ -15,6 +15,7 @@ import {
   Bell,
   Puzzle,
 } from "lucide-react";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { useKubernetesStore } from "@/stores/kubernetesStore";
 import {
   Select,
@@ -70,7 +71,9 @@ import {
   IngressClassList,
   NamespaceList,
   WorkloadOverview,
+  CrdList,
 } from "@/components/Kubernetes";
+import { BottomPanel } from "@/components/BottomPanel";
 import type {
   KubeconfigInfo,
   NamespaceInfo,
@@ -729,6 +732,11 @@ export function KubernetesPage() {
     []
   );
 
+  // Reset resources when activeSection changes to prevent stale data accumulation
+  useEffect(() => {
+    setResources(EMPTY_RESOURCES);
+  }, [activeSection]);
+
   useEffect(() => {
     if (!selectedClusterId) return;
     loadResourceData(activeSection, selectedClusterId, selectedNamespace);
@@ -889,7 +897,7 @@ export function KubernetesPage() {
 
     switch (activeSection) {
       case "pods":
-        return <PodList pods={resources.pods} clusterId={cid} namespace={ns} />;
+        return <PodList pods={resources.pods} clusterId={cid} namespace={ns} onRefresh={handleRefresh} />;
       case "deployments":
         return <DeploymentList deployments={resources.deployments} clusterId={cid} namespace={ns} />;
       case "daemonsets":
@@ -909,11 +917,11 @@ export function KubernetesPage() {
       case "ingresses":
         return <IngressList ingresses={resources.ingresses} clusterId={cid} namespace={ns} />;
       case "configmaps":
-        return <ConfigMapList configmaps={resources.configmaps} clusterId={cid} namespace={ns} />;
+        return <ConfigMapList configmaps={resources.configmaps} clusterId={cid} namespace={ns} onRefresh={handleRefresh} />;
       case "secrets":
-        return <SecretList secrets={resources.secrets} clusterId={cid} namespace={ns} />;
+        return <SecretList secrets={resources.secrets} clusterId={cid} namespace={ns} onRefresh={handleRefresh} />;
       case "hpas":
-        return <HPAList hpas={resources.hpas} clusterId={cid} namespace={ns} />;
+        return <HPAList hpas={resources.hpas} clusterId={cid} namespace={ns} onRefresh={handleRefresh} />;
       case "pvcs":
         return <PVCList pvcs={resources.pvcs} clusterId={cid} namespace={ns} />;
       case "pvs":
@@ -937,21 +945,21 @@ export function KubernetesPage() {
       case "networkpolicies":
         return <NetworkPolicyList networkpolicies={resources.networkpolicies} clusterId={cid} namespace={ns} />;
       case "resourcequotas":
-        return <ResourceQuotaList resourcequotas={resources.resourcequotas} clusterId={cid} namespace={ns} />;
+        return <ResourceQuotaList resourcequotas={resources.resourcequotas} clusterId={cid} namespace={ns} onRefresh={handleRefresh} />;
       case "limitranges":
-        return <LimitRangeList limitranges={resources.limitranges} clusterId={cid} namespace={ns} />;
+        return <LimitRangeList limitranges={resources.limitranges} clusterId={cid} namespace={ns} onRefresh={handleRefresh} />;
       case "poddisruptionbudgets":
-        return <PodDisruptionBudgetList items={resources.poddisruptionbudgets} clusterId={cid} namespace={ns} />;
+        return <PodDisruptionBudgetList items={resources.poddisruptionbudgets} clusterId={cid} namespace={ns} onRefresh={handleRefresh} />;
       case "priorityclasses":
-        return <PriorityClassList items={resources.priorityclasses} clusterId={cid} />;
+        return <PriorityClassList items={resources.priorityclasses} clusterId={cid} onRefresh={handleRefresh} />;
       case "runtimeclasses":
-        return <RuntimeClassList items={resources.runtimeclasses} clusterId={cid} />;
+        return <RuntimeClassList items={resources.runtimeclasses} clusterId={cid} onRefresh={handleRefresh} />;
       case "leases":
-        return <LeaseList items={resources.leases} clusterId={cid} namespace={ns} />;
+        return <LeaseList items={resources.leases} clusterId={cid} namespace={ns} onRefresh={handleRefresh} />;
       case "mutatingwebhooks":
-        return <MutatingWebhookList items={resources.mutatingwebhooks} clusterId={cid} />;
+        return <MutatingWebhookList items={resources.mutatingwebhooks} clusterId={cid} onRefresh={handleRefresh} />;
       case "validatingwebhooks":
-        return <ValidatingWebhookList items={resources.validatingwebhooks} clusterId={cid} />;
+        return <ValidatingWebhookList items={resources.validatingwebhooks} clusterId={cid} onRefresh={handleRefresh} />;
       case "endpoints":
         return <EndpointList items={resources.endpoints} clusterId={cid} namespace={ns} />;
       case "endpointslices":
@@ -1043,37 +1051,7 @@ export function KubernetesPage() {
       case "crds":
         return (
           <div className="p-6">
-            <h2 className="text-xl font-semibold mb-4">Custom Resource Definitions</h2>
-            {resources.crds.length === 0 ? (
-              <p className="text-muted-foreground">No custom resource definitions found.</p>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm border-collapse">
-                  <thead>
-                    <tr className="border-b text-muted-foreground text-left">
-                      <th className="px-4 py-3 font-medium">Name</th>
-                      <th className="px-4 py-3 font-medium">Group</th>
-                      <th className="px-4 py-3 font-medium">Version</th>
-                      <th className="px-4 py-3 font-medium">Kind</th>
-                      <th className="px-4 py-3 font-medium">Scope</th>
-                      <th className="px-4 py-3 font-medium">Age</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {resources.crds.map((crd) => (
-                      <tr key={crd.name} className="border-b hover:bg-muted/30 transition-colors">
-                        <td className="px-4 py-3 font-medium font-mono text-xs">{crd.name}</td>
-                        <td className="px-4 py-3 text-muted-foreground">{crd.group}</td>
-                        <td className="px-4 py-3 font-mono text-xs">{crd.version}</td>
-                        <td className="px-4 py-3">{crd.kind}</td>
-                        <td className="px-4 py-3 text-muted-foreground">{crd.scope}</td>
-                        <td className="px-4 py-3 text-muted-foreground">{crd.age}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
+            <CrdList clusterId={cid} />
           </div>
         );
       default:
@@ -1086,6 +1064,7 @@ export function KubernetesPage() {
   const selectedConfig = kubeconfigs.find((c) => c.id === selectedClusterId);
 
   return (
+    <ErrorBoundary>
     <div className="flex flex-col h-full bg-background">
       {/* Hotbar */}
       <Hotbar
@@ -1167,8 +1146,8 @@ export function KubernetesPage() {
         </div>
       )}
 
-      {/* Main layout: sidebar + content */}
-      <div className="flex flex-1 overflow-hidden">
+      {/* Main layout: sidebar + content (top area of CSS grid) */}
+      <div className="flex flex-1 overflow-hidden min-h-0">
         {/* Sidebar */}
         <aside className="w-56 shrink-0 border-r bg-card overflow-y-auto flex flex-col">
           {NAV_ENTRIES.map((entry) => {
@@ -1252,6 +1231,10 @@ export function KubernetesPage() {
         </main>
       </div>
 
+      {/* Bottom dock panel — DevTools-style. Opens via store (e.g. via context menus,
+          ResourceActionMenu, etc.). When closed, renders nothing. */}
+      <BottomPanel />
+
       {/* Command Palette */}
       <CommandPalette
         isOpen={isCommandPaletteOpen}
@@ -1303,5 +1286,6 @@ export function KubernetesPage() {
         />
       )}
     </div>
+    </ErrorBoundary>
   );
 }

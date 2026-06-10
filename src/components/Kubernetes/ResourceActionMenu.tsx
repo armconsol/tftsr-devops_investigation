@@ -1,6 +1,7 @@
 import React from "react";
 import { MoreHorizontal } from "lucide-react";
 import { Button } from "@/components/ui";
+import { useSmartPosition } from "@/hooks/useSmartPosition";
 
 export interface ResourceAction {
   label: string;
@@ -19,6 +20,8 @@ interface ResourceActionMenuProps {
 export function ResourceActionMenu({ actions, triggerLabel = "Actions" }: ResourceActionMenuProps) {
   const [open, setOpen] = React.useState(false);
   const ref = React.useRef<HTMLDivElement>(null);
+  const contentRef = React.useRef<HTMLDivElement>(null);
+  const flipUpward = useSmartPosition(open, contentRef);
 
   const visible = actions.filter((a) => !a.hidden);
 
@@ -50,7 +53,12 @@ export function ResourceActionMenu({ actions, triggerLabel = "Actions" }: Resour
       </Button>
 
       {open && (
-        <div className="absolute right-0 z-50 mt-1 w-48 rounded-md border bg-card shadow-lg">
+        <div
+          ref={contentRef}
+          className={`absolute right-0 z-50 w-48 rounded-md border bg-card shadow-lg ${
+            flipUpward ? "bottom-full mb-1" : "top-full mt-1"
+          }`}
+        >
           <div className="py-1">
             {visible.map((action, idx) => {
               const Icon = action.icon;

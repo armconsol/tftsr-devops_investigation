@@ -6,5 +6,6 @@ pub mod docs;
 pub mod image;
 pub mod integrations;
 pub mod kube;
+pub mod metrics;
 pub mod shell;
 pub mod system;

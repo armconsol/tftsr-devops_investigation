@@ -1,15 +1,20 @@
 import React, { useState } from "react";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, Button } from "@/components/ui";
 import { Badge } from "@/components/ui";
-import { FileText, Terminal, Link, Pencil, Trash2, Zap } from "lucide-react";
+import { FileText, Terminal, Link, Pencil, Trash2, Zap, Settings } from "lucide-react";
 import type { PodInfo } from "@/lib/tauriCommands";
 import { deleteResourceCmd, forceDeleteResourceCmd, getResourceYamlCmd } from "@/lib/tauriCommands";
 import { ResourceActionMenu } from "./ResourceActionMenu";
 import { ConfirmDeleteDialog } from "./ConfirmDeleteDialog";
-import { LogsModal } from "./LogsModal";
-import { ShellExecModal } from "./ShellExecModal";
-import { AttachModal } from "./AttachModal";
+import { LogStreamPanel } from "./LogStreamPanel";
+import { InteractiveShellModal } from "./InteractiveShellModal";
+import { InteractiveAttachModal } from "./InteractiveAttachModal";
 import { EditResourceModal } from "./EditResourceModal";
+import { useColumnConfig } from "@/hooks/useColumnConfig";
+import { useMetrics } from "@/hooks/useMetrics";
+import { DEFAULT_COLUMNS } from "@/config/defaultColumns";
+import { ColumnConfigModal } from "@/components/tables/ColumnConfigModal";
+import { QuickActionColumn } from "@/components/tables/QuickActionColumn";
 
 interface PodListProps {
   pods: PodInfo[];
@@ -31,9 +36,18 @@ export function PodList({ pods, clusterId, namespace, onRefresh }: PodListProps)
   const [activeModal, setActiveModal] = useState<ActiveModal>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
+  const [showColumnConfig, setShowColumnConfig] = useState(false);
 
-  // namespace prop is retained for API compatibility (parent uses it to drive list fetches)
-  void namespace;
+  // Configurable columns
+  const columnConfig = useColumnConfig("pods", DEFAULT_COLUMNS.pods);
+  const { isColumnVisible } = columnConfig;
+
+  // Live pod metrics — only poll when CPU/Memory columns are actually visible.
+  const metricsEnabled = isColumnVisible("cpu") || isColumnVisible("memory");
+  const { getPodMetrics } = useMetrics(
+    metricsEnabled ? clusterId : null,
+    metricsEnabled ? namespace : null
+  );
 
   const getPodStatusColor = (status: string) => {
     switch (status.toLowerCase()) {
@@ -87,36 +101,85 @@ export function PodList({ pods, clusterId, namespace, onRefresh }: PodListProps)
       {editError && (
         <p className="mb-2 text-sm text-destructive">{editError}</p>
       )}
+      <div className="flex items-center justify-between mb-2">
+        <div className="text-sm text-muted-foreground">
+          {pods.length} {pods.length === 1 ? "pod" : "pods"}
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setShowColumnConfig(true)}
+          className="flex items-center gap-1"
+        >
+          <Settings className="h-3.5 w-3.5" />
+          Columns
+        </Button>
+      </div>
       <div className="overflow-x-auto">
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Ready</TableHead>
-              <TableHead>Age</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
+              {isColumnVisible("name") && <TableHead>Name</TableHead>}
+              {isColumnVisible("namespace") && <TableHead>Namespace</TableHead>}
+              {isColumnVisible("status") && <TableHead>Status</TableHead>}
+              {isColumnVisible("ready") && <TableHead>Ready</TableHead>}
+              {isColumnVisible("restarts") && <TableHead>Restarts</TableHead>}
+              {isColumnVisible("age") && <TableHead>Age</TableHead>}
+              {isColumnVisible("ip") && <TableHead>IP</TableHead>}
+              {isColumnVisible("node") && <TableHead>Node</TableHead>}
+              {isColumnVisible("cpu") && <TableHead>CPU</TableHead>}
+              {isColumnVisible("memory") && <TableHead>Memory</TableHead>}
+              {isColumnVisible("actions") && <TableHead className="text-right">Actions</TableHead>}
             </TableRow>
           </TableHeader>
           <TableBody>
             {pods.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={5} className="text-center text-muted-foreground">
+                <TableCell colSpan={11} className="text-center text-muted-foreground">
                   No pods found
                 </TableCell>
               </TableRow>
             ) : (
-              pods.map((pod) => (
+              pods.map((pod) => {
+                const podMetrics = metricsEnabled ? getPodMetrics(pod.name) : undefined;
+                return (
                 <TableRow key={pod.name}>
-                  <TableCell className="font-medium">{pod.name}</TableCell>
-                  <TableCell>
-                    <Badge className={`${getPodStatusColor(pod.status)} text-white`}>
-                      {pod.status}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>{pod.ready}</TableCell>
-                  <TableCell className="text-muted-foreground">{pod.age}</TableCell>
-                  <TableCell className="text-right">
+                  {isColumnVisible("name") && (
+                    <TableCell className="font-medium">{pod.name}</TableCell>
+                  )}
+                  {isColumnVisible("namespace") && (
+                    <TableCell className="text-muted-foreground">{pod.namespace}</TableCell>
+                  )}
+                  {isColumnVisible("status") && (
+                    <TableCell>
+                      <Badge className={`${getPodStatusColor(pod.status)} text-white`}>
+                        {pod.status}
+                      </Badge>
+                    </TableCell>
+                  )}
+                  {isColumnVisible("ready") && <TableCell>{pod.ready}</TableCell>}
+                  {isColumnVisible("restarts") && <TableCell>{pod.restarts}</TableCell>}
+                  {isColumnVisible("age") && (
+                    <TableCell className="text-muted-foreground">{pod.age}</TableCell>
+                  )}
+                  {isColumnVisible("ip") && (
+                    <TableCell className="text-muted-foreground font-mono text-xs">{pod.ip || "-"}</TableCell>
+                  )}
+                  {isColumnVisible("node") && (
+                    <TableCell className="text-muted-foreground">{pod.node || "-"}</TableCell>
+                  )}
+                  {isColumnVisible("cpu") && (
+                    <TableCell className="text-muted-foreground font-mono text-xs">
+                      {podMetrics?.cpu ?? "-"}
+                    </TableCell>
+                  )}
+                  {isColumnVisible("memory") && (
+                    <TableCell className="text-muted-foreground font-mono text-xs">
+                      {podMetrics?.memory ?? "-"}
+                    </TableCell>
+                  )}
+                  {isColumnVisible("actions") && (
+                    <TableCell className="text-right">
                     <ResourceActionMenu
                       actions={[
                         {
@@ -157,16 +220,18 @@ export function PodList({ pods, clusterId, namespace, onRefresh }: PodListProps)
                         },
                       ]}
                     />
-                  </TableCell>
+                    </TableCell>
+                  )}
                 </TableRow>
-              ))
+                );
+              })
             )}
           </TableBody>
         </Table>
       </div>
 
       {activeModal?.type === "logs" && (
-        <LogsModal
+        <LogStreamPanel
           open
           onOpenChange={(o) => { if (!o) setActiveModal(null); }}
           clusterId={clusterId}
@@ -177,24 +242,22 @@ export function PodList({ pods, clusterId, namespace, onRefresh }: PodListProps)
       )}
 
       {activeModal?.type === "shell" && (
-        <ShellExecModal
-          open
-          onOpenChange={(o) => { if (!o) setActiveModal(null); }}
+        <InteractiveShellModal
           clusterId={clusterId}
           namespace={activeModal.pod.namespace}
-          podName={activeModal.pod.name}
-          containers={activeModal.pod.containers}
+          pod={activeModal.pod.name}
+          container={activeModal.pod.containers[0]}
+          onClose={() => setActiveModal(null)}
         />
       )}
 
       {activeModal?.type === "attach" && (
-        <AttachModal
-          open
-          onOpenChange={(o) => { if (!o) setActiveModal(null); }}
+        <InteractiveAttachModal
           clusterId={clusterId}
           namespace={activeModal.pod.namespace}
-          podName={activeModal.pod.name}
-          containers={activeModal.pod.containers}
+          pod={activeModal.pod.name}
+          container={activeModal.pod.containers[0]}
+          onClose={() => setActiveModal(null)}
         />
       )}
 
@@ -232,6 +295,26 @@ export function PodList({ pods, clusterId, namespace, onRefresh }: PodListProps)
           onConfirm={() => handleDelete(true)}
         />
       )}
+
+      <ColumnConfigModal
+        open={showColumnConfig}
+        onOpenChange={setShowColumnConfig}
+        resourceType="Pods"
+        columnConfig={columnConfig}
+        columnLabels={{
+          name: "Name",
+          namespace: "Namespace",
+          status: "Status",
+          ready: "Ready",
+          restarts: "Restarts",
+          age: "Age",
+          ip: "IP Address",
+          node: "Node",
+          cpu: "CPU",
+          memory: "Memory",
+          actions: "Actions",
+        }}
+      />
     </>
   );
 }

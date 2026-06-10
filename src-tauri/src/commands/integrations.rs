@@ -277,11 +277,116 @@ pub async fn test_azuredevops_connection(
 
 #[tauri::command]
 pub async fn create_azuredevops_workitem(
-    _issue_id: String,
-    _project: String,
-    _config: serde_json::Value,
+    issue_id: String,
+    project: String,
+    config: serde_json::Value,
+    app_state: State<'_, AppState>,
 ) -> Result<TicketResult, String> {
-    Err("Integrations available in v0.2. Please update to the latest version.".to_string())
+    // Extract optional configuration values from the config payload.
+    // The frontend may pass: base_url, work_item_type, severity. All have safe defaults.
+    let base_url = config
+        .get("base_url")
+        .and_then(|v| v.as_str())
+        .map(String::from);
+    let work_item_type = config
+        .get("work_item_type")
+        .and_then(|v| v.as_str())
+        .unwrap_or("Bug")
+        .to_string();
+    let severity = config
+        .get("severity")
+        .and_then(|v| v.as_str())
+        .unwrap_or("3 - Medium")
+        .to_string();
+
+    // Look up issue title/description from the database to use as work-item content.
+    let (title, description, base_url_resolved) = {
+        let db = app_state
+            .db
+            .lock()
+            .map_err(|e| format!("Failed to lock database: {e}"))?;
+
+        let (title, description) = db
+            .query_row(
+                "SELECT title, description FROM issues WHERE id = ?1",
+                rusqlite::params![issue_id],
+                |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+            )
+            .map_err(|e| format!("Failed to load issue {issue_id}: {e}"))?;
+
+        // Fall back to stored integration_config base_url if caller did not provide one.
+        let resolved = match base_url {
+            Some(url) => url,
+            None => db
+                .query_row(
+                    "SELECT base_url FROM integration_config WHERE service = 'azuredevops'",
+                    [],
+                    |row| row.get::<_, String>(0),
+                )
+                .map_err(|e| format!("Azure DevOps base URL not configured: {e}"))?,
+        };
+
+        (title, description, resolved)
+    };
+
+    // Retrieve and decrypt stored access token.
+    let access_token = {
+        let db = app_state
+            .db
+            .lock()
+            .map_err(|e| format!("Failed to lock database: {e}"))?;
+
+        let encrypted: String = db
+            .query_row(
+                "SELECT encrypted_token FROM credentials WHERE service = 'azuredevops'",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(|e| {
+                format!("Azure DevOps credentials not found. Please authenticate first: {e}")
+            })?;
+
+        crate::integrations::auth::decrypt_token(&encrypted)?
+    };
+
+    let ado_config = crate::integrations::azuredevops::AzureDevOpsConfig {
+        organization_url: base_url_resolved,
+        project,
+        access_token,
+    };
+
+    let result = crate::integrations::azuredevops::create_work_item(
+        &ado_config,
+        &title,
+        &description,
+        &work_item_type,
+        &severity,
+    )
+    .await?;
+
+    // Audit log the external publish action.
+    {
+        let db = app_state
+            .db
+            .lock()
+            .map_err(|e| format!("Failed to lock database: {e}"))?;
+        let details = serde_json::json!({
+            "issue_id": issue_id,
+            "work_item_id": result.id,
+            "work_item_type": work_item_type,
+        });
+        if let Err(e) = crate::audit::log::write_audit_event(
+            &db,
+            "ado_workitem_created",
+            "issue",
+            &issue_id,
+            &details.to_string(),
+        ) {
+            tracing::warn!("Failed to write audit event for ADO workitem creation: {e}");
+        }
+    }
+
+    Ok(result)
 }
 
 // ─── OAuth2 Commands ────────────────────────────────────────────────────────
@@ -331,6 +436,7 @@ pub async fn initiate_oauth(
         let refresh_registry = app_state.refresh_registry.clone();
         let watchers = app_state.watchers.clone();
         let log_streams = app_state.log_streams.clone();
+        let pty_sessions = app_state.pty_sessions.clone();
 
         tokio::spawn(async move {
             let app_state_for_callback = AppState {
@@ -345,6 +451,7 @@ pub async fn initiate_oauth(
                 refresh_registry,
                 watchers,
                 log_streams,
+                pty_sessions,
             };
             while let Some(callback) = callback_rx.recv().await {
                 tracing::info!("Received OAuth callback for state: {}", callback.state);

@@ -80,8 +80,12 @@ export async function subscribeToK8sEvents(
     eventBus.on(`k8s:${clusterId}:${namespace}:${resourceType}`, handler);
 
     return () => {
+      // Synchronously remove from eventBus to prevent further callbacks
       eventBus.off(`k8s:${clusterId}:${namespace}:${resourceType}`, handler);
-      invoke<void>("unsubscribe_from_k8s_events", { unsubscribeId });
+      // Fire-and-forget backend unsubscribe with error handling
+      invoke<void>("unsubscribe_from_k8s_events", { unsubscribeId }).catch((err) => {
+        console.error("Failed to unsubscribe from backend:", err);
+      });
     };
   } catch (error) {
     console.error("Failed to subscribe to K8s events:", error);
@@ -105,8 +109,12 @@ export async function subscribeToAllEvents(
     eventBus.on(`k8s:${clusterId}:all`, handler);
 
     return () => {
+      // Synchronously remove from eventBus to prevent further callbacks
       eventBus.off(`k8s:${clusterId}:all`, handler);
-      invoke<void>("unsubscribe_from_k8s_events", { unsubscribeId });
+      // Fire-and-forget backend unsubscribe with error handling
+      invoke<void>("unsubscribe_from_k8s_events", { unsubscribeId }).catch((err) => {
+        console.error("Failed to unsubscribe from backend:", err);
+      });
     };
   } catch (error) {
     console.error("Failed to subscribe to all K8s events:", error);

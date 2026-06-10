@@ -14,6 +14,8 @@ const mockTerminalInstance = {
   onData: vi.fn((cb: (data: string) => void) => {
     onDataHandlers.push(cb);
   }),
+  onSelectionChange: vi.fn(),
+  getSelection: vi.fn(() => "selected text"),
   loadAddon: vi.fn(),
   options: {} as Record<string, unknown>,
 };
@@ -294,6 +296,116 @@ describe("Terminal component", () => {
       unmount();
 
       expect(mockTerminalInstance.dispose).toHaveBeenCalled();
+    });
+  });
+
+  describe("terminal configuration", () => {
+    beforeEach(() => {
+      localStorage.clear();
+    });
+
+    it("renders settings button in tab bar", async () => {
+      render(<Terminal {...withPodProps} />);
+      await waitFor(() => screen.getByRole("tab"));
+
+      const settingsBtn = screen.queryByRole("button", { name: /settings/i });
+      expect(settingsBtn).toBeInTheDocument();
+    });
+
+    it("opens settings dialog when settings button is clicked", async () => {
+      render(<Terminal {...withPodProps} />);
+      await waitFor(() => screen.getByRole("tab"));
+
+      const settingsBtn = screen.getByRole("button", { name: /settings/i });
+      await userEvent.click(settingsBtn);
+
+      await waitFor(() => {
+        expect(screen.getByText(/terminal settings/i)).toBeInTheDocument();
+      });
+    });
+
+    it("shows copy-on-select toggle in settings dialog", async () => {
+      render(<Terminal {...withPodProps} />);
+      await waitFor(() => screen.getByRole("tab"));
+
+      const settingsBtn = screen.getByRole("button", { name: /settings/i });
+      await userEvent.click(settingsBtn);
+
+      await waitFor(() => {
+        expect(screen.getByLabelText(/copy on select/i)).toBeInTheDocument();
+      });
+    });
+
+    it("shows font family input in settings dialog", async () => {
+      render(<Terminal {...withPodProps} />);
+      await waitFor(() => screen.getByRole("tab"));
+
+      const settingsBtn = screen.getByRole("button", { name: /settings/i });
+      await userEvent.click(settingsBtn);
+
+      await waitFor(() => {
+        expect(screen.getByLabelText(/font family/i)).toBeInTheDocument();
+      });
+    });
+
+    it("shows font size input in settings dialog", async () => {
+      render(<Terminal {...withPodProps} />);
+      await waitFor(() => screen.getByRole("tab"));
+
+      const settingsBtn = screen.getByRole("button", { name: /settings/i });
+      await userEvent.click(settingsBtn);
+
+      await waitFor(() => {
+        expect(screen.getByLabelText(/font size/i)).toBeInTheDocument();
+      });
+    });
+
+    it("persists settings to localStorage when changed", async () => {
+      render(<Terminal {...withPodProps} />);
+      await waitFor(() => screen.getByRole("tab"));
+
+      const settingsBtn = screen.getByRole("button", { name: /settings/i });
+      await userEvent.click(settingsBtn);
+
+      await waitFor(() => screen.getByLabelText(/copy on select/i));
+
+      const copyOnSelectCheckbox = screen.getByLabelText(/copy on select/i) as HTMLInputElement;
+      await userEvent.click(copyOnSelectCheckbox);
+
+      await waitFor(() => {
+        const stored = localStorage.getItem("terminal-settings");
+        expect(stored).toBeTruthy();
+        const parsed = JSON.parse(stored || "{}");
+        expect(parsed.copyOnSelect).toBeDefined();
+      });
+    });
+
+    it("loads settings from localStorage on mount", async () => {
+      localStorage.setItem(
+        "terminal-settings",
+        JSON.stringify({
+          copyOnSelect: true,
+          fontFamily: "Courier New",
+          fontSize: 16,
+        })
+      );
+
+      render(<Terminal {...withPodProps} />);
+      await waitFor(() => screen.getByRole("tab"));
+
+      const settingsBtn = screen.getByRole("button", { name: /settings/i });
+      await userEvent.click(settingsBtn);
+
+      await waitFor(() => {
+        const copyOnSelectCheckbox = screen.getByLabelText(/copy on select/i) as HTMLInputElement;
+        expect(copyOnSelectCheckbox.checked).toBe(true);
+
+        const fontFamilyInput = screen.getByLabelText(/font family/i) as HTMLInputElement;
+        expect(fontFamilyInput.value).toBe("Courier New");
+
+        const fontSizeInput = screen.getByLabelText(/font size/i) as HTMLInputElement;
+        expect(fontSizeInput.value).toBe("16");
+      });
     });
   });
 });
