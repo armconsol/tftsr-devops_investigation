@@ -77,9 +77,9 @@ cargo tauri build  # Outputs to src-tauri/target/release/bundle/
 
 ### CI/CD
 
-- **Test pipeline**: `.github/workflows/test.yml` — runs on every push/PR targeting `main`
-- **Release pipeline**: `.github/workflows/release.yml` — runs on every push to `main`, auto-tags, produces multi-platform bundles (Linux amd64+arm64, Windows, macOS arm64+Intel), uploads to GitHub Releases at `https://gogs.tftsr.com/sarman/apollo_nxt-tftsr/releases`
-- **Docker builder images**: `.github/workflows/build-images.yml` — rebuilds `ghcr.io/tftsr/tftsr-*` images when `.docker/**` changes on `main`
+- **Test pipeline**: `.gitea/workflows/test.yml` — runs on every push/PR targeting `main`
+- **Release pipeline**: `.gitea/workflows/auto-tag.yml` — runs on every push to `master`, auto-tags, produces multi-platform bundles (Linux amd64+arm64, Windows, macOS arm64+Intel), uploads to Gitea Releases at `https://gogs.tftsr.com/sarman/tftsr-devops_investigation/releases`
+- **Docker builder images**: `.gitea/workflows/build-images.yml` — rebuilds `172.0.0.29:3000/tftsr/tftsr-*` images when `.docker/**` changes on `master`
 
 ---
 
@@ -201,22 +201,22 @@ Before any text is sent to an AI provider, `apply_redactions` must be called and
 
 **Documentation**: `docs/wiki/Shell-Execution.md`
 
-### GitHub Actions CI
+### Gitea Actions CI
 
-All pipelines run on GitHub Actions at `https://gogs.tftsr.com/sarman/apollo_nxt-tftsr/actions`.
+All pipelines run on Gitea Actions at `https://gogs.tftsr.com/sarman/tftsr-devops_investigation/actions`.
 
-- `GITHUB_TOKEN` is the only credential needed — no external secrets required
-- Builder images are hosted on `ghcr.io/tftsr/` (GitHub Container Registry)
-- Branch protection on `main` requires `rust-test` and `frontend-test` checks to pass, plus Copilot code review, before merging
+- `TFT_GITEA_TOKEN` is the only credential needed — no external secrets required
+- Builder images are hosted on `172.0.0.29:3000/tftsr/` (private registry)
+- Branch protection on `master` requires `rust-test` and `frontend-test` checks to pass, plus PR review, before merging
 - kubectl binaries downloaded during build via `scripts/download-kubectl.sh` for all platforms
 
 ---
 
 ## Wiki Maintenance
 
-The project wiki lives at `https://gogs.tftsr.com/sarman/apollo_nxt-tftsr/wiki`.
+The project wiki lives at `https://gogs.tftsr.com/sarman/tftsr-devops_investigation/wiki`.
 
-**Source of truth**: `docs/wiki/*.md` in this repo. The `wiki-sync` job (in `.github/workflows/release.yml`) automatically pushes any changes to the GitHub wiki on every push to `main`.
+**Source of truth**: `docs/wiki/*.md` in this repo. The `auto-tag` workflow (in `.gitea/workflows/auto-tag.yml`) automatically pushes any changes to the Gitea wiki on every push to `master`.
 
 **When making code changes, update the corresponding wiki file in `docs/wiki/` before committing:**
 

@@ -50,7 +50,7 @@ All command handlers receive `State<'_, AppState>` as a Tauri-injected parameter
 | `commands/integrations.rs` | Confluence / ServiceNow / ADO — v0.2 stubs |
 | `ai/provider.rs` | `Provider` trait + `create_provider()` factory |
 | `pii/detector.rs` | Multi-pattern PII scanner with overlap resolution |
-| `db/migrations.rs` | Versioned schema (17 migrations in `_migrations` table) |
+| `db/migrations.rs` | Versioned schema (15 migrations in `_migrations` table) |
 | `db/models.rs` | All DB types — see `IssueDetail` note below |
 | `docs/rca.rs` + `docs/postmortem.rs` | Markdown template builders |
 | `audit/log.rs` | `write_audit_event()` — called before every external send |
@@ -178,7 +178,7 @@ Use `detail.issue.title`, **not** `detail.title`.
 
 ## Incident Response Methodology
 
-The application integrates a comprehensive incident response framework via system prompt injection. The `INCIDENT_RESPONSE_FRAMEWORK` constant in `src/lib/domainPrompts.ts` is appended to all 17 domain-specific system prompts (Linux, Windows, Network, Kubernetes, Databases, Virtualization, Hardware, Observability, and others).
+The application integrates a comprehensive incident response framework via system prompt injection. The `INCIDENT_RESPONSE_FRAMEWORK` constant in `src/lib/domainPrompts.ts` is appended to all 15 domain-specific system prompts (Linux, Windows, Network, Kubernetes, Databases, Virtualization, Hardware, Observability, Telephony, Security, Public Safety, Application, Automation, HPE, Dell, Identity).
 
 **5-Phase Framework:**
 

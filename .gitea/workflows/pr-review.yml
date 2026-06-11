@@ -184,21 +184,32 @@ jobs:
           LITELLM_API_KEY: ${{ secrets.OLLAMA_API_KEY }}
           PR_TITLE: ${{ github.event.pull_request.title }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_BODY: ${{ github.event.pull_request.body }}
         run: |
           set -euo pipefail
           CHANGED_FILES=$(tr '\n' ' ' < /tmp/pr_files.txt)
 
-          # Build prompt file. Use 'printf "%s\n" text' throughout so the format
-          # string is always "%s\n" and content with leading hyphens or embedded
-          # double-dashes is never misinterpreted as a printf option flag.
+          # Build prompt file following anthropics/claude-code code-review pattern:
+          # - Multi-agent review (parallel analysis)
+          # - High-signal issues only (no nitpicks, style, or speculative concerns)
+          # - Validate findings against codebase
+          # - Consider PR title/description for author intent
+          # - Check for pre-existing issues
           {
-            printf '%s\n\n' 'You are a senior engineer performing a code review.'
+            printf '%s\n\n' 'You are a senior engineer performing a code review following the anthropics/claude-code code-review pattern.'
             printf 'PR Title: %s\n' "$PR_TITLE"
+            printf 'PR Body: %s\n\n' "${PR_BODY:-No description provided}"
             printf 'Files changed: %s\n\n' "$CHANGED_FILES"
+            printf '%s\n' '---'
+            printf '%s\n\n' '## CODEBASE INDEX'
+            printf '%s\n' 'These are the ONLY Tauri commands, TypeScript exports, Rust public functions,'
+            printf '%s\n' 'and database tables that exist in this project. Before raising any finding,'
+            printf '%s\n' 'confirm that every symbol you cite appears in this list or in the file'
+            printf '%s\n' 'contents below. If it does not appear in either, your finding is fabricated.'
             printf '%s\n' '---'
             cat /tmp/codebase_index.txt
             printf '%s\n\n' '---'
-            printf '%s\n\n' '## Changed file contents'
+            printf '%s\n\n' '## CHANGED FILE CONTENTS'
             printf '%s\n' 'Each section is the COMPLETE, FINAL file after PR changes (not a diff).'
             printf '%s\n\n' 'Files over 500 lines show only changed sections with surrounding context.'
             printf '%s\n' '---'
@@ -207,37 +218,69 @@ jobs:
             if [ -s /tmp/pr_comments.txt ]; then
               cat /tmp/pr_comments.txt
               printf '%s\n\n' '---'
-              printf '%s\n' '## CRITICAL: Prior review context above'
+              printf '%s\n' '## CRITICAL: PRIOR REVIEW CONTEXT ABOVE'
               printf '%s\n' 'Before raising ANY finding, check the review history above.'
               printf '%s\n' 'SILENTLY DISCARD any finding that has already been:'
               printf '%s\n' '  - Marked as invalid or incorrect by a reviewer'
               printf '%s\n' '  - Acknowledged as an intentional design decision or known limitation'
-              printf '%s\n\n' '  - Confirmed fixed in a prior commit'
+              printf '%s\n' '  - Confirmed fixed in a prior commit'
               printf '%s\n\n' 'Raising a previously-refuted finding is a critical error.'
               printf '%s\n' '---'
             fi
-            printf '%s\n\n' '## Instructions'
-            printf '%s\n' 'Before raising any finding:'
-            printf '%s\n' '1. Confirm every symbol you cite exists in the CODEBASE INDEX or file'
-            printf '%s\n' '   contents above. If absent from both, discard the finding.'
-            printf '%s\n' '2. Quote the exact line(s) from the file contents that support it.'
-            printf '%s\n' '3. Confirm the issue is genuine, not intentional design.'
-            printf '%s\n\n' '4. If any step fails, discard silently - do not mention it.'
-            printf '%s\n\n' 'Do NOT show reasoning. Only output confirmed issues.'
-            printf '%s\n' 'Severity:'
-            printf '%s\n' '- BLOCKER: fails to compile, corrupts data, or security vulnerability'
-            printf '%s\n' '- WARNING: real risk to address before merge'
-            printf '%s\n\n' '- SUGGESTION: minor improvement, follow-up PR fine'
-            printf '%s\n\n' 'Focus: security bugs, logic errors, data loss, injection, unhandled errors.'
-            printf '%s\n\n' 'Ignore: style, missing comments, speculative future concerns.'
-            printf '%s\n\n' '## Output format (strict)'
-            printf '%s\n\n' '**Summary** (2-3 sentences)'
-            printf '%s\n' '**Findings**'
-            printf '%s\n' '- [SEVERITY] file:line - description'
-            printf '%s\n' '  Evidence: quoted line'
-            printf '%s\n\n' '  Fix: concrete change'
-            printf '%s\n\n' '(Write "No findings." if none.)'
-            printf '%s\n' '**Verdict**: APPROVE / APPROVE WITH COMMENTS / REQUEST CHANGES'
+            printf '%s\n\n' '## CODE REVIEW INSTRUCTIONS'
+            printf '%s\n\n' 'You MUST follow this workflow precisely:'
+            printf '%s\n\n' '1. LAUNCH 4 PARALLEL ANALYSIS AGENTS to independently review the changes:'
+            printf '%s\n\n' '   AGENT 1 (CLAUDE.MD COMPLIANCE): Audit changes for CLAUDE.md compliance'
+            printf '%s\n' '   - Only consider CLAUDE.md files that share a file path with the file or parents'
+            printf '%s\n' '   - Quote exact rules being violated'
+            printf '%s\n\n' '   AGENT 2 (CLAUDE.MD COMPLIANCE): Audit changes for CLAUDE.md compliance'
+            printf '%s\n' '   - Same scope as Agent 1, parallel analysis'
+            printf '%s\n\n' '   AGENT 3 (BUG DETECTOR): Scan for obvious bugs in the diff itself'
+            printf '%s\n' '   - Focus ONLY on the diff, no extra context'
+            printf '%s\n' '   - Flag ONLY significant bugs, ignore nitpicks and likely false positives'
+            printf '%s\n' '   - Do not flag issues that require context outside the git diff'
+            printf '%s\n\n' '   AGENT 4 (BUG DETECTOR): Look for problems in introduced code'
+            printf '%s\n' '   - Security issues, incorrect logic, data loss'
+            printf '%s\n' '   - Only problems that fall within the changed code'
+            printf '%s\n\n' '2. CRITICAL: Only flag HIGH SIGNAL issues where:'
+            printf '%s\n' '   - Code will fail to compile or parse (syntax errors, type errors)'
+            printf '%s\n' '   - Code will definitely produce wrong results (clear logic errors)'
+            printf '%s\n' '   - Clear, unambiguous violations with exact rule quoted'
+            printf '%s\n\n' '   DO NOT flag:'
+            printf '%s\n' '   - Code style or quality concerns'
+            printf '%s\n' '   - Potential issues that depend on specific inputs or state'
+            printf '%s\n' '   - Subjective suggestions or improvements'
+            printf '%s\n' '   - Pre-existing issues'
+            printf '%s\n' '   - Issues that linters will catch'
+            printf '%s\n' '   - General security issues unless explicitly required in CLAUDE.md'
+            printf '%s\n\n' '3. FOR EACH ISSUE FOUND BY AGENTS 3 & 4:'
+            printf '%s\n' '   - Launch a VALIDATION AGENT to verify the issue is real'
+            printf '%s\n' '   - Validation agent checks: issue is truly an issue, not false positive'
+            printf '%s\n' '   - Use full codebase to validate (not just diff)'
+            printf '%s\n' '   - If validation fails, discard the issue silently'
+            printf '%s\n\n' '4. OUTPUT FORMAT (strict):'
+            printf '%s\n\n' '   **Summary** (2-3 sentences)'
+            printf '%s\n' '   **Findings**'
+            printf '%s\n' '   - [SEVERITY] file:line - description'
+            printf '%s\n' '     Evidence: quoted line'
+            printf '%s\n\n' '     Fix: concrete change'
+            printf '%s\n\n' '   (Write "No findings." if none.)'
+            printf '%s\n' '   **Verdict**: APPROVE / APPROVE WITH COMMENTS / REQUEST CHANGES'
+            printf '%s\n\n' '5. SEVERITY DEFINITIONS:'
+            printf '%s\n' '   - BLOCKER: fails to compile, corrupts data, or security vulnerability'
+            printf '%s\n' '   - WARNING: real risk to address before merge'
+            printf '%s\n' '   - SUGGESTION: minor improvement, follow-up PR fine'
+            printf '%s\n\n' '6. FOCUS AREAS:'
+            printf '%s\n' '   - Security bugs, logic errors, data loss, injection, unhandled errors'
+            printf '%s\n\n' '7. IGNORE:'
+            printf '%s\n' '   - Style, missing comments, speculative future concerns'
+            printf '%s\n\n' '8. FALSE POSITIVES TO AVOID:'
+            printf '%s\n' '   - Pre-existing issues'
+            printf '%s\n' '   - Something that appears buggy but is actually correct'
+            printf '%s\n' '   - Pedantic nitpicks that senior engineers would not flag'
+            printf '%s\n' '   - Issues that linters will catch'
+            printf '%s\n' '   - General code quality concerns unless explicitly required in CLAUDE.md'
+            printf '%s\n' '   - Issues mentioned in CLAUDE.md but explicitly silenced in code'
           } > /tmp/prompt.txt
 
           # Write body to file — passing 100KB+ JSON as a shell arg hits ARG_MAX.
@@ -307,7 +350,7 @@ jobs:
           all_content = '\n'.join(all_content_parts)
 
           def evidence_exists(block: str) -> bool:
-              """True if ≥1 significant line from the block is found verbatim in changed files."""
+              """True if ≥1 significant line from the block is found verbatim in the codebase."""
               for raw in block.splitlines():
                   line = raw.lstrip('+-').strip()
                   # Skip blank, very short, pure-comment, or diff-header lines
@@ -327,7 +370,7 @@ jobs:
               if code_match and not evidence_exists(code_match.group(1)):
                   # Replace first severity tag with a prefixed version
                   return severity_re.sub(
-                      lambda m: f'[{m.group(1)} — ⚠️ UNVERIFIED: evidence not found in PR files]',
+                      lambda m: f'[{m.group(1)} — ⚠️ UNVERIFIED: evidence not found in codebase]',
                       finding_text, count=1
                   )
               return finding_text

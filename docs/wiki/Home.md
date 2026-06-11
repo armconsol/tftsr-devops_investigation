@@ -38,7 +38,10 @@
 
 | Version | Status | Highlights |
 |---------|--------|-----------|
-| v0.2.6 | 🚀 Latest | Custom REST AI gateway support, OAuth2 shell permissions, user ID tracking |
+| v1.1.0 | 🚀 Latest | Kubernetes Management UI with PTY terminals, metrics, port forwarding, YAML editor |
+| v1.0.1 | Released | Domain prompt fix, UI contrast improvements, ARM64 Linux build |
+| v1.0.0 | Released | Core application with PII detection, Shell Execution, 5-Whys AI triage |
+| v0.2.6 | Released | Custom REST AI gateway support, OAuth2 shell permissions, user ID tracking |
 | v0.2.5 | Released | Image attachments with PII detection and approval workflow |
 | v0.2.3 | Released | Confluence/ServiceNow/ADO REST API clients (19 TDD tests) |
 | v0.1.1 | Released | Core application with PII detection, RCA generation |
@@ -56,6 +59,7 @@ Download from [Releases](https://gogs.tftsr.com/sarman/tftsr-devops_investigatio
 | Phase 10 (Integrations) | ✅ Complete — Confluence, ServiceNow, Azure DevOps fully implemented with OAuth2 |
 | Phase 11 (CI/CD) | ✅ Complete — Gitea Actions fully operational |
 | Phase 12 (Release packaging) | ✅ linux/amd64 · linux/arm64 (native) · windows/amd64 |
+| Phase 13 (Kubernetes Management) | ✅ Complete — PTY terminals, metrics, port forwarding, YAML editor |
 
 ## Tech Stack
 
