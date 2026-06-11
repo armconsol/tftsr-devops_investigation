@@ -9,6 +9,7 @@ pub mod mcp;
 pub mod metrics;
 pub mod ollama;
 pub mod pii;
+pub mod proxmox;
 pub mod shell;
 pub mod state;
 
@@ -43,6 +44,7 @@ pub fn run() {
         mcp_connections: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
         pending_approvals: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
         clusters: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
+        proxmox_clusters: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
         port_forwards: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
         refresh_registry: Arc::new(tokio::sync::Mutex::new(crate::kube::RefreshRegistry::new())),
         watchers: Arc::new(Mutex::new(std::collections::HashMap::new())),
@@ -147,6 +149,11 @@ pub fn run() {
             commands::integrations::save_integration_config,
             commands::integrations::get_integration_config,
             commands::integrations::get_all_integration_configs,
+            // Proxmox
+            commands::proxmox::add_proxmox_cluster,
+            commands::proxmox::remove_proxmox_cluster,
+            commands::proxmox::list_proxmox_clusters,
+            commands::proxmox::get_proxmox_cluster,
             // System / Settings
             commands::system::check_ollama_installed,
             commands::system::get_ollama_install_guide,

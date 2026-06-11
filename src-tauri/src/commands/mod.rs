@@ -7,5 +7,6 @@ pub mod image;
 pub mod integrations;
 pub mod kube;
 pub mod metrics;
+pub mod proxmox;
 pub mod shell;
 pub mod system;
