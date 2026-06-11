@@ -68,6 +68,10 @@ CI, chore, and build changes are excluded.
 - Update documentation for Kubernetes Management UI
 - Add ticket summary for kube action namespace and stability fixes
 - Update to v1.1.0 release with Kubernetes Management UI
+- Add Proxmox implementation documentation
+- Update Proxmox implementation documentation for v1.2.0
+- Add Proxmox implementation summary
+- Add Proxmox PDM feature parity completion summary
 
 ### Features
 - **kube**: Add Kubernetes management GUI components
@@ -96,6 +100,18 @@ CI, chore, and build changes are excluded.
 - **metrics**: Implement kubectl top metrics backend
 - **tables**: Roll out configurable columns to all workload lists
 - **kube**: Add YAML edit action to NamespaceList
+- Implement Proxmox cluster management foundation
+- Implement VM management operations for Proxmox VE
+- Implement Proxmox Backup Server operations
+- Implement Ceph management operations for Proxmox VE
+- Implement SDN management operations for Proxmox VE
+- Implement Firewall management operations for Proxmox VE
+- Implement HA groups management operations for Proxmox VE
+- Implement Update management operations for Proxmox VE
+- Implement Proxmox Datacenter Manager feature parity - Phases 1-11
+- Implement remaining PDM features - Phases 12-15
+- Add missing PDM UI components for feature parity
+- Implement 100% Proxmox PDM feature parity - UI components
 
 ### Security
 - **kube**: Restrict temp kubeconfig files to owner-only permissions
