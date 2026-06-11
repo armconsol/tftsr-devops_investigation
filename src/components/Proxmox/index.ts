@@ -19,3 +19,7 @@ export { SubscriptionList } from './SubscriptionList';
 export { NoteList } from './NoteList';
 export { SearchResults } from './SearchResults';
 export { ClusterSelector } from './ClusterSelectorAdvanced';
+export { SearchBar } from './SearchBar';
+export { ClusterOperationsList } from './ClusterOperationsList';
+export { ConnectionList } from './ConnectionList';
+export { CLICommandsList } from './CLICommandsList';
