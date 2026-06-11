@@ -4,6 +4,11 @@ All notable changes to TRCAA are documented here.
 Commit types shown: feat, fix, perf, docs, refactor.
 CI, chore, and build changes are excluded.
 
+## [Unreleased]
+
+### Bug Fixes
+- Proxmox PDM v1.2.0 bugs and feature parity
+
 ## [1.2.0] — 2026-06-11
 
 ### Bug Fixes
