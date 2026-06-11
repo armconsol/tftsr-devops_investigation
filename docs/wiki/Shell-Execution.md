@@ -642,8 +642,6 @@ CREATE INDEX idx_approval_decisions_session ON approval_decisions(session_id);
 - Export execution history as CSV/JSON
 - Integration with issue timeline (show commands executed during incident)
 - Proxmox advanced commands (cluster management, backups)
-- Multi-kubeconfig context switching within single file
-- Auto-detection of ~/.kube/config on startup (pending AppHandle fix)
 
 **Stretch Goals**:
 - Parallel command execution (run multiple commands concurrently)
@@ -662,4 +660,5 @@ CREATE INDEX idx_approval_decisions_session ON approval_decisions(session_id);
 
 ## Version History
 
+- **v1.1.0** (2026-06-06): Production-ready with three-tier safety classification, kubectl bundling, and multi-cluster support
 - **v1.0.0** (2026-06-02): Initial release with three-tier safety classification, kubectl bundling, and multi-cluster support

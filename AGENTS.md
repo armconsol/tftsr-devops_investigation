@@ -35,7 +35,7 @@
 | `src-tauri/src/state.rs` | `AppState` (DB, settings, integration_webviews) |
 | `src-tauri/src/commands/` | Tauri IPC handlers (db, ai, analysis, docs, integrations, system) |
 | `src-tauri/src/ai/provider.rs` | `Provider` trait + `create_provider()` factory |
-| `src-tauri/src/pii/` | Detection engine (12 patterns) + redaction |
+| `src-tauri/src/pii/` | Detection engine (13 patterns) + redaction |
 | `src-tauri/src/db/models.rs` | DB types: `Issue`, `IssueDetail` (nested), `LogFile`, `ResolutionStep`, `AiConversation` |
 | `src-tauri/src/audit/log.rs` | `write_audit_event()` before every external send |
 | `src/lib/tauriCommands.ts` | **Source of truth** for all Tauri IPC calls |
@@ -130,7 +130,7 @@ TypeScript mirrors this shape exactly in `tauriCommands.ts`.
 - **Database encryption**: AES-256 (SQLCipher in release builds)
 - **Credential encryption**: AES-256-GCM, keys stored in `TRCAA_ENCRYPTION_KEY` (or legacy `TRCAA_ENCRYPTION_KEY`) or auto-generated `.enckey` (mode 0600)
 - **Audit trail**: Hash-chained entries (`prev_hash` + `entry_hash`) for tamper evidence
-- **PII protection**: 12-pattern detector → user approval gate → hash-chained audit entry
+- **PII protection**: 13-pattern detector → user approval gate → hash-chained audit entry
 
 ---
 
