@@ -17,6 +17,7 @@ import {
   FileCode,
   Server,
   Server as ServerIcon,
+  Settings,
 } from "lucide-react";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { getAppVersionCmd, loadAiProvidersCmd, testProviderConnectionCmd, shutdownPortForwardsCmd } from "@/lib/tauriCommands";
@@ -51,12 +52,31 @@ import { ProxmoxSDNPage } from "@/pages/Proxmox/SDNPage";
 import { ProxmoxHAPage } from "@/pages/Proxmox/HAPage";
 import { ProxmoxTasksPage } from "@/pages/Proxmox/TasksPage";
 import { ProxmoxCertificatesPage } from "@/pages/Proxmox/CertificatesPage";
+import { ProxmoxSettings } from "@/pages/Settings/Proxmox";
 
 const navItems = [
   { to: "/", icon: Home, label: "Dashboard" },
   { to: "/new-issue", icon: Plus, label: "New Issue" },
   { to: "/kubernetes", icon: Server, label: "Kubernetes" },
-  { to: "/proxmox/remotes", icon: ServerIcon, label: "Proxmox" },
+  {
+    to: "/proxmox",
+    icon: ServerIcon,
+    label: "Proxmox",
+    children: [
+      { to: "/proxmox/remotes", label: "Remotes" },
+      { to: "/proxmox/vms", label: "VMs" },
+      { to: "/proxmox/containers", label: "Containers" },
+      { to: "/proxmox/storage", label: "Storage" },
+      { to: "/proxmox/network", label: "Network" },
+      { to: "/proxmox/firewall", label: "Firewall" },
+      { to: "/proxmox/ceph", label: "Ceph" },
+      { to: "/proxmox/sdn", label: "SDN" },
+      { to: "/proxmox/ha", label: "HA Groups" },
+      { to: "/proxmox/backup", label: "Backup" },
+      { to: "/proxmox/tasks", label: "Tasks" },
+      { to: "/proxmox/certificates", label: "Certificates" },
+    ],
+  },
   { to: "/history", icon: Clock, label: "History" },
 ];
 
@@ -68,6 +88,7 @@ const settingsItems = [
   { to: "/settings/integrations", icon: Link, label: "Integrations" },
   { to: "/settings/mcp", icon: Plug, label: "MCP Servers" },
   { to: "/settings/security", icon: Shield, label: "Security" },
+  { to: "/settings/proxmox", icon: Settings, label: "Proxmox" },
 ];
 
 export default function App() {
@@ -148,23 +169,64 @@ export default function App() {
 
           {/* Main nav */}
           <nav className="flex-1 px-2 py-3 space-y-1">
-            {navItems.map((item) => (
-              <NavLink
-                key={item.to}
-                to={item.to}
-                end={item.to === "/"}
-                className={({ isActive }) =>
-                  `flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-                    isActive
-                      ? "bg-primary text-primary-foreground"
-                      : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-                  }`
-                }
-              >
-                <item.icon className="w-4 h-4 shrink-0" />
-                {!collapsed && <span>{item.label}</span>}
-              </NavLink>
-            ))}
+            {navItems.map((item) => {
+              if (item.children) {
+                return (
+                  <div key={item.to}>
+                    <NavLink
+                      to={item.to}
+                      className={({ isActive }) =>
+                        `flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                          isActive
+                            ? "bg-primary text-primary-foreground"
+                            : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                        }`
+                      }
+                    >
+                      <item.icon className="w-4 h-4 shrink-0" />
+                      {!collapsed && <span>{item.label}</span>}
+                    </NavLink>
+                    {!collapsed && (
+                      <div className="ml-4 space-y-1 pl-4 border-l border-muted">
+                        {item.children.map((child) => (
+                          <NavLink
+                            key={child.to}
+                            to={child.to}
+                            className={({ isActive }) =>
+                              `flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors ${
+                                isActive
+                                  ? "bg-primary text-primary-foreground"
+                                  : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                              }`
+                            }
+                          >
+                            <span className="w-4 h-4 shrink-0" />
+                            <span>{child.label}</span>
+                          </NavLink>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              }
+              return (
+                <NavLink
+                  key={item.to}
+                  to={item.to}
+                  end={item.to === "/"}
+                  className={({ isActive }) =>
+                    `flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                      isActive
+                        ? "bg-primary text-primary-foreground"
+                        : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                    }`
+                  }
+                >
+                  <item.icon className="w-4 h-4 shrink-0" />
+                  {!collapsed && <span>{item.label}</span>}
+                </NavLink>
+              );
+            })}
 
             {/* Settings section */}
             <div className="pt-4">
@@ -223,19 +285,20 @@ export default function App() {
             <Route path="/settings/shell" element={<ShellExecution />} />
             <Route path="/settings/kubeconfig" element={<KubeconfigManager />} />
             <Route path="/kubernetes" element={<KubernetesPage />} />
-            <Route path="/proxmox/remotes" element={<ProxmoxRemotesPage />} />
-            <Route path="/proxmox/vms" element={<ProxmoxVMsPage />} />
-            <Route path="/proxmox/containers" element={<ProxmoxContainersPage />} />
-            <Route path="/proxmox/storage" element={<ProxmoxStoragePage />} />
-            <Route path="/proxmox/network" element={<ProxmoxNetworkPage />} />
-            <Route path="/proxmox/firewall" element={<ProxmoxFirewallPage />} />
-            <Route path="/proxmox/acl" element={<ProxmoxACLPage />} />
-            <Route path="/proxmox/backup" element={<ProxmoxBackupPage />} />
-            <Route path="/proxmox/ceph" element={<ProxmoxCephPage />} />
-            <Route path="/proxmox/sdn" element={<ProxmoxSDNPage />} />
-            <Route path="/proxmox/ha" element={<ProxmoxHAPage />} />
-            <Route path="/proxmox/tasks" element={<ProxmoxTasksPage />} />
-            <Route path="/proxmox/certificates" element={<ProxmoxCertificatesPage />} />
+          <Route path="/proxmox/remotes" element={<ProxmoxRemotesPage />} />
+          <Route path="/proxmox/vms" element={<ProxmoxVMsPage />} />
+          <Route path="/proxmox/containers" element={<ProxmoxContainersPage />} />
+          <Route path="/proxmox/storage" element={<ProxmoxStoragePage />} />
+          <Route path="/proxmox/network" element={<ProxmoxNetworkPage />} />
+          <Route path="/proxmox/firewall" element={<ProxmoxFirewallPage />} />
+          <Route path="/proxmox/acl" element={<ProxmoxACLPage />} />
+          <Route path="/proxmox/backup" element={<ProxmoxBackupPage />} />
+          <Route path="/proxmox/ceph" element={<ProxmoxCephPage />} />
+          <Route path="/proxmox/sdn" element={<ProxmoxSDNPage />} />
+          <Route path="/proxmox/ha" element={<ProxmoxHAPage />} />
+          <Route path="/proxmox/tasks" element={<ProxmoxTasksPage />} />
+          <Route path="/proxmox/certificates" element={<ProxmoxCertificatesPage />} />
+          <Route path="/settings/proxmox" element={<ProxmoxSettings />} />
             <Route path="/settings/integrations" element={<Integrations />} />
             <Route path="/settings/mcp" element={<MCPServers />} />
             <Route path="/settings/security" element={<Security />} />
