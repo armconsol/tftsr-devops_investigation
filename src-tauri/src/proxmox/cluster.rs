@@ -19,7 +19,7 @@ pub struct ClusterInfo {
 #[serde(rename_all = "lowercase")]
 pub enum ClusterType {
     #[default]
-    VE,  // Proxmox VE
+    VE, // Proxmox VE
     PBS, // Proxmox Backup Server
 }
 

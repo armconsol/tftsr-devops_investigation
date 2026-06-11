@@ -66,7 +66,11 @@ pub async fn list_pools(
                 let pg_num = pool.get("pg_num")?.as_u64()? as u32;
                 let used = pool.get("used")?.as_u64()?;
                 let avail = pool.get("avail")?.as_u64()?;
-                let status = pool.get("status")?.as_str().unwrap_or("unknown").to_string();
+                let status = pool
+                    .get("status")?
+                    .as_str()
+                    .unwrap_or("unknown")
+                    .to_string();
 
                 Some(CephPool {
                     pool: pool_name,
@@ -341,13 +345,16 @@ pub async fn clone_rbd(
         "dest": format!("{}/{}", dest_pool, dest_image)
     });
 
-    let _response: serde_json::Value = client
-        .post(&path, &config, Some(ticket))
-        .await
-        .map_err(|e| format!(
-            "Failed to clone RBD image {} to {}/{}: {}",
-            source_image, dest_pool, dest_image, e
-        ))?;
+    let _response: serde_json::Value =
+        client
+            .post(&path, &config, Some(ticket))
+            .await
+            .map_err(|e| {
+                format!(
+                    "Failed to clone RBD image {} to {}/{}: {}",
+                    source_image, dest_pool, dest_image, e
+                )
+            })?;
     Ok(())
 }
 
@@ -384,13 +391,16 @@ pub async fn create_snapshot(
         "snapshot": snapshot
     });
 
-    let _response: serde_json::Value = client
-        .post(&path, &config, Some(ticket))
-        .await
-        .map_err(|e| format!(
-            "Failed to create snapshot {} for RBD image {}: {}",
-            snapshot, image, e
-        ))?;
+    let _response: serde_json::Value =
+        client
+            .post(&path, &config, Some(ticket))
+            .await
+            .map_err(|e| {
+                format!(
+                    "Failed to create snapshot {} for RBD image {}: {}",
+                    snapshot, image, e
+                )
+            })?;
     Ok(())
 }
 
@@ -412,7 +422,11 @@ pub async fn list_monitors(
                 let name = mon.get("name")?.as_str()?.to_string();
                 let quorum = mon.get("quorum")?.as_bool()?;
                 let address = mon.get("addr")?.as_str()?.to_string();
-                let version = mon.get("version")?.as_str().unwrap_or("unknown").to_string();
+                let version = mon
+                    .get("version")?
+                    .as_str()
+                    .unwrap_or("unknown")
+                    .to_string();
 
                 Some(CephMonitor {
                     name,
@@ -472,14 +486,26 @@ pub async fn get_ceph_health(
         .and_then(|d| d.as_array())
         .map(|arr| {
             arr.iter()
-                .filter_map(|d| d.get("message").and_then(|m| m.as_str()).map(|s| s.to_string()))
+                .filter_map(|d| {
+                    d.get("message")
+                        .and_then(|m| m.as_str())
+                        .map(|s| s.to_string())
+                })
                 .collect()
         })
         .unwrap_or_default();
 
     Ok(CephHealth {
-        status: health.get("status").and_then(|s| s.as_str()).unwrap_or("unknown").to_string(),
-        summary: health.get("summary").and_then(|s| s.as_str()).unwrap_or("").to_string(),
+        status: health
+            .get("status")
+            .and_then(|s| s.as_str())
+            .unwrap_or("unknown")
+            .to_string(),
+        summary: health
+            .get("summary")
+            .and_then(|s| s.as_str())
+            .unwrap_or("")
+            .to_string(),
         details,
     })
 }

@@ -44,8 +44,15 @@ pub async fn list_firewall_rules(
                 let protocol = rule.get("protocol")?.as_str().unwrap_or("").to_string();
                 let source = rule.get("source")?.as_str().unwrap_or("").to_string();
                 let destination = rule.get("dest")?.as_str().unwrap_or("").to_string();
-                let port = rule.get("dport").or(rule.get("sport")).and_then(|p| p.as_str()).map(|s| s.to_string());
-                let enabled = rule.get("enabled").and_then(|e| e.as_bool()).unwrap_or(true);
+                let port = rule
+                    .get("dport")
+                    .or(rule.get("sport"))
+                    .and_then(|p| p.as_str())
+                    .map(|s| s.to_string());
+                let enabled = rule
+                    .get("enabled")
+                    .and_then(|e| e.as_bool())
+                    .unwrap_or(true);
 
                 Some(FirewallRule {
                     rule_num,
@@ -200,8 +207,15 @@ pub async fn get_firewall_status(
             let protocol = rule.get("protocol")?.as_str().unwrap_or("").to_string();
             let source = rule.get("source")?.as_str().unwrap_or("").to_string();
             let destination = rule.get("dest")?.as_str().unwrap_or("").to_string();
-            let port = rule.get("dport").or(rule.get("sport")).and_then(|p| p.as_str()).map(|s| s.to_string());
-            let enabled = rule.get("enabled").and_then(|e| e.as_bool()).unwrap_or(true);
+            let port = rule
+                .get("dport")
+                .or(rule.get("sport"))
+                .and_then(|p| p.as_str())
+                .map(|s| s.to_string());
+            let enabled = rule
+                .get("enabled")
+                .and_then(|e| e.as_bool())
+                .unwrap_or(true);
 
             Some(FirewallRule {
                 rule_num,

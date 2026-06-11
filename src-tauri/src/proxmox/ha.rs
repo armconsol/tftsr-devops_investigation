@@ -50,7 +50,11 @@ pub async fn list_ha_groups(
                     .unwrap_or_default();
                 let max_failures = group.get("max_failures")?.as_u64()? as u32;
                 let max_relocate = group.get("max_relocate")?.as_u64()? as u32;
-                let state = group.get("state")?.as_str().unwrap_or("unknown").to_string();
+                let state = group
+                    .get("state")?
+                    .as_str()
+                    .unwrap_or("unknown")
+                    .to_string();
 
                 Some(HaGroup {
                     group: name,
@@ -145,10 +149,23 @@ pub async fn list_ha_resources(
             .iter()
             .filter_map(|resource| {
                 let res = resource.get("resource")?.as_str()?.to_string();
-                let group = resource.get("group").and_then(|g| g.as_str()).map(|s| s.to_string());
-                let node = resource.get("node").and_then(|n| n.as_str()).map(|s| s.to_string());
-                let state = resource.get("state")?.as_str().unwrap_or("unknown").to_string();
-                let enabled = resource.get("enabled").and_then(|e| e.as_bool()).unwrap_or(true);
+                let group = resource
+                    .get("group")
+                    .and_then(|g| g.as_str())
+                    .map(|s| s.to_string());
+                let node = resource
+                    .get("node")
+                    .and_then(|n| n.as_str())
+                    .map(|s| s.to_string());
+                let state = resource
+                    .get("state")?
+                    .as_str()
+                    .unwrap_or("unknown")
+                    .to_string();
+                let enabled = resource
+                    .get("enabled")
+                    .and_then(|e| e.as_bool())
+                    .unwrap_or(true);
 
                 Some(HaResource {
                     resource: res,

@@ -208,7 +208,11 @@ pub async fn get_datastore_status(
         size: ds.get("size").and_then(|s| s.as_u64()).unwrap_or(0),
         used: ds.get("used").and_then(|u| u.as_u64()).unwrap_or(0),
         available: ds.get("available").and_then(|a| a.as_u64()).unwrap_or(0),
-        status: ds.get("status").and_then(|s| s.as_str()).unwrap_or("unknown").to_string(),
+        status: ds
+            .get("status")
+            .and_then(|s| s.as_str())
+            .unwrap_or("unknown")
+            .to_string(),
     })
 }
 
@@ -250,13 +254,16 @@ pub async fn restore_backup(
         "target-vmid": target_vmid
     });
 
-    let _response: serde_json::Value = client
-        .post(&path, &config, Some(ticket))
-        .await
-        .map_err(|e| format!(
-            "Failed to restore backup {} to VM {}: {}",
-            backup_id, target_vmid, e
-        ))?;
+    let _response: serde_json::Value =
+        client
+            .post(&path, &config, Some(ticket))
+            .await
+            .map_err(|e| {
+                format!(
+                    "Failed to restore backup {} to VM {}: {}",
+                    backup_id, target_vmid, e
+                )
+            })?;
     Ok(())
 }
 

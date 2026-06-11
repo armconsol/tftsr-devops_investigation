@@ -163,7 +163,10 @@ pub async fn list_vms(
                     uptime: r.get("uptime").and_then(|u| u.as_u64()).unwrap_or(0),
                     node,
                     template: r.get("template").and_then(|t| t.as_bool()),
-                    agent: r.get("agent").and_then(|a| a.as_str()).map(|s| s.to_string()),
+                    agent: r
+                        .get("agent")
+                        .and_then(|a| a.as_str())
+                        .map(|s| s.to_string()),
                     mem: r.get("mem").and_then(|m| m.as_u64()),
                     max_mem: r.get("maxmem").and_then(|m| m.as_u64()),
                     max_disk: r.get("maxdisk").and_then(|d| d.as_u64()),
@@ -199,15 +202,25 @@ pub async fn get_vm(
 
     Ok(VmInfo {
         id: vmid,
-        name: vm.get("name").and_then(|n| n.as_str()).map(|s| s.to_string()),
-        status: vm.get("status").and_then(|s| s.as_str()).unwrap_or("unknown").to_string(),
+        name: vm
+            .get("name")
+            .and_then(|n| n.as_str())
+            .map(|s| s.to_string()),
+        status: vm
+            .get("status")
+            .and_then(|s| s.as_str())
+            .unwrap_or("unknown")
+            .to_string(),
         cpu: vm.get("cpu").and_then(|c| c.as_f64()).unwrap_or(0.0),
         memory: vm.get("memory").and_then(|m| m.as_u64()).unwrap_or(0),
         disk: vm.get("disk").and_then(|d| d.as_u64()).unwrap_or(0),
         uptime: vm.get("uptime").and_then(|u| u.as_u64()).unwrap_or(0),
         node: node.to_string(),
         template: vm.get("template").and_then(|t| t.as_bool()),
-        agent: vm.get("agent").and_then(|a| a.as_str()).map(|s| s.to_string()),
+        agent: vm
+            .get("agent")
+            .and_then(|a| a.as_str())
+            .map(|s| s.to_string()),
         mem: vm.get("mem").and_then(|m| m.as_u64()),
         max_mem: vm.get("maxmem").and_then(|m| m.as_u64()),
         max_disk: vm.get("maxdisk").and_then(|d| d.as_u64()),
@@ -334,10 +347,16 @@ pub async fn create_snapshot(
         "snapname": snapshot_name
     });
 
-    let _response: serde_json::Value = client
-        .post(&path, &config, Some(ticket))
-        .await
-        .map_err(|e| format!("Failed to create snapshot {} for VM {}: {}", snapshot_name, vmid, e))?;
+    let _response: serde_json::Value =
+        client
+            .post(&path, &config, Some(ticket))
+            .await
+            .map_err(|e| {
+                format!(
+                    "Failed to create snapshot {} for VM {}: {}",
+                    snapshot_name, vmid, e
+                )
+            })?;
     Ok(())
 }
 
@@ -350,10 +369,12 @@ pub async fn delete_snapshot(
     ticket: &str,
 ) -> Result<(), String> {
     let path = format!("nodes/{}/qemu/{}/snapshot/{}", node, vmid, snapshot_name);
-    let _response: serde_json::Value = client
-        .delete(&path, Some(ticket))
-        .await
-        .map_err(|e| format!("Failed to delete snapshot {} for VM {}: {}", snapshot_name, vmid, e))?;
+    let _response: serde_json::Value = client.delete(&path, Some(ticket)).await.map_err(|e| {
+        format!(
+            "Failed to delete snapshot {} for VM {}: {}",
+            snapshot_name, vmid, e
+        )
+    })?;
     Ok(())
 }
 
@@ -365,11 +386,19 @@ pub async fn rollback_snapshot(
     snapshot_name: &str,
     ticket: &str,
 ) -> Result<(), String> {
-    let path = format!("nodes/{}/qemu/{}/snapshot/{}/rollback", node, vmid, snapshot_name);
+    let path = format!(
+        "nodes/{}/qemu/{}/snapshot/{}/rollback",
+        node, vmid, snapshot_name
+    );
     let _response: serde_json::Value = client
         .post(&path, &serde_json::json!({}), Some(ticket))
         .await
-        .map_err(|e| format!("Failed to rollback VM {} to snapshot {}: {}", vmid, snapshot_name, e))?;
+        .map_err(|e| {
+            format!(
+                "Failed to rollback VM {} to snapshot {}: {}",
+                vmid, snapshot_name, e
+            )
+        })?;
     Ok(())
 }
 

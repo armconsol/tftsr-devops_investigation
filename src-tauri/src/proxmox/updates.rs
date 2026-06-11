@@ -81,7 +81,8 @@ pub async fn list_updates(
                 .filter_map(|update| {
                     let package = update.get("package")?.as_str()?.to_string();
                     let version = update.get("version")?.as_str()?.to_string();
-                    let available_version = update.get("available")?.as_str().unwrap_or("").to_string();
+                    let available_version =
+                        update.get("available")?.as_str().unwrap_or("").to_string();
                     let size = update.get("size")?.as_u64().unwrap_or(0);
 
                     Some(UpdateInfo {

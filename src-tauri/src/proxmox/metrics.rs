@@ -26,21 +26,89 @@ pub struct NodeStatus {
 
 /// Get node metrics for a specific node
 pub async fn get_node_metrics(
-    _client: &crate::proxmox::client::ProxmoxClient,
-    _node: &str,
-    _ticket: &str,
+    client: &crate::proxmox::client::ProxmoxClient,
+    node: &str,
+    ticket: &str,
 ) -> Result<NodeMetrics, String> {
-    // Implementation will be completed in Phase 2
-    Err("Not implemented yet".to_string())
+    let path = format!("nodes/{}/status", node);
+    let response: serde_json::Value = client
+        .get(&path, Some(ticket))
+        .await
+        .map_err(|e| format!("Failed to get node metrics for {}: {}", node, e))?;
+
+    if let Some(data) = response.get("data") {
+        let cpu = data.get("cpu").and_then(|c| c.as_f64()).unwrap_or(0.0);
+        let memory = data.get("memory").and_then(|m| m.as_f64()).unwrap_or(0.0);
+        let disk = data.get("disk").and_then(|d| d.as_f64()).unwrap_or(0.0);
+        let network = data.get("network").and_then(|n| n.as_f64()).unwrap_or(0.0);
+        let load = data.get("load").and_then(|l| l.as_f64()).unwrap_or(0.0);
+        let uptime = data.get("uptime").and_then(|u| u.as_u64()).unwrap_or(0);
+
+        Ok(NodeMetrics {
+            cpu,
+            memory,
+            disk,
+            network,
+            load,
+            uptime,
+        })
+    } else {
+        Err("Invalid response format: missing 'data' field".to_string())
+    }
 }
 
 /// List all nodes in a cluster
 pub async fn list_nodes(
-    _client: &crate::proxmox::client::ProxmoxClient,
-    _ticket: &str,
+    client: &crate::proxmox::client::ProxmoxClient,
+    ticket: &str,
 ) -> Result<Vec<NodeStatus>, String> {
-    // Implementation will be completed in Phase 2
-    Err("Not implemented yet".to_string())
+    let path = "cluster/resources";
+    let response: serde_json::Value = client
+        .get(path, Some(ticket))
+        .await
+        .map_err(|e| format!("Failed to list nodes: {}", e))?;
+
+    if let Some(resources) = response.get("data").and_then(|d| d.as_array()) {
+        let node_list: Vec<NodeStatus> = resources
+            .iter()
+            .filter_map(|resource| {
+                let node = resource.get("node").and_then(|n| n.as_str())?.to_string();
+                let cpu = resource.get("cpu").and_then(|c| c.as_f64()).unwrap_or(0.0);
+                let memory = resource
+                    .get("memory")
+                    .and_then(|m| m.as_f64())
+                    .unwrap_or(0.0);
+                let disk = resource.get("disk").and_then(|d| d.as_f64()).unwrap_or(0.0);
+                let load = resource.get("load").and_then(|l| l.as_f64()).unwrap_or(0.0);
+                let uptime = resource.get("uptime").and_then(|u| u.as_u64()).unwrap_or(0);
+                let version = resource
+                    .get("version")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let status = resource
+                    .get("status")
+                    .and_then(|s| s.as_str())
+                    .unwrap_or("unknown")
+                    .to_string();
+
+                Some(NodeStatus {
+                    node,
+                    cpu,
+                    memory,
+                    disk,
+                    load,
+                    uptime,
+                    version,
+                    status,
+                })
+            })
+            .collect();
+
+        Ok(node_list)
+    } else {
+        Err("Invalid response format: missing 'data' field".to_string())
+    }
 }
 
 #[cfg(test)]

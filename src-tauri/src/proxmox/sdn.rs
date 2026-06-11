@@ -50,7 +50,11 @@ pub async fn list_evpn_zones(
                             .collect()
                     })
                     .unwrap_or_default();
-                let status = zone.get("status")?.as_str().unwrap_or("unknown").to_string();
+                let status = zone
+                    .get("status")?
+                    .as_str()
+                    .unwrap_or("unknown")
+                    .to_string();
 
                 Some(EvpnZone {
                     zone: name,
@@ -144,7 +148,11 @@ pub async fn list_vnets(
                 let zone = vnet.get("zone")?.as_str()?.to_string();
                 let l2vni = vnet.get("l2vni")?.as_u64()? as u32;
                 let dhcp = vnet.get("dhcp")?.as_bool()?;
-                let status = vnet.get("status")?.as_str().unwrap_or("unknown").to_string();
+                let status = vnet
+                    .get("status")?
+                    .as_str()
+                    .unwrap_or("unknown")
+                    .to_string();
 
                 Some(VirtualNetwork {
                     vnet: name,

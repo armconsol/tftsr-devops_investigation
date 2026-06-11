@@ -1,5 +1,6 @@
 pub mod ai;
 pub mod audit;
+pub mod cli;
 pub mod commands;
 pub mod db;
 pub mod docs;
@@ -149,11 +150,64 @@ pub fn run() {
             commands::integrations::save_integration_config,
             commands::integrations::get_integration_config,
             commands::integrations::get_all_integration_configs,
-            // Proxmox
+            // Proxmox - Core Management (Phase 1)
+            commands::proxmox::list_auth_realms,
+            commands::proxmox::add_ldap_realm,
+            commands::proxmox::add_ad_realm,
+            commands::proxmox::add_openid_realm,
+            commands::proxmox::list_acme_accounts,
+            commands::proxmox::register_acme_account,
+            commands::proxmox::get_acme_challenges,
+            commands::proxmox::list_apt_updates,
+            commands::proxmox::update_apt_repos,
+            commands::proxmox::list_apt_repositories,
+            commands::proxmox::get_shell_ticket,
+            commands::proxmox::list_views,
+            commands::proxmox::add_view,
+            commands::proxmox::update_view,
+            commands::proxmox::delete_view,
+            commands::proxmox::list_certificates,
+            commands::proxmox::upload_certificate,
+            commands::proxmox::get_certificate,
+            // Proxmox - Advanced Management (Phase 2)
+            commands::proxmox::list_firewall_rules,
+            commands::proxmox::add_firewall_rule,
+            commands::proxmox::delete_firewall_rule,
+            commands::proxmox::list_sdn_controllers,
+            commands::proxmox::list_sdn_vnets,
+            commands::proxmox::list_sdn_zones,
+            // Proxmox - Network Management (Phase 3)
+            commands::proxmox::list_ceph_clusters,
+            commands::proxmox::get_ceph_cluster_status,
+            // Proxmox - Advanced Operations (Phase 4)
+            commands::proxmox::migrate_vm,
+            commands::proxmox::list_migration_status,
+            commands::proxmox::list_updates,
+            commands::proxmox::refresh_updates,
+            commands::proxmox::install_updates,
+            commands::proxmox::list_tasks,
+            commands::proxmox::get_task_status,
+            commands::proxmox::stop_task,
+            // Proxmox - Infrastructure (Phase 5)
+            commands::proxmox::get_metrics_summary,
+            commands::proxmox::list_metric_collections,
+            // Proxmox - Existing
             commands::proxmox::add_proxmox_cluster,
             commands::proxmox::remove_proxmox_cluster,
             commands::proxmox::list_proxmox_clusters,
             commands::proxmox::get_proxmox_cluster,
+            commands::proxmox::list_proxmox_vms,
+            commands::proxmox::get_proxmox_vm,
+            commands::proxmox::start_proxmox_vm,
+            commands::proxmox::stop_proxmox_vm,
+            commands::proxmox::reboot_proxmox_vm,
+            commands::proxmox::shutdown_proxmox_vm,
+            commands::proxmox::list_proxmox_backup_jobs,
+            commands::proxmox::list_proxmox_datastores,
+            commands::proxmox::trigger_proxmox_backup_job,
+            commands::proxmox::list_ceph_pools,
+            commands::proxmox::list_ceph_osd,
+            commands::proxmox::get_ceph_health,
             // System / Settings
             commands::system::check_ollama_installed,
             commands::system::get_ollama_install_guide,

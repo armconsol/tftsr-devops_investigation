@@ -11,6 +11,7 @@ pub struct ProxmoxClient {
     port: u16,
     username: String,
     api_token: Option<String>,
+    pub ticket: Option<String>,
     client: Client,
 }
 
@@ -40,6 +41,7 @@ impl ProxmoxClient {
             port,
             username: username.to_string(),
             api_token: None,
+            ticket: None,
             client: Client::builder()
                 .timeout(Duration::from_secs(30))
                 .build()
@@ -47,15 +49,17 @@ impl ProxmoxClient {
         }
     }
 
+    /// Set the ticket for authentication
+    pub fn set_ticket(&mut self, ticket: &str) {
+        self.ticket = Some(ticket.to_string());
+    }
+
     /// Authenticate with root username and password
     /// Returns the API ticket for subsequent requests
     pub async fn authenticate(&self, password: &str) -> Result<String> {
         let url = format!("{}/api2/json/access/ticket", self.base_url);
 
-        let params = vec![
-            ("username", self.username.as_str()),
-            ("password", password),
-        ];
+        let params = vec![("username", self.username.as_str()), ("password", password)];
 
         let response = self
             .client
