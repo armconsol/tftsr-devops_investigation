@@ -437,6 +437,7 @@ pub async fn initiate_oauth(
         let watchers = app_state.watchers.clone();
         let log_streams = app_state.log_streams.clone();
         let pty_sessions = app_state.pty_sessions.clone();
+        let proxmox_clusters = app_state.proxmox_clusters.clone();
 
         tokio::spawn(async move {
             let app_state_for_callback = AppState {
@@ -452,6 +453,7 @@ pub async fn initiate_oauth(
                 watchers,
                 log_streams,
                 pty_sessions,
+                proxmox_clusters,
             };
             while let Some(callback) = callback_rx.recv().await {
                 tracing::info!("Received OAuth callback for state: {}", callback.state);

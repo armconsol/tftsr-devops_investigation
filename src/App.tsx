@@ -16,6 +16,7 @@ import {
   Terminal,
   FileCode,
   Server,
+  Server as ServerIcon,
 } from "lucide-react";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { getAppVersionCmd, loadAiProvidersCmd, testProviderConnectionCmd, shutdownPortForwardsCmd } from "@/lib/tauriCommands";
@@ -37,11 +38,25 @@ import ShellExecution from "@/pages/Settings/ShellExecution";
 import KubeconfigManager from "@/pages/Settings/KubeconfigManager";
 import { KubernetesPage } from "@/pages/Kubernetes/KubernetesPage";
 import { ShellApprovalModal } from "@/components/ShellApprovalModal";
+import { ProxmoxRemotesPage } from "@/pages/Proxmox/RemotesPage";
+import { ProxmoxVMsPage } from "@/pages/Proxmox/VMsPage";
+import { ProxmoxContainersPage } from "@/pages/Proxmox/ContainersPage";
+import { ProxmoxStoragePage } from "@/pages/Proxmox/StoragePage";
+import { ProxmoxNetworkPage } from "@/pages/Proxmox/NetworkPage";
+import { ProxmoxFirewallPage } from "@/pages/Proxmox/FirewallPage";
+import { ProxmoxACLPage } from "@/pages/Proxmox/ACLPage";
+import { ProxmoxBackupPage } from "@/pages/Proxmox/BackupPage";
+import { ProxmoxCephPage } from "@/pages/Proxmox/CephPage";
+import { ProxmoxSDNPage } from "@/pages/Proxmox/SDNPage";
+import { ProxmoxHAPage } from "@/pages/Proxmox/HAPage";
+import { ProxmoxTasksPage } from "@/pages/Proxmox/TasksPage";
+import { ProxmoxCertificatesPage } from "@/pages/Proxmox/CertificatesPage";
 
 const navItems = [
   { to: "/", icon: Home, label: "Dashboard" },
   { to: "/new-issue", icon: Plus, label: "New Issue" },
   { to: "/kubernetes", icon: Server, label: "Kubernetes" },
+  { to: "/proxmox/remotes", icon: ServerIcon, label: "Proxmox" },
   { to: "/history", icon: Clock, label: "History" },
 ];
 
@@ -208,6 +223,19 @@ export default function App() {
             <Route path="/settings/shell" element={<ShellExecution />} />
             <Route path="/settings/kubeconfig" element={<KubeconfigManager />} />
             <Route path="/kubernetes" element={<KubernetesPage />} />
+            <Route path="/proxmox/remotes" element={<ProxmoxRemotesPage />} />
+            <Route path="/proxmox/vms" element={<ProxmoxVMsPage />} />
+            <Route path="/proxmox/containers" element={<ProxmoxContainersPage />} />
+            <Route path="/proxmox/storage" element={<ProxmoxStoragePage />} />
+            <Route path="/proxmox/network" element={<ProxmoxNetworkPage />} />
+            <Route path="/proxmox/firewall" element={<ProxmoxFirewallPage />} />
+            <Route path="/proxmox/acl" element={<ProxmoxACLPage />} />
+            <Route path="/proxmox/backup" element={<ProxmoxBackupPage />} />
+            <Route path="/proxmox/ceph" element={<ProxmoxCephPage />} />
+            <Route path="/proxmox/sdn" element={<ProxmoxSDNPage />} />
+            <Route path="/proxmox/ha" element={<ProxmoxHAPage />} />
+            <Route path="/proxmox/tasks" element={<ProxmoxTasksPage />} />
+            <Route path="/proxmox/certificates" element={<ProxmoxCertificatesPage />} />
             <Route path="/settings/integrations" element={<Integrations />} />
             <Route path="/settings/mcp" element={<MCPServers />} />
             <Route path="/settings/security" element={<Security />} />

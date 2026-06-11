@@ -131,6 +131,9 @@ pub struct AppState {
         Arc<TokioMutex<HashMap<String, tokio::sync::oneshot::Sender<ApprovalResponse>>>>,
     /// Kubernetes cluster clients: cluster_id -> client
     pub clusters: Arc<TokioMutex<HashMap<String, crate::kube::ClusterClient>>>,
+    /// Proxmox cluster clients: cluster_id -> client
+    pub proxmox_clusters:
+        Arc<TokioMutex<HashMap<String, Arc<TokioMutex<crate::proxmox::client::ProxmoxClient>>>>>,
     /// Port forwarding sessions: session_id -> session
     pub port_forwards: Arc<TokioMutex<HashMap<String, crate::kube::PortForwardSession>>>,
     /// Refresh registry for domain-based data fetching

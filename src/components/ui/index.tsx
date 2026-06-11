@@ -777,4 +777,36 @@ export const Checkbox = React.forwardRef<HTMLInputElement, CheckboxProps>(
 );
 Checkbox.displayName = "Checkbox";
 
+// ─── Switch ───────────────────────────────────────────────────────────────────
+
+interface SwitchProps {
+  checked?: boolean;
+  onCheckedChange?: (checked: boolean) => void;
+  disabled?: boolean;
+  className?: string;
+}
+
+export const Switch = React.forwardRef<HTMLInputElement, SwitchProps>(
+  ({ className, checked, onCheckedChange, disabled, ...props }, ref) => {
+    return (
+      <input
+        type="checkbox"
+        ref={ref}
+        checked={checked}
+        onChange={(e) => {
+          onCheckedChange?.(e.target.checked);
+        }}
+        disabled={disabled}
+        className={cn(
+          "h-5 w-9 rounded-full bg-secondary border-2 border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-50",
+          checked ? "bg-primary" : "",
+          className
+        )}
+        {...props}
+      />
+    );
+  }
+);
+Switch.displayName = "Switch";
+
 export { cn };

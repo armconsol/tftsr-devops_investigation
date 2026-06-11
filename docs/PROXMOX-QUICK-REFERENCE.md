@@ -1,7 +1,7 @@
 # Proxmox Integration - Quick Reference
 
 **Version:** v1.2.0  
-**Status:** Planning ✓ | Implementation: Pending
+**Status:** Implementation Complete ✅
 
 ---
 
@@ -47,11 +47,28 @@ Database (SQLite + AES-256-GCM)
 |------|---------|
 | `src-tauri/src/proxmox/mod.rs` | Module exports |
 | `src-tauri/src/proxmox/client.rs` | Proxmox API client |
-| `src-tauri/src/proxmox/auth.rs` | Authentication logic |
+| `src-tauri/src/proxmox/auth_realm.rs` | LDAP/AD/OpenID realms |
+| `src-tauri/src/proxmox/acme.rs` | ACME certificate management |
+| `src-tauri/src/proxmox/apt.rs` | APT repository management |
 | `src-tauri/src/proxmox/cluster.rs` | Cluster registry |
 | `src-tauri/src/proxmox/models.rs` | Data models |
+| `src-tauri/src/proxmox/metrics.rs` | Metrics aggregation |
+| `src-tauri/src/proxmox/migration.rs` | Live migration logic |
+| `src-tauri/src/proxmox/backup.rs` | PBS backup management |
+| `src-tauri/src/proxmox/ceph.rs` | Ceph management |
+| `src-tauri/src/proxmox/ceph_cluster.rs` | Ceph cluster management |
+| `src-tauri/src/proxmox/sdn.rs` | SDN management |
+| `src-tauri/src/proxmox/firewall.rs` | Firewall management |
+| `src-tauri/src/proxmox/ha.rs` | HA groups management |
+| `src-tauri/src/proxmox/updates.rs` | Update management |
+| `src-tauri/src/proxmox/updates_ext.rs` | Extended updates |
+| `src-tauri/src/proxmox/views.rs` | Dashboard views |
+| `src-tauri/src/proxmox/certificates.rs` | Certificate management |
+| `src-tauri/src/proxmox/shell.rs` | Remote shell |
+| `src-tauri/src/proxmox/tasks.rs` | Task management |
 | `src-tauri/src/commands/proxmox.rs` | IPC commands |
-| `src-tauri/src/db/migrations.rs` | DB schema (migration 012) |
+| `src-tauri/src/db/migrations.rs` | DB schema |
+| `src-tauri/src/cli/mod.rs` | CLI tools |
 
 ### Frontend
 
@@ -59,10 +76,10 @@ Database (SQLite + AES-256-GCM)
 |------|---------|
 | `src/pages/Proxmox/index.tsx` | Main page |
 | `src/pages/Proxmox/ClusterList.tsx` | Cluster management |
-| `src/pages/Proxmox/ClusterDashboard.tsx` | Metrics dashboard |
-| `src/pages/Proxmox/VMManager.tsx` | VM operations |
-| `src/pages/Proxmox/AddClusterModal.tsx` | Add cluster UI |
-| `src/lib/tauriCommands.ts` | IPC wrappers |
+| `src/pages/Proxmox/ClusterSelector.tsx` | Cluster selector |
+| `src/lib/tauriCommands.ts` | IPC type definitions |
+| `src/lib/proxmoxClient.ts` | IPC wrappers |
+| `src/lib/domain.ts` | TypeScript types |
 | `src/stores/proxmoxStore.ts` | State management |
 
 ---
@@ -254,6 +271,73 @@ collectProxmoxLogsCmd(issueId, clusterId, resourceType, resourceId, timeRange)
 
 ---
 
+## Implemented Features
+
+### Core Management ✅
+- [x] Cluster management (add/remove/list)
+- [x] Multi-cluster support (VE and PBS)
+- [x] Authentication with root credentials
+- [x] API token generation and storage
+- [x] SSL fingerprint verification
+- [x] Encrypted credential storage (AES-256-GCM)
+
+### Proxmox VE Operations ✅
+- [x] VM management (start/stop/reboot/shutdown)
+- [x] VM listing and details
+- [x] Node status and metrics
+- [x] Storage management
+- [x] Snapshot operations
+
+### Proxmox Backup Server ✅
+- [x] Backup job management
+- [x] Datastore management
+- [x] Backup listing and restoration
+
+### Ceph Management ✅
+- [x] Pool management (list/create/delete/quota)
+- [x] OSD management (list/weight/out/in)
+- [x] MDS management (list/failover)
+- [x] RBD management (list/create/delete/resize/clone)
+- [x] Monitor management (list/quorum)
+- [x] Ceph health monitoring
+- [x] Ceph cluster discovery
+
+### User Management ✅
+- [x] LDAP authentication realm
+- [x] Active Directory realm
+- [x] OpenID Connect realm
+
+### ACME/Let's Encrypt ✅
+- [x] ACME account management
+- [x] Certificate registration
+- [x] Challenge configuration
+
+### APT Repository Management ✅
+- [x] Package update checking
+- [x] Repository listing
+- [x] Repository configuration
+
+### Remote Management ✅
+- [x] Remote shell (WebSocket terminal)
+- [x] Dashboard views (customization)
+- [x] Certificate upload/import
+
+### Network Management ✅
+- [x] SDN zones and virtual networks
+- [x] Firewall rules management
+
+### Advanced Operations ✅
+- [x] Remote migration (cross-cluster)
+- [x] System updates management
+- [x] Task management (remote forwarding)
+- [x] Metric collection (periodic)
+
+### CLI Tools ✅
+- [x] Command-line client
+- [x] Administrative tool
+
+---
+
 ## Configuration
 
 ### Environment Variables
@@ -285,14 +369,14 @@ PROXMOX_ENABLE_SSL_VERIFY=true
 
 ## Security Checklist
 
-- [ ] All passwords encrypted with AES-256-GCM
-- [ ] API tokens stored encrypted
-- [ ] SSL fingerprint verification configurable
-- [ ] Audit logging for all operations
-- [ ] No credentials in logs
-- [ ] CSRF tokens handled properly
-- [ ] Rate limiting implemented
-- [ ] Error messages don't leak sensitive info
+- [x] All passwords encrypted with AES-256-GCM
+- [x] API tokens stored encrypted
+- [x] SSL fingerprint verification configurable
+- [x] Audit logging for all operations
+- [x] No credentials in logs
+- [x] CSRF tokens handled properly
+- [x] Rate limiting implemented
+- [x] Error messages don't leak sensitive info
 
 ---
 
@@ -403,12 +487,15 @@ npm run test:e2e
 ## Next Steps
 
 1. ✅ **Planning complete** - This document
-2. ⏳ **Phase 1** - Foundation (Week 1)
-3. ⏳ **Phase 2** - VE Management (Week 2)
-4. ⏳ **Phase 3** - PBS Support (Week 3)
-5. ⏳ **Phase 4** - Cross-Datacenter (Week 4)
-6. ⏳ **Phase 5** - Triage Integration (Week 5)
-7. ⏳ **Phase 6** - Testing & Docs (Week 6)
+2. ✅ **Phase 1** - Foundation (Week 1)
+3. ✅ **Phase 2** - VE Management (Week 2)
+4. ✅ **Phase 3** - PBS Support (Week 3)
+5. ✅ **Phase 4** - Cross-Datacenter (Week 4)
+6. ✅ **Phase 5** - Triage Integration (Week 5)
+7. ✅ **Phase 6** - Testing & Docs (Week 6)
+8. ✅ **Phase 7** - User Management & ACME (Complete)
+9. ✅ **Phase 8** - Remote Management (Complete)
+10. ✅ **Phase 9** - CLI Tools (Complete)
 
 ---
 

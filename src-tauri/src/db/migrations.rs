@@ -394,6 +394,38 @@ pub fn run_migrations(conn: &Connection) -> anyhow::Result<()> {
             CREATE INDEX IF NOT EXISTS idx_port_forwards_status ON port_forwards(status);
             CREATE INDEX IF NOT EXISTS idx_port_forwards_namespace ON port_forwards(namespace);",
         ),
+        (
+            "031_create_proxmox_clusters",
+            "CREATE TABLE IF NOT EXISTS proxmox_clusters (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                cluster_type TEXT NOT NULL CHECK(cluster_type IN ('ve', 'pbs')),
+                url TEXT NOT NULL,
+                port INTEGER NOT NULL DEFAULT 8006,
+                auth_method TEXT NOT NULL DEFAULT 'root',
+                encrypted_credentials TEXT NOT NULL,
+                ssl_fingerprint TEXT,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+            CREATE INDEX IF NOT EXISTS idx_proxmox_clusters_name ON proxmox_clusters(name);
+            CREATE INDEX IF NOT EXISTS idx_proxmox_clusters_type ON proxmox_clusters(cluster_type);",
+        ),
+        (
+            "032_create_proxmox_resources",
+            "CREATE TABLE IF NOT EXISTS proxmox_resources (
+                id TEXT PRIMARY KEY,
+                cluster_id TEXT NOT NULL REFERENCES proxmox_clusters(id) ON DELETE CASCADE,
+                resource_type TEXT NOT NULL,
+                resource_id TEXT NOT NULL,
+                resource_data TEXT NOT NULL DEFAULT '{}',
+                last_updated TEXT NOT NULL DEFAULT (datetime('now')),
+                UNIQUE(cluster_id, resource_type, resource_id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_proxmox_resources_cluster ON proxmox_resources(cluster_id);
+            CREATE INDEX IF NOT EXISTS idx_proxmox_resources_type ON proxmox_resources(resource_type);
+            CREATE INDEX IF NOT EXISTS idx_proxmox_resources_updated ON proxmox_resources(last_updated);",
+        ),
     ];
 
     for (name, sql) in migrations {
