@@ -67,6 +67,7 @@ CI, chore, and build changes are excluded.
 - **kubernetes**: Add comment about dynamic port allocation limitation
 - Update documentation for Kubernetes Management UI
 - Add ticket summary for kube action namespace and stability fixes
+- Update to v1.1.0 release with Kubernetes Management UI
 
 ### Features
 - **kube**: Add Kubernetes management GUI components
