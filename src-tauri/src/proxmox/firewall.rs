@@ -25,49 +25,236 @@ pub struct FirewallStatus {
 
 /// List firewall rules
 pub async fn list_firewall_rules(
-    _client: &crate::proxmox::client::ProxmoxClient,
-    _node: &str,
-    _ticket: &str,
+    client: &crate::proxmox::client::ProxmoxClient,
+    node: &str,
+    ticket: &str,
 ) -> Result<Vec<FirewallRule>, String> {
-    Err("Not implemented yet".to_string())
+    let path = format!("nodes/{}/firewall/rules", node);
+    let response: serde_json::Value = client
+        .get(&path, Some(ticket))
+        .await
+        .map_err(|e| format!("Failed to list firewall rules: {}", e))?;
+
+    if let Some(rules) = response.get("data").and_then(|d| d.as_array()) {
+        let rule_list: Vec<FirewallRule> = rules
+            .iter()
+            .filter_map(|rule| {
+                let rule_num = rule.get("rule_num")?.as_u64()? as u32;
+                let action = rule.get("action")?.as_str()?.to_string();
+                let protocol = rule.get("protocol")?.as_str().unwrap_or("").to_string();
+                let source = rule.get("source")?.as_str().unwrap_or("").to_string();
+                let destination = rule.get("dest")?.as_str().unwrap_or("").to_string();
+                let port = rule.get("dport").or(rule.get("sport")).and_then(|p| p.as_str()).map(|s| s.to_string());
+                let enabled = rule.get("enabled").and_then(|e| e.as_bool()).unwrap_or(true);
+
+                Some(FirewallRule {
+                    rule_num,
+                    action,
+                    protocol,
+                    source,
+                    destination,
+                    port,
+                    enabled,
+                })
+            })
+            .collect();
+
+        Ok(rule_list)
+    } else {
+        Err("Invalid response format: missing 'data' field".to_string())
+    }
 }
 
 /// Add firewall rule
 pub async fn add_rule(
-    _client: &crate::proxmox::client::ProxmoxClient,
-    _node: &str,
-    _rule: &FirewallRule,
-    _ticket: &str,
+    client: &crate::proxmox::client::ProxmoxClient,
+    node: &str,
+    rule: &FirewallRule,
+    ticket: &str,
 ) -> Result<(), String> {
-    Err("Not implemented yet".to_string())
+    let path = format!("nodes/{}/firewall/rules", node);
+    let config = serde_json::json!({
+        "action": rule.action,
+        "protocol": rule.protocol,
+        "source": rule.source,
+        "dest": rule.destination,
+        "dport": rule.port,
+        "enabled": rule.enabled
+    });
+
+    let _response: serde_json::Value = client
+        .post(&path, &config, Some(ticket))
+        .await
+        .map_err(|e| format!("Failed to add firewall rule: {}", e))?;
+    Ok(())
 }
 
 /// Delete firewall rule
 pub async fn delete_rule(
-    _client: &crate::proxmox::client::ProxmoxClient,
-    _node: &str,
-    _rule_num: u32,
-    _ticket: &str,
+    client: &crate::proxmox::client::ProxmoxClient,
+    node: &str,
+    rule_num: u32,
+    ticket: &str,
 ) -> Result<(), String> {
-    Err("Not implemented yet".to_string())
+    let path = format!("nodes/{}/firewall/rules/{}", node, rule_num);
+    let _response: serde_json::Value = client
+        .delete(&path, Some(ticket))
+        .await
+        .map_err(|e| format!("Failed to delete firewall rule {}: {}", rule_num, e))?;
+    Ok(())
+}
+
+/// Update firewall rule
+pub async fn update_rule(
+    client: &crate::proxmox::client::ProxmoxClient,
+    node: &str,
+    rule_num: u32,
+    rule: &FirewallRule,
+    ticket: &str,
+) -> Result<(), String> {
+    let path = format!("nodes/{}/firewall/rules/{}", node, rule_num);
+    let config = serde_json::json!({
+        "action": rule.action,
+        "protocol": rule.protocol,
+        "source": rule.source,
+        "dest": rule.destination,
+        "dport": rule.port,
+        "enabled": rule.enabled
+    });
+
+    let _response: serde_json::Value = client
+        .put(&path, &config, Some(ticket))
+        .await
+        .map_err(|e| format!("Failed to update firewall rule {}: {}", rule_num, e))?;
+    Ok(())
 }
 
 /// Enable firewall
 pub async fn enable_firewall(
-    _client: &crate::proxmox::client::ProxmoxClient,
-    _node: &str,
-    _ticket: &str,
+    client: &crate::proxmox::client::ProxmoxClient,
+    node: &str,
+    ticket: &str,
 ) -> Result<(), String> {
-    Err("Not implemented yet".to_string())
+    let path = format!("nodes/{}/firewall/options", node);
+    let config = serde_json::json!({
+        "enabled": true
+    });
+
+    let _response: serde_json::Value = client
+        .put(&path, &config, Some(ticket))
+        .await
+        .map_err(|e| format!("Failed to enable firewall: {}", e))?;
+    Ok(())
 }
 
 /// Disable firewall
 pub async fn disable_firewall(
-    _client: &crate::proxmox::client::ProxmoxClient,
-    _node: &str,
-    _ticket: &str,
+    client: &crate::proxmox::client::ProxmoxClient,
+    node: &str,
+    ticket: &str,
 ) -> Result<(), String> {
-    Err("Not implemented yet".to_string())
+    let path = format!("nodes/{}/firewall/options", node);
+    let config = serde_json::json!({
+        "enabled": false
+    });
+
+    let _response: serde_json::Value = client
+        .put(&path, &config, Some(ticket))
+        .await
+        .map_err(|e| format!("Failed to disable firewall: {}", e))?;
+    Ok(())
+}
+
+/// Get firewall status
+pub async fn get_firewall_status(
+    client: &crate::proxmox::client::ProxmoxClient,
+    node: &str,
+    ticket: &str,
+) -> Result<FirewallStatus, String> {
+    let path = format!("nodes/{}/firewall/rules", node);
+    let rules_response: serde_json::Value = client
+        .get(&path, Some(ticket))
+        .await
+        .map_err(|e| format!("Failed to get firewall rules: {}", e))?;
+
+    let enabled_path = format!("nodes/{}/firewall/options", node);
+    let options_response: serde_json::Value = client
+        .get(&enabled_path, Some(ticket))
+        .await
+        .map_err(|e| format!("Failed to get firewall options: {}", e))?;
+
+    let enabled = options_response
+        .get("data")
+        .and_then(|d| d.get("enabled"))
+        .and_then(|e| e.as_bool())
+        .unwrap_or(false);
+
+    let rules: Vec<FirewallRule> = rules_response
+        .get("data")
+        .and_then(|d| d.as_array())
+        .unwrap_or(&Vec::new())
+        .iter()
+        .filter_map(|rule| {
+            let rule_num = rule.get("rule_num")?.as_u64()? as u32;
+            let action = rule.get("action")?.as_str()?.to_string();
+            let protocol = rule.get("protocol")?.as_str().unwrap_or("").to_string();
+            let source = rule.get("source")?.as_str().unwrap_or("").to_string();
+            let destination = rule.get("dest")?.as_str().unwrap_or("").to_string();
+            let port = rule.get("dport").or(rule.get("sport")).and_then(|p| p.as_str()).map(|s| s.to_string());
+            let enabled = rule.get("enabled").and_then(|e| e.as_bool()).unwrap_or(true);
+
+            Some(FirewallRule {
+                rule_num,
+                action,
+                protocol,
+                source,
+                destination,
+                port,
+                enabled,
+            })
+        })
+        .collect();
+
+    let rule_count = rules.len() as u32;
+
+    Ok(FirewallStatus {
+        enabled,
+        rules,
+        rule_count,
+    })
+}
+
+/// Get firewall zone configuration
+pub async fn get_firewall_zone(
+    client: &crate::proxmox::client::ProxmoxClient,
+    node: &str,
+    zone: &str,
+    ticket: &str,
+) -> Result<serde_json::Value, String> {
+    let path = format!("nodes/{}/firewall/zones/{}", node, zone);
+    client
+        .get(&path, Some(ticket))
+        .await
+        .map_err(|e| format!("Failed to get firewall zone {}: {}", zone, e))
+}
+
+/// List firewall zones
+pub async fn list_firewall_zones(
+    client: &crate::proxmox::client::ProxmoxClient,
+    node: &str,
+    ticket: &str,
+) -> Result<Vec<serde_json::Value>, String> {
+    let path = format!("nodes/{}/firewall/zones", node);
+    let response: serde_json::Value = client
+        .get(&path, Some(ticket))
+        .await
+        .map_err(|e| format!("Failed to list firewall zones: {}", e))?;
+
+    if let Some(zones) = response.get("data").and_then(|d| d.as_array()) {
+        Ok(zones.to_vec())
+    } else {
+        Err("Invalid response format: missing 'data' field".to_string())
+    }
 }
 
 #[cfg(test)]
@@ -91,5 +278,19 @@ mod tests {
 
         assert_eq!(rule.action, deserialized.action);
         assert_eq!(rule.enabled, deserialized.enabled);
+    }
+
+    #[test]
+    fn test_firewall_status_serialization() {
+        let status = FirewallStatus {
+            enabled: true,
+            rules: vec![],
+            rule_count: 0,
+        };
+
+        let json = serde_json::to_string(&status).unwrap();
+        let deserialized: FirewallStatus = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(status.enabled, deserialized.enabled);
     }
 }
