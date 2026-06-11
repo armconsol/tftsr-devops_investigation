@@ -4,7 +4,7 @@ All notable changes to TRCAA are documented here.
 Commit types shown: feat, fix, perf, docs, refactor.
 CI, chore, and build changes are excluded.
 
-## [Unreleased]
+## [1.2.0] — 2026-06-11
 
 ### Bug Fixes
 - **lint**: Resolve ESLint errors
