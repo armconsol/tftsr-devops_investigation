@@ -1592,3 +1592,45 @@ export const getPodMetricsCmd = (clusterId: string, namespace: string) =>
 
 export const getNodeMetricsCmd = (clusterId: string) =>
   invoke<NodeMetrics[]>("get_node_metrics", { clusterId });
+
+// ─── Proxmox Management Types ─────────────────────────────────────────────────
+
+export interface ProxmoxClusterInfo {
+  id: string;
+  name: string;
+  clusterType: "ve" | "pbs";
+  url: string;
+  port: number;
+  username: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ─── Proxmox Management Commands ──────────────────────────────────────────────
+
+export const addProxmoxClusterCmd = (
+  id: string,
+  name: string,
+  clusterType: "ve" | "pbs",
+  url: string,
+  port: number,
+  username: string,
+  password: string
+) =>
+  invoke<ProxmoxClusterInfo>("add_proxmox_cluster", {
+    id,
+    name,
+    cluster_type: clusterType,
+    connection: { url, port },
+    username,
+    password,
+  });
+
+export const removeProxmoxClusterCmd = (id: string) =>
+  invoke<void>("remove_proxmox_cluster", { id });
+
+export const listProxmoxClustersCmd = () =>
+  invoke<ProxmoxClusterInfo[]>("list_proxmox_clusters");
+
+export const getProxmoxClusterCmd = (id: string) =>
+  invoke<ProxmoxClusterInfo | null>("get_proxmox_cluster", { id });
