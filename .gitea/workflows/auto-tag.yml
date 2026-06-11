@@ -167,17 +167,22 @@ jobs:
             # First run: changelog job owns release creation so build jobs
             # never race against a missing release object
             echo "Creating release $TAG..."
+            IS_PRERELEASE="false"
+            if echo "$TAG" | grep -qE '-(rc|alpha|beta|pre|dev)'; then
+              IS_PRERELEASE="true"
+            fi
             RELEASE_ID=$(jq -n \
               --arg tag "$TAG" \
               --arg name "TFTSR $TAG" \
               --rawfile body /tmp/release_body.md \
-              '{tag_name: $tag, name: $name, body: $body, draft: true}' \
+              --argjson prerelease "$IS_PRERELEASE" \
+              '{tag_name: $tag, name: $name, body: $body, draft: true, prerelease: $prerelease}' \
               | curl -sf -X POST "$API/releases" \
                   -H "Authorization: token $RELEASE_TOKEN" \
                   -H "Content-Type: application/json" \
                   --data @- \
               | jq -r '.id')
-            echo "✓ Release created (id=$RELEASE_ID)"
+            echo "✓ Release created (id=$RELEASE_ID, prerelease=$IS_PRERELEASE)"
           else
             # Re-run: patch the body only
             echo "Updating existing release $TAG (id=$RELEASE_ID)..."
