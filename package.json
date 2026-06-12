@@ -42,7 +42,7 @@
     "@types/react-dom": "^18",
     "@typescript-eslint/eslint-plugin": "^8.58.1",
     "@typescript-eslint/parser": "^8.58.1",
-    "@vitejs/plugin-react": "^4.7.0",
+    "@vitejs/plugin-react": "^6.0.2",
     "@vitest/coverage-v8": "^4",
     "@wdio/cli": "^9",
     "@wdio/mocha-framework": "^9",
@@ -53,7 +53,7 @@
     "jsdom": "^26",
     "postcss": "^8",
     "typescript": "^5",
-    "vite": "^6",
+    "vite": "^8",
     "vitest": "^4",
     "webdriverio": "^9"
   }
