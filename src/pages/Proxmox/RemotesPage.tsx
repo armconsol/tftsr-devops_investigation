@@ -117,7 +117,7 @@ export function ProxmoxRemotesPage() {
           <p className="text-muted-foreground">Manage Proxmox VE and Backup Server connections</p>
         </div>
         <div className="flex space-x-2">
-          <Button variant="outline" size="sm">
+          <Button variant="outline" size="sm" onClick={() => { void loadRemotes(); }}>
             <RefreshCw className="mr-2 h-4 w-4" />
             Refresh
           </Button>
@@ -130,7 +130,7 @@ export function ProxmoxRemotesPage() {
 
       <RemotesList
         remotes={remotes}
-        onRefresh={() => {}}
+        onRefresh={() => { void loadRemotes(); }}
         onEdit={(remote) => {
           setEditingRemote(remote as RemoteInfo | null);
         }}

@@ -3,12 +3,14 @@ import { Button } from '@/components/ui/index';
 import { Input } from '@/components/ui/index';
 import { Label } from '@/components/ui/index';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/index';
+import { DialogFooter } from '@/components/ui/index';
 
 interface RemoteConfig {
   id: string;
   name: string;
   url: string;
   username: string;
+  password?: string;
   type: 'pve' | 'pbs';
   status: string;
 }
@@ -25,6 +27,7 @@ export function EditRemoteForm({ remote, onSave, onCancel }: EditRemoteFormProps
     name: remote.name,
     url: remote.url,
     username: remote.username,
+    password: '',
     type: remote.type,
     status: remote.status,
   });
@@ -99,6 +102,21 @@ export function EditRemoteForm({ remote, onSave, onCancel }: EditRemoteFormProps
         </div>
 
         <div className="space-y-2">
+          <Label htmlFor="password">Password</Label>
+          <Input
+            id="password"
+            type="password"
+            value={config.password || ''}
+            onChange={(e) => setConfig({ ...config, password: e.target.value })}
+            placeholder="Enter new password (leave blank to keep existing)"
+            disabled={loading}
+          />
+          <p className="text-xs text-muted-foreground">
+            Leave blank to keep the existing password
+          </p>
+        </div>
+
+        <div className="space-y-2">
           <Label htmlFor="type">Type</Label>
           <Input
             id="type"
@@ -121,14 +139,14 @@ export function EditRemoteForm({ remote, onSave, onCancel }: EditRemoteFormProps
           />
         </div>
 
-        <div className="flex justify-end space-x-2 pt-4">
+        <DialogFooter className="flex justify-end space-x-2 pt-4">
           <Button type="button" variant="outline" onClick={onCancel} disabled={loading}>
             Cancel
           </Button>
           <Button type="submit" disabled={loading}>
             {loading ? 'Saving...' : 'Save Changes'}
           </Button>
-        </div>
+        </DialogFooter>
       </div>
     </form>
   );

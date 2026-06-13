@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/index';
 import { Label } from '@/components/ui/index';
 import { Switch } from '@/components/ui/index';
@@ -6,12 +6,22 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Button } from '@/components/ui/index';
 
 export function ProxmoxSettings() {
-  const [defaultPort, setDefaultPort] = React.useState<string>('8006');
-  const [connectionTimeout, setConnectionTimeout] = React.useState<string>('30');
-  const [retryAttempts, setRetryAttempts] = React.useState<string>('3');
-  const [verifyCertificates, setVerifyCertificates] = React.useState(true);
-  const [enableCaching, setEnableCaching] = React.useState(true);
-  const [enableDebug, setEnableDebug] = React.useState(false);
+  const [defaultPort, setDefaultPort] = useState<string>('8006');
+  const [connectionTimeout, setConnectionTimeout] = useState<string>('30');
+  const [retryAttempts, setRetryAttempts] = useState<string>('3');
+  const [verifyCertificates, setVerifyCertificates] = useState(true);
+  const [enableCaching, setEnableCaching] = useState(true);
+  const [enableDebug, setEnableDebug] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    setDefaultPort(localStorage.getItem('proxmox_default_port') ?? '8006');
+    setConnectionTimeout(localStorage.getItem('proxmox_connection_timeout') ?? '30');
+    setRetryAttempts(localStorage.getItem('proxmox_retry_attempts') ?? '3');
+    setVerifyCertificates((localStorage.getItem('proxmox_verify_certificates') ?? 'true') === 'true');
+    setEnableCaching((localStorage.getItem('proxmox_enable_caching') ?? 'true') === 'true');
+    setEnableDebug((localStorage.getItem('proxmox_enable_debug') ?? 'false') === 'true');
+  }, []);
 
   return (
     <div className="space-y-6">
@@ -114,9 +124,40 @@ export function ProxmoxSettings() {
         </CardContent>
       </Card>
 
-      <div className="flex justify-end space-x-2 pt-4">
-        <Button variant="outline">Reset to Defaults</Button>
-        <Button>Save Settings</Button>
+      <div className="flex items-center justify-end space-x-2 pt-4">
+        <Button
+          variant="outline"
+          onClick={() => {
+            ['proxmox_default_port', 'proxmox_connection_timeout', 'proxmox_retry_attempts',
+             'proxmox_verify_certificates', 'proxmox_enable_caching', 'proxmox_enable_debug']
+              .forEach((k) => localStorage.removeItem(k));
+            setDefaultPort('8006');
+            setConnectionTimeout('30');
+            setRetryAttempts('3');
+            setVerifyCertificates(true);
+            setEnableCaching(true);
+            setEnableDebug(false);
+          }}
+        >
+          Reset to Defaults
+        </Button>
+        <Button
+          onClick={() => {
+            localStorage.setItem('proxmox_default_port', defaultPort);
+            localStorage.setItem('proxmox_connection_timeout', connectionTimeout);
+            localStorage.setItem('proxmox_retry_attempts', retryAttempts);
+            localStorage.setItem('proxmox_verify_certificates', String(verifyCertificates));
+            localStorage.setItem('proxmox_enable_caching', String(enableCaching));
+            localStorage.setItem('proxmox_enable_debug', String(enableDebug));
+            setSaved(true);
+            setTimeout(() => setSaved(false), 2000);
+          }}
+        >
+          Save Settings
+        </Button>
+        {saved && (
+          <span className="text-sm text-green-600">Settings saved</span>
+        )}
       </div>
     </div>
   );
