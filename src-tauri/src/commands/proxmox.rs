@@ -1583,6 +1583,537 @@ pub async fn list_metric_collections(
     Ok(collections)
 }
 
+// ─── Phase 6 - HA Management ──────────────────────────────────────────────────
+
+/// List HA groups
+#[tauri::command]
+pub async fn list_ha_groups(
+    cluster_id: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<serde_json::Value>, String> {
+    let clusters = state.proxmox_clusters.lock().await;
+    let client = clusters
+        .get(&cluster_id)
+        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+    let client_guard = client.lock().await;
+
+    let groups = crate::proxmox::ha::list_ha_groups(
+        &client_guard,
+        client_guard.ticket.as_deref().unwrap_or(""),
+    )
+    .await
+    .map_err(|e| format!("Failed to list HA groups: {}", e))?;
+
+    groups
+        .into_iter()
+        .map(|g| serde_json::to_value(g).map_err(|e| e.to_string()))
+        .collect::<Result<Vec<_>, _>>()
+}
+
+/// Create HA group
+#[tauri::command]
+pub async fn create_ha_group(
+    cluster_id: String,
+    group: String,
+    nodes: Vec<String>,
+    max_failures: u32,
+    max_relocate: u32,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let clusters = state.proxmox_clusters.lock().await;
+    let client = clusters
+        .get(&cluster_id)
+        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+    let client_guard = client.lock().await;
+
+    crate::proxmox::ha::create_ha_group(
+        &client_guard,
+        &group,
+        &nodes,
+        max_failures,
+        max_relocate,
+        client_guard.ticket.as_deref().unwrap_or(""),
+    )
+    .await
+    .map_err(|e| format!("Failed to create HA group: {}", e))
+}
+
+/// Update HA group
+#[tauri::command]
+pub async fn update_ha_group(
+    cluster_id: String,
+    group: String,
+    nodes: Vec<String>,
+    max_failures: u32,
+    max_relocate: u32,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let clusters = state.proxmox_clusters.lock().await;
+    let client = clusters
+        .get(&cluster_id)
+        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+    let client_guard = client.lock().await;
+
+    crate::proxmox::ha::update_ha_group(
+        &client_guard,
+        &group,
+        &nodes,
+        max_failures,
+        max_relocate,
+        client_guard.ticket.as_deref().unwrap_or(""),
+    )
+    .await
+    .map_err(|e| format!("Failed to update HA group: {}", e))
+}
+
+/// Delete HA group
+#[tauri::command]
+pub async fn delete_ha_group(
+    cluster_id: String,
+    group: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let clusters = state.proxmox_clusters.lock().await;
+    let client = clusters
+        .get(&cluster_id)
+        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+    let client_guard = client.lock().await;
+
+    crate::proxmox::ha::delete_ha_group(
+        &client_guard,
+        &group,
+        client_guard.ticket.as_deref().unwrap_or(""),
+    )
+    .await
+    .map_err(|e| format!("Failed to delete HA group: {}", e))
+}
+
+/// List HA resources
+#[tauri::command]
+pub async fn list_ha_resources(
+    cluster_id: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<serde_json::Value>, String> {
+    let clusters = state.proxmox_clusters.lock().await;
+    let client = clusters
+        .get(&cluster_id)
+        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+    let client_guard = client.lock().await;
+
+    let resources = crate::proxmox::ha::list_ha_resources(
+        &client_guard,
+        client_guard.ticket.as_deref().unwrap_or(""),
+    )
+    .await
+    .map_err(|e| format!("Failed to list HA resources: {}", e))?;
+
+    resources
+        .into_iter()
+        .map(|r| serde_json::to_value(r).map_err(|e| e.to_string()))
+        .collect::<Result<Vec<_>, _>>()
+}
+
+/// Enable HA resource
+#[tauri::command]
+pub async fn enable_ha_resource(
+    cluster_id: String,
+    resource: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let clusters = state.proxmox_clusters.lock().await;
+    let client = clusters
+        .get(&cluster_id)
+        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+    let client_guard = client.lock().await;
+
+    crate::proxmox::ha::enable_ha_resource(
+        &client_guard,
+        &resource,
+        client_guard.ticket.as_deref().unwrap_or(""),
+    )
+    .await
+    .map_err(|e| format!("Failed to enable HA resource: {}", e))
+}
+
+// ─── Phase 7 - ACL / Users / Realms ──────────────────────────────────────────
+
+/// List ACL entries
+#[tauri::command]
+pub async fn list_acls(
+    cluster_id: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<serde_json::Value>, String> {
+    let clusters = state.proxmox_clusters.lock().await;
+    let client = clusters
+        .get(&cluster_id)
+        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+    let client_guard = client.lock().await;
+
+    let path = "access/acl";
+    let response: serde_json::Value = client_guard
+        .get(path, Some(client_guard.ticket.as_deref().unwrap_or("")))
+        .await
+        .map_err(|e| format!("Failed to list ACLs: {}", e))?;
+
+    response
+        .get("data")
+        .and_then(|d| d.as_array())
+        .map(|arr| arr.to_vec())
+        .ok_or_else(|| "Invalid response format".to_string())
+}
+
+/// List users
+#[tauri::command]
+pub async fn list_users(
+    cluster_id: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<serde_json::Value>, String> {
+    let clusters = state.proxmox_clusters.lock().await;
+    let client = clusters
+        .get(&cluster_id)
+        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+    let client_guard = client.lock().await;
+
+    let path = "access/users";
+    let response: serde_json::Value = client_guard
+        .get(path, Some(client_guard.ticket.as_deref().unwrap_or("")))
+        .await
+        .map_err(|e| format!("Failed to list users: {}", e))?;
+
+    response
+        .get("data")
+        .and_then(|d| d.as_array())
+        .map(|arr| arr.to_vec())
+        .ok_or_else(|| "Invalid response format".to_string())
+}
+
+/// List authentication realms (typed)
+#[tauri::command]
+pub async fn list_realms(
+    cluster_id: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<serde_json::Value>, String> {
+    let clusters = state.proxmox_clusters.lock().await;
+    let client = clusters
+        .get(&cluster_id)
+        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+    let client_guard = client.lock().await;
+
+    let realms = crate::proxmox::auth_realm::list_auth_realms(
+        &client_guard,
+        client_guard.ticket.as_deref().unwrap_or(""),
+    )
+    .await
+    .map_err(|e| format!("Failed to list realms: {}", e))?;
+
+    realms
+        .into_iter()
+        .map(|r| serde_json::to_value(r).map_err(|e| e.to_string()))
+        .collect::<Result<Vec<_>, _>>()
+}
+
+// ─── Phase 8 - Cluster Notes ──────────────────────────────────────────────────
+
+/// Get cluster notes
+#[tauri::command]
+pub async fn get_cluster_notes(
+    cluster_id: String,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    let clusters = state.proxmox_clusters.lock().await;
+    let client = clusters
+        .get(&cluster_id)
+        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+    let client_guard = client.lock().await;
+
+    let path = "cluster/config";
+    let response: serde_json::Value = client_guard
+        .get(path, Some(client_guard.ticket.as_deref().unwrap_or("")))
+        .await
+        .map_err(|e| format!("Failed to get cluster notes: {}", e))?;
+
+    Ok(response
+        .get("data")
+        .and_then(|d| d.get("notes"))
+        .and_then(|n| n.as_str())
+        .unwrap_or("")
+        .to_string())
+}
+
+/// Update cluster notes
+#[tauri::command]
+pub async fn update_cluster_notes(
+    cluster_id: String,
+    notes: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let clusters = state.proxmox_clusters.lock().await;
+    let client = clusters
+        .get(&cluster_id)
+        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+    let client_guard = client.lock().await;
+
+    let path = "cluster/config";
+    let body = serde_json::json!({ "notes": notes });
+    let _: serde_json::Value = client_guard
+        .put(path, &body, Some(client_guard.ticket.as_deref().unwrap_or("")))
+        .await
+        .map_err(|e| format!("Failed to update cluster notes: {}", e))?;
+
+    Ok(())
+}
+
+// ─── Phase 9 - Resource Search ────────────────────────────────────────────────
+
+/// Search Proxmox resources
+#[tauri::command]
+pub async fn search_proxmox_resources(
+    cluster_id: String,
+    query: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<serde_json::Value>, String> {
+    let clusters = state.proxmox_clusters.lock().await;
+    let client = clusters
+        .get(&cluster_id)
+        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+    let client_guard = client.lock().await;
+
+    let path = format!("cluster/resources?type=vm&search={}", query);
+    let response: serde_json::Value = client_guard
+        .get(&path, Some(client_guard.ticket.as_deref().unwrap_or("")))
+        .await
+        .map_err(|e| format!("Failed to search resources: {}", e))?;
+
+    response
+        .get("data")
+        .and_then(|d| d.as_array())
+        .map(|arr| arr.to_vec())
+        .ok_or_else(|| "Invalid response format".to_string())
+}
+
+// ─── Phase 10 - Node Status ───────────────────────────────────────────────────
+
+/// Get node status
+#[tauri::command]
+pub async fn get_node_status(
+    cluster_id: String,
+    node_id: String,
+    state: State<'_, AppState>,
+) -> Result<serde_json::Value, String> {
+    let clusters = state.proxmox_clusters.lock().await;
+    let client = clusters
+        .get(&cluster_id)
+        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+    let client_guard = client.lock().await;
+
+    let path = format!("nodes/{}/status", node_id);
+    let response: serde_json::Value = client_guard
+        .get(&path, Some(client_guard.ticket.as_deref().unwrap_or("")))
+        .await
+        .map_err(|e| format!("Failed to get node status: {}", e))?;
+
+    response
+        .get("data")
+        .cloned()
+        .ok_or_else(|| "Invalid response format: missing data field".to_string())
+}
+
+// ─── Phase 11 - Syslog ────────────────────────────────────────────────────────
+
+/// Get node syslog
+#[tauri::command]
+pub async fn get_syslog(
+    cluster_id: String,
+    node_id: String,
+    limit: Option<u32>,
+    state: State<'_, AppState>,
+) -> Result<Vec<serde_json::Value>, String> {
+    let clusters = state.proxmox_clusters.lock().await;
+    let client = clusters
+        .get(&cluster_id)
+        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+    let client_guard = client.lock().await;
+
+    let limit_val = limit.unwrap_or(500);
+    let path = format!("nodes/{}/syslog?limit={}", node_id, limit_val);
+    let response: serde_json::Value = client_guard
+        .get(&path, Some(client_guard.ticket.as_deref().unwrap_or("")))
+        .await
+        .map_err(|e| format!("Failed to get syslog: {}", e))?;
+
+    response
+        .get("data")
+        .and_then(|d| d.as_array())
+        .map(|arr| arr.to_vec())
+        .ok_or_else(|| "Invalid response format".to_string())
+}
+
+// ─── Phase 12 - Network Interfaces ───────────────────────────────────────────
+
+/// List network interfaces on a node
+#[tauri::command]
+pub async fn list_network_interfaces(
+    cluster_id: String,
+    node_id: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<serde_json::Value>, String> {
+    let clusters = state.proxmox_clusters.lock().await;
+    let client = clusters
+        .get(&cluster_id)
+        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+    let client_guard = client.lock().await;
+
+    let path = format!("nodes/{}/network", node_id);
+    let response: serde_json::Value = client_guard
+        .get(&path, Some(client_guard.ticket.as_deref().unwrap_or("")))
+        .await
+        .map_err(|e| format!("Failed to list network interfaces: {}", e))?;
+
+    response
+        .get("data")
+        .and_then(|d| d.as_array())
+        .map(|arr| arr.to_vec())
+        .ok_or_else(|| "Invalid response format".to_string())
+}
+
+// ─── Phase 13 - Cluster Views (typed aliases) ─────────────────────────────────
+
+/// List cluster views (typed)
+#[tauri::command]
+pub async fn list_cluster_views(
+    cluster_id: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<serde_json::Value>, String> {
+    let clusters = state.proxmox_clusters.lock().await;
+    let client = clusters
+        .get(&cluster_id)
+        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+    let client_guard = client.lock().await;
+
+    let views = crate::proxmox::views::list_views(
+        &client_guard,
+        client_guard.ticket.as_deref().unwrap_or(""),
+    )
+    .await
+    .map_err(|e| format!("Failed to list cluster views: {}", e))?;
+
+    views
+        .into_iter()
+        .map(|v| serde_json::to_value(v).map_err(|e| e.to_string()))
+        .collect::<Result<Vec<_>, _>>()
+}
+
+/// Create cluster view
+#[tauri::command]
+pub async fn create_cluster_view(
+    cluster_id: String,
+    view_id: String,
+    name: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let clusters = state.proxmox_clusters.lock().await;
+    let client = clusters
+        .get(&cluster_id)
+        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+    let client_guard = client.lock().await;
+
+    let view = crate::proxmox::views::DashboardView {
+        view_id,
+        name,
+        description: String::new(),
+        layout: "grid".to_string(),
+        widgets: vec![],
+        enabled: true,
+        created_at: chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+        updated_at: chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+    };
+
+    crate::proxmox::views::add_view(
+        &client_guard,
+        &view,
+        client_guard.ticket.as_deref().unwrap_or(""),
+    )
+    .await
+    .map_err(|e| format!("Failed to create cluster view: {}", e))
+}
+
+/// Delete cluster view
+#[tauri::command]
+pub async fn delete_cluster_view(
+    cluster_id: String,
+    view_id: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let clusters = state.proxmox_clusters.lock().await;
+    let client = clusters
+        .get(&cluster_id)
+        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+    let client_guard = client.lock().await;
+
+    crate::proxmox::views::delete_view(
+        &client_guard,
+        &view_id,
+        client_guard.ticket.as_deref().unwrap_or(""),
+    )
+    .await
+    .map_err(|e| format!("Failed to delete cluster view: {}", e))
+}
+
+// ─── Phase 14 - Subscription ──────────────────────────────────────────────────
+
+/// Get subscription status
+#[tauri::command]
+pub async fn get_subscription_status(
+    cluster_id: String,
+    state: State<'_, AppState>,
+) -> Result<serde_json::Value, String> {
+    let clusters = state.proxmox_clusters.lock().await;
+    let client = clusters
+        .get(&cluster_id)
+        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+    let client_guard = client.lock().await;
+
+    let path = "nodes/localhost/subscription";
+    let response: serde_json::Value = client_guard
+        .get(path, Some(client_guard.ticket.as_deref().unwrap_or("")))
+        .await
+        .map_err(|e| format!("Failed to get subscription status: {}", e))?;
+
+    response
+        .get("data")
+        .cloned()
+        .ok_or_else(|| "Invalid response format: missing data field".to_string())
+}
+
+// ─── Phase 15 - Cluster Task Log ─────────────────────────────────────────────
+
+/// List cluster-level tasks
+#[tauri::command]
+pub async fn list_cluster_tasks(
+    cluster_id: String,
+    limit: Option<u32>,
+    state: State<'_, AppState>,
+) -> Result<Vec<serde_json::Value>, String> {
+    let clusters = state.proxmox_clusters.lock().await;
+    let client = clusters
+        .get(&cluster_id)
+        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+    let client_guard = client.lock().await;
+
+    let limit_val = limit.unwrap_or(50);
+    let path = format!("cluster/tasks?limit={}", limit_val);
+    let response: serde_json::Value = client_guard
+        .get(&path, Some(client_guard.ticket.as_deref().unwrap_or("")))
+        .await
+        .map_err(|e| format!("Failed to list cluster tasks: {}", e))?;
+
+    response
+        .get("data")
+        .and_then(|d| d.as_array())
+        .map(|arr| arr.to_vec())
+        .ok_or_else(|| "Invalid response format".to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

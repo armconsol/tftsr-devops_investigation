@@ -618,3 +618,344 @@ export async function listMetricCollections(
 ): Promise<any[]> {
   return await invoke<any[]>("list_metric_collections", { clusterId });
 }
+
+// ─── HA (High Availability) ───────────────────────────────────────────────────
+
+export interface HaGroup {
+  id: string;
+  nodes: string;
+  comment?: string;
+  restricted?: boolean;
+  noQuorumPolicy?: string;
+}
+
+export interface HaResource {
+  sid: string;
+  group?: string;
+  state: string;
+  maxRestart?: number;
+  maxRelocate?: number;
+}
+
+/**
+ * List HA groups
+ * @param clusterId - Cluster identifier
+ */
+export const listHaGroups = async (clusterId: string): Promise<HaGroup[]> =>
+  invoke<HaGroup[]>("list_ha_groups", { clusterId });
+
+/**
+ * Create an HA group
+ * @param clusterId - Cluster identifier
+ * @param config - HA group configuration
+ */
+export const createHaGroup = async (
+  clusterId: string,
+  config: Partial<HaGroup>
+): Promise<void> => invoke<void>("create_ha_group", { clusterId, config });
+
+/**
+ * Update an HA group
+ * @param clusterId - Cluster identifier
+ * @param id - HA group identifier
+ * @param config - HA group configuration
+ */
+export const updateHaGroup = async (
+  clusterId: string,
+  id: string,
+  config: Partial<HaGroup>
+): Promise<void> => invoke<void>("update_ha_group", { clusterId, id, config });
+
+/**
+ * Delete an HA group
+ * @param clusterId - Cluster identifier
+ * @param id - HA group identifier
+ */
+export const deleteHaGroup = async (
+  clusterId: string,
+  id: string
+): Promise<void> => invoke<void>("delete_ha_group", { clusterId, id });
+
+/**
+ * List HA resources
+ * @param clusterId - Cluster identifier
+ */
+export const listHaResources = async (
+  clusterId: string
+): Promise<HaResource[]> =>
+  invoke<HaResource[]>("list_ha_resources", { clusterId });
+
+/**
+ * Enable an HA resource
+ * @param clusterId - Cluster identifier
+ * @param id - HA resource identifier
+ */
+export const enableHaResource = async (
+  clusterId: string,
+  id: string
+): Promise<void> => invoke<void>("enable_ha_resource", { clusterId, id });
+
+// ─── ACL / User Management ────────────────────────────────────────────────────
+
+export interface AclEntry {
+  path: string;
+  type: "user" | "group" | "token";
+  ugid: string;
+  roleid: string;
+  propagate?: boolean;
+}
+
+export interface ProxmoxUser {
+  userid: string;
+  comment?: string;
+  email?: string;
+  enabled: boolean;
+  expire?: number;
+  firstname?: string;
+  lastname?: string;
+  groups?: string[];
+}
+
+export interface AuthRealm {
+  realm: string;
+  type: string;
+  comment?: string;
+}
+
+/**
+ * List ACL entries
+ * @param clusterId - Cluster identifier
+ */
+export const listAcls = async (clusterId: string): Promise<AclEntry[]> =>
+  invoke<AclEntry[]>("list_acls", { clusterId });
+
+/**
+ * List users
+ * @param clusterId - Cluster identifier
+ */
+export const listUsers = async (clusterId: string): Promise<ProxmoxUser[]> =>
+  invoke<ProxmoxUser[]>("list_users", { clusterId });
+
+/**
+ * List authentication realms (typed)
+ * @param clusterId - Cluster identifier
+ */
+export const listRealms = async (clusterId: string): Promise<AuthRealm[]> =>
+  invoke<AuthRealm[]>("list_realms", { clusterId });
+
+// ─── Cluster Notes ────────────────────────────────────────────────────────────
+
+/**
+ * Get cluster notes
+ * @param clusterId - Cluster identifier
+ */
+export const getClusterNotes = async (clusterId: string): Promise<string> =>
+  invoke<string>("get_cluster_notes", { clusterId });
+
+/**
+ * Update cluster notes
+ * @param clusterId - Cluster identifier
+ * @param notes - Notes content
+ */
+export const updateClusterNotes = async (
+  clusterId: string,
+  notes: string
+): Promise<void> => invoke<void>("update_cluster_notes", { clusterId, notes });
+
+// ─── Resource Search ──────────────────────────────────────────────────────────
+
+export interface SearchResult {
+  id: string;
+  type: "vm" | "container" | "node" | "storage" | "pool";
+  name: string;
+  node?: string;
+  description?: string;
+}
+
+/**
+ * Search Proxmox resources
+ * @param clusterId - Cluster identifier
+ * @param query - Search query string
+ */
+export const searchResources = async (
+  clusterId: string,
+  query: string
+): Promise<SearchResult[]> =>
+  invoke<SearchResult[]>("search_proxmox_resources", { clusterId, query });
+
+// ─── Node Status ──────────────────────────────────────────────────────────────
+
+export interface NodeStatus {
+  uptime: number;
+  memory: { used: number; total: number };
+  cpu: number;
+  swap: { used: number; total: number };
+  disk: { used: number; total: number };
+  loadAvg: number[];
+  version: string;
+}
+
+/**
+ * Get node status
+ * @param clusterId - Cluster identifier
+ * @param nodeId - Node identifier
+ */
+export const getNodeStatus = async (
+  clusterId: string,
+  nodeId: string
+): Promise<NodeStatus> =>
+  invoke<NodeStatus>("get_node_status", { clusterId, nodeId });
+
+// ─── APT (typed) ──────────────────────────────────────────────────────────────
+
+export interface AptPackage {
+  package: string;
+  version: string;
+  newVersion?: string;
+  priority: string;
+  description?: string;
+}
+
+export interface AptRepository {
+  types: string[];
+  uris: string[];
+  suites: string[];
+  components: string[];
+  enabled: boolean;
+  comment?: string;
+}
+
+// ─── Syslog ───────────────────────────────────────────────────────────────────
+
+export interface SyslogEntry {
+  n: number;
+  t: string;
+  msg: string;
+}
+
+/**
+ * Get node syslog
+ * @param clusterId - Cluster identifier
+ * @param nodeId - Node identifier
+ * @param limit - Maximum number of entries (default 500)
+ */
+export const getSyslog = async (
+  clusterId: string,
+  nodeId: string,
+  limit?: number
+): Promise<SyslogEntry[]> =>
+  invoke<SyslogEntry[]>("get_syslog", {
+    clusterId,
+    nodeId,
+    limit: limit ?? 500,
+  });
+
+// ─── Network Interfaces ───────────────────────────────────────────────────────
+
+export interface NetworkInterface {
+  iface: string;
+  type: string;
+  address?: string;
+  netmask?: string;
+  gateway?: string;
+  active: boolean;
+  autostart: boolean;
+  comments?: string;
+}
+
+/**
+ * List network interfaces on a node
+ * @param clusterId - Cluster identifier
+ * @param nodeId - Node identifier
+ */
+export const listNetworkInterfaces = async (
+  clusterId: string,
+  nodeId: string
+): Promise<NetworkInterface[]> =>
+  invoke<NetworkInterface[]>("list_network_interfaces", { clusterId, nodeId });
+
+// ─── Cluster Views (typed) ────────────────────────────────────────────────────
+
+export interface ClusterView {
+  id: string;
+  name: string;
+  includes?: string[];
+  excludes?: string[];
+}
+
+/**
+ * List cluster views
+ * @param clusterId - Cluster identifier
+ */
+export const listClusterViews = async (
+  clusterId: string
+): Promise<ClusterView[]> =>
+  invoke<ClusterView[]>("list_cluster_views", { clusterId });
+
+/**
+ * Create a cluster view
+ * @param clusterId - Cluster identifier
+ * @param config - View configuration
+ */
+export const createClusterView = async (
+  clusterId: string,
+  config: Partial<ClusterView>
+): Promise<void> =>
+  invoke<void>("create_cluster_view", { clusterId, config });
+
+/**
+ * Delete a cluster view
+ * @param clusterId - Cluster identifier
+ * @param viewId - View identifier
+ */
+export const deleteClusterView = async (
+  clusterId: string,
+  viewId: string
+): Promise<void> => invoke<void>("delete_cluster_view", { clusterId, viewId });
+
+// ─── Subscription ─────────────────────────────────────────────────────────────
+
+export interface SubscriptionStatus {
+  status: "active" | "expired" | "none";
+  productname?: string;
+  regdate?: string;
+  nextduedate?: string;
+  key?: string;
+  serverid?: string;
+}
+
+/**
+ * Get subscription status
+ * @param clusterId - Cluster identifier
+ */
+export const getSubscriptionStatus = async (
+  clusterId: string
+): Promise<SubscriptionStatus> =>
+  invoke<SubscriptionStatus>("get_subscription_status", { clusterId });
+
+// ─── Cluster Task Log ─────────────────────────────────────────────────────────
+
+export interface ClusterTask {
+  upid: string;
+  node: string;
+  pid: number;
+  starttime: number;
+  type: string;
+  user: string;
+  status?: string;
+  exitstatus?: string;
+}
+
+/**
+ * List cluster-level tasks
+ * @param clusterId - Cluster identifier
+ * @param limit - Maximum number of tasks to return (default 50)
+ */
+export const listClusterTasks = async (
+  clusterId: string,
+  limit?: number
+): Promise<ClusterTask[]> =>
+  invoke<ClusterTask[]>("list_cluster_tasks", {
+    clusterId,
+    limit: limit ?? 50,
+  });

@@ -191,6 +191,36 @@ pub fn run() {
             // Proxmox - Infrastructure (Phase 5)
             commands::proxmox::get_metrics_summary,
             commands::proxmox::list_metric_collections,
+            // Proxmox - HA Management (Phase 6)
+            commands::proxmox::list_ha_groups,
+            commands::proxmox::create_ha_group,
+            commands::proxmox::update_ha_group,
+            commands::proxmox::delete_ha_group,
+            commands::proxmox::list_ha_resources,
+            commands::proxmox::enable_ha_resource,
+            // Proxmox - ACL / Users / Realms (Phase 7)
+            commands::proxmox::list_acls,
+            commands::proxmox::list_users,
+            commands::proxmox::list_realms,
+            // Proxmox - Cluster Notes (Phase 8)
+            commands::proxmox::get_cluster_notes,
+            commands::proxmox::update_cluster_notes,
+            // Proxmox - Resource Search (Phase 9)
+            commands::proxmox::search_proxmox_resources,
+            // Proxmox - Node Status (Phase 10)
+            commands::proxmox::get_node_status,
+            // Proxmox - Syslog (Phase 11)
+            commands::proxmox::get_syslog,
+            // Proxmox - Network Interfaces (Phase 12)
+            commands::proxmox::list_network_interfaces,
+            // Proxmox - Cluster Views typed (Phase 13)
+            commands::proxmox::list_cluster_views,
+            commands::proxmox::create_cluster_view,
+            commands::proxmox::delete_cluster_view,
+            // Proxmox - Subscription (Phase 14)
+            commands::proxmox::get_subscription_status,
+            // Proxmox - Cluster Tasks (Phase 15)
+            commands::proxmox::list_cluster_tasks,
             // Proxmox - Existing
             commands::proxmox::add_proxmox_cluster,
             commands::proxmox::remove_proxmox_cluster,
