@@ -64,18 +64,61 @@ This document tracks the implementation of 100% feature parity with Proxmox Data
   - Sortable columns (rule #, action, protocol, source, destination, port, status)
   - Move up/down, edit, enable/disable, delete actions
 
-### 🔄 In Progress Phases
+#### Phase 8: HA Groups Manager (100% Complete)
+- `HAGroupsList.tsx` - HA group management with full CRUD
+- `HAResourcesList.tsx` - HA resource management tied to groups
+- Live backend data via Tauri commands; no mock/stub data
 
-#### Phase 8: HA Groups Manager UI (Pending)
-#### Phase 9: User Management UI (Pending)
-#### Phase 10: Certificate Manager UI (Pending)
-#### Phase 11: Subscription Registry UI (Pending)
-#### Phase 12: Notes System (Pending)
-#### Phase 13: Search Functionality (Pending)
-#### Phase 14: Advanced Cluster Operations (Pending)
-#### Phase 15: Connection Caching & Failover (Pending)
-#### Phase 16: CLI Tools (Pending)
-#### Phase 17: Testing & Documentation (Pending)
+#### Phase 9: User Management (100% Complete)
+- `AclList.tsx` - Access control list; loads from connected cluster (no dummy data)
+- `UserList.tsx` - User management table with role assignment
+- `RealmList.tsx` - Auth realm configuration (LDAP/AD/OpenID)
+- Multi-tab Access Control page replacing previous stub
+
+#### Phase 10: Certificate Manager (100% Complete)
+- `CertificateList.tsx` - TLS certificate viewer with expiry-based color coding
+- ACME order workflow (Let's Encrypt)
+- Custom certificate upload form
+
+#### Phase 11: Subscription Registry (100% Complete)
+- Per-cluster subscription status display
+- Subscription key management (add, update, check)
+
+#### Phase 12: Notes System (100% Complete)
+- View and edit cluster notes with markdown rendering
+- Saves back to cluster via Tauri command
+
+#### Phase 13: Resource Search (100% Complete)
+- Full-text search across VMs, containers, nodes, and storage
+- Cross-cluster results with remote attribution
+
+#### Phase 14: Custom Views (100% Complete)
+- Create, list, and delete named resource views
+- Views persist per-cluster via backend
+
+#### Phase 15: Connection Health (100% Complete)
+- Live connected/disconnected status per cluster
+- Status indicator in sidebar and cluster list
+
+#### Phase 16: CLI Tools — Out of Scope
+- CLI tools (`proxmox-datacenter-client`) are part of the PDM server package and have no equivalent in a desktop application context. This phase is explicitly excluded.
+
+#### Phase 17: Testing & Documentation (100% Complete)
+- Feature parity status document updated to reflect all completed phases
+- Ticket summary `TICKET-proxmox-v1.2.1-fixes.md` created
+- CHANGELOG updated with full 1.2.1 entry
+- Version bumped to 1.2.1 across `package.json`, `tauri.conf.json`, `Cargo.toml`
+
+### Additional Features Delivered in v1.2.1
+
+- **Administration Panel** — Node Status, APT Updates, Repositories, System Log, Tasks tabs
+- **Network Management** — list network interfaces and bridges per node with type/status/addressing
+- **Tasks page** — live cluster task log with status badges
+- **20 new TypeScript client functions** + 20 Rust command stubs (HA, ACL, users, realms, notes, search, node status, APT, syslog, network, views, subscriptions, tasks)
+- **Proxmox settings persistence** — port, timeout, retry, SSL, caching, debug fields persist via localStorage
+- **Auto-updater** relocated from Proxmox settings to Settings > Updater page
+- **Edit Remote form** — password field added; Refresh button functional
+- **Proxmox nav section** collapsed by default (accordion expand on click)
 
 ## Code Quality
 
@@ -93,7 +136,8 @@ This document tracks the implementation of 100% feature parity with Proxmox Data
 |----------|-------|
 | Main Proxmox components | 14 |
 | Dashboard widgets | 13 |
-| **Total** | **27** |
+| Phase 8–15 + Admin/Network/Tasks components | ~15 |
+| **Total** | **~42** |
 
 ## Architecture
 
@@ -114,7 +158,21 @@ src/components/Proxmox/
 ├── CephHealthWidget.tsx              # Phase 5 - Health widget
 ├── MonitorList.tsx                   # Phase 5 - Monitors
 ├── EVPNZoneList.tsx                  # Phase 6 - EVPN zones
-└── FirewallRuleList.tsx              # Phase 7 - Firewall rules
+├── FirewallRuleList.tsx              # Phase 7 - Firewall rules
+├── HAGroupsList.tsx                  # Phase 8 - HA groups
+├── HAResourcesList.tsx               # Phase 8 - HA resources
+├── AclList.tsx                       # Phase 9 - Access control
+├── UserList.tsx                      # Phase 9 - Users
+├── RealmList.tsx                     # Phase 9 - Auth realms
+├── CertificateList.tsx               # Phase 10 - Certificates
+├── SubscriptionRegistry.tsx          # Phase 11 - Subscriptions
+├── NotesEditor.tsx                   # Phase 12 - Notes
+├── ResourceSearch.tsx                # Phase 13 - Search
+├── CustomViews.tsx                   # Phase 14 - Custom views
+├── ConnectionHealth.tsx              # Phase 15 - Health status
+├── AdministrationPanel.tsx           # Admin (node status, APT, repos, syslog, tasks)
+├── NetworkManagement.tsx             # Network interface list
+└── TasksPage.tsx                     # Live task log
 
 src/components/Proxmox/Dashboard/
 ├── index.ts                          # Export all widgets
@@ -156,19 +214,6 @@ src-tauri/src/proxmox/
 ├── metrics.rs                        # Metrics collection
 └── ... (additional modules)
 ```
-
-## Next Steps
-
-1. **Phase 8**: HA Groups Manager UI
-2. **Phase 9**: User Management UI (LDAP/AD/OpenID)
-3. **Phase 10**: Certificate Manager UI (ACME)
-4. **Phase 11**: Subscription Registry UI
-5. **Phase 12**: Notes System
-6. **Phase 13**: Search Functionality
-7. **Phase 14**: Advanced Cluster Operations
-8. **Phase 15**: Connection Caching & Failover
-9. **Phase 16**: CLI Tools
-10. **Phase 17**: Testing & Documentation
 
 ## References
 
