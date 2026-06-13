@@ -1894,7 +1894,11 @@ pub async fn update_cluster_notes(
     let path = "cluster/config";
     let body = serde_json::json!({ "notes": notes });
     let _: serde_json::Value = client_guard
-        .put(path, &body, Some(client_guard.ticket.as_deref().unwrap_or("")))
+        .put(
+            path,
+            &body,
+            Some(client_guard.ticket.as_deref().unwrap_or("")),
+        )
         .await
         .map_err(|e| format!("Failed to update cluster notes: {}", e))?;
 
