@@ -53,7 +53,9 @@ import { ProxmoxCephPage } from "@/pages/Proxmox/CephPage";
 import { ProxmoxSDNPage } from "@/pages/Proxmox/SDNPage";
 import { ProxmoxHAPage } from "@/pages/Proxmox/HAPage";
 import { ProxmoxTasksPage } from "@/pages/Proxmox/TasksPage";
+import { ProxmoxViewsPage } from "@/pages/Proxmox/ViewsPage";
 import { ProxmoxCertificatesPage } from "@/pages/Proxmox/CertificatesPage";
+import { ProxmoxSubscriptionPage } from "@/pages/Proxmox/SubscriptionPage";
 import { ProxmoxSettings } from "@/pages/Settings/Proxmox";
 import { Updater } from "@/pages/Settings/Updater";
 
@@ -77,7 +79,9 @@ const navItems = [
       { to: "/proxmox/ha", label: "HA Groups" },
       { to: "/proxmox/backup", label: "Backup" },
       { to: "/proxmox/tasks", label: "Tasks" },
+      { to: "/proxmox/views", label: "Views" },
       { to: "/proxmox/certificates", label: "Certificates" },
+      { to: "/proxmox/subscriptions", label: "Subscriptions" },
     ],
   },
   { to: "/history", icon: Clock, label: "History" },
@@ -313,7 +317,9 @@ export default function App() {
           <Route path="/proxmox/sdn" element={<ProxmoxSDNPage />} />
           <Route path="/proxmox/ha" element={<ProxmoxHAPage />} />
           <Route path="/proxmox/tasks" element={<ProxmoxTasksPage />} />
+          <Route path="/proxmox/views" element={<ProxmoxViewsPage />} />
           <Route path="/proxmox/certificates" element={<ProxmoxCertificatesPage />} />
+          <Route path="/proxmox/subscriptions" element={<ProxmoxSubscriptionPage />} />
           <Route path="/settings/updater" element={<Updater />} />
           <Route path="/settings/proxmox" element={<ProxmoxSettings />} />
             <Route path="/settings/integrations" element={<Integrations />} />
