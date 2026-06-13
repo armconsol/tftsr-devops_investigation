@@ -4,17 +4,25 @@ All notable changes to TRCAA are documented here.
 Commit types shown: feat, fix, perf, docs, refactor.
 CI, chore, and build changes are excluded.
 
-## [1.2.2] - 2026-06-13
+## [1.2.1] — 2026-06-13
 
-### Fixed
-- **database**: Add migration to remove old dummy/proxmox test data from existing installations
-- **proxmox**: Fix cluster deletion functionality
-- **proxmox**: Fix cluster creation and save functionality
+### Bug Fixes
+- Proxmox PDM v1.2.0 bugs and feature parity
+- Implement v1.2.1 fixes
+- Persist Proxmox settings via localStorage; fix Remotes add/refresh flow
+- **fmt**: Apply rustfmt formatting to proxmox commands
+- **proxmox**: Add database migration to remove old dummy data; bump to v1.2.2
 
-### Added
-- **proxmox**: 100% feature parity with Proxmox Datacenter Manager v1.1.4
+### Features
+- Move auto-updater to Settings > Updater; collapse Proxmox nav by default
+- Add missing proxmox backend client functions and Rust command stubs
+- **proxmox**: Implement notes system, resource search, and administration panel (phases 12-13)
+- **proxmox**: Implement HA groups manager and user management UI (phases 8-9)
+- **proxmox**: Implement certificate manager and subscription registry (phases 10-11)
+- **proxmox**: Implement network management, tasks, custom views, and connection health (phases 14-15)
+- **proxmox**: Add routes for notes, search, and administration pages
 
-## [1.2.1] - 2026-06-12
+## [1.2.0] — 2026-06-11
 
 ### Bug Fixes
 - **lint**: Resolve ESLint errors
