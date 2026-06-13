@@ -426,6 +426,13 @@ pub fn run_migrations(conn: &Connection) -> anyhow::Result<()> {
             CREATE INDEX IF NOT EXISTS idx_proxmox_resources_type ON proxmox_resources(resource_type);
             CREATE INDEX IF NOT EXISTS idx_proxmox_resources_updated ON proxmox_resources(last_updated);",
         ),
+        (
+            "033_cleanup_old_dummy_data",
+            "DELETE FROM proxmox_clusters WHERE name LIKE '%example%' OR name LIKE '%test%' OR name LIKE '%dummy%' OR name LIKE '%sample%';
+            DELETE FROM proxmox_resources WHERE cluster_id IN (
+                SELECT id FROM proxmox_clusters WHERE name LIKE '%example%' OR name LIKE '%test%' OR name LIKE '%dummy%' OR name LIKE '%sample%'
+            );",
+        ),
     ];
 
     for (name, sql) in migrations {
