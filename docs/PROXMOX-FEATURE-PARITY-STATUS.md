@@ -109,6 +109,19 @@ This document tracks the implementation of 100% feature parity with Proxmox Data
 - CHANGELOG updated with full 1.2.1 entry
 - Version bumped to 1.2.1 across `package.json`, `tauri.conf.json`, `Cargo.toml`
 
+## v1.2.2 Updates
+
+### Fixed
+- **Database Migration**: Added migration 033 to automatically remove old dummy/proxmox test data from existing installations on app startup
+- **Cluster Management**: Fixed cluster deletion functionality that prevented users from removing remotes
+- **Cluster Creation**: Fixed cluster creation and save functionality to properly persist new connections
+
+### Testing
+- ✅ Database migration successfully removes old dummy data
+- ✅ Cluster deletion works end-to-end
+- ✅ Cluster creation and save works end-to-end
+- ✅ Version bumped to 1.2.2 across all config files
+
 ### Additional Features Delivered in v1.2.1
 
 - **Administration Panel** — Node Status, APT Updates, Repositories, System Log, Tasks tabs
