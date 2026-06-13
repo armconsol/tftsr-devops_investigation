@@ -79,6 +79,12 @@ pub async fn update_settings(
     {
         settings.active_provider = Some(active_provider.to_string());
     }
+    if let Some(ch) = partial_settings
+        .get("update_channel")
+        .and_then(|v| v.as_str())
+    {
+        settings.update_channel = ch.to_string();
+    }
 
     Ok(settings.clone())
 }
@@ -489,8 +495,20 @@ fn is_newer_version(latest: &str, current: &str) -> bool {
 }
 
 #[tauri::command]
-pub async fn check_app_updates(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
+pub async fn check_app_updates(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+) -> Result<serde_json::Value, String> {
     let current_version = app.package_info().version.to_string();
+
+    let channel = {
+        state
+            .settings
+            .lock()
+            .map_err(|e| e.to_string())?
+            .update_channel
+            .clone()
+    };
 
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(10))
@@ -499,7 +517,7 @@ pub async fn check_app_updates(app: tauri::AppHandle) -> Result<serde_json::Valu
 
     let response = client
         .get(
-            "https://gogs.tftsr.com/api/v1/repos/sarman/tftsr-devops_investigation/releases/latest",
+            "https://gogs.tftsr.com/api/v1/repos/sarman/tftsr-devops_investigation/releases?limit=20",
         )
         .header("Accept", "application/json")
         .send()
@@ -513,10 +531,25 @@ pub async fn check_app_updates(app: tauri::AppHandle) -> Result<serde_json::Valu
         ));
     }
 
-    let release: serde_json::Value = response
+    let releases: Vec<serde_json::Value> = response
         .json()
         .await
         .map_err(|e| format!("Failed to parse update response: {e}"))?;
+
+    let release = releases
+        .iter()
+        .find(|r| {
+            let is_pre = r["prerelease"].as_bool().unwrap_or(false);
+            let is_draft = r["draft"].as_bool().unwrap_or(false);
+            if is_draft {
+                return false;
+            }
+            match channel.as_str() {
+                "beta" => is_pre,
+                _ => !is_pre,
+            }
+        })
+        .ok_or_else(|| format!("No release found for channel: {channel}"))?;
 
     let latest_tag = release["tag_name"]
         .as_str()
@@ -553,12 +586,24 @@ pub async fn install_app_updates(app: tauri::AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub async fn get_update_channel() -> Result<String, String> {
-    Ok("stable".to_string())
+pub async fn get_update_channel(state: tauri::State<'_, AppState>) -> Result<String, String> {
+    state
+        .settings
+        .lock()
+        .map(|s| s.update_channel.clone())
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub async fn set_update_channel(_channel: String) -> Result<(), String> {
+pub async fn set_update_channel(
+    channel: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    state
+        .settings
+        .lock()
+        .map_err(|e| e.to_string())?
+        .update_channel = channel;
     Ok(())
 }
 

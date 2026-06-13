@@ -361,6 +361,66 @@ docker exec gogs_postgres_db psql -U gogs -d gogsdb -c "SELECT id, lower_name FR
 
 ---
 
+## Release Channels
+
+The project ships two update channels:
+
+| Channel | Branch | Tag format | Gitea release flag | Updater endpoint |
+|---------|--------|------------|--------------------|-----------------|
+| **Stable** | `master` | `v1.2.3` | `prerelease: false` | `/releases?limit=20` → first non-prerelease |
+| **Beta** | `beta` | `v1.2.3-beta.N` | `prerelease: true` | `/releases?limit=20` → first prerelease |
+
+### Workflow files
+
+| Workflow | Trigger | Produces |
+|----------|---------|---------|
+| `auto-tag.yml` | push to `master` | Stable release, wiki sync, CHANGELOG committed back to master |
+| `release-beta.yml` | push to `beta` | Pre-release, no wiki sync |
+
+### Beta tag numbering
+
+`release-beta.yml` reads `CARGO_VERSION` from `src-tauri/Cargo.toml` and finds the
+highest existing `v{CARGO_VERSION}-beta.N` tag. It increments N on each push:
+
+```
+v1.3.0-beta.1  ← first push after Cargo.toml bumped to 1.3.0
+v1.3.0-beta.2  ← second push
+v1.3.0-beta.3  ← etc.
+```
+
+When `Cargo.toml` is bumped (e.g. `1.3.0` → `1.4.0`), the counter resets to `.1`.
+
+### Promoting beta to stable
+
+1. Ensure `Cargo.toml` version is correct (no `-beta` suffix — just the clean semver).
+2. Open a PR from `beta → master` and merge it.
+3. `auto-tag.yml` fires, creates tag `v1.3.0`, builds all platforms, marks release stable.
+
+### In-app updater channel switching
+
+Users select their channel in **Settings → Updates**. The selection is stored in
+`AppSettings.update_channel` (persisted via the frontend settings store).
+
+`check_app_updates` queries `GET /releases?limit=20` and returns the first release
+matching the active channel:
+- `stable` → first entry where `prerelease == false`
+- `beta` → first entry where `prerelease == true`
+
+Draft releases are always skipped.
+
+### Branch protection for `beta`
+
+`beta` should carry the same protection rules as `master`:
+- Require PR before merging
+- Require all CI checks: `rust-fmt-check`, `rust-clippy`, `rust-tests`,
+  `frontend-typecheck`, `frontend-tests`
+- Dismiss stale reviews on new commits
+
+Set **Settings → Repository → Default Branch** to `beta` so the Gitea UI defaults
+new PRs to target `beta` rather than `master`.
+
+---
+
 ## Migration Notes (Gogs 0.14 → Gitea)
 
 Gitea auto-migrates the Gogs PostgreSQL schema on first start. Users, repos, teams, and
