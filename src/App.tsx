@@ -11,10 +11,12 @@ import {
   Plug,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
   Sun,
   Moon,
   Terminal,
   FileCode,
+  RefreshCw,
   Server,
   Server as ServerIcon,
   Settings,
@@ -51,8 +53,14 @@ import { ProxmoxCephPage } from "@/pages/Proxmox/CephPage";
 import { ProxmoxSDNPage } from "@/pages/Proxmox/SDNPage";
 import { ProxmoxHAPage } from "@/pages/Proxmox/HAPage";
 import { ProxmoxTasksPage } from "@/pages/Proxmox/TasksPage";
+import { ProxmoxViewsPage } from "@/pages/Proxmox/ViewsPage";
 import { ProxmoxCertificatesPage } from "@/pages/Proxmox/CertificatesPage";
+import { ProxmoxSubscriptionPage } from "@/pages/Proxmox/SubscriptionPage";
+import { ProxmoxNotesPage } from "@/pages/Proxmox/NotesPage";
+import { ProxmoxSearchPage } from "@/pages/Proxmox/SearchPage";
+import { ProxmoxAdminPage } from "@/pages/Proxmox/AdminPage";
 import { ProxmoxSettings } from "@/pages/Settings/Proxmox";
+import { Updater } from "@/pages/Settings/Updater";
 
 const navItems = [
   { to: "/", icon: Home, label: "Dashboard" },
@@ -63,6 +71,7 @@ const navItems = [
     icon: ServerIcon,
     label: "Proxmox",
     children: [
+      { to: "/proxmox/search", label: "Search" },
       { to: "/proxmox/remotes", label: "Remotes" },
       { to: "/proxmox/vms", label: "VMs" },
       { to: "/proxmox/containers", label: "Containers" },
@@ -74,7 +83,11 @@ const navItems = [
       { to: "/proxmox/ha", label: "HA Groups" },
       { to: "/proxmox/backup", label: "Backup" },
       { to: "/proxmox/tasks", label: "Tasks" },
+      { to: "/proxmox/notes", label: "Notes" },
+      { to: "/proxmox/views", label: "Views" },
       { to: "/proxmox/certificates", label: "Certificates" },
+      { to: "/proxmox/subscriptions", label: "Subscriptions" },
+      { to: "/proxmox/admin", label: "Administration" },
     ],
   },
   { to: "/history", icon: Clock, label: "History" },
@@ -88,15 +101,17 @@ const settingsItems = [
   { to: "/settings/integrations", icon: Link, label: "Integrations" },
   { to: "/settings/mcp", icon: Plug, label: "MCP Servers" },
   { to: "/settings/security", icon: Shield, label: "Security" },
+  { to: "/settings/updater", icon: RefreshCw, label: "Updater" },
   { to: "/settings/proxmox", icon: Settings, label: "Proxmox" },
 ];
 
 export default function App() {
   const [collapsed, setCollapsed] = useState(false);
+  const [expandedSections, setExpandedSections] = useState<string[]>([]);
   const [appVersion, setAppVersion] = useState("");
   const { theme, setTheme, setProviders, getActiveProvider } = useSettingsStore();
   const cleanupDone = useRef(false);
-  void useLocation();
+  const location = useLocation();
 
   useEffect(() => {
     getAppVersionCmd().then(setAppVersion).catch(() => {});
@@ -171,30 +186,41 @@ export default function App() {
           <nav className="flex-1 px-2 py-3 space-y-1">
             {navItems.map((item) => {
               if (item.children) {
+                const isExpanded = expandedSections.includes(item.to);
+                const isActive = location.pathname.startsWith(item.to);
                 return (
                   <div key={item.to}>
-                    <NavLink
-                      to={item.to}
-                      className={({ isActive }) =>
-                        `flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-                          isActive
-                            ? "bg-primary text-primary-foreground"
-                            : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-                        }`
+                    <button
+                      onClick={() =>
+                        setExpandedSections((prev) =>
+                          prev.includes(item.to)
+                            ? prev.filter((t) => t !== item.to)
+                            : [...prev, item.to]
+                        )
                       }
+                      className={`w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                        isActive
+                          ? "bg-primary text-primary-foreground"
+                          : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                      }`}
                     >
                       <item.icon className="w-4 h-4 shrink-0" />
                       {!collapsed && <span>{item.label}</span>}
-                    </NavLink>
-                    {!collapsed && (
+                      {!collapsed && (
+                        isExpanded
+                          ? <ChevronDown className="w-3 h-3 ml-auto" />
+                          : <ChevronRight className="w-3 h-3 ml-auto" />
+                      )}
+                    </button>
+                    {!collapsed && isExpanded && (
                       <div className="ml-4 space-y-1 pl-4 border-l border-muted">
                         {item.children.map((child) => (
                           <NavLink
                             key={child.to}
                             to={child.to}
-                            className={({ isActive }) =>
+                            className={({ isActive: childActive }) =>
                               `flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors ${
-                                isActive
+                                childActive
                                   ? "bg-primary text-primary-foreground"
                                   : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
                               }`
@@ -297,7 +323,13 @@ export default function App() {
           <Route path="/proxmox/sdn" element={<ProxmoxSDNPage />} />
           <Route path="/proxmox/ha" element={<ProxmoxHAPage />} />
           <Route path="/proxmox/tasks" element={<ProxmoxTasksPage />} />
+          <Route path="/proxmox/views" element={<ProxmoxViewsPage />} />
           <Route path="/proxmox/certificates" element={<ProxmoxCertificatesPage />} />
+          <Route path="/proxmox/subscriptions" element={<ProxmoxSubscriptionPage />} />
+          <Route path="/proxmox/notes" element={<ProxmoxNotesPage />} />
+          <Route path="/proxmox/search" element={<ProxmoxSearchPage />} />
+          <Route path="/proxmox/admin" element={<ProxmoxAdminPage />} />
+          <Route path="/settings/updater" element={<Updater />} />
           <Route path="/settings/proxmox" element={<ProxmoxSettings />} />
             <Route path="/settings/integrations" element={<Integrations />} />
             <Route path="/settings/mcp" element={<MCPServers />} />

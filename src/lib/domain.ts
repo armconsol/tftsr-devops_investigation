@@ -12,6 +12,8 @@ export interface ClusterInfo {
   username: string;
   createdAt: string;
   updatedAt: string;
+  /** True when a live client exists in the backend connection pool */
+  connected?: boolean;
 }
 
 export interface ClusterConnection {
@@ -94,4 +96,15 @@ export interface HaGroup {
   maxFailures: number;
   maxRelocate: number;
   state: string;
+}
+
+export interface Certificate {
+  filename: string;
+  subject: string;
+  san?: string[];
+  issuer?: string;
+  notbefore?: string;
+  notafter?: string;
+  fingerprint?: string;
+  pem?: string;
 }

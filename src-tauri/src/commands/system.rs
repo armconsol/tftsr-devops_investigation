@@ -5,6 +5,7 @@ use crate::ollama::{
 };
 use crate::state::{AppSettings, AppState, ProviderConfig};
 use std::env;
+use tauri_plugin_updater::UpdaterExt;
 
 // --- Ollama commands ---
 
@@ -462,4 +463,45 @@ mod sudo_tests {
         let result = resolve_sudo_username(None);
         assert_eq!(result, env_user);
     }
+}
+
+// --- Updater commands ---
+
+#[tauri::command]
+pub async fn check_app_updates(app: tauri::AppHandle) -> Result<bool, String> {
+    match app.updater() {
+        Ok(updater) => match updater.check().await {
+            Ok(update) => Ok(update.is_some()),
+            Err(e) => Err(format!("Failed to check for updates: {e}")),
+        },
+        Err(e) => Err(format!("Failed to get updater: {e}")),
+    }
+}
+
+#[tauri::command]
+pub async fn install_app_updates(app: tauri::AppHandle) -> Result<(), String> {
+    match app.updater() {
+        Ok(updater) => match updater.check().await {
+            Ok(Some(update)) => match update.download_and_install(|_, _| {}, || {}).await {
+                Ok(_) => Ok(()),
+                Err(e) => Err(format!("Failed to install update: {e}")),
+            },
+            Ok(None) => Err("No update available".to_string()),
+            Err(e) => Err(format!("Failed to check for updates: {e}")),
+        },
+        Err(e) => Err(format!("Failed to get updater: {e}")),
+    }
+}
+
+#[tauri::command]
+pub async fn get_update_channel() -> Result<String, String> {
+    Ok("stable".to_string())
+}
+
+#[tauri::command]
+pub async fn set_update_channel(_channel: String) -> Result<(), String> {
+    // Channel selection is configured via tauri.conf.json endpoints
+    // This command exists for future extensibility but currently no-op
+    // since Tauri's updater plugin uses static configuration
+    Ok(())
 }
