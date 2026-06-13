@@ -56,6 +56,9 @@ import { ProxmoxTasksPage } from "@/pages/Proxmox/TasksPage";
 import { ProxmoxViewsPage } from "@/pages/Proxmox/ViewsPage";
 import { ProxmoxCertificatesPage } from "@/pages/Proxmox/CertificatesPage";
 import { ProxmoxSubscriptionPage } from "@/pages/Proxmox/SubscriptionPage";
+import { ProxmoxNotesPage } from "@/pages/Proxmox/NotesPage";
+import { ProxmoxSearchPage } from "@/pages/Proxmox/SearchPage";
+import { ProxmoxAdminPage } from "@/pages/Proxmox/AdminPage";
 import { ProxmoxSettings } from "@/pages/Settings/Proxmox";
 import { Updater } from "@/pages/Settings/Updater";
 
@@ -68,6 +71,7 @@ const navItems = [
     icon: ServerIcon,
     label: "Proxmox",
     children: [
+      { to: "/proxmox/search", label: "Search" },
       { to: "/proxmox/remotes", label: "Remotes" },
       { to: "/proxmox/vms", label: "VMs" },
       { to: "/proxmox/containers", label: "Containers" },
@@ -79,9 +83,11 @@ const navItems = [
       { to: "/proxmox/ha", label: "HA Groups" },
       { to: "/proxmox/backup", label: "Backup" },
       { to: "/proxmox/tasks", label: "Tasks" },
+      { to: "/proxmox/notes", label: "Notes" },
       { to: "/proxmox/views", label: "Views" },
       { to: "/proxmox/certificates", label: "Certificates" },
       { to: "/proxmox/subscriptions", label: "Subscriptions" },
+      { to: "/proxmox/admin", label: "Administration" },
     ],
   },
   { to: "/history", icon: Clock, label: "History" },
@@ -320,6 +326,9 @@ export default function App() {
           <Route path="/proxmox/views" element={<ProxmoxViewsPage />} />
           <Route path="/proxmox/certificates" element={<ProxmoxCertificatesPage />} />
           <Route path="/proxmox/subscriptions" element={<ProxmoxSubscriptionPage />} />
+          <Route path="/proxmox/notes" element={<ProxmoxNotesPage />} />
+          <Route path="/proxmox/search" element={<ProxmoxSearchPage />} />
+          <Route path="/proxmox/admin" element={<ProxmoxAdminPage />} />
           <Route path="/settings/updater" element={<Updater />} />
           <Route path="/settings/proxmox" element={<ProxmoxSettings />} />
             <Route path="/settings/integrations" element={<Integrations />} />
