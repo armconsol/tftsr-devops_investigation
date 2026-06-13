@@ -641,8 +641,16 @@ export const getAppVersionCmd = () =>
 
 // ─── Updater ──────────────────────────────────────────────────────────────────
 
-export const checkAppUpdatesCmd = async (): Promise<boolean> =>
-  invoke<boolean>("check_app_updates");
+export interface UpdateCheckResult {
+  updateAvailable: boolean;
+  currentVersion: string;
+  latestVersion: string;
+  releaseUrl: string;
+  releaseNotes: string;
+}
+
+export const checkAppUpdatesCmd = async (): Promise<UpdateCheckResult> =>
+  invoke<UpdateCheckResult>("check_app_updates");
 
 export const installAppUpdatesCmd = async (): Promise<void> =>
   invoke<void>("install_app_updates");

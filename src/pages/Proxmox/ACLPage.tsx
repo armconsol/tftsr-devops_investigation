@@ -40,7 +40,7 @@ export function ProxmoxACLPage() {
         console.error('Failed to load clusters:', err);
         toast.error('Failed to load clusters');
       });
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
 
   const loadAcls = useCallback(async (clusterId: string) => {
     if (!clusterId) return;

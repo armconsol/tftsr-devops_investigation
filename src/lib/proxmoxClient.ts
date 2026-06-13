@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 // Proxmox client module
 // Provides TypeScript client wrapper for Proxmox API
 
@@ -60,6 +61,14 @@ export async function getProxmoxCluster(id: string): Promise<ClusterInfo | null>
  */
 export async function listProxmoxVms(clusterId: string): Promise<any[]> {
   return await invoke<any[]>("list_proxmox_vms", { clusterId });
+}
+
+/**
+ * List all Proxmox LXC containers
+ * @param clusterId - Cluster identifier
+ */
+export async function listProxmoxContainers(clusterId: string): Promise<any[]> {
+  return await invoke<any[]>("list_proxmox_containers", { clusterId });
 }
 
 /**

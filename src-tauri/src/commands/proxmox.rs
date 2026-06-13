@@ -41,21 +41,12 @@ pub async fn add_proxmox_cluster(
     password: &str,
     state: State<'_, AppState>,
 ) -> Result<ClusterInfo, String> {
-    // Create client
-    let mut client = ProxmoxClient::new(&connection.url, connection.port, &username);
+    // Create client (no live auth — credentials stored and used on first connect)
+    let client = ProxmoxClient::new(&connection.url, connection.port, &username);
 
-    // Authenticate and get ticket
-    let ticket = client
-        .authenticate(password)
-        .await
-        .map_err(|e| format!("Authentication failed: {}", e))?;
-
-    // Set the ticket on the client
-    client.set_ticket(&ticket);
-
-    // Encrypt credentials for storage
+    // Encrypt raw password for storage; auth happens lazily on first API call
     let credentials = serde_json::json!({
-        "ticket": ticket,
+        "password": password,
         "username": username
     });
     let encrypted_credentials = crate::integrations::auth::encrypt_token(
@@ -70,7 +61,7 @@ pub async fn add_proxmox_cluster(
         cluster_type,
         url: connection.url,
         port: connection.port,
-        username,
+        username: username.clone(),
         created_at: Utc::now().format("%Y-%m-%d %H:%M:%S").to_string(),
         updated_at: Utc::now().format("%Y-%m-%d %H:%M:%S").to_string(),
     };
@@ -83,8 +74,8 @@ pub async fn add_proxmox_cluster(
             .map_err(|e| format!("Failed to lock database: {}", e))?;
 
         db.execute(
-            "INSERT INTO proxmox_clusters (id, name, cluster_type, url, port, auth_method, encrypted_credentials, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            "INSERT INTO proxmox_clusters (id, name, cluster_type, url, port, username, auth_method, encrypted_credentials, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
             rusqlite::params![
                 cluster.id,
                 cluster.name,
@@ -94,7 +85,8 @@ pub async fn add_proxmox_cluster(
                 },
                 cluster.url,
                 cluster.port,
-                "root",
+                username,
+                "password",
                 encrypted_credentials,
                 cluster.created_at,
                 cluster.updated_at,
@@ -103,7 +95,7 @@ pub async fn add_proxmox_cluster(
         .map_err(|e| format!("Failed to store cluster: {}", e))?;
     }
 
-    // Store in memory for quick access
+    // Store in memory connection pool (unauthenticated; ticket set on first use)
     {
         let mut clusters = state.proxmox_clusters.lock().await;
         clusters.insert(id, Arc::new(Mutex::new(client)));
@@ -148,7 +140,7 @@ pub async fn list_proxmox_clusters(
 
         let mut stmt = db
             .prepare(
-                "SELECT id, name, cluster_type, url, port, created_at, updated_at FROM proxmox_clusters",
+                "SELECT id, name, cluster_type, url, port, username, created_at, updated_at FROM proxmox_clusters",
             )
             .map_err(|e| format!("Failed to prepare query: {}", e))?;
 
@@ -164,9 +156,9 @@ pub async fn list_proxmox_clusters(
                     },
                     url: row.get(3)?,
                     port: row.get(4)?,
-                    username: "".to_string(), // Will be decrypted when needed
-                    created_at: row.get(5)?,
-                    updated_at: row.get(6)?,
+                    username: row.get(5)?,
+                    created_at: row.get(6)?,
+                    updated_at: row.get(7)?,
                 })
             })
             .map_err(|e| format!("Failed to query clusters: {}", e))?;
@@ -213,7 +205,7 @@ pub async fn get_proxmox_cluster(
 
         let mut stmt = db
             .prepare(
-                "SELECT id, name, cluster_type, url, port, created_at, updated_at FROM proxmox_clusters WHERE id = ?1",
+                "SELECT id, name, cluster_type, url, port, username, created_at, updated_at FROM proxmox_clusters WHERE id = ?1",
             )
             .map_err(|e| format!("Failed to prepare query: {}", e))?;
 
@@ -228,9 +220,9 @@ pub async fn get_proxmox_cluster(
                 },
                 url: row.get(3)?,
                 port: row.get(4)?,
-                username: "".to_string(),
-                created_at: row.get(5)?,
-                updated_at: row.get(6)?,
+                username: row.get(5)?,
+                created_at: row.get(6)?,
+                updated_at: row.get(7)?,
             })
         })
         .optional()
@@ -2156,6 +2148,31 @@ pub async fn list_cluster_tasks(
         .ok_or_else(|| "Invalid response format".to_string())
 }
 
+/// List Proxmox LXC containers
+#[tauri::command]
+pub async fn list_proxmox_containers(
+    cluster_id: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<serde_json::Value>, String> {
+    let clusters = state.proxmox_clusters.lock().await;
+    let client = clusters
+        .get(&cluster_id)
+        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+    let client_guard = client.lock().await;
+
+    let path = "cluster/resources?type=lxc";
+    let response: serde_json::Value = client_guard
+        .get(path, Some(client_guard.ticket.as_deref().unwrap_or("")))
+        .await
+        .map_err(|e| format!("Failed to list containers: {}", e))?;
+
+    response
+        .get("data")
+        .and_then(|d| d.as_array())
+        .map(|arr| arr.to_vec())
+        .ok_or_else(|| "Invalid response format".to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2190,5 +2207,40 @@ mod tests {
 
         assert_eq!(cluster.id, deserialized.id);
         assert_eq!(cluster.name, deserialized.name);
+    }
+
+    #[test]
+    fn test_list_proxmox_containers_error_message() {
+        let err = format!("Cluster {} not found", "missing-id");
+        assert_eq!(err, "Cluster missing-id not found");
+    }
+
+    #[test]
+    fn test_list_proxmox_containers_invalid_response() {
+        let response = serde_json::json!({"other": "field"});
+        let result: Result<Vec<serde_json::Value>, String> = response
+            .get("data")
+            .and_then(|d| d.as_array())
+            .map(|arr| arr.to_vec())
+            .ok_or_else(|| "Invalid response format".to_string());
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), "Invalid response format");
+    }
+
+    #[test]
+    fn test_list_proxmox_containers_valid_response() {
+        let response = serde_json::json!({
+            "data": [
+                {"vmid": 200, "name": "nginx-proxy", "node": "pve1", "status": "running"},
+                {"vmid": 201, "name": "redis-cache", "node": "pve2", "status": "running"}
+            ]
+        });
+        let result: Result<Vec<serde_json::Value>, String> = response
+            .get("data")
+            .and_then(|d| d.as_array())
+            .map(|arr| arr.to_vec())
+            .ok_or_else(|| "Invalid response format".to_string());
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().len(), 2);
     }
 }
