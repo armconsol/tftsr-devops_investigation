@@ -4,28 +4,22 @@ All notable changes to TRCAA are documented here.
 Commit types shown: feat, fix, perf, docs, refactor.
 CI, chore, and build changes are excluded.
 
-## [1.2.1] - 2026-06-12
+## [1.2.1] — 2026-06-13
 
-### Fixed
-- Auto-updater moved out of Proxmox settings into its own Settings > Updater page
-- Proxmox settings (port, timeout, retry, SSL, caching, debug) now persist via localStorage
-- Removed hardcoded dummy ACL entries from the Access Control page — data now loads from the connected cluster
-- Fixed Proxmox connection Add/Edit forms: password field added to Edit form, Refresh button now functional
-- Proxmox sidebar section starts collapsed by default (click to expand)
+### Bug Fixes
+- Proxmox PDM v1.2.0 bugs and feature parity
+- Implement v1.2.1 fixes
+- Persist Proxmox settings via localStorage; fix Remotes add/refresh flow
+- **fmt**: Apply rustfmt formatting to proxmox commands
 
-### Added
-- **Phase 8**: HA Groups Manager — full CRUD for HA groups and resources with live backend data
-- **Phase 9**: User Management — Users, Groups, Auth Realms (LDAP/AD/OpenID) tabs in Access Control
-- **Phase 10**: Certificate Manager — TLS certificate viewer with ACME ordering and custom cert upload
-- **Phase 11**: Subscription Registry — per-cluster subscription status and key management
-- **Phase 12**: Notes System — view and edit cluster notes with markdown support
-- **Phase 13**: Resource Search — full-text search across VMs, containers, nodes, storage
-- **Phase 14**: Custom Views — create, list, and delete named resource views
-- **Phase 15**: Connection Health — live connected/disconnected status per cluster
-- Administration Panel — Node Status, APT Updates, Repositories, System Log, Tasks tabs
-- Network Management page — list network interfaces and bridges per node
-- Tasks page connected to live cluster task log
-- All 20 missing Proxmox backend client functions added (HA, ACL, users, realms, notes, search, node status, APT, syslog, network, views, subscriptions, tasks)
+### Features
+- Move auto-updater to Settings > Updater; collapse Proxmox nav by default
+- Add missing proxmox backend client functions and Rust command stubs
+- **proxmox**: Implement notes system, resource search, and administration panel (phases 12-13)
+- **proxmox**: Implement HA groups manager and user management UI (phases 8-9)
+- **proxmox**: Implement certificate manager and subscription registry (phases 10-11)
+- **proxmox**: Implement network management, tasks, custom views, and connection health (phases 14-15)
+- **proxmox**: Add routes for notes, search, and administration pages
 
 ## [1.2.0] — 2026-06-11
 
