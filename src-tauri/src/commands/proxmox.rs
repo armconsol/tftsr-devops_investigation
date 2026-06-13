@@ -14,6 +14,22 @@ pub struct ClusterConnection {
     pub port: u16,
 }
 
+/// Cluster info enriched with live connection health status
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClusterInfoWithHealth {
+    pub id: String,
+    pub name: String,
+    pub cluster_type: ClusterType,
+    pub url: String,
+    pub port: u16,
+    pub username: String,
+    pub created_at: String,
+    pub updated_at: String,
+    /// True if an active client object exists in the in-memory connection pool
+    pub connected: bool,
+}
+
 /// Add a Proxmox cluster
 #[tauri::command]
 pub async fn add_proxmox_cluster(
@@ -119,10 +135,12 @@ pub async fn remove_proxmox_cluster(id: String, state: State<'_, AppState>) -> R
     Ok(())
 }
 
-/// List all Proxmox clusters
+/// List all Proxmox clusters, annotated with live connection health
 #[tauri::command]
-pub async fn list_proxmox_clusters(state: State<'_, AppState>) -> Result<Vec<ClusterInfo>, String> {
-    let clusters = {
+pub async fn list_proxmox_clusters(
+    state: State<'_, AppState>,
+) -> Result<Vec<ClusterInfoWithHealth>, String> {
+    let db_clusters = {
         let db = state
             .db
             .lock()
@@ -154,11 +172,31 @@ pub async fn list_proxmox_clusters(state: State<'_, AppState>) -> Result<Vec<Clu
             .map_err(|e| format!("Failed to query clusters: {}", e))?;
 
         cluster_iter
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|e| e.to_string())
+            .collect::<Result<Vec<ClusterInfo>, _>>()
+            .map_err(|e| e.to_string())?
     };
 
-    clusters
+    // Annotate each cluster with whether a live client exists in the connection pool
+    let live_clients = state.proxmox_clusters.lock().await;
+    let result = db_clusters
+        .into_iter()
+        .map(|c| {
+            let connected = live_clients.contains_key(&c.id);
+            ClusterInfoWithHealth {
+                id: c.id,
+                name: c.name,
+                cluster_type: c.cluster_type,
+                url: c.url,
+                port: c.port,
+                username: c.username,
+                created_at: c.created_at,
+                updated_at: c.updated_at,
+                connected,
+            }
+        })
+        .collect();
+
+    Ok(result)
 }
 
 /// Get a specific Proxmox cluster

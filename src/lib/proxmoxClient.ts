@@ -877,10 +877,11 @@ export const listNetworkInterfaces = async (
 // ─── Cluster Views (typed) ────────────────────────────────────────────────────
 
 export interface ClusterView {
-  id: string;
+  view_id: string;
   name: string;
-  includes?: string[];
-  excludes?: string[];
+  description?: string;
+  layout?: string;
+  enabled?: boolean;
 }
 
 /**
@@ -895,13 +896,15 @@ export const listClusterViews = async (
 /**
  * Create a cluster view
  * @param clusterId - Cluster identifier
- * @param config - View configuration
+ * @param viewId - View identifier
+ * @param name - View display name
  */
 export const createClusterView = async (
   clusterId: string,
-  config: Partial<ClusterView>
+  viewId: string,
+  name: string
 ): Promise<void> =>
-  invoke<void>("create_cluster_view", { clusterId, config });
+  invoke<void>("create_cluster_view", { clusterId, viewId, name });
 
 /**
  * Delete a cluster view
