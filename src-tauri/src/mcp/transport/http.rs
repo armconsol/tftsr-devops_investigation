@@ -81,6 +81,11 @@ pub fn build_http_transport(
 mod tests {
     use super::*;
 
+    // Initialize rustls provider for HTTPS tests
+    fn init_rustls_provider() {
+        let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
+    }
+
     #[test]
     fn test_empty_headers_returns_empty_map() {
         let headers = HashMap::new();
@@ -267,6 +272,7 @@ mod tests {
 
     #[test]
     fn test_builds_transport_with_https() {
+        init_rustls_provider();
         let rt = tokio::runtime::Runtime::new().unwrap();
         let _guard = rt.enter();
         let _transport = build_http_transport("https://example.com/mcp", None, HashMap::new());
@@ -274,6 +280,7 @@ mod tests {
 
     #[test]
     fn test_builds_transport_with_auth() {
+        init_rustls_provider();
         let rt = tokio::runtime::Runtime::new().unwrap();
         let _guard = rt.enter();
         let _transport = build_http_transport(
