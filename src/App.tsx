@@ -11,10 +11,12 @@ import {
   Plug,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
   Sun,
   Moon,
   Terminal,
   FileCode,
+  RefreshCw,
   Server,
   Server as ServerIcon,
   Settings,
@@ -53,6 +55,7 @@ import { ProxmoxHAPage } from "@/pages/Proxmox/HAPage";
 import { ProxmoxTasksPage } from "@/pages/Proxmox/TasksPage";
 import { ProxmoxCertificatesPage } from "@/pages/Proxmox/CertificatesPage";
 import { ProxmoxSettings } from "@/pages/Settings/Proxmox";
+import { Updater } from "@/pages/Settings/Updater";
 
 const navItems = [
   { to: "/", icon: Home, label: "Dashboard" },
@@ -88,15 +91,17 @@ const settingsItems = [
   { to: "/settings/integrations", icon: Link, label: "Integrations" },
   { to: "/settings/mcp", icon: Plug, label: "MCP Servers" },
   { to: "/settings/security", icon: Shield, label: "Security" },
+  { to: "/settings/updater", icon: RefreshCw, label: "Updater" },
   { to: "/settings/proxmox", icon: Settings, label: "Proxmox" },
 ];
 
 export default function App() {
   const [collapsed, setCollapsed] = useState(false);
+  const [expandedSections, setExpandedSections] = useState<string[]>([]);
   const [appVersion, setAppVersion] = useState("");
   const { theme, setTheme, setProviders, getActiveProvider } = useSettingsStore();
   const cleanupDone = useRef(false);
-  void useLocation();
+  const location = useLocation();
 
   useEffect(() => {
     getAppVersionCmd().then(setAppVersion).catch(() => {});
@@ -171,30 +176,41 @@ export default function App() {
           <nav className="flex-1 px-2 py-3 space-y-1">
             {navItems.map((item) => {
               if (item.children) {
+                const isExpanded = expandedSections.includes(item.to);
+                const isActive = location.pathname.startsWith(item.to);
                 return (
                   <div key={item.to}>
-                    <NavLink
-                      to={item.to}
-                      className={({ isActive }) =>
-                        `flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-                          isActive
-                            ? "bg-primary text-primary-foreground"
-                            : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-                        }`
+                    <button
+                      onClick={() =>
+                        setExpandedSections((prev) =>
+                          prev.includes(item.to)
+                            ? prev.filter((t) => t !== item.to)
+                            : [...prev, item.to]
+                        )
                       }
+                      className={`w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                        isActive
+                          ? "bg-primary text-primary-foreground"
+                          : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                      }`}
                     >
                       <item.icon className="w-4 h-4 shrink-0" />
                       {!collapsed && <span>{item.label}</span>}
-                    </NavLink>
-                    {!collapsed && (
+                      {!collapsed && (
+                        isExpanded
+                          ? <ChevronDown className="w-3 h-3 ml-auto" />
+                          : <ChevronRight className="w-3 h-3 ml-auto" />
+                      )}
+                    </button>
+                    {!collapsed && isExpanded && (
                       <div className="ml-4 space-y-1 pl-4 border-l border-muted">
                         {item.children.map((child) => (
                           <NavLink
                             key={child.to}
                             to={child.to}
-                            className={({ isActive }) =>
+                            className={({ isActive: childActive }) =>
                               `flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors ${
-                                isActive
+                                childActive
                                   ? "bg-primary text-primary-foreground"
                                   : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
                               }`
@@ -298,6 +314,7 @@ export default function App() {
           <Route path="/proxmox/ha" element={<ProxmoxHAPage />} />
           <Route path="/proxmox/tasks" element={<ProxmoxTasksPage />} />
           <Route path="/proxmox/certificates" element={<ProxmoxCertificatesPage />} />
+          <Route path="/settings/updater" element={<Updater />} />
           <Route path="/settings/proxmox" element={<ProxmoxSettings />} />
             <Route path="/settings/integrations" element={<Integrations />} />
             <Route path="/settings/mcp" element={<MCPServers />} />
