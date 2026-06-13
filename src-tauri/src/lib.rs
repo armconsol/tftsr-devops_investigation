@@ -71,6 +71,7 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_http::init())
+        .plugin(tauri_plugin_opener::init())
         .manage(app_state)
         .setup(|app| {
             let handle = app.handle().clone();
@@ -227,6 +228,7 @@ pub fn run() {
             commands::proxmox::list_proxmox_clusters,
             commands::proxmox::get_proxmox_cluster,
             commands::proxmox::list_proxmox_vms,
+            commands::proxmox::list_proxmox_containers,
             commands::proxmox::get_proxmox_vm,
             commands::proxmox::start_proxmox_vm,
             commands::proxmox::stop_proxmox_vm,

@@ -1,18 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/index';
 import { Button } from '@/components/ui/index';
-import { RefreshCw, Check, AlertCircle, Loader } from 'lucide-react';
+import { RefreshCw, Check, AlertCircle, Loader, ExternalLink } from 'lucide-react';
 import {
   checkAppUpdatesCmd,
   installAppUpdatesCmd,
   getUpdateChannelCmd,
   setUpdateChannelCmd,
+  type UpdateCheckResult,
 } from '@/lib/tauriCommands';
 
 export function Updater() {
   const [channel, setChannel] = useState('stable');
   const [checking, setChecking] = useState(false);
-  const [updateAvailable, setUpdateAvailable] = useState(false);
+  const [result, setResult] = useState<UpdateCheckResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const loadChannel = async () => {
@@ -28,21 +29,20 @@ export function Updater() {
     setChecking(true);
     setError(null);
     try {
-      const available = await checkAppUpdatesCmd();
-      setUpdateAvailable(available);
-    } catch {
-      setError('Failed to check for updates');
+      const data = await checkAppUpdatesCmd();
+      setResult(data);
+    } catch (err) {
+      setError(String(err));
     } finally {
       setChecking(false);
     }
   };
 
-  const handleInstallUpdate = async () => {
+  const handleDownloadUpdate = async () => {
     try {
       await installAppUpdatesCmd();
-      setUpdateAvailable(false);
-    } catch {
-      setError('Failed to install update');
+    } catch (err) {
+      setError('Failed to open releases page: ' + String(err));
     }
   };
 
@@ -64,7 +64,7 @@ export function Updater() {
     <div className="space-y-4">
       <div>
         <h1 className="text-2xl font-bold">Updater</h1>
-        <p className="text-muted-foreground">Configure application auto-updates</p>
+        <p className="text-muted-foreground">Configure application updates</p>
       </div>
 
       <Card>
@@ -121,48 +121,62 @@ export function Updater() {
             )}
           </Button>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-4">
           {error && (
-            <div className="mb-4 flex items-center space-x-2 rounded-lg bg-destructive/15 p-3 text-destructive">
-              <AlertCircle className="h-4 w-4" />
+            <div className="flex items-center space-x-2 rounded-lg bg-destructive/15 p-3 text-destructive">
+              <AlertCircle className="h-4 w-4 flex-shrink-0" />
               <span className="text-sm">{error}</span>
             </div>
           )}
 
-          {updateAvailable ? (
-            <div className="flex items-center justify-between rounded-lg bg-green-50 p-4 dark:bg-green-900/20">
-              <div className="flex items-center space-x-3">
-                <div className="rounded-full bg-green-600 p-1 text-white">
-                  <Check className="h-4 w-4" />
-                </div>
-                <div>
-                  <div className="font-semibold text-green-900 dark:text-green-100">
-                    Update Available
-                  </div>
-                  <div className="text-sm text-green-700 dark:text-green-300">
-                    A new version is ready to install
-                  </div>
-                </div>
-              </div>
-              <Button onClick={handleInstallUpdate}>
-                Install Update
-              </Button>
-            </div>
-          ) : (
-            <div className="flex items-center justify-between rounded-lg bg-muted p-4">
-              <div className="flex items-center space-x-3">
-                <div className="rounded-full bg-muted-foreground p-1 text-background">
-                  <Check className="h-4 w-4" />
-                </div>
-                <div>
-                  <div className="font-semibold">Up to Date</div>
-                  <div className="text-sm text-muted-foreground">
-                    You are running the latest version
-                  </div>
-                </div>
-              </div>
+          {result && (
+            <div className="text-sm text-muted-foreground space-y-1">
+              <div>Current version: <span className="font-mono font-medium text-foreground">{result.currentVersion}</span></div>
+              <div>Latest version: <span className="font-mono font-medium text-foreground">{result.latestVersion || '—'}</span></div>
             </div>
           )}
+
+          {result?.updateAvailable ? (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between rounded-lg bg-green-50 p-4 dark:bg-green-900/20">
+                <div className="flex items-center space-x-3">
+                  <div className="rounded-full bg-green-600 p-1 text-white">
+                    <Check className="h-4 w-4" />
+                  </div>
+                  <div>
+                    <div className="font-semibold text-green-900 dark:text-green-100">
+                      Update Available — v{result.latestVersion}
+                    </div>
+                    <div className="text-sm text-green-700 dark:text-green-300">
+                      Click below to open the releases page and download
+                    </div>
+                  </div>
+                </div>
+                <Button onClick={handleDownloadUpdate}>
+                  <ExternalLink className="mr-2 h-4 w-4" />
+                  Download Update
+                </Button>
+              </div>
+              {result.releaseNotes && (
+                <div className="rounded-lg border p-3 text-sm">
+                  <div className="font-medium mb-1">Release Notes</div>
+                  <pre className="whitespace-pre-wrap text-muted-foreground font-sans">{result.releaseNotes}</pre>
+                </div>
+              )}
+            </div>
+          ) : result ? (
+            <div className="flex items-center space-x-3 rounded-lg bg-muted p-4">
+              <div className="rounded-full bg-muted-foreground p-1 text-background">
+                <Check className="h-4 w-4" />
+              </div>
+              <div>
+                <div className="font-semibold">Up to Date</div>
+                <div className="text-sm text-muted-foreground">
+                  You are running the latest version
+                </div>
+              </div>
+            </div>
+          ) : null}
         </CardContent>
       </Card>
     </div>

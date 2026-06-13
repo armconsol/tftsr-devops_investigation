@@ -8,6 +8,7 @@ import { RemoveRemoteDialog } from '@/components/Proxmox';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/index';
 import { listProxmoxClusters, addProxmoxCluster, removeProxmoxCluster } from '@/lib/proxmoxClient';
 import { ClusterType } from '@/lib/domain';
+import { toast } from 'sonner';
 
 interface RemoteInfo {
   id: string;
@@ -69,7 +70,8 @@ export function ProxmoxRemotesPage() {
       setShowAddDialog(false);
     } catch (err) {
       console.error('Failed to add remote:', err);
-      alert('Failed to add remote: ' + String(err));
+      toast.error('Failed to add remote: ' + String(err));
+      throw err;
     }
   };
 
@@ -92,7 +94,8 @@ export function ProxmoxRemotesPage() {
       setEditingRemote(null);
     } catch (err) {
       console.error('Failed to edit remote:', err);
-      alert('Failed to edit remote: ' + String(err));
+      toast.error('Failed to edit remote: ' + String(err));
+      throw err;
     }
   };
 
@@ -104,7 +107,7 @@ export function ProxmoxRemotesPage() {
         setRemovingRemote(null);
       } catch (err) {
         console.error('Failed to remove remote:', err);
-        alert('Failed to remove remote: ' + String(err));
+        toast.error('Failed to remove remote: ' + String(err));
       }
     }
   };
