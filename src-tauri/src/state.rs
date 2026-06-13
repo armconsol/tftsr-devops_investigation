@@ -57,6 +57,12 @@ pub struct AppSettings {
     pub default_provider: String,
     pub default_model: String,
     pub ollama_url: String,
+    #[serde(default = "default_update_channel")]
+    pub update_channel: String,
+}
+
+fn default_update_channel() -> String {
+    "stable".to_string()
 }
 
 impl Default for AppSettings {
@@ -68,6 +74,7 @@ impl Default for AppSettings {
             default_provider: "ollama".to_string(),
             default_model: "llama3.2:3b".to_string(),
             ollama_url: "http://localhost:11434".to_string(),
+            update_channel: "stable".to_string(),
         }
     }
 }

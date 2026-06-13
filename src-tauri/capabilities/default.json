@@ -23,6 +23,7 @@
     "fs:scope-app-recursive",
     "fs:scope-temp-recursive",
     "shell:allow-open",
+    "opener:allow-open-url",
     "http:default"
   ]
 }

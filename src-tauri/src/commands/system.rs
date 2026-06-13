@@ -5,7 +5,7 @@ use crate::ollama::{
 };
 use crate::state::{AppSettings, AppState, ProviderConfig};
 use std::env;
-use tauri_plugin_updater::UpdaterExt;
+use tauri_plugin_opener::OpenerExt;
 
 // --- Ollama commands ---
 
@@ -78,6 +78,12 @@ pub async fn update_settings(
         .and_then(|v| v.as_str())
     {
         settings.active_provider = Some(active_provider.to_string());
+    }
+    if let Some(ch) = partial_settings
+        .get("update_channel")
+        .and_then(|v| v.as_str())
+    {
+        settings.update_channel = ch.to_string();
     }
 
     Ok(settings.clone())
@@ -467,41 +473,157 @@ mod sudo_tests {
 
 // --- Updater commands ---
 
-#[tauri::command]
-pub async fn check_app_updates(app: tauri::AppHandle) -> Result<bool, String> {
-    match app.updater() {
-        Ok(updater) => match updater.check().await {
-            Ok(update) => Ok(update.is_some()),
-            Err(e) => Err(format!("Failed to check for updates: {e}")),
-        },
-        Err(e) => Err(format!("Failed to get updater: {e}")),
+fn is_newer_version(latest: &str, current: &str) -> bool {
+    if latest.is_empty() || current.is_empty() {
+        return false;
     }
+    let parse_version =
+        |v: &str| -> Vec<u64> { v.split('.').filter_map(|p| p.parse().ok()).collect() };
+    let latest_parts = parse_version(latest);
+    let current_parts = parse_version(current);
+    for i in 0..latest_parts.len().max(current_parts.len()) {
+        let l = latest_parts.get(i).copied().unwrap_or(0);
+        let c = current_parts.get(i).copied().unwrap_or(0);
+        if l > c {
+            return true;
+        }
+        if l < c {
+            return false;
+        }
+    }
+    false
+}
+
+#[tauri::command]
+pub async fn check_app_updates(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+) -> Result<serde_json::Value, String> {
+    let current_version = app.package_info().version.to_string();
+
+    let channel = {
+        state
+            .settings
+            .lock()
+            .map_err(|e| e.to_string())?
+            .update_channel
+            .clone()
+    };
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .map_err(|e| format!("Failed to create HTTP client: {e}"))?;
+
+    let response = client
+        .get(
+            "https://gogs.tftsr.com/api/v1/repos/sarman/tftsr-devops_investigation/releases?limit=20",
+        )
+        .header("Accept", "application/json")
+        .send()
+        .await
+        .map_err(|e| format!("Failed to check for updates: {e}"))?;
+
+    if !response.status().is_success() {
+        return Err(format!(
+            "Update server returned status: {}",
+            response.status()
+        ));
+    }
+
+    let releases: Vec<serde_json::Value> = response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse update response: {e}"))?;
+
+    let release = releases
+        .iter()
+        .find(|r| {
+            let is_pre = r["prerelease"].as_bool().unwrap_or(false);
+            let is_draft = r["draft"].as_bool().unwrap_or(false);
+            if is_draft {
+                return false;
+            }
+            match channel.as_str() {
+                "beta" => is_pre,
+                _ => !is_pre,
+            }
+        })
+        .ok_or_else(|| format!("No release found for channel: {channel}"))?;
+
+    let latest_tag = release["tag_name"]
+        .as_str()
+        .unwrap_or("")
+        .trim_start_matches('v')
+        .to_string();
+
+    let update_available = is_newer_version(&latest_tag, &current_version);
+
+    let release_url = release["html_url"]
+        .as_str()
+        .unwrap_or("https://gogs.tftsr.com/sarman/tftsr-devops_investigation/releases")
+        .to_string();
+
+    let body = release["body"].as_str().unwrap_or("").to_string();
+
+    Ok(serde_json::json!({
+        "updateAvailable": update_available,
+        "currentVersion": current_version,
+        "latestVersion": latest_tag,
+        "releaseUrl": release_url,
+        "releaseNotes": body
+    }))
 }
 
 #[tauri::command]
 pub async fn install_app_updates(app: tauri::AppHandle) -> Result<(), String> {
-    match app.updater() {
-        Ok(updater) => match updater.check().await {
-            Ok(Some(update)) => match update.download_and_install(|_, _| {}, || {}).await {
-                Ok(_) => Ok(()),
-                Err(e) => Err(format!("Failed to install update: {e}")),
-            },
-            Ok(None) => Err("No update available".to_string()),
-            Err(e) => Err(format!("Failed to check for updates: {e}")),
-        },
-        Err(e) => Err(format!("Failed to get updater: {e}")),
-    }
+    app.opener()
+        .open_url(
+            "https://gogs.tftsr.com/sarman/tftsr-devops_investigation/releases",
+            None::<&str>,
+        )
+        .map_err(|e| format!("Failed to open browser: {e}"))
 }
 
 #[tauri::command]
-pub async fn get_update_channel() -> Result<String, String> {
-    Ok("stable".to_string())
+pub async fn get_update_channel(state: tauri::State<'_, AppState>) -> Result<String, String> {
+    state
+        .settings
+        .lock()
+        .map(|s| s.update_channel.clone())
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub async fn set_update_channel(_channel: String) -> Result<(), String> {
-    // Channel selection is configured via tauri.conf.json endpoints
-    // This command exists for future extensibility but currently no-op
-    // since Tauri's updater plugin uses static configuration
+pub async fn set_update_channel(
+    channel: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    state
+        .settings
+        .lock()
+        .map_err(|e| e.to_string())?
+        .update_channel = channel;
     Ok(())
+}
+
+#[cfg(test)]
+mod updater_tests {
+    use super::*;
+
+    #[test]
+    fn test_is_newer_version() {
+        assert!(is_newer_version("1.3.0", "1.2.2"));
+        assert!(is_newer_version("2.0.0", "1.9.9"));
+        assert!(!is_newer_version("1.2.2", "1.2.2"));
+        assert!(!is_newer_version("1.2.1", "1.2.2"));
+        assert!(!is_newer_version("0.9.0", "1.0.0"));
+        assert!(is_newer_version("1.2.3", "1.2.2"));
+    }
+
+    #[test]
+    fn test_is_newer_version_empty() {
+        assert!(!is_newer_version("", "1.0.0"));
+        assert!(!is_newer_version("1.0.0", ""));
+    }
 }

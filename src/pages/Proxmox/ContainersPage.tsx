@@ -1,40 +1,65 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/index';
 import { Button } from '@/components/ui/index';
 import { RefreshCw } from 'lucide-react';
 import { ContainerOverview } from '@/components/Proxmox';
-
-interface ContainerInfo {
-  id: string;
-  name: string;
-  vmid: number;
-  node: string;
-  status: string;
-  cpu: number;
-  memory: number;
-  disk: number;
-  uptime?: string;
-}
+import { listProxmoxClusters, listProxmoxContainers } from '@/lib/proxmoxClient';
+import type { ClusterInfo } from '@/lib/domain';
+import { toast } from 'sonner';
 
 export function ProxmoxContainersPage() {
-  const containers: ContainerInfo[] = [
-    { id: '1', name: 'nginx-proxy', vmid: 200, node: 'pve1', status: 'running', cpu: 2, memory: 2048, disk: 20, uptime: '1d 8h' },
-    { id: '2', name: 'redis-cache', vmid: 201, node: 'pve2', status: 'running', cpu: 1, memory: 1024, disk: 10, uptime: '3d 2h' },
-    { id: '3', name: 'monitoring', vmid: 202, node: 'pve1', status: 'stopped', cpu: 2, memory: 4096, disk: 30 },
-  ];
-  const [selectedContainer, setSelectedContainer] = useState<ContainerInfo | null>(null);
+  const [clusters, setClusters] = useState<ClusterInfo[]>([]);
+  const [selectedClusterId, setSelectedClusterId] = useState<string>('');
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [containers, setContainers] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [selectedContainer, setSelectedContainer] = useState<any | null>(null);
 
-  const handlePowerAction = (_action: string) => {
-    // Power action handler
-  };
+  useEffect(() => {
+    listProxmoxClusters()
+      .then((cls) => {
+        setClusters(cls);
+        if (cls.length > 0) setSelectedClusterId(cls[0].id);
+      })
+      .catch((err) => {
+        console.error('Failed to load clusters:', err);
+        toast.error('Failed to load clusters');
+      });
+  }, []);
 
-  const handleConsole = () => {
-    // Console handler
-  };
+  const loadContainers = useCallback(async (clusterId: string) => {
+    if (!clusterId) return;
+    setIsLoading(true);
+    try {
+      const data = await listProxmoxContainers(clusterId);
+      setContainers(data);
+    } catch (err) {
+      console.error('Failed to load containers:', err);
+      toast.error('Failed to load containers');
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
 
-  const handleContainerSelect = (container: ContainerInfo) => {
-    setSelectedContainer(container);
-  };
+  useEffect(() => {
+    if (selectedClusterId) loadContainers(selectedClusterId);
+  }, [selectedClusterId, loadContainers]);
+
+  if (clusters.length === 0 && !isLoading) {
+    return (
+      <div className="space-y-4">
+        <div>
+          <h1 className="text-2xl font-bold">Containers</h1>
+          <p className="text-muted-foreground">Manage LXC containers</p>
+        </div>
+        <div className="text-center py-12 text-muted-foreground">
+          <p>No Proxmox clusters configured.</p>
+          <p className="text-sm mt-1">Add a remote connection first.</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">
@@ -43,8 +68,19 @@ export function ProxmoxContainersPage() {
           <h1 className="text-2xl font-bold">Containers</h1>
           <p className="text-muted-foreground">Manage LXC containers</p>
         </div>
-        <div className="flex space-x-2">
-          <Button variant="outline" size="sm">
+        <div className="flex items-center space-x-2">
+          {clusters.length > 1 && (
+            <select
+              className="rounded-md border px-3 py-1.5 text-sm bg-background"
+              value={selectedClusterId}
+              onChange={(e) => setSelectedClusterId(e.target.value)}
+            >
+              {clusters.map((c) => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+            </select>
+          )}
+          <Button variant="outline" size="sm" onClick={() => loadContainers(selectedClusterId)}>
             <RefreshCw className="mr-2 h-4 w-4" />
             Refresh
           </Button>
@@ -54,16 +90,20 @@ export function ProxmoxContainersPage() {
       {selectedContainer ? (
         <ContainerOverview
           container={selectedContainer}
-          onRefresh={() => {}}
-          onPowerAction={handlePowerAction}
-          onConsole={handleConsole}
+          onRefresh={() => loadContainers(selectedClusterId)}
+          onPowerAction={(_action) => { toast.info('Power action — not yet implemented'); }}
+          onConsole={() => { toast.info('Console — not yet implemented'); }}
         />
       ) : (
         <div className="grid grid-cols-1 gap-4">
           {containers.map((container) => (
-            <Card key={container.id} className="cursor-pointer hover:shadow-md" onClick={() => handleContainerSelect(container)}>
+            <Card
+              key={container.vmid ?? container.id}
+              className="cursor-pointer hover:shadow-md"
+              onClick={() => setSelectedContainer(container)}
+            >
               <CardHeader>
-                <CardTitle>{container.name}</CardTitle>
+                <CardTitle>{container.name ?? `CT ${container.vmid}`}</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="grid grid-cols-4 gap-4 text-sm">
@@ -81,7 +121,15 @@ export function ProxmoxContainersPage() {
                   </div>
                   <div>
                     <div className="text-muted-foreground">Resources</div>
-                    <div className="font-medium">{container.cpu} CPU / {container.memory}MB RAM</div>
+                    <div className="font-medium">
+                      {container.maxcpu ?? container.cpu ?? '?'} CPU /{' '}
+                      {container.maxmem
+                        ? `${Math.round(container.maxmem / 1048576)} MB`
+                        : container.memory
+                          ? `${container.memory} MB`
+                          : '?'}{' '}
+                      RAM
+                    </div>
                   </div>
                 </div>
               </CardContent>
