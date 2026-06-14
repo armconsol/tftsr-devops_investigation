@@ -1,6 +1,6 @@
 [package]
 name = "trcaa"
-version = "1.2.3"
+version = "1.2.4"
 edition = "2021"
 
 [lib]
@@ -9,6 +9,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2.6", features = [] }
+cc = "1.0"
 
 [dependencies]
 tauri = { version = "2", features = [] }

@@ -48,8 +48,17 @@ jobs:
             pkg-config
       - name: Install Rust components
         run: rustup component add rustfmt
-      - name: Install dependencies
-        run: npm install --legacy-peer-deps
+      - name: Install dependencies with retry
+        run: |
+          for i in 1 2 3; do
+            if npm install --legacy-peer-deps --prefer-offline --no-audit; then
+              exit 0
+            fi
+            echo "Attempt $i failed, retrying in 5 seconds..."
+            sleep 5
+          done
+          echo "All retry attempts failed"
+          exit 1
       - name: Update version from Git
         run: node scripts/update-version.mjs
       - run: cargo generate-lockfile --manifest-path src-tauri/Cargo.toml
@@ -161,7 +170,17 @@ jobs:
           key: ${{ runner.os }}-npm-${{ hashFiles('**/package-lock.json') }}
           restore-keys: |
             ${{ runner.os }}-npm-
-      - run: npm ci --legacy-peer-deps
+      - name: Install dependencies with retry
+        run: |
+          for i in 1 2 3; do
+            if npm ci --legacy-peer-deps --prefer-offline --no-audit; then
+              exit 0
+            fi
+            echo "Attempt $i failed, retrying in 5 seconds..."
+            sleep 5
+          done
+          echo "All retry attempts failed"
+          exit 1
       - run: npx tsc --noEmit
 
   frontend-tests:
@@ -195,5 +214,15 @@ jobs:
           key: ${{ runner.os }}-npm-${{ hashFiles('**/package-lock.json') }}
           restore-keys: |
             ${{ runner.os }}-npm-
-      - run: npm ci --legacy-peer-deps
+      - name: Install dependencies with retry
+        run: |
+          for i in 1 2 3; do
+            if npm ci --legacy-peer-deps --prefer-offline --no-audit; then
+              exit 0
+            fi
+            echo "Attempt $i failed, retrying in 5 seconds..."
+            sleep 5
+          done
+          echo "All retry attempts failed"
+          exit 1
       - run: npm run test:run

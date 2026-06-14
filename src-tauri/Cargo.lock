@@ -6528,13 +6528,14 @@ dependencies = [
 
 [[package]]
 name = "trcaa"
-version = "1.2.2"
+version = "1.2.4"
 dependencies = [
  "aes-gcm",
  "aho-corasick",
  "anyhow",
  "async-trait",
  "base64 0.22.1",
+ "cc",
  "chrono",
  "dirs 5.0.1",
  "docx-rs",
