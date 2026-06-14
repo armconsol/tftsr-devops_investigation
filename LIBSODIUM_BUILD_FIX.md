@@ -1,14 +1,14 @@
 # libsodium pkg-config Detection Fix
 
-> **Note:** This document describes **only the changes in this PR (PR #102)**. For the complete fix history including PR #101 (Docker packages, smoke test), see `LIBSODIUM_BUILD_HISTORY.md`.
+> **Scope:** This document describes **only the changes in this PR**. For historical context including prior related work, see `LIBSODIUM_BUILD_HISTORY.md`.
 
 ## Description
 
-This PR fixes libsodium build failures that persisted after adding `libsodium-dev` packages to Docker images (PR #101). The issue was that `libsodium-sys-stable`'s build script wasn't being explicitly told **how** to find libsodium.
+This PR fixes libsodium build failures by adding explicit `SODIUM_USE_PKG_CONFIG` environment variables to CI workflows. The Docker images already have libsodium packages installed, but the build script wasn't being told **how** to find them.
 
-**Remaining build failures after PR #101:**
+**Build failures observed:**
 
-1. **Linux amd64/arm64**: `libsodium not found via pkg-config or vcpkg` (despite `libsodium-dev` + `pkg-config` being installed)
+1. **Linux amd64/arm64**: `libsodium not found via pkg-config or vcpkg` (despite `libsodium-dev` + `pkg-config` being installed in Docker images)
 2. **Windows cross-build**: `SODIUM_LIB_DIR is incompatible with SODIUM_USE_PKG_CONFIG` (conflicting detection methods)
 
 ## Root Cause
@@ -24,7 +24,7 @@ The `libsodium-sys-stable` crate's `build.rs` checks environment variables in th
 **What went wrong:**
 
 - **Linux**: Had the packages installed but wasn't explicitly told to use pkg-config → fell through to vcpkg → failed
-- **Windows**: Set `SODIUM_LIB_DIR` (from previous PR) but also had pkg-config available → conflicting modes → build script error
+- **Windows**: `SODIUM_LIB_DIR` was already set, but pkg-config was also available → conflicting modes → build script error
 
 ## Changes in This PR
 
@@ -49,12 +49,14 @@ env:
 #### Windows cross-compile build (line ~448)
 ```yaml
 env:
-  SODIUM_LIB_DIR: /usr/x86_64-w64-mingw32/lib      # Already present from PR #101
-  SODIUM_STATIC: "1"                               # Already present from PR #101
-  SODIUM_USE_PKG_CONFIG: "no"                      # NEW: Disable pkg-config
+  SODIUM_LIB_DIR: /usr/x86_64-w64-mingw32/lib      # Already present (see HISTORY doc)
+  SODIUM_STATIC: "1"                               # Already present (see HISTORY doc)
+  SODIUM_USE_PKG_CONFIG: "no"                      # NEW in this PR: Disable pkg-config
 ```
 
 **Why:** Prevents conflict between explicit path mode (`SODIUM_LIB_DIR`) and pkg-config detection. Windows uses pre-built libsodium from Dockerfile, not system packages.
+
+**Only the `SODIUM_USE_PKG_CONFIG: "no"` line is new in this PR** - the other env vars were already present.
 
 ### Documentation
 
@@ -94,17 +96,18 @@ This PR only modifies CI workflow environment variables. Testing occurs via CI p
 - [ ] Windows CI build succeeds
 - [ ] All platforms produce valid artifacts
 
-## Relationship to PR #101
+## Files Changed in This PR
 
-**PR #101** (already merged to beta):
-- Added `libsodium-dev` to Linux Docker images (`.docker/Dockerfile.*`)
-- Added `SODIUM_LIB_DIR` + `SODIUM_STATIC` to Windows workflow
-- Added smoke test in `src-tauri/src/state.rs`
+1. **`.gitea/workflows/auto-tag.yml`**
+   - Linux amd64 build: Added `SODIUM_USE_PKG_CONFIG: "1"`
+   - Linux arm64 build: Added `SODIUM_USE_PKG_CONFIG: "1"`
+   - Windows build: Added `SODIUM_USE_PKG_CONFIG: "no"`
 
-**This PR (PR #102)**:
-- Adds `SODIUM_USE_PKG_CONFIG` env vars to tell build script **how** to find libsodium
-- Fixes detection failures that persisted after package installation
-- **No Dockerfile changes** (those were in PR #101)
-- **No test changes** (those were in PR #101)
+2. **Documentation only**
+   - `LIBSODIUM_BUILD_FIX.md` (this file)
+   - `LIBSODIUM_PKG_CONFIG_FIX.md` (detailed version)
+   - `LIBSODIUM_BUILD_HISTORY.md` (historical context - see for relationship to PR #101)
 
-Both PRs together form the complete fix. See `LIBSODIUM_BUILD_HISTORY.md` for the full story.
+**No Dockerfile changes** - Docker images already have libsodium packages from prior work.
+**No application code changes** - This PR only adds environment variables to CI workflow.
+**No test changes** - libsodium linking is already validated by existing tests.
