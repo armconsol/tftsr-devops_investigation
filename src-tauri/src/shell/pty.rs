@@ -276,11 +276,18 @@ mod tests {
         // Should be alive initially
         assert!(session.is_alive(), "Session should be alive");
 
-        // Wait for process to exit
-        std::thread::sleep(std::time::Duration::from_millis(200));
+        // Wait for process to exit with retry logic to handle OS timing variations
+        let mut retries = 10;
+        while retries > 0 && session.is_alive() {
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            retries -= 1;
+        }
 
         // Should be dead now
-        assert!(!session.is_alive(), "Session should be dead");
+        assert!(
+            !session.is_alive(),
+            "Session should be dead after sleep completed"
+        );
     }
 
     #[test]
