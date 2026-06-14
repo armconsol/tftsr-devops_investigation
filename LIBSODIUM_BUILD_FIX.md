@@ -36,8 +36,26 @@ This fix resolves build failures across all CI/CD build targets (Linux amd64/arm
 ### 2. CI/CD Pipeline Fix
 
 **`.gitea/workflows/auto-tag.yml`**
-- Added `SODIUM_LIB_DIR: /usr/x86_64-w64-mingw32/lib` to Windows build environment
+
+**Linux amd64 build:**
+- Added `SODIUM_USE_PKG_CONFIG: "1"` to force pkg-config detection of libsodium
+
+**Linux arm64 build:**
+- Added `SODIUM_USE_PKG_CONFIG: "1"` to force pkg-config detection for cross-compiled libsodium
+
+**Windows cross-compile build:**
+- Added `SODIUM_LIB_DIR: /usr/x86_64-w64-mingw32/lib` to point to pre-built libsodium
 - Added `SODIUM_STATIC: "1"` to ensure static linking of pre-built libsodium
+- Added `SODIUM_USE_PKG_CONFIG: "no"` to prevent conflict with explicit SODIUM_LIB_DIR
+
+**Rationale:**
+`libsodium-sys-stable`'s build.rs checks environment variables in this order:
+1. If `SODIUM_LIB_DIR` is set → use explicit path (incompatible with `SODIUM_USE_PKG_CONFIG`)
+2. If `SODIUM_USE_PKG_CONFIG` is not "no" → try pkg-config detection
+3. Fall back to vcpkg or fail
+
+Linux builds have `libsodium-dev` + `pkg-config` installed, so we force pkg-config mode.
+Windows has pre-compiled libsodium at a known path, so we use explicit path mode and disable pkg-config.
 
 ### 3. Test Coverage
 
