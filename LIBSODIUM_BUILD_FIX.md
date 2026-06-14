@@ -1,208 +1,110 @@
-# libsodium Build Failure Fix (Complete Solution)
+# libsodium pkg-config Detection Fix
 
-> **Note:** This document describes the complete fix implemented across **two PRs**:
-> - **PR #101**: Docker package additions + initial Windows env vars + test coverage
-> - **PR #102**: pkg-config detection control (see `LIBSODIUM_PKG_CONFIG_FIX.md` for PR #102 details)
+> **Note:** This document describes **only the changes in this PR (PR #102)**. For the complete fix history including PR #101 (Docker packages, smoke test), see `LIBSODIUM_BUILD_HISTORY.md`.
 
 ## Description
 
-This fix resolves build failures across all CI/CD build targets (Linux amd64/arm64, Windows cross-compilation) caused by missing libsodium library dependencies. The application uses `tauri-plugin-stronghold` which transitively depends on `iota-crypto` → `libsodium-sys-stable`, requiring libsodium to be available at build time.
+This PR fixes libsodium build failures that persisted after adding `libsodium-dev` packages to Docker images (PR #101). The issue was that `libsodium-sys-stable`'s build script wasn't being explicitly told **how** to find libsodium.
 
-**Build failures observed:**
+**Remaining build failures after PR #101:**
 
-1. **Linux amd64/arm64**: `libsodium not found via pkg-config or vcpkg`
-2. **Windows cross-build**: `SODIUM_LIB_DIR is incompatible with SODIUM_USE_PKG_CONFIG`
+1. **Linux amd64/arm64**: `libsodium not found via pkg-config or vcpkg` (despite `libsodium-dev` + `pkg-config` being installed)
+2. **Windows cross-build**: `SODIUM_LIB_DIR is incompatible with SODIUM_USE_PKG_CONFIG` (conflicting detection methods)
 
-## Root Cause (Two-Part Issue)
+## Root Cause
 
-**Part 1 (Fixed in PR #101):**
-- **Linux builds**: Docker images lacked `libsodium-dev` package
-- **Windows cross-build**: Missing explicit `SODIUM_LIB_DIR` environment variable despite pre-built libsodium in the cross-compiler image
+The `libsodium-sys-stable` crate's `build.rs` checks environment variables in this precedence:
 
-**Part 2 (Fixed in PR #102):**
-- **Linux builds**: `libsodium-sys-stable` build script wasn't explicitly told to use pkg-config
-- **Windows cross-build**: Setting `SODIUM_LIB_DIR` without disabling pkg-config caused detection conflict
+1. If `SODIUM_LIB_DIR` is set → use explicit path (incompatible with `SODIUM_USE_PKG_CONFIG` mode)
+2. If `SODIUM_USE_PKG_CONFIG` ≠ `"no"` (string equality) → try pkg-config detection
+3. Fall back to vcpkg or fail with error
 
-## Acceptance Criteria
+**Note on string values:** The build script performs string comparison, so `"no"` disables pkg-config while any other value (including `"1"`, `"yes"`, or empty) enables it. YAML quotes preserve these as strings.
 
-- [x] All three Docker build images updated with libsodium dependencies
-- [x] Windows cross-build CI configuration includes proper `SODIUM_LIB_DIR` and `SODIUM_STATIC` environment variables
-- [x] New test added to verify libsodium linking via stronghold dependency chain
-- [x] All existing tests (416 Rust + 386 TypeScript = 802 total) pass without regression
-- [x] All linting checks pass (cargo fmt, clippy, eslint, tsc)
-- [x] Changes follow TDD methodology with test-first approach
+**What went wrong:**
 
-## Work Implemented
+- **Linux**: Had the packages installed but wasn't explicitly told to use pkg-config → fell through to vcpkg → failed
+- **Windows**: Set `SODIUM_LIB_DIR` (from previous PR) but also had pkg-config available → conflicting modes → build script error
 
-### 1. Docker Image Updates (PR #101)
+## Changes in This PR
 
-**`.docker/Dockerfile.linux-amd64`**
-- Added `libsodium-dev` to apt package installation list
+### `.gitea/workflows/auto-tag.yml`
 
-**`.docker/Dockerfile.linux-arm64`**
-- Added `libsodium-dev:arm64` to multiarch package installation list
-
-### 2. CI/CD Pipeline Fix
-
-**`.gitea/workflows/auto-tag.yml`**
-
-**Linux amd64 build:**
-- **PR #102:** Added `SODIUM_USE_PKG_CONFIG: "1"` to force pkg-config detection of libsodium
-
-**Linux arm64 build:**
-- **PR #102:** Added `SODIUM_USE_PKG_CONFIG: "1"` to force pkg-config detection for cross-compiled libsodium
-
-**Windows cross-compile build:**
-- **PR #101:** Added `SODIUM_LIB_DIR: /usr/x86_64-w64-mingw32/lib` to point to pre-built libsodium
-- **PR #101:** Added `SODIUM_STATIC: "1"` to ensure static linking of pre-built libsodium
-- **PR #102:** Added `SODIUM_USE_PKG_CONFIG: "no"` to prevent conflict with explicit SODIUM_LIB_DIR
-
-**Rationale:**
-`libsodium-sys-stable`'s build.rs checks environment variables in this order:
-1. If `SODIUM_LIB_DIR` is set → use explicit path (incompatible with `SODIUM_USE_PKG_CONFIG`)
-2. If `SODIUM_USE_PKG_CONFIG` is not "no" → try pkg-config detection
-3. Fall back to vcpkg or fail
-
-Linux builds have `libsodium-dev` + `pkg-config` installed, so we force pkg-config mode.
-Windows has pre-compiled libsodium at a known path, so we use explicit path mode and disable pkg-config.
-
-### 3. Test Coverage (PR #101)
-
-**`src-tauri/src/state.rs`**
-- Added comprehensive test module with 3 tests:
-  - `test_app_settings_default`: Verifies default settings initialization
-  - `test_get_app_data_dir_returns_some`: Ensures data directory resolution
-  - `test_libsodium_linking`: **Smoke test that verifies libsodium linking through the stronghold dependency chain**
-
-The smoke test is critical because it ensures the entire dependency chain compiles and links correctly. If libsodium were misconfigured, this test would fail at compile/link time, not runtime.
-
-### 4. Code Quality
-
-- All code follows Rust 2021 edition best practices
-- Comprehensive inline documentation added to test functions
-- Formatting verified with `cargo fmt`
-- Zero clippy warnings
-- Zero ESLint warnings
-- Zero TypeScript type errors
-
-## Testing Needed
-
-### Local Testing (Completed ✓)
-- [x] `cargo test --manifest-path src-tauri/Cargo.toml` → 416 tests passed
-- [x] `npm run test:run` → 386 tests passed
-- [x] `cargo fmt --check` → Passed
-- [x] `cargo clippy -- -D warnings` → Zero warnings
-- [x] `npx eslint . --max-warnings 0` → Zero warnings
-- [x] `npx tsc --noEmit` → Zero errors
-
-### CI/CD Testing (Required)
-The following must be verified after merging to beta and triggering CI builds:
-
-1. **Linux amd64 build** (`build-linux-amd64` job)
-   - [ ] Build completes without `libsodium not found` error
-   - [ ] `.deb` and `.rpm` artifacts generated successfully
-   - [ ] Artifacts uploaded to Gitea release
-
-2. **Linux arm64 build** (`build-linux-arm64` job)
-   - [ ] Cross-compilation completes with arm64 libsodium-dev
-   - [ ] `.deb` and `.rpm` artifacts generated successfully
-   - [ ] Artifacts uploaded to Gitea release
-
-3. **Windows amd64 build** (`build-windows-amd64` job)
-   - [ ] Build completes without env var conflict error
-   - [ ] `.exe` and `.msi` artifacts generated successfully
-   - [ ] Artifacts uploaded to Gitea release
-
-4. **macOS arm64 build** (`build-macos-arm64` job)
-   - [ ] Build continues to work (no libsodium changes needed for macOS)
-   - [ ] `.dmg` artifact generated successfully
-
-### Verification Steps
-
-After PR merge and CI completion:
-
-1. Navigate to https://gogs.tftsr.com/sarman/tftsr-devops_investigation/actions
-2. Verify all 4 build jobs complete with success status
-3. Check https://gogs.tftsr.com/sarman/tftsr-devops_investigation/releases for artifacts
-4. Download and test artifacts on respective platforms:
-   - Linux: Install `.deb`/`.rpm` and verify app launches
-   - Windows: Install `.msi` and verify app launches
-   - macOS: Mount `.dmg` and verify app launches
-
-## Files Changed
-
-```
-.docker/Dockerfile.linux-amd64    |  1 +
-.docker/Dockerfile.linux-arm64    |  1 +
-.gitea/workflows/auto-tag.yml     |  2 +
-src-tauri/src/state.rs            | 46 +++++++++++++++++++++++++++++++
-────────────────────────────────────────────────
-4 files changed, 50 insertions(+)
+#### Linux amd64 build (line ~347)
+```yaml
+env:
+  SODIUM_USE_PKG_CONFIG: "1"  # NEW: Force pkg-config detection
 ```
 
-## Technical Details
+**Why:** Ensures `libsodium-sys-stable` uses the installed `libsodium-dev` package via pkg-config.
 
-### Dependency Chain
-```
-trcaa (main app)
-  └─ tauri-plugin-stronghold v2
-      └─ iota-crypto v0.23.2
-          └─ libsodium-sys-stable v1.24.0
-              └─ libsodium (system library)
+#### Linux arm64 build (line ~633)
+```yaml
+env:
+  SODIUM_USE_PKG_CONFIG: "1"  # NEW: Force pkg-config for cross-compile
 ```
 
-### Build System Integration
+**Why:** Same as amd64 - force pkg-config to find the arm64 libsodium package.
 
-**libsodium-sys-stable build.rs resolution order:**
-1. Check `SODIUM_LIB_DIR` env var (Windows cross-build uses this)
-2. Try `pkg-config` to find system libsodium (Linux native uses this)
-3. Try `vcpkg` (Windows native uses this)
-4. Fail if none found
+#### Windows cross-compile build (line ~448)
+```yaml
+env:
+  SODIUM_LIB_DIR: /usr/x86_64-w64-mingw32/lib      # Already present from PR #101
+  SODIUM_STATIC: "1"                               # Already present from PR #101
+  SODIUM_USE_PKG_CONFIG: "no"                      # NEW: Disable pkg-config
+```
 
-**Our solution:**
-- Linux: Install `libsodium-dev` → pkg-config finds it automatically
-- Windows cross: Set `SODIUM_LIB_DIR=/usr/x86_64-w64-mingw32/lib` → points to pre-built libsodium
-- macOS: Already has libsodium via Homebrew (no changes needed)
+**Why:** Prevents conflict between explicit path mode (`SODIUM_LIB_DIR`) and pkg-config detection. Windows uses pre-built libsodium from Dockerfile, not system packages.
 
-## Risk Assessment
+### Documentation
 
-**Risk Level:** Low
+**Files changed in this PR:**
+- `LIBSODIUM_BUILD_FIX.md` (this file) - Documents env var strategy for pkg-config detection
+- `LIBSODIUM_PKG_CONFIG_FIX.md` - Alternative/detailed version of this doc
+- `LIBSODIUM_BUILD_HISTORY.md` - Complete fix history across PR #101 and PR #102
 
-**Reasoning:**
-- Changes are additive (adding packages, env vars, tests)
-- No modifications to existing application logic
-- All 802 existing tests pass without regression
-- Docker image changes only affect CI builds, not production deployment
-- Smoke test ensures the fix works at compile/link time, not just runtime
+Explains:
+- Platform-specific environment variable strategy
+- Build script precedence order
+- Rationale for each approach
 
-**Rollback Plan:**
-If issues arise, revert the 4 changed files and rebuild the Docker images with the previous tags.
+## Strategy Summary
 
-## Performance Impact
+| Platform | Method | Env Vars | Reason |
+|----------|--------|----------|--------|
+| Linux amd64 | pkg-config | `SODIUM_USE_PKG_CONFIG=1` | Has `libsodium-dev` + `pkg-config` installed |
+| Linux arm64 | pkg-config | `SODIUM_USE_PKG_CONFIG=1` | Has `libsodium-dev:arm64` + `pkg-config` |
+| Windows | explicit path | `SODIUM_LIB_DIR=...` + `SODIUM_USE_PKG_CONFIG=no` | Pre-built lib in known location, disable pkg-config |
 
-**Build Time:** Negligible increase (~5 seconds) to install libsodium-dev packages in Docker images.
+## Testing
 
-**Runtime:** Zero impact. Libsodium is already statically linked in release builds via `OPENSSL_STATIC=1` and `SODIUM_STATIC=1`.
+This PR only modifies CI workflow environment variables. Testing occurs via CI pipeline:
 
-## Security Considerations
+- [ ] Linux amd64 build succeeds with pkg-config detection
+- [ ] Linux arm64 build succeeds with cross-compile pkg-config
+- [ ] Windows build succeeds with explicit lib path (no pkg-config conflict)
+- [ ] All platforms produce valid `.deb`, `.rpm`, `.exe`, `.msi` artifacts
 
-- Using system-provided `libsodium-dev` packages from official Debian/Ubuntu repositories
-- Version pinned to distribution-stable releases (Ubuntu 22.04 for arm64, Rust 1.88 Debian slim for amd64)
-- Windows uses manually built libsodium 1.0.20 from official release tarball
-- Static linking ensures no runtime dependency vulnerabilities
+## Acceptance Criteria (This PR Only)
 
-## Related Documentation
+- [x] Added `SODIUM_USE_PKG_CONFIG` env vars to all three CI build targets
+- [x] Documentation accurately reflects only changes in this PR
+- [ ] Linux amd64 CI build succeeds
+- [ ] Linux arm64 CI build succeeds  
+- [ ] Windows CI build succeeds
+- [ ] All platforms produce valid artifacts
 
-- **Upstream Issue:** libsodium-sys-stable build script requires libsodium at build time
-- **Tauri Plugin Stronghold:** https://v2.tauri.app/plugin/stronghold/
-- **libsodium:** https://libsodium.gitbook.io/doc/
+## Relationship to PR #101
 
-## Approval Notes
+**PR #101** (already merged to beta):
+- Added `libsodium-dev` to Linux Docker images (`.docker/Dockerfile.*`)
+- Added `SODIUM_LIB_DIR` + `SODIUM_STATIC` to Windows workflow
+- Added smoke test in `src-tauri/src/state.rs`
 
-This fix is required to unblock all CI/CD builds. Without it, no releases can be generated for any platform.
+**This PR (PR #102)**:
+- Adds `SODIUM_USE_PKG_CONFIG` env vars to tell build script **how** to find libsodium
+- Fixes detection failures that persisted after package installation
+- **No Dockerfile changes** (those were in PR #101)
+- **No test changes** (those were in PR #101)
 
----
-
-**Branch:** `fix/libsodium-build-failures`  
-**Base Branch:** `beta`  
-**Target Merge:** `beta` → `master` (via standard PR workflow)
+Both PRs together form the complete fix. See `LIBSODIUM_BUILD_HISTORY.md` for the full story.
