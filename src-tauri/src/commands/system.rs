@@ -626,4 +626,17 @@ mod updater_tests {
         assert!(!is_newer_version("", "1.0.0"));
         assert!(!is_newer_version("1.0.0", ""));
     }
+
+    #[test]
+    fn test_update_channel_default() {
+        let settings = AppSettings::default();
+        assert_eq!(settings.update_channel, "stable");
+    }
+
+    #[test]
+    fn test_update_channel_serialization() {
+        let settings = AppSettings::default();
+        let json = serde_json::to_string(&settings).unwrap();
+        assert!(json.contains("\"stable\""));
+    }
 }

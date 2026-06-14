@@ -256,6 +256,10 @@ pub fn run() {
             commands::system::get_sudo_config_status,
             commands::system::test_sudo_password,
             commands::system::clear_sudo_password,
+            commands::system::check_app_updates,
+            commands::system::install_app_updates,
+            commands::system::get_update_channel,
+            commands::system::set_update_channel,
             // MCP Servers
             mcp::commands::list_mcp_servers,
             mcp::commands::create_mcp_server,
