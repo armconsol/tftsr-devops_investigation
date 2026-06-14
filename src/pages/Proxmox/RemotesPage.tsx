@@ -55,14 +55,24 @@ export function ProxmoxRemotesPage() {
   const handleAddRemote = async (config: any) => {
     try {
       const clusterType = config.type === 'pve' ? 've' : 'pbs';
-      const url = config.url.replace(/^https?:\/\//, '');
-      const port = config.type === 'pve' ? 8006 : 8007;
+
+      // Parse URL to extract hostname and port
+      let hostname = config.url.replace(/^https?:\/\//, '');
+      let port = config.type === 'pve' ? 8006 : 8007;
+
+      // If URL contains port, extract it
+      const portMatch = hostname.match(/:(\d+)$/);
+      if (portMatch) {
+        port = parseInt(portMatch[1], 10);
+        hostname = hostname.replace(/:\d+$/, '');
+      }
+
       const id = config.id || generateId();
       await addProxmoxCluster(
         id,
         config.name,
         clusterType as ClusterType,
-        { url, port },
+        { url: hostname, port },
         config.username,
         config.password || ''
       );
@@ -79,14 +89,24 @@ export function ProxmoxRemotesPage() {
   const handleEditRemote = async (config: any) => {
     try {
       const clusterType = config.type === 'pve' ? 've' : 'pbs';
-      const url = config.url.replace(/^https?:\/\//, '');
-      const port = config.type === 'pve' ? 8006 : 8007;
+
+      // Parse URL to extract hostname and port
+      let hostname = config.url.replace(/^https?:\/\//, '');
+      let port = config.type === 'pve' ? 8006 : 8007;
+
+      // If URL contains port, extract it
+      const portMatch = hostname.match(/:(\d+)$/);
+      if (portMatch) {
+        port = parseInt(portMatch[1], 10);
+        hostname = hostname.replace(/:\d+$/, '');
+      }
+
       await removeProxmoxCluster(config.id);
       await addProxmoxCluster(
         config.id,
         config.name,
         clusterType as ClusterType,
-        { url, port },
+        { url: hostname, port },
         config.username,
         config.password || ''
       );
