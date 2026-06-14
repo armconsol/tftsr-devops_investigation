@@ -1,4 +1,8 @@
-# libsodium Build Failure Fix
+# libsodium Build Failure Fix (Complete Solution)
+
+> **Note:** This document describes the complete fix implemented across **two PRs**:
+> - **PR #101**: Docker package additions + initial Windows env vars + test coverage
+> - **PR #102**: pkg-config detection control (see `LIBSODIUM_PKG_CONFIG_FIX.md` for PR #102 details)
 
 ## Description
 
@@ -9,10 +13,15 @@ This fix resolves build failures across all CI/CD build targets (Linux amd64/arm
 1. **Linux amd64/arm64**: `libsodium not found via pkg-config or vcpkg`
 2. **Windows cross-build**: `SODIUM_LIB_DIR is incompatible with SODIUM_USE_PKG_CONFIG`
 
-## Root Cause
+## Root Cause (Two-Part Issue)
 
+**Part 1 (Fixed in PR #101):**
 - **Linux builds**: Docker images lacked `libsodium-dev` package
 - **Windows cross-build**: Missing explicit `SODIUM_LIB_DIR` environment variable despite pre-built libsodium in the cross-compiler image
+
+**Part 2 (Fixed in PR #102):**
+- **Linux builds**: `libsodium-sys-stable` build script wasn't explicitly told to use pkg-config
+- **Windows cross-build**: Setting `SODIUM_LIB_DIR` without disabling pkg-config caused detection conflict
 
 ## Acceptance Criteria
 
@@ -25,7 +34,7 @@ This fix resolves build failures across all CI/CD build targets (Linux amd64/arm
 
 ## Work Implemented
 
-### 1. Docker Image Updates
+### 1. Docker Image Updates (PR #101)
 
 **`.docker/Dockerfile.linux-amd64`**
 - Added `libsodium-dev` to apt package installation list
@@ -38,15 +47,15 @@ This fix resolves build failures across all CI/CD build targets (Linux amd64/arm
 **`.gitea/workflows/auto-tag.yml`**
 
 **Linux amd64 build:**
-- Added `SODIUM_USE_PKG_CONFIG: "1"` to force pkg-config detection of libsodium
+- **PR #102:** Added `SODIUM_USE_PKG_CONFIG: "1"` to force pkg-config detection of libsodium
 
 **Linux arm64 build:**
-- Added `SODIUM_USE_PKG_CONFIG: "1"` to force pkg-config detection for cross-compiled libsodium
+- **PR #102:** Added `SODIUM_USE_PKG_CONFIG: "1"` to force pkg-config detection for cross-compiled libsodium
 
 **Windows cross-compile build:**
-- Added `SODIUM_LIB_DIR: /usr/x86_64-w64-mingw32/lib` to point to pre-built libsodium
-- Added `SODIUM_STATIC: "1"` to ensure static linking of pre-built libsodium
-- Added `SODIUM_USE_PKG_CONFIG: "no"` to prevent conflict with explicit SODIUM_LIB_DIR
+- **PR #101:** Added `SODIUM_LIB_DIR: /usr/x86_64-w64-mingw32/lib` to point to pre-built libsodium
+- **PR #101:** Added `SODIUM_STATIC: "1"` to ensure static linking of pre-built libsodium
+- **PR #102:** Added `SODIUM_USE_PKG_CONFIG: "no"` to prevent conflict with explicit SODIUM_LIB_DIR
 
 **Rationale:**
 `libsodium-sys-stable`'s build.rs checks environment variables in this order:
@@ -57,7 +66,7 @@ This fix resolves build failures across all CI/CD build targets (Linux amd64/arm
 Linux builds have `libsodium-dev` + `pkg-config` installed, so we force pkg-config mode.
 Windows has pre-compiled libsodium at a known path, so we use explicit path mode and disable pkg-config.
 
-### 3. Test Coverage
+### 3. Test Coverage (PR #101)
 
 **`src-tauri/src/state.rs`**
 - Added comprehensive test module with 3 tests:
