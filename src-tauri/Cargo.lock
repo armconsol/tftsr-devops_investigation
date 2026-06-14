@@ -6545,6 +6545,7 @@ dependencies = [
  "http 1.4.1",
  "infer 0.15.0",
  "lazy_static",
+ "libsodium-sys-stable",
  "lopdf",
  "mockito",
  "portable-pty",

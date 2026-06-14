@@ -444,9 +444,8 @@ jobs:
           CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER: x86_64-w64-mingw32-gcc
           OPENSSL_NO_VENDOR: "0"
           OPENSSL_STATIC: "1"
-          SODIUM_LIB_DIR: /usr/x86_64-w64-mingw32/lib
-          SODIUM_STATIC: "1"
-          SODIUM_USE_PKG_CONFIG: "no"
+          PKG_CONFIG_x86_64_pc_windows_gnu: x86_64-w64-mingw32-pkg-config
+          PKG_CONFIG_ALLOW_CROSS: "1"
         run: |
           npm ci --legacy-peer-deps
           CI=true npx tauri build --target x86_64-pc-windows-gnu
