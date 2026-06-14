@@ -224,7 +224,6 @@ jobs:
       - name: Build
         env:
           APPIMAGE_EXTRACT_AND_RUN: "1"
-          SODIUM_USE_PKG_CONFIG: "1"
         run: |
           npm ci --legacy-peer-deps
           CI=true npx tauri build --target x86_64-unknown-linux-gnu
@@ -492,7 +491,6 @@ jobs:
           PKG_CONFIG_SYSROOT_DIR: /usr/aarch64-linux-gnu
           PKG_CONFIG_PATH: /usr/lib/aarch64-linux-gnu/pkgconfig:/usr/aarch64-linux-gnu/lib/pkgconfig
           PKG_CONFIG_ALLOW_CROSS: "1"
-          SODIUM_USE_PKG_CONFIG: "1"
           OPENSSL_NO_VENDOR: "0"
           OPENSSL_STATIC: "1"
           APPIMAGE_EXTRACT_AND_RUN: "1"

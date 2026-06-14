@@ -42,16 +42,32 @@ The `libsodium-sys-stable` crate (dependency chain: `tauri-plugin-stronghold` �
 
 ## Solution
 
+### Two-Phase Fix
+
+This fix was implemented in two commits:
+
+**Phase 1 (Commit `7316339a`):** Fixed Windows configuration and attempted Linux fixes with `SODIUM_USE_PKG_CONFIG=1`
+- Windows: Changed `SODIUM_LIB_DIR` from `""` to `/usr/x86_64-w64-mingw32/lib` ✅
+- Linux: Added `SODIUM_USE_PKG_CONFIG=1` ❌ (still failed)
+
+**Phase 2 (Commit `44ba1bd4`):** Revised Linux approach to use vendored builds
+- Linux: Removed `SODIUM_USE_PKG_CONFIG` to trigger vendored build from source ✅
+- Windows: No changes (already correct from Phase 1)
+
+### Revised Approach: Use Vendored libsodium Build
+
+After initial attempt with `SODIUM_USE_PKG_CONFIG=1` still failed (pkg-config couldn't find libsodium.pc in CI containers), switched to the **vendored build** approach: remove all SODIUM_* environment variables and let libsodium-sys-stable build from source.
+
 ### Changes to `.gitea/workflows/release-beta.yml`
 
 #### 1. Linux amd64 Build
 ```yaml
 env:
   APPIMAGE_EXTRACT_AND_RUN: "1"
-  SODIUM_USE_PKG_CONFIG: "1"  # Added
+  # Removed SODIUM_USE_PKG_CONFIG - let it build from source
 ```
 
-**Why:** Forces libsodium-sys to use pkg-config, which finds `libsodium-dev` package installed in the Docker image.
+**Why:** Vendored build is more reliable in CI. libsodium-sys-stable will download and compile libsodium from source automatically.
 
 #### 2. Windows amd64 Build
 ```yaml
@@ -62,15 +78,15 @@ env:
   CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER: x86_64-w64-mingw32-gcc
   OPENSSL_NO_VENDOR: "0"
   OPENSSL_STATIC: "1"
-  SODIUM_LIB_DIR: /usr/x86_64-w64-mingw32/lib  # Changed from ""
-  SODIUM_STATIC: "1"                           # Changed from "yes"
-  SODIUM_USE_PKG_CONFIG: "no"                  # Added (explicit disable)
+  SODIUM_LIB_DIR: /usr/x86_64-w64-mingw32/lib
+  SODIUM_STATIC: "1"
+  SODIUM_USE_PKG_CONFIG: "no"
 ```
 
 **Why:** 
-- Points `SODIUM_LIB_DIR` to the actual pre-built libsodium location (installed by Dockerfile.windows-cross)
-- Explicitly disables pkg-config to prevent conflict
-- Standardizes `SODIUM_STATIC` to "1" (matches auto-tag.yml)
+- Uses pre-built libsodium from Dockerfile.windows-cross (installed to `/usr/x86_64-w64-mingw32/lib`)
+- Explicitly disables pkg-config to prevent conflict with SODIUM_LIB_DIR
+- **Note:** This configuration was fixed in commit `7316339a` and remains unchanged in current commit
 
 #### 3. Linux arm64 Build
 ```yaml
@@ -80,26 +96,22 @@ env:
   AR_aarch64_unknown_linux_gnu: aarch64-linux-gnu-ar
   CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
   PKG_CONFIG_SYSROOT_DIR: /usr/aarch64-linux-gnu
-  PKG_CONFIG_PATH: /usr/lib/aarch64-linux-gnu/pkgconfig:/usr/aarch64-linux-gnu/lib/pkgconfig  # Extended
+  PKG_CONFIG_PATH: /usr/lib/aarch64-linux-gnu/pkgconfig:/usr/aarch64-linux-gnu/lib/pkgconfig
   PKG_CONFIG_ALLOW_CROSS: "1"
-  SODIUM_USE_PKG_CONFIG: "1"  # Added
+  # Removed SODIUM_USE_PKG_CONFIG - let it build from source
   OPENSSL_NO_VENDOR: "0"
   OPENSSL_STATIC: "1"
   APPIMAGE_EXTRACT_AND_RUN: "1"
 ```
 
 **Why:**
-- Added `SODIUM_USE_PKG_CONFIG=1` to force pkg-config detection
-- Extended PKG_CONFIG_PATH to include `/usr/aarch64-linux-gnu/lib/pkgconfig` where arm64 libsodium.pc is located
+- Vendored build approach for consistency with linux-amd64
+- Cross-compilation toolchain env vars still needed for the C compiler
 
 ### Changes to `.gitea/workflows/auto-tag.yml`
 
-#### Linux arm64 Build Only
-```yaml
-PKG_CONFIG_PATH: /usr/lib/aarch64-linux-gnu/pkgconfig:/usr/aarch64-linux-gnu/lib/pkgconfig
-```
-
-**Why:** Same PKG_CONFIG_PATH extension as release-beta.yml for consistency.
+#### Linux amd64 & arm64 Builds
+Removed `SODIUM_USE_PKG_CONFIG=1` from both builds to match release-beta.yml vendored approach.
 
 ## Technical Details
 
