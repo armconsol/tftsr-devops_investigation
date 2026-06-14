@@ -63,7 +63,11 @@ jobs:
       - name: Update version from Git
         run: node scripts/update-version.mjs
       - run: cargo generate-lockfile --manifest-path src-tauri/Cargo.toml
+        env:
+          SODIUM_LIB_DIR: /usr/lib/x86_64-linux-gnu
       - run: cargo fmt --manifest-path src-tauri/Cargo.toml --check
+        env:
+          SODIUM_LIB_DIR: /usr/lib/x86_64-linux-gnu
 
   rust-clippy:
     runs-on: ubuntu-latest
@@ -102,6 +106,8 @@ jobs:
       - name: Install clippy
         run: rustup component add clippy
       - run: cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
+        env:
+          SODIUM_LIB_DIR: /usr/lib/x86_64-linux-gnu
 
   rust-tests:
     runs-on: ubuntu-latest
@@ -138,9 +144,13 @@ jobs:
             libsodium-dev \
             pkg-config
       - run: cargo test --manifest-path src-tauri/Cargo.toml -- --test-threads=1
+        env:
+          SODIUM_LIB_DIR: /usr/lib/x86_64-linux-gnu
 
       - name: Run shell module tests
         run: 'cargo test --manifest-path src-tauri/Cargo.toml "shell::" -- --test-threads=1'
+        env:
+          SODIUM_LIB_DIR: /usr/lib/x86_64-linux-gnu
 
   frontend-typecheck:
     runs-on: ubuntu-latest
