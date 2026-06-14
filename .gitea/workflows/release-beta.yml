@@ -317,6 +317,10 @@ jobs:
           CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER: x86_64-w64-mingw32-gcc
           OPENSSL_NO_VENDOR: "0"
           OPENSSL_STATIC: "1"
+          # Fix memset_explicit missing symbol for libsodium on MinGW
+          CFLAGS_x86_64_pc_windows_gnu: "-D_WIN32_WINNT=0x0602"
+          SODIUM_LIB_DIR: ""
+          SODIUM_STATIC: "yes"
         run: |
           npm ci --legacy-peer-deps
           CI=true npx tauri build --target x86_64-pc-windows-gnu

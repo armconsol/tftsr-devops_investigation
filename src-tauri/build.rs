@@ -5,6 +5,16 @@ fn main() {
     println!("cargo:rerun-if-changed=.git/refs/heads/master");
     println!("cargo:rerun-if-changed=.git/refs/tags");
 
+    // Compile memset_explicit shim for Windows MinGW
+    if std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_default() == "windows"
+        && std::env::var("CARGO_CFG_TARGET_ENV").unwrap_or_default() == "gnu"
+    {
+        cc::Build::new()
+            .file("memset_s_shim.c")
+            .compile("memset_shim");
+        println!("cargo:rerun-if-changed=memset_s_shim.c");
+    }
+
     tauri_build::build()
 }
 
