@@ -91,3 +91,30 @@ But based on previous error messages showing pkg-config attempts, libsodium IS i
 **Created:** 2026-06-14 (after 12 hours of attempts)  
 **Approach:** Direct library path specification  
 **Confidence:** HIGH - This is the intended workaround when pkg-config fails
+
+## Update History
+
+### Commit 1: Initial SODIUM_LIB_DIR implementation
+Added SODIUM_LIB_DIR to all workflows, but conflicted with existing use-pkg-config feature.
+
+### Commit 2: Remove conflicting feature
+Removed `libsodium-sys-stable = { version = "1.24", features = ["use-pkg-config"] }` from Cargo.toml.
+The build script doesn't allow both SODIUM_LIB_DIR and SODIUM_USE_PKG_CONFIG simultaneously.
+
+### Commit 3: Refactor to job-level env
+Moved SODIUM_LIB_DIR from per-step env to job-level env in test.yml for consistency and to ensure ALL cargo commands (including `cargo generate-lockfile`) have access to it.
+
+## Final State
+
+**Branch commits:**
+1. `863868b2` - fix(ci): use SODIUM_LIB_DIR to bypass pkg-config detection
+2. `b20deab3` - fix: remove use-pkg-config feature conflicting with SODIUM_LIB_DIR  
+3. `1172f201` - refactor(ci): move SODIUM_LIB_DIR to job-level env
+
+**Files modified:**
+- `.gitea/workflows/test.yml` - SODIUM_LIB_DIR at job level for 3 Rust jobs
+- `.gitea/workflows/auto-tag.yml` - SODIUM_LIB_DIR in Build steps for all platforms
+- `src-tauri/Cargo.toml` - Removed conflicting use-pkg-config dependency
+- `src-tauri/Cargo.lock` - Updated after dependency removal
+
+**Automated Review:** APPROVE WITH COMMENTS (addressed in commit 3)
