@@ -45,7 +45,7 @@ warp = "0.3"
 urlencoding = "2"
 infer = "0.15"
 url = "2.5.8"
-lopdf = "0.31"
+lopdf = "0.41"
 zip = "0.6"
 quick-xml = "0.36"
 rmcp = { version = "1.7.0", features = [
