@@ -225,6 +225,7 @@ jobs:
         env:
           APPIMAGE_EXTRACT_AND_RUN: "1"
         run: |
+          apt-get update -qq && apt-get install -y --no-install-recommends libsodium-dev
           npm ci --legacy-peer-deps
           CI=true npx tauri build --target x86_64-unknown-linux-gnu
       - name: Upload artifacts
@@ -317,6 +318,8 @@ jobs:
           CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER: x86_64-w64-mingw32-gcc
           OPENSSL_NO_VENDOR: "0"
           OPENSSL_STATIC: "1"
+          SODIUM_LIB_DIR: /usr/x86_64-w64-mingw32/lib
+          SODIUM_STATIC: "1"
         run: |
           npm ci --legacy-peer-deps
           CI=true npx tauri build --target x86_64-pc-windows-gnu
@@ -492,6 +495,7 @@ jobs:
           OPENSSL_STATIC: "1"
           APPIMAGE_EXTRACT_AND_RUN: "1"
         run: |
+          apt-get update -qq && apt-get install -y --no-install-recommends libsodium-dev:arm64
           npm ci --legacy-peer-deps
           CI=true npx tauri build --target aarch64-unknown-linux-gnu --bundles deb,rpm
       - name: Upload artifacts
