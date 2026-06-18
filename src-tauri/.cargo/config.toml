@@ -9,7 +9,4 @@ rustflags = ["-C", "link-arg=-Wl,--exclude-all-symbols"]
 # Use system OpenSSL instead of vendoring from source (which requires Perl modules
 # unavailable on some environments and breaks clippy/check).
 OPENSSL_NO_VENDOR = "1"
-
-# Force libsodium to use minimal mode which avoids memset_explicit on Windows
-SODIUM_USE_PKG_CONFIG = "0"
 SODIUM_STATIC = "1"
