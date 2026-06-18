@@ -226,6 +226,7 @@ jobs:
           APPIMAGE_EXTRACT_AND_RUN: "1"
           SODIUM_LIB_DIR: /usr/lib/x86_64-linux-gnu
         run: |
+          unset SODIUM_USE_PKG_CONFIG
           npm ci --legacy-peer-deps
           CI=true npx tauri build --target x86_64-unknown-linux-gnu
       - name: Upload artifacts
@@ -321,6 +322,7 @@ jobs:
           SODIUM_LIB_DIR: /usr/x86_64-w64-mingw32/lib
           SODIUM_STATIC: "1"
         run: |
+          unset SODIUM_USE_PKG_CONFIG
           npm ci --legacy-peer-deps
           CI=true npx tauri build --target x86_64-pc-windows-gnu
       - name: Upload artifacts
@@ -496,6 +498,7 @@ jobs:
           APPIMAGE_EXTRACT_AND_RUN: "1"
           SODIUM_LIB_DIR: /usr/lib/aarch64-linux-gnu
         run: |
+          unset SODIUM_USE_PKG_CONFIG
           npm ci --legacy-peer-deps
           CI=true npx tauri build --target aarch64-unknown-linux-gnu --bundles deb,rpm
       - name: Upload artifacts
