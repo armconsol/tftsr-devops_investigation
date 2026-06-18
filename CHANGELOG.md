@@ -9,6 +9,7 @@ CI, chore, and build changes are excluded.
 ### Bug Fixes
 - Register missing updater commands
 - **ci**: Add libsodium to all build environments
+- **ci**: Unset SODIUM_USE_PKG_CONFIG and use SODIUM_LIB_DIR in auto-tag.yml
 
 ## [1.2.3] — 2026-06-13
 
