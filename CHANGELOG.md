@@ -4,10 +4,14 @@ All notable changes to TRCAA are documented here.
 Commit types shown: feat, fix, perf, docs, refactor.
 CI, chore, and build changes are excluded.
 
-## [Unreleased]
+## [1.2.3] — 2026-06-13
 
 ### Bug Fixes
 - **proxmox**: Remove dummy data, fix add-remote, fix updater
+
+### Features
+- **ci**: Add beta release channel with two-track pipeline
+- **ci**: Auto-sync beta from master after every push
 
 ## [1.2.1] — 2026-06-13
 
