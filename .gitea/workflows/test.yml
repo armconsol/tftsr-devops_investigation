@@ -45,6 +45,7 @@ jobs:
             libayatana-appindicator3-dev \
             librsvg2-dev \
             libdbus-1-dev \
+            libsodium-dev \
             pkg-config
       - name: Install Rust components
         run: rustup component add rustfmt
@@ -87,6 +88,7 @@ jobs:
             libayatana-appindicator3-dev \
             librsvg2-dev \
             libdbus-1-dev \
+            libsodium-dev \
             pkg-config
       - name: Install clippy
         run: rustup component add clippy
@@ -124,6 +126,7 @@ jobs:
             libayatana-appindicator3-dev \
             librsvg2-dev \
             libdbus-1-dev \
+            libsodium-dev \
             pkg-config
       - run: cargo test --manifest-path src-tauri/Cargo.toml -- --test-threads=1
 
