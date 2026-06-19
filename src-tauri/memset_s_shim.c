@@ -1,28 +1,14 @@
-// Shim for memset_explicit on MinGW which doesn't provide it
-// This is needed for libsodium's secure memory clearing
-
-#if defined(_WIN32) && defined(__MINGW32__)
+/* memset_explicit shim for Windows MinGW
+ *
+ * libsodium-sys-stable expects memset_explicit which isn't available
+ * in the MinGW runtime. This provides a compatible implementation.
+ */
 
 #include <string.h>
 
-// memset_explicit is available in Windows 8+ but MinGW headers don't always declare it
-// Provide a fallback implementation using SecureZeroMemory if available,
-// or a volatile memset to prevent compiler optimization
-void *memset_explicit(void *s, int c, size_t n) {
-    // Try to use Windows API if available
-    #ifdef _WIN32_WINNT
-        #if _WIN32_WINNT >= 0x0602  // Windows 8+
-            extern void *memset_s(void *, size_t, int, size_t);
-            return memset_s(s, n, c, n);
-        #endif
-    #endif
-
-    // Fallback: use volatile to prevent optimization
-    volatile unsigned char *p = (volatile unsigned char *)s;
+void memset_explicit(void *dest, int val, size_t n) {
+    volatile unsigned char *p = (volatile unsigned char *)dest;
     while (n--) {
-        *p++ = (unsigned char)c;
+        *p++ = (unsigned char)val;
     }
-    return s;
 }
-
-#endif
