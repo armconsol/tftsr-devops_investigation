@@ -341,13 +341,15 @@ jobs:
           key: ${{ runner.os }}-npm-${{ hashFiles('**/package-lock.json') }}
           restore-keys: |
             ${{ runner.os }}-npm-
+      - name: Install libsodium
+        run: |
+          apt-get update && apt-get install -y libsodium-dev pkg-config
       - name: Build
         env:
           APPIMAGE_EXTRACT_AND_RUN: "1"
-          SODIUM_LIB_DIR: /usr/lib/x86_64-linux-gnu
         run: |
           npm ci --legacy-peer-deps
-          env -u SODIUM_USE_PKG_CONFIG CI=true npx tauri build --target x86_64-unknown-linux-gnu
+          CI=true npx tauri build --target x86_64-unknown-linux-gnu
       - name: Upload artifacts
         env:
           RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
@@ -437,6 +439,9 @@ jobs:
           key: ${{ runner.os }}-npm-${{ hashFiles('**/package-lock.json') }}
           restore-keys: |
             ${{ runner.os }}-npm-
+      - name: Install libsodium
+        run: |
+          apt-get update && apt-get install -y libsodium-dev pkg-config
       - name: Build
         env:
           CC_x86_64_pc_windows_gnu: x86_64-w64-mingw32-gcc
@@ -445,10 +450,9 @@ jobs:
           CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER: x86_64-w64-mingw32-gcc
           OPENSSL_NO_VENDOR: "0"
           OPENSSL_STATIC: "1"
-          SODIUM_LIB_DIR: /usr/x86_64-w64-mingw32/lib
         run: |
           npm ci --legacy-peer-deps
-          env -u SODIUM_USE_PKG_CONFIG CI=true npx tauri build --target x86_64-pc-windows-gnu
+          CI=true npx tauri build --target x86_64-pc-windows-gnu
       - name: Upload artifacts
         env:
           RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
@@ -622,6 +626,9 @@ jobs:
           key: ${{ runner.os }}-npm-${{ hashFiles('**/package-lock.json') }}
           restore-keys: |
             ${{ runner.os }}-npm-
+      - name: Install libsodium
+        run: |
+          apt-get update && apt-get install -y libsodium-dev pkg-config libssl-dev
       - name: Build
         env:
           CC_aarch64_unknown_linux_gnu: aarch64-linux-gnu-gcc
@@ -634,10 +641,9 @@ jobs:
           OPENSSL_NO_VENDOR: "0"
           OPENSSL_STATIC: "1"
           APPIMAGE_EXTRACT_AND_RUN: "1"
-          SODIUM_LIB_DIR: /usr/lib/aarch64-linux-gnu
         run: |
           npm ci --legacy-peer-deps
-          env -u SODIUM_USE_PKG_CONFIG CI=true npx tauri build --target aarch64-unknown-linux-gnu --bundles deb,rpm
+          CI=true npx tauri build --target aarch64-unknown-linux-gnu --bundles deb,rpm
       - name: Upload artifacts
         env:
           RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
