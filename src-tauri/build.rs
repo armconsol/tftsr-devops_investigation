@@ -13,6 +13,8 @@ fn main() {
             .file("memset_s_shim.c")
             .compile("memset_shim");
         println!("cargo:rerun-if-changed=memset_s_shim.c");
+        // Explicitly link the shim library
+        println!("cargo:rustc-link-lib=static=memset_shim");
     }
 
     tauri_build::build()
