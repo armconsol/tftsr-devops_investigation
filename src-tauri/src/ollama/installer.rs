@@ -52,6 +52,7 @@ pub async fn check_ollama() -> anyhow::Result<OllamaStatus> {
 }
 
 /// Find the full path to the ollama binary
+#[allow(dead_code)]
 fn find_ollama_binary() -> Option<std::path::PathBuf> {
     // Try which/where command first
     let which_cmd = if cfg!(target_os = "windows") {

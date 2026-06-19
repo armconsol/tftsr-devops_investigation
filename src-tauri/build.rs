@@ -9,17 +9,22 @@ fn main() {
     // libsodium-sys-stable uses memset_explicit which isn't available in MinGW
     let target_os = std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
     let target_env = std::env::var("CARGO_CFG_TARGET_ENV").unwrap_or_default();
-    
+
     if target_os == "windows" && target_env == "gnu" {
+        let out_dir = std::env::var("OUT_DIR").unwrap();
+        let obj_path = format!("{}/memset_shim.o", out_dir);
+
         cc::Build::new()
             .file("memset_s_shim.c")
             .define("WIN32", None)
             .define("__WIN32__", None)
+            .out_dir(&out_dir)
             .compile("memset_shim");
+
         println!("cargo:rerun-if-changed=memset_s_shim.c");
-        // Link the shim library - must be before libsodium in link order
-        // The shim provides memset_explicit which libsodium expects
-        println!("cargo:rustc-link-lib=static=memset_shim");
+        // Directly link the object file instead of using -l flag
+        // This ensures the symbol is available regardless of link order
+        println!("cargo:rustc-link-arg={}", obj_path);
     }
 
     tauri_build::build()
