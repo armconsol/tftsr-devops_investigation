@@ -25,7 +25,7 @@ export async function addProxmoxCluster(
   return await invoke<ClusterInfo>("add_proxmox_cluster", {
     id,
     name,
-    cluster_type: clusterType,
+    clusterType,
     connection,
     username,
     password,
