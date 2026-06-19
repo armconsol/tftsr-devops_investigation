@@ -57,7 +57,10 @@ impl ProxmoxClient {
     /// Authenticate with root username and password
     /// Returns the API ticket for subsequent requests
     pub async fn authenticate(&self, password: &str) -> Result<String> {
-        let url = format!("{}/api2/json/access/ticket", self.base_url);
+        let url = format!(
+            "https://{}:{}/api2/json/access/ticket",
+            self.base_url, self.port
+        );
 
         let params = vec![("username", self.username.as_str()), ("password", password)];
 
@@ -95,8 +98,9 @@ impl ProxmoxClient {
     /// Get the full API URL for a given path
     fn get_api_url(&self, path: &str) -> String {
         format!(
-            "{}/api2/json/{}",
+            "https://{}:{}/api2/json/{}",
             self.base_url,
+            self.port,
             path.trim_start_matches('/')
         )
     }
@@ -266,30 +270,34 @@ impl ProxmoxClient {
 mod tests {
     use super::*;
 
+    // The frontend strips the protocol via parseRemoteUrl before sending to the backend,
+    // so ProxmoxClient always receives a bare hostname (no scheme, no port).
+    // get_api_url() is responsible for constructing the full https URL with port.
+
     #[test]
     fn test_proxmox_client_new() {
-        let client = ProxmoxClient::new("https://pve.example.com", 8006, "root@pam");
-        assert_eq!(client.base_url(), "https://pve.example.com");
+        let client = ProxmoxClient::new("pve.example.com", 8006, "root@pam");
+        assert_eq!(client.base_url(), "pve.example.com");
         assert_eq!(client.port(), 8006);
         assert_eq!(client.username(), "root@pam");
     }
 
     #[test]
     fn test_proxmox_client_with_trailing_slash() {
-        let client = ProxmoxClient::new("https://pve.example.com/", 8006, "root@pam");
-        assert_eq!(client.base_url(), "https://pve.example.com");
+        let client = ProxmoxClient::new("pve.example.com/", 8006, "root@pam");
+        assert_eq!(client.base_url(), "pve.example.com");
     }
 
     #[test]
     fn test_get_api_url() {
-        let client = ProxmoxClient::new("https://pve.example.com", 8006, "root@pam");
+        let client = ProxmoxClient::new("pve.example.com", 8006, "root@pam");
         assert_eq!(
             client.get_api_url("cluster/resources"),
-            "https://pve.example.com/api2/json/cluster/resources"
+            "https://pve.example.com:8006/api2/json/cluster/resources"
         );
         assert_eq!(
             client.get_api_url("/cluster/resources"),
-            "https://pve.example.com/api2/json/cluster/resources"
+            "https://pve.example.com:8006/api2/json/cluster/resources"
         );
     }
 }

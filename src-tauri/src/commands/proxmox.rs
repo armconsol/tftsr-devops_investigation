@@ -38,7 +38,7 @@ pub async fn add_proxmox_cluster(
     cluster_type: ClusterType,
     connection: ClusterConnection,
     username: String,
-    password: &str,
+    password: String,
     state: State<'_, AppState>,
 ) -> Result<ClusterInfo, String> {
     // Create client (no live auth — credentials stored and used on first connect)

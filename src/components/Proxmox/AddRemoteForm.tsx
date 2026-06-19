@@ -61,7 +61,7 @@ export function AddRemoteForm({ onAdd, onCancel }: AddRemoteFormProps) {
     try {
       await onAdd(config);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to add remote');
+      setError(String(err));
     } finally {
       setLoading(false);
     }
