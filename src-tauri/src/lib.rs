@@ -225,6 +225,8 @@ pub fn run() {
             // Proxmox - Existing
             commands::proxmox::add_proxmox_cluster,
             commands::proxmox::remove_proxmox_cluster,
+            commands::proxmox::update_proxmox_cluster,
+            commands::proxmox::ping_proxmox_cluster,
             commands::proxmox::list_proxmox_clusters,
             commands::proxmox::get_proxmox_cluster,
             commands::proxmox::list_proxmox_vms,

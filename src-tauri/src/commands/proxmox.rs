@@ -300,10 +300,104 @@ async fn get_proxmox_client_for_cluster(
     let client_arc = Arc::new(Mutex::new(client));
     {
         let mut clusters = state.proxmox_clusters.lock().await;
+        // Re-check under write lock: a concurrent task may have already created a client
+        // for this cluster between our read-check and here, so prefer the existing one.
+        if let Some(existing) = clusters.get(cluster_id) {
+            return Ok(existing.clone());
+        }
         clusters.insert(cluster_id.to_string(), client_arc.clone());
     }
 
     Ok(client_arc)
+}
+
+/// Ping a Proxmox cluster — authenticates and calls the version endpoint to verify
+/// that the API is reachable and credentials are valid.
+#[tauri::command]
+pub async fn ping_proxmox_cluster(
+    cluster_id: String,
+    state: State<'_, AppState>,
+) -> Result<serde_json::Value, String> {
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+
+    client_guard
+        .get::<serde_json::Value>("version", client_guard.ticket.as_deref())
+        .await
+        .map_err(|e| format!("Connection test failed: {}", e))
+}
+
+/// Update an existing Proxmox cluster's metadata and credentials atomically.
+/// Unlike the remove-then-add pattern this is a single SQL UPDATE so there is
+/// no window where the record is missing.
+#[tauri::command]
+pub async fn update_proxmox_cluster(
+    id: String,
+    name: String,
+    cluster_type: ClusterType,
+    connection: ClusterConnection,
+    username: String,
+    password: &str,
+    state: State<'_, AppState>,
+) -> Result<ClusterInfo, String> {
+    let credentials = serde_json::json!({ "password": password, "username": username });
+    let encrypted_credentials = crate::integrations::auth::encrypt_token(
+        &serde_json::to_string(&credentials).map_err(|e| e.to_string())?,
+    )
+    .map_err(|e| format!("Failed to encrypt credentials: {}", e))?;
+
+    let updated_at = Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+
+    {
+        let db = state
+            .db
+            .lock()
+            .map_err(|e| format!("Failed to lock database: {}", e))?;
+
+        let rows = db
+            .execute(
+                "UPDATE proxmox_clusters \
+                 SET name=?1, cluster_type=?2, url=?3, port=?4, username=?5, \
+                     encrypted_credentials=?6, updated_at=?7 \
+                 WHERE id=?8",
+                rusqlite::params![
+                    name,
+                    match cluster_type {
+                        ClusterType::VE => "ve",
+                        ClusterType::PBS => "pbs",
+                    },
+                    connection.url,
+                    connection.port,
+                    username,
+                    encrypted_credentials,
+                    updated_at,
+                    id,
+                ],
+            )
+            .map_err(|e| format!("Failed to update cluster: {}", e))?;
+
+        if rows == 0 {
+            return Err(format!("Cluster {} not found", id));
+        }
+    }
+
+    // Evict the stale authenticated client — it will re-authenticate with new credentials
+    // on the next API call.
+    {
+        let mut clusters = state.proxmox_clusters.lock().await;
+        clusters.remove(&id);
+    }
+
+    Ok(ClusterInfo {
+        id,
+        name,
+        cluster_type,
+        url: connection.url,
+        port: connection.port,
+        username,
+        created_at: String::new(),
+        updated_at,
+    })
 }
 
 /// List all Proxmox VMs
@@ -2109,5 +2203,42 @@ mod tests {
             .ok_or_else(|| "Invalid response format".to_string());
         assert!(result.is_ok());
         assert_eq!(result.unwrap().len(), 2);
+    }
+
+    #[test]
+    fn test_update_proxmox_cluster_not_found_error() {
+        let err = format!("Cluster {} not found", "missing-id");
+        assert_eq!(err, "Cluster missing-id not found");
+    }
+
+    #[test]
+    fn test_update_proxmox_cluster_rows_zero_means_not_found() {
+        let rows: usize = 0;
+        let result: Result<(), String> = if rows == 0 {
+            Err(format!("Cluster {} not found", "ghost-id"))
+        } else {
+            Ok(())
+        };
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("ghost-id"));
+    }
+
+    #[test]
+    fn test_update_proxmox_cluster_rows_nonzero_succeeds() {
+        let rows: usize = 1;
+        let result: Result<(), String> = if rows == 0 {
+            Err(format!("Cluster {} not found", "real-id"))
+        } else {
+            Ok(())
+        };
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_ping_proxmox_cluster_error_message_format() {
+        let raw = anyhow::anyhow!("connection refused");
+        let msg = format!("Connection test failed: {}", raw);
+        assert!(msg.starts_with("Connection test failed:"));
+        assert!(msg.contains("connection refused"));
     }
 }

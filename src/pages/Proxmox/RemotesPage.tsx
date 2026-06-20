@@ -6,7 +6,7 @@ import { AddRemoteForm } from '@/components/Proxmox';
 import { EditRemoteForm } from '@/components/Proxmox';
 import { RemoveRemoteDialog } from '@/components/Proxmox';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/index';
-import { listProxmoxClusters, addProxmoxCluster, removeProxmoxCluster, getProxmoxCluster } from '@/lib/proxmoxClient';
+import { listProxmoxClusters, addProxmoxCluster, removeProxmoxCluster, updateProxmoxCluster, pingProxmoxCluster } from '@/lib/proxmoxClient';
 import { ClusterType } from '@/lib/domain';
 import { toast } from 'sonner';
 
@@ -102,11 +102,7 @@ export function ProxmoxRemotesPage() {
       const clusterType = config.type === 'pve' ? 've' : 'pbs';
       const { hostname, port } = parseRemoteUrl(config.url, config.type);
 
-      // Edit operation requires remove-then-add since backend doesn't support update.
-      // If add fails after remove, the remote will be lost - this is a known limitation
-      // until backend supports atomic update operations.
-      await removeProxmoxCluster(config.id);
-      await addProxmoxCluster(
+      await updateProxmoxCluster(
         config.id,
         config.name,
         clusterType as ClusterType,
@@ -139,15 +135,11 @@ export function ProxmoxRemotesPage() {
   const handleConnectRemote = async (remote: RemoteInfo) => {
     try {
       toast.info(`Testing connection to ${remote.name}...`);
-      const result = await getProxmoxCluster(remote.id);
-      if (result !== null) {
-        toast.success(`Connected to ${remote.name}`);
-        setRemotes((prev) =>
-          prev.map((r) => (r.id === remote.id ? { ...r, status: 'connected' } : r))
-        );
-      } else {
-        toast.error(`Cluster ${remote.name} not found`);
-      }
+      await pingProxmoxCluster(remote.id);
+      toast.success(`Connected to ${remote.name}`);
+      setRemotes((prev) =>
+        prev.map((r) => (r.id === remote.id ? { ...r, status: 'connected' } : r))
+      );
     } catch (err) {
       console.error('Failed to connect remote:', err);
       toast.error('Connection failed: ' + String(err));

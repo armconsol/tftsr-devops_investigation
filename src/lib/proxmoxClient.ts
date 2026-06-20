@@ -41,6 +41,36 @@ export async function removeProxmoxCluster(id: string): Promise<void> {
 }
 
 /**
+ * Update an existing Proxmox cluster's metadata and credentials atomically.
+ * Uses a single SQL UPDATE so there is no window where the record is missing.
+ */
+export async function updateProxmoxCluster(
+  id: string,
+  name: string,
+  clusterType: ClusterType,
+  connection: { url: string; port: number },
+  username: string,
+  password: string
+): Promise<ClusterInfo> {
+  return await invoke<ClusterInfo>("update_proxmox_cluster", {
+    id,
+    name,
+    clusterType,
+    connection,
+    username,
+    password,
+  });
+}
+
+/**
+ * Ping a Proxmox cluster — authenticates and calls the version endpoint to verify
+ * the API is reachable and credentials are valid.
+ */
+export async function pingProxmoxCluster(clusterId: string): Promise<any> {
+  return await invoke<any>("ping_proxmox_cluster", { clusterId });
+}
+
+/**
  * List all Proxmox clusters
  */
 export async function listProxmoxClusters(): Promise<ClusterInfo[]> {
