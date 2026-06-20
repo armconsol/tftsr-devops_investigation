@@ -6,7 +6,7 @@ import { AddRemoteForm } from '@/components/Proxmox';
 import { EditRemoteForm } from '@/components/Proxmox';
 import { RemoveRemoteDialog } from '@/components/Proxmox';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/index';
-import { listProxmoxClusters, addProxmoxCluster, removeProxmoxCluster } from '@/lib/proxmoxClient';
+import { listProxmoxClusters, addProxmoxCluster, removeProxmoxCluster, updateProxmoxCluster, pingProxmoxCluster } from '@/lib/proxmoxClient';
 import { ClusterType } from '@/lib/domain';
 import { toast } from 'sonner';
 
@@ -35,7 +35,7 @@ export function ProxmoxRemotesPage() {
         url: c.url,
         username: c.username,
         type: c.clusterType === 've' ? 'pve' : 'pbs',
-        status: 'connected' as const, // Placeholder - actual status requires connection test
+        status: (c.connected ? 'connected' : 'disconnected') as RemoteInfo['status'],
       }));
       setRemotes(remotesList);
     } catch (err) {
@@ -102,11 +102,7 @@ export function ProxmoxRemotesPage() {
       const clusterType = config.type === 'pve' ? 've' : 'pbs';
       const { hostname, port } = parseRemoteUrl(config.url, config.type);
 
-      // Edit operation requires remove-then-add since backend doesn't support update.
-      // If add fails after remove, the remote will be lost - this is a known limitation
-      // until backend supports atomic update operations.
-      await removeProxmoxCluster(config.id);
-      await addProxmoxCluster(
+      await updateProxmoxCluster(
         config.id,
         config.name,
         clusterType as ClusterType,
@@ -136,6 +132,30 @@ export function ProxmoxRemotesPage() {
     }
   };
 
+  const handleConnectRemote = async (remote: RemoteInfo) => {
+    try {
+      toast.info(`Testing connection to ${remote.name}...`);
+      await pingProxmoxCluster(remote.id);
+      toast.success(`Connected to ${remote.name}`);
+      setRemotes((prev) =>
+        prev.map((r) => (r.id === remote.id ? { ...r, status: 'connected' } : r))
+      );
+    } catch (err) {
+      console.error('Failed to connect remote:', err);
+      toast.error('Connection failed: ' + String(err));
+      setRemotes((prev) =>
+        prev.map((r) => (r.id === remote.id ? { ...r, status: 'error' } : r))
+      );
+    }
+  };
+
+  const handleDisconnectRemote = (remote: RemoteInfo) => {
+    setRemotes((prev) =>
+      prev.map((r) => (r.id === remote.id ? { ...r, status: 'disconnected' } : r))
+    );
+    toast.info(`Disconnected from ${remote.name}`);
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -163,6 +183,12 @@ export function ProxmoxRemotesPage() {
         }}
         onDelete={(remote) => {
           setRemovingRemote(remote as RemoteInfo | null);
+        }}
+        onConnect={(remote) => {
+          void handleConnectRemote(remote as RemoteInfo);
+        }}
+        onDisconnect={(remote) => {
+          handleDisconnectRemote(remote as RemoteInfo);
         }}
       />
 

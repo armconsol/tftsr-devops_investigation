@@ -1,8 +1,8 @@
-import React from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/index';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/index';
 import { Button } from '@/components/ui/index';
-import { MoreHorizontal } from 'lucide-react';
+import { MoreHorizontal, Plug, PlugZap } from 'lucide-react';
 
 interface RemoteInfo {
   id: string;
@@ -23,6 +23,77 @@ interface RemotesListProps {
   onDelete?: (remote: RemoteInfo) => void;
   onConnect?: (remote: RemoteInfo) => void;
   onDisconnect?: (remote: RemoteInfo) => void;
+}
+
+function ActionsMenu({
+  remote,
+  onEdit,
+  onDelete,
+  onConnect,
+  onDisconnect,
+}: {
+  remote: RemoteInfo;
+  onEdit?: (remote: RemoteInfo) => void;
+  onDelete?: (remote: RemoteInfo) => void;
+  onConnect?: (remote: RemoteInfo) => void;
+  onDisconnect?: (remote: RemoteInfo) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  return (
+    <div className="relative" ref={menuRef}>
+      <button
+        className="rounded-md p-1 hover:bg-accent"
+        onClick={() => setOpen((v) => !v)}
+        title="More actions"
+      >
+        <MoreHorizontal className="h-4 w-4" />
+      </button>
+      {open && (
+        <div className="absolute right-0 z-50 mt-1 w-44 rounded-md border bg-background shadow-lg">
+          <div className="py-1">
+            <button
+              className="flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-accent"
+              onClick={() => { setOpen(false); onEdit?.(remote); }}
+            >
+              Edit
+            </button>
+            <button
+              className="flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-accent"
+              onClick={() => {
+                setOpen(false);
+                if (remote.status === 'connected') {
+                  onDisconnect?.(remote);
+                } else {
+                  onConnect?.(remote);
+                }
+              }}
+            >
+              Test Connection
+            </button>
+            <div className="my-1 h-px bg-border" />
+            <button
+              className="flex w-full items-center gap-2 px-3 py-2 text-sm text-destructive hover:bg-destructive/10"
+              onClick={() => { setOpen(false); onDelete?.(remote); }}
+            >
+              Delete
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function RemotesList({
@@ -100,44 +171,31 @@ export function RemotesList({
                   </TableCell>
                   <TableCell>{remote.lastConnected || '-'}</TableCell>
                   <TableCell className="text-right">
-                    <div className="flex items-center justify-end space-x-2">
-                      <button
-                        className="rounded-md p-1 hover:bg-accent"
-                        onClick={() => onEdit?.(remote)}
-                        title="Edit"
-                      >
-                        <span className="h-4 w-4 text-xs">✏️</span>
-                      </button>
+                    <div className="flex items-center justify-end space-x-1">
                       {remote.status === 'connected' ? (
                         <button
-                          className="rounded-md p-1 hover:bg-red-100 hover:text-red-600"
+                          className="rounded-md p-1 hover:bg-red-100 hover:text-red-600 text-green-600"
                           onClick={() => onDisconnect?.(remote)}
                           title="Disconnect"
                         >
-                          <span className="h-4 w-4 text-xs">🔌</span>
+                          <PlugZap className="h-4 w-4" />
                         </button>
                       ) : (
                         <button
-                          className="rounded-md p-1 hover:bg-green-100 hover:text-green-600"
+                          className="rounded-md p-1 hover:bg-green-100 hover:text-green-600 text-muted-foreground"
                           onClick={() => onConnect?.(remote)}
-                          title="Connect"
+                          title="Test connection"
                         >
-                          <span className="h-4 w-4 text-xs">🔌</span>
+                          <Plug className="h-4 w-4" />
                         </button>
                       )}
-                      <button
-                        className="rounded-md p-1 hover:bg-red-100 hover:text-red-600"
-                        onClick={() => onDelete?.(remote)}
-                        title="Delete"
-                      >
-                        <span className="h-4 w-4 text-xs">🗑️</span>
-                      </button>
-                      <button
-                        className="rounded-md p-1 hover:bg-accent"
-                        title="More"
-                      >
-                        <MoreHorizontal className="h-4 w-4" />
-                      </button>
+                      <ActionsMenu
+                        remote={remote}
+                        onEdit={onEdit}
+                        onDelete={onDelete}
+                        onConnect={onConnect}
+                        onDisconnect={onDisconnect}
+                      />
                     </div>
                   </TableCell>
                 </TableRow>

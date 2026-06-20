@@ -351,9 +351,11 @@ pub async fn chat_message(
     let agent_registry = create_agent_registry();
     let devops_agent = agent_registry.get("devops-incident-responder");
 
+    // CRITICAL: Build messages array with ALL system messages FIRST, then history, then user message
+    // This ensures system messages are always at the beginning as required by most LLM APIs
     let mut messages = Vec::new();
 
-    // Inject devops-incident-responder as primary system prompt (always)
+    // 1. Inject devops-incident-responder as primary system prompt (always first)
     if let Some(agent) = devops_agent {
         messages.push(Message {
             role: "system".into(),
@@ -363,7 +365,7 @@ pub async fn chat_message(
         });
     }
 
-    // Inject domain system prompt if provided
+    // 2. Inject domain system prompt if provided (second position)
     if let Some(ref prompt) = system_prompt {
         if !prompt.is_empty() {
             messages.push(Message {
@@ -373,28 +375,6 @@ pub async fn chat_message(
                 tool_calls: None,
             });
         }
-    }
-
-    messages.extend(history);
-
-    // If we found integration content, add it to the conversation context
-    if !integration_context.is_empty() {
-        let context_message = Message {
-            role: "system".into(),
-            content: format!(
-                "INTERNAL DOCUMENTATION SOURCES:\n\n{integration_context}\n\n\
-                 Instructions: The above content is from internal company documentation systems \
-                 (Confluence, ServiceNow, Azure DevOps). \
-                 \n\n**IMPORTANT**: First determine if this documentation is RELEVANT to the user's question:\
-                 \n- If the documentation directly addresses the question → Use it and cite sources with URLs\
-                 \n- If the documentation is tangentially related but doesn't answer the question → Briefly mention what internal docs exist, then provide a complete answer using general knowledge\
-                 \n- If the documentation is completely unrelated → Ignore it and answer using general knowledge\
-                 \n\nDo NOT force irrelevant internal documentation into your answer. The user needs accurate information, not forced citations."
-            ),
-            tool_call_id: None,
-            tool_calls: None,
-        };
-        messages.push(context_message);
     }
 
     // Tool execution configuration
@@ -427,6 +407,7 @@ pub async fn chat_message(
         !matches!(kind, "anthropic" | "gemini" | "mistral" | "ollama")
     };
 
+    // 3. Tool-calling system messages — must come BEFORE history so all system messages are contiguous
     if tools.is_some() && is_openai_compatible {
         messages.push(Message {
             role: "system".into(),
@@ -435,7 +416,6 @@ pub async fn chat_message(
             tool_calls: None,
         });
 
-        // Add iteration budget awareness
         messages.push(Message {
             role: "system".into(),
             content: format!(
@@ -454,6 +434,34 @@ pub async fn chat_message(
         });
     }
 
+    // 4. Integration context as system message — still before history
+    if !integration_context.is_empty() {
+        messages.push(Message {
+            role: "system".into(),
+            content: format!(
+                "INTERNAL DOCUMENTATION SOURCES:\n\n{integration_context}\n\n\
+                 Instructions: The above content is from internal company documentation systems \
+                 (Confluence, ServiceNow, Azure DevOps). \
+                 \n\n**IMPORTANT**: First determine if this documentation is RELEVANT to the user's question:\
+                 \n- If the documentation directly addresses the question → Use it and cite sources with URLs\
+                 \n- If the documentation is tangentially related but doesn't answer the question → Briefly mention what internal docs exist, then provide a complete answer using general knowledge\
+                 \n- If the documentation is completely unrelated → Ignore it and answer using general knowledge\
+                 \n\nDo NOT force irrelevant internal documentation into your answer. The user needs accurate information, not forced citations."
+            ),
+            tool_call_id: None,
+            tool_calls: None,
+        });
+    }
+
+    // 5. Filter out any system messages from history to avoid duplicates and maintain order
+    let filtered_history: Vec<Message> = history
+        .into_iter()
+        .filter(|msg| msg.role != "system")
+        .collect();
+
+    // 6. Add filtered history (user/assistant messages only) — all system messages are already above
+    messages.extend(filtered_history);
+
     messages.push(Message {
         role: "user".into(),
         content: full_message.clone(),
@@ -471,7 +479,7 @@ pub async fn chat_message(
         // Warn AI when approaching limit
         if iteration == MAX_TOOL_ITERATIONS - 2 {
             messages.push(Message {
-                role: "system".into(),
+                role: "user".into(),
                 content: format!(
                     "WARNING: You are on iteration {iteration}/{MAX_TOOL_ITERATIONS} (2 rounds remaining). \
                      You MUST provide your final answer in the NEXT round. \
@@ -490,7 +498,7 @@ pub async fn chat_message(
             // Add final instruction
             let mut final_messages = sanitized_messages;
             final_messages.push(Message {
-                role: "system".into(),
+                role: "user".into(),
                 content: format!(
                     "CRITICAL: Tool iteration limit reached ({iteration}/{MAX_TOOL_ITERATIONS}). \
                      TOOLS ARE NOW DISABLED. \
