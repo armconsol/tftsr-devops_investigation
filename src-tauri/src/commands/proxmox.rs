@@ -232,16 +232,87 @@ pub async fn get_proxmox_cluster(
     Ok(cluster)
 }
 
+/// Helper function to get or create a Proxmox client for a cluster
+/// This will:
+/// 1. Check if client exists in memory pool
+/// 2. If not, load credentials from database and create/authenticate client
+async fn get_proxmox_client_for_cluster(
+    cluster_id: &str,
+    state: &State<'_, AppState>,
+) -> Result<Arc<Mutex<crate::proxmox::ProxmoxClient>>, String> {
+    // First, try to get from in-memory pool
+    {
+        let clusters = state.proxmox_clusters.lock().await;
+        if let Some(client) = clusters.get(cluster_id) {
+            return Ok(client.clone());
+        }
+    }
+
+    // Not in memory - load from database and create client
+    let (url, port, username, encrypted_credentials) = {
+        let db = state
+            .db
+            .lock()
+            .map_err(|e| format!("Failed to lock database: {}", e))?;
+
+        let mut stmt = db
+            .prepare(
+                "SELECT url, port, username, encrypted_credentials FROM proxmox_clusters WHERE id = ?1",
+            )
+            .map_err(|e| format!("Failed to prepare query: {}", e))?;
+
+        stmt.query_row([cluster_id], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, u16>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+            ))
+        })
+        .optional()
+        .map_err(|e| format!("Failed to query cluster: {}", e))?
+        .ok_or_else(|| format!("Cluster {} not found in database", cluster_id))?
+    };
+
+    // Decrypt credentials
+    let credentials_json = crate::integrations::auth::decrypt_token(&encrypted_credentials)
+        .map_err(|e| format!("Failed to decrypt credentials: {}", e))?;
+
+    let credentials: serde_json::Value = serde_json::from_str(&credentials_json)
+        .map_err(|e| format!("Failed to parse credentials: {}", e))?;
+
+    let password = credentials
+        .get("password")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| "Password not found in credentials".to_string())?;
+
+    // Create new client
+    let mut client = crate::proxmox::ProxmoxClient::new(&url, port, &username);
+
+    // Authenticate to get ticket
+    let ticket = client
+        .authenticate(password)
+        .await
+        .map_err(|e| format!("Failed to authenticate with Proxmox: {}", e))?;
+
+    client.set_ticket(&ticket);
+
+    let client_arc = Arc::new(Mutex::new(client));
+    {
+        let mut clusters = state.proxmox_clusters.lock().await;
+        clusters.insert(cluster_id.to_string(), client_arc.clone());
+    }
+
+    Ok(client_arc)
+}
+
 /// List all Proxmox VMs
 #[tauri::command]
 pub async fn list_proxmox_vms(
     cluster_id: String,
     state: State<'_, AppState>,
 ) -> Result<Vec<serde_json::Value>, String> {
-    let clusters = state.proxmox_clusters.lock().await;
-    let client = clusters
-        .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
 
     let vms =
@@ -266,10 +337,7 @@ pub async fn get_proxmox_vm(
     vm_id: u32,
     state: State<'_, AppState>,
 ) -> Result<serde_json::Value, String> {
-    let clusters = state.proxmox_clusters.lock().await;
-    let client = clusters
-        .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
 
     let vm = crate::proxmox::vm::get_vm(
@@ -292,10 +360,7 @@ pub async fn start_proxmox_vm(
     vm_id: u32,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    let clusters = state.proxmox_clusters.lock().await;
-    let client = clusters
-        .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
 
     crate::proxmox::vm::start_vm(
@@ -316,10 +381,7 @@ pub async fn stop_proxmox_vm(
     vm_id: u32,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    let clusters = state.proxmox_clusters.lock().await;
-    let client = clusters
-        .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
 
     crate::proxmox::vm::stop_vm(
@@ -340,10 +402,7 @@ pub async fn reboot_proxmox_vm(
     vm_id: u32,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    let clusters = state.proxmox_clusters.lock().await;
-    let client = clusters
-        .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
 
     crate::proxmox::vm::reboot_vm(
@@ -364,10 +423,7 @@ pub async fn shutdown_proxmox_vm(
     vm_id: u32,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    let clusters = state.proxmox_clusters.lock().await;
-    let client = clusters
-        .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
 
     crate::proxmox::vm::shutdown_vm(
@@ -387,10 +443,7 @@ pub async fn list_proxmox_backup_jobs(
     node: String,
     state: State<'_, AppState>,
 ) -> Result<Vec<serde_json::Value>, String> {
-    let clusters = state.proxmox_clusters.lock().await;
-    let client = clusters
-        .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
 
     let jobs = crate::proxmox::backup::list_backup_jobs(
@@ -417,10 +470,7 @@ pub async fn list_proxmox_datastores(
     cluster_id: String,
     state: State<'_, AppState>,
 ) -> Result<Vec<serde_json::Value>, String> {
-    let clusters = state.proxmox_clusters.lock().await;
-    let client = clusters
-        .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
 
     let datastores = crate::proxmox::backup::list_datastores(
@@ -448,10 +498,7 @@ pub async fn trigger_proxmox_backup_job(
     job_id: u32,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    let clusters = state.proxmox_clusters.lock().await;
-    let client = clusters
-        .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
 
     crate::proxmox::backup::trigger_backup_job(
@@ -470,10 +517,7 @@ pub async fn list_ceph_pools(
     cluster_id: String,
     state: State<'_, AppState>,
 ) -> Result<Vec<serde_json::Value>, String> {
-    let clusters = state.proxmox_clusters.lock().await;
-    let client = clusters
-        .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
 
     let pools = crate::proxmox::ceph::list_pools(
@@ -499,10 +543,7 @@ pub async fn list_ceph_osd(
     cluster_id: String,
     state: State<'_, AppState>,
 ) -> Result<Vec<serde_json::Value>, String> {
-    let clusters = state.proxmox_clusters.lock().await;
-    let client = clusters
-        .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
 
     let osds = crate::proxmox::ceph::list_osds(
@@ -528,10 +569,7 @@ pub async fn get_ceph_health(
     cluster_id: String,
     state: State<'_, AppState>,
 ) -> Result<serde_json::Value, String> {
-    let clusters = state.proxmox_clusters.lock().await;
-    let client = clusters
-        .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
 
     let health = crate::proxmox::ceph::get_ceph_health(
@@ -552,10 +590,7 @@ pub async fn list_auth_realms(
     cluster_id: String,
     state: State<'_, AppState>,
 ) -> Result<Vec<serde_json::Value>, String> {
-    let clusters = state.proxmox_clusters.lock().await;
-    let client = clusters
-        .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
 
     let realms = crate::proxmox::auth_realm::list_auth_realms(
@@ -590,10 +625,7 @@ pub async fn add_ldap_realm(
     certificate: String,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    let clusters = state.proxmox_clusters.lock().await;
-    let client = clusters
-        .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
 
     let config = crate::proxmox::auth_realm::LdapRealmConfig {
@@ -635,10 +667,7 @@ pub async fn add_ad_realm(
     certificate: String,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    let clusters = state.proxmox_clusters.lock().await;
-    let client = clusters
-        .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
 
     let config = crate::proxmox::auth_realm::AdRealmConfig {
@@ -677,10 +706,7 @@ pub async fn add_openid_realm(
     mapping: String,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    let clusters = state.proxmox_clusters.lock().await;
-    let client = clusters
-        .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
 
     let config = crate::proxmox::auth_realm::OpenidRealmConfig {
@@ -708,10 +734,7 @@ pub async fn list_acme_accounts(
     cluster_id: String,
     state: State<'_, AppState>,
 ) -> Result<Vec<serde_json::Value>, String> {
-    let clusters = state.proxmox_clusters.lock().await;
-    let client = clusters
-        .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
 
     let accounts = crate::proxmox::acme::list_acme_accounts(
@@ -737,10 +760,7 @@ pub async fn register_acme_account(
     terms_of_service_agreed: bool,
     state: State<'_, AppState>,
 ) -> Result<serde_json::Value, String> {
-    let clusters = state.proxmox_clusters.lock().await;
-    let client = clusters
-        .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
 
     let account = crate::proxmox::acme::register_acme_account(
@@ -762,10 +782,7 @@ pub async fn get_acme_challenges(
     domain: String,
     state: State<'_, AppState>,
 ) -> Result<Vec<serde_json::Value>, String> {
-    let clusters = state.proxmox_clusters.lock().await;
-    let client = clusters
-        .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
 
     let challenges = crate::proxmox::acme::get_acme_challenges(
@@ -793,10 +810,7 @@ pub async fn list_apt_updates(
     node: String,
     state: State<'_, AppState>,
 ) -> Result<Vec<serde_json::Value>, String> {
-    let clusters = state.proxmox_clusters.lock().await;
-    let client = clusters
-        .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
 
     let updates = crate::proxmox::apt::list_apt_updates(
@@ -822,10 +836,7 @@ pub async fn update_apt_repos(
     node: String,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    let clusters = state.proxmox_clusters.lock().await;
-    let client = clusters
-        .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
 
     crate::proxmox::apt::update_apt_repos(
@@ -844,10 +855,7 @@ pub async fn list_apt_repositories(
     node: String,
     state: State<'_, AppState>,
 ) -> Result<Vec<serde_json::Value>, String> {
-    let clusters = state.proxmox_clusters.lock().await;
-    let client = clusters
-        .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
 
     let repos = crate::proxmox::apt::list_apt_repositories(
@@ -873,10 +881,7 @@ pub async fn get_shell_ticket(
     remote: String,
     state: State<'_, AppState>,
 ) -> Result<serde_json::Value, String> {
-    let clusters = state.proxmox_clusters.lock().await;
-    let client = clusters
-        .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
 
     let ticket = crate::proxmox::shell::get_shell_ticket(
@@ -896,10 +901,7 @@ pub async fn list_views(
     cluster_id: String,
     state: State<'_, AppState>,
 ) -> Result<Vec<serde_json::Value>, String> {
-    let clusters = state.proxmox_clusters.lock().await;
-    let client = clusters
-        .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
 
     let views = crate::proxmox::views::list_views(
@@ -930,10 +932,7 @@ pub async fn add_view(
     enabled: bool,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    let clusters = state.proxmox_clusters.lock().await;
-    let client = clusters
-        .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
 
     let widgets: Vec<crate::proxmox::views::Widget> = widgets
@@ -976,10 +975,7 @@ pub async fn update_view(
     enabled: bool,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    let clusters = state.proxmox_clusters.lock().await;
-    let client = clusters
-        .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
 
     let widgets: Vec<crate::proxmox::views::Widget> = widgets
@@ -1017,10 +1013,7 @@ pub async fn delete_view(
     view_id: String,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    let clusters = state.proxmox_clusters.lock().await;
-    let client = clusters
-        .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
 
     crate::proxmox::views::delete_view(
@@ -1038,10 +1031,7 @@ pub async fn list_certificates(
     cluster_id: String,
     state: State<'_, AppState>,
 ) -> Result<Vec<serde_json::Value>, String> {
-    let clusters = state.proxmox_clusters.lock().await;
-    let client = clusters
-        .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
 
     let certs = crate::proxmox::certificates::list_certificates(
@@ -1068,10 +1058,7 @@ pub async fn upload_certificate(
     name: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<serde_json::Value, String> {
-    let clusters = state.proxmox_clusters.lock().await;
-    let client = clusters
-        .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
 
     let cert = crate::proxmox::certificates::upload_certificate(
@@ -1094,10 +1081,7 @@ pub async fn get_certificate(
     cert_id: String,
     state: State<'_, AppState>,
 ) -> Result<serde_json::Value, String> {
-    let clusters = state.proxmox_clusters.lock().await;
-    let client = clusters
-        .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
 
     let cert = crate::proxmox::certificates::get_certificate(
@@ -1121,10 +1105,7 @@ pub async fn list_firewall_rules(
     node: String,
     state: State<'_, AppState>,
 ) -> Result<Vec<serde_json::Value>, String> {
-    let clusters = state.proxmox_clusters.lock().await;
-    let client = clusters
-        .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
 
     let rules = crate::proxmox::firewall::list_firewall_rules(
@@ -1157,10 +1138,7 @@ pub async fn add_firewall_rule(
     enabled: bool,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    let clusters = state.proxmox_clusters.lock().await;
-    let client = clusters
-        .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
 
     let rule = crate::proxmox::firewall::FirewallRule {
@@ -1191,10 +1169,7 @@ pub async fn delete_firewall_rule(
     rule_num: u32,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    let clusters = state.proxmox_clusters.lock().await;
-    let client = clusters
-        .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
 
     crate::proxmox::firewall::delete_rule(
@@ -1214,10 +1189,7 @@ pub async fn list_sdn_controllers(
     cluster_id: String,
     state: State<'_, AppState>,
 ) -> Result<Vec<serde_json::Value>, String> {
-    let clusters = state.proxmox_clusters.lock().await;
-    let client = clusters
-        .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
 
     let controllers = crate::proxmox::sdn::list_evpn_zones(
@@ -1243,10 +1215,7 @@ pub async fn list_sdn_vnets(
     cluster_id: String,
     state: State<'_, AppState>,
 ) -> Result<Vec<serde_json::Value>, String> {
-    let clusters = state.proxmox_clusters.lock().await;
-    let client = clusters
-        .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
 
     let vnets = crate::proxmox::sdn::list_vnets(
@@ -1270,10 +1239,7 @@ pub async fn list_sdn_zones(
     cluster_id: String,
     state: State<'_, AppState>,
 ) -> Result<Vec<serde_json::Value>, String> {
-    let clusters = state.proxmox_clusters.lock().await;
-    let client = clusters
-        .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
 
     let zones = crate::proxmox::sdn::list_evpn_zones(
@@ -1300,10 +1266,7 @@ pub async fn list_ceph_clusters(
     cluster_id: String,
     state: State<'_, AppState>,
 ) -> Result<Vec<serde_json::Value>, String> {
-    let clusters = state.proxmox_clusters.lock().await;
-    let client = clusters
-        .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
 
     let ceph_clusters = crate::proxmox::ceph_cluster::list_ceph_clusters(
@@ -1328,10 +1291,7 @@ pub async fn get_ceph_cluster_status(
     ceph_cluster_id: String,
     state: State<'_, AppState>,
 ) -> Result<serde_json::Value, String> {
-    let clusters = state.proxmox_clusters.lock().await;
-    let client = clusters
-        .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
 
     let status = crate::proxmox::ceph_cluster::get_ceph_cluster_status(
@@ -1358,10 +1318,7 @@ pub async fn migrate_vm(
     target_cluster: String,
     state: State<'_, AppState>,
 ) -> Result<serde_json::Value, String> {
-    let clusters = state.proxmox_clusters.lock().await;
-    let client = clusters
-        .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
 
     let task = crate::proxmox::migration::migrate_vm(
@@ -1385,10 +1342,7 @@ pub async fn list_migration_status(
     node: String,
     state: State<'_, AppState>,
 ) -> Result<Vec<serde_json::Value>, String> {
-    let clusters = state.proxmox_clusters.lock().await;
-    let client = clusters
-        .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
 
     let tasks = crate::proxmox::migration::list_migration_status(
@@ -1414,10 +1368,7 @@ pub async fn list_updates(
     cluster_id: String,
     state: State<'_, AppState>,
 ) -> Result<Vec<serde_json::Value>, String> {
-    let clusters = state.proxmox_clusters.lock().await;
-    let client = clusters
-        .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
 
     let updates = crate::proxmox::updates_ext::list_updates_all_remotes(
@@ -1438,10 +1389,7 @@ pub async fn list_updates(
 /// Refresh updates
 #[tauri::command]
 pub async fn refresh_updates(cluster_id: String, state: State<'_, AppState>) -> Result<(), String> {
-    let clusters = state.proxmox_clusters.lock().await;
-    let client = clusters
-        .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
 
     crate::proxmox::updates_ext::refresh_updates_all(
@@ -1459,10 +1407,7 @@ pub async fn install_updates(
     packages: Vec<String>,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    let clusters = state.proxmox_clusters.lock().await;
-    let client = clusters
-        .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
 
     let package_refs: Vec<&str> = packages.iter().map(|s| s.as_str()).collect();
@@ -1483,10 +1428,7 @@ pub async fn list_tasks(
     node: String,
     state: State<'_, AppState>,
 ) -> Result<Vec<serde_json::Value>, String> {
-    let clusters = state.proxmox_clusters.lock().await;
-    let client = clusters
-        .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
 
     let tasks = crate::proxmox::tasks::list_tasks(
@@ -1513,10 +1455,7 @@ pub async fn get_task_status(
     task_id: String,
     state: State<'_, AppState>,
 ) -> Result<serde_json::Value, String> {
-    let clusters = state.proxmox_clusters.lock().await;
-    let client = clusters
-        .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
 
     let task = crate::proxmox::tasks::get_task_status(
@@ -1539,10 +1478,7 @@ pub async fn stop_task(
     task_id: String,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    let clusters = state.proxmox_clusters.lock().await;
-    let client = clusters
-        .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
 
     crate::proxmox::tasks::stop_task(
@@ -1564,10 +1500,7 @@ pub async fn get_metrics_summary(
     cluster_id: String,
     state: State<'_, AppState>,
 ) -> Result<serde_json::Value, String> {
-    let clusters = state.proxmox_clusters.lock().await;
-    let client = clusters
-        .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
 
     let nodes = crate::proxmox::metrics::list_nodes(
@@ -1592,10 +1525,7 @@ pub async fn list_metric_collections(
     cluster_id: String,
     state: State<'_, AppState>,
 ) -> Result<Vec<serde_json::Value>, String> {
-    let clusters = state.proxmox_clusters.lock().await;
-    let client = clusters
-        .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
 
     let nodes = crate::proxmox::metrics::list_nodes(
@@ -1621,10 +1551,7 @@ pub async fn list_ha_groups(
     cluster_id: String,
     state: State<'_, AppState>,
 ) -> Result<Vec<serde_json::Value>, String> {
-    let clusters = state.proxmox_clusters.lock().await;
-    let client = clusters
-        .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
 
     let groups = crate::proxmox::ha::list_ha_groups(
@@ -1650,10 +1577,7 @@ pub async fn create_ha_group(
     max_relocate: u32,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    let clusters = state.proxmox_clusters.lock().await;
-    let client = clusters
-        .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
 
     crate::proxmox::ha::create_ha_group(
@@ -1678,10 +1602,7 @@ pub async fn update_ha_group(
     max_relocate: u32,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    let clusters = state.proxmox_clusters.lock().await;
-    let client = clusters
-        .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
 
     crate::proxmox::ha::update_ha_group(
@@ -1703,10 +1624,7 @@ pub async fn delete_ha_group(
     group: String,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    let clusters = state.proxmox_clusters.lock().await;
-    let client = clusters
-        .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
 
     crate::proxmox::ha::delete_ha_group(
@@ -1724,10 +1642,7 @@ pub async fn list_ha_resources(
     cluster_id: String,
     state: State<'_, AppState>,
 ) -> Result<Vec<serde_json::Value>, String> {
-    let clusters = state.proxmox_clusters.lock().await;
-    let client = clusters
-        .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
 
     let resources = crate::proxmox::ha::list_ha_resources(
@@ -1750,10 +1665,7 @@ pub async fn enable_ha_resource(
     resource: String,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    let clusters = state.proxmox_clusters.lock().await;
-    let client = clusters
-        .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
 
     crate::proxmox::ha::enable_ha_resource(
@@ -1773,10 +1685,7 @@ pub async fn list_acls(
     cluster_id: String,
     state: State<'_, AppState>,
 ) -> Result<Vec<serde_json::Value>, String> {
-    let clusters = state.proxmox_clusters.lock().await;
-    let client = clusters
-        .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
 
     let path = "access/acl";
@@ -1798,10 +1707,7 @@ pub async fn list_users(
     cluster_id: String,
     state: State<'_, AppState>,
 ) -> Result<Vec<serde_json::Value>, String> {
-    let clusters = state.proxmox_clusters.lock().await;
-    let client = clusters
-        .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
 
     let path = "access/users";
@@ -1823,10 +1729,7 @@ pub async fn list_realms(
     cluster_id: String,
     state: State<'_, AppState>,
 ) -> Result<Vec<serde_json::Value>, String> {
-    let clusters = state.proxmox_clusters.lock().await;
-    let client = clusters
-        .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
 
     let realms = crate::proxmox::auth_realm::list_auth_realms(
@@ -1850,10 +1753,7 @@ pub async fn get_cluster_notes(
     cluster_id: String,
     state: State<'_, AppState>,
 ) -> Result<String, String> {
-    let clusters = state.proxmox_clusters.lock().await;
-    let client = clusters
-        .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
 
     let path = "cluster/config";
@@ -1877,10 +1777,7 @@ pub async fn update_cluster_notes(
     notes: String,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    let clusters = state.proxmox_clusters.lock().await;
-    let client = clusters
-        .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
 
     let path = "cluster/config";
@@ -1906,10 +1803,7 @@ pub async fn search_proxmox_resources(
     query: String,
     state: State<'_, AppState>,
 ) -> Result<Vec<serde_json::Value>, String> {
-    let clusters = state.proxmox_clusters.lock().await;
-    let client = clusters
-        .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
 
     let path = format!("cluster/resources?type=vm&search={}", query);
@@ -1934,10 +1828,7 @@ pub async fn get_node_status(
     node_id: String,
     state: State<'_, AppState>,
 ) -> Result<serde_json::Value, String> {
-    let clusters = state.proxmox_clusters.lock().await;
-    let client = clusters
-        .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
 
     let path = format!("nodes/{}/status", node_id);
@@ -1962,10 +1853,7 @@ pub async fn get_syslog(
     limit: Option<u32>,
     state: State<'_, AppState>,
 ) -> Result<Vec<serde_json::Value>, String> {
-    let clusters = state.proxmox_clusters.lock().await;
-    let client = clusters
-        .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
 
     let limit_val = limit.unwrap_or(500);
@@ -1991,10 +1879,7 @@ pub async fn list_network_interfaces(
     node_id: String,
     state: State<'_, AppState>,
 ) -> Result<Vec<serde_json::Value>, String> {
-    let clusters = state.proxmox_clusters.lock().await;
-    let client = clusters
-        .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
 
     let path = format!("nodes/{}/network", node_id);
@@ -2018,10 +1903,7 @@ pub async fn list_cluster_views(
     cluster_id: String,
     state: State<'_, AppState>,
 ) -> Result<Vec<serde_json::Value>, String> {
-    let clusters = state.proxmox_clusters.lock().await;
-    let client = clusters
-        .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
 
     let views = crate::proxmox::views::list_views(
@@ -2045,10 +1927,7 @@ pub async fn create_cluster_view(
     name: String,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    let clusters = state.proxmox_clusters.lock().await;
-    let client = clusters
-        .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
 
     let view = crate::proxmox::views::DashboardView {
@@ -2078,10 +1957,7 @@ pub async fn delete_cluster_view(
     view_id: String,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    let clusters = state.proxmox_clusters.lock().await;
-    let client = clusters
-        .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
 
     crate::proxmox::views::delete_view(
@@ -2101,10 +1977,7 @@ pub async fn get_subscription_status(
     cluster_id: String,
     state: State<'_, AppState>,
 ) -> Result<serde_json::Value, String> {
-    let clusters = state.proxmox_clusters.lock().await;
-    let client = clusters
-        .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
 
     let path = "nodes/localhost/subscription";
@@ -2128,10 +2001,7 @@ pub async fn list_cluster_tasks(
     limit: Option<u32>,
     state: State<'_, AppState>,
 ) -> Result<Vec<serde_json::Value>, String> {
-    let clusters = state.proxmox_clusters.lock().await;
-    let client = clusters
-        .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
 
     let limit_val = limit.unwrap_or(50);
@@ -2154,10 +2024,7 @@ pub async fn list_proxmox_containers(
     cluster_id: String,
     state: State<'_, AppState>,
 ) -> Result<Vec<serde_json::Value>, String> {
-    let clusters = state.proxmox_clusters.lock().await;
-    let client = clusters
-        .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
 
     let path = "cluster/resources?type=lxc";

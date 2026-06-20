@@ -6,7 +6,7 @@ import { AddRemoteForm } from '@/components/Proxmox';
 import { EditRemoteForm } from '@/components/Proxmox';
 import { RemoveRemoteDialog } from '@/components/Proxmox';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/index';
-import { listProxmoxClusters, addProxmoxCluster, removeProxmoxCluster } from '@/lib/proxmoxClient';
+import { listProxmoxClusters, addProxmoxCluster, removeProxmoxCluster, getProxmoxCluster } from '@/lib/proxmoxClient';
 import { ClusterType } from '@/lib/domain';
 import { toast } from 'sonner';
 
@@ -35,7 +35,7 @@ export function ProxmoxRemotesPage() {
         url: c.url,
         username: c.username,
         type: c.clusterType === 've' ? 'pve' : 'pbs',
-        status: 'connected' as const, // Placeholder - actual status requires connection test
+        status: (c.connected ? 'connected' : 'disconnected') as RemoteInfo['status'],
       }));
       setRemotes(remotesList);
     } catch (err) {
@@ -136,6 +136,34 @@ export function ProxmoxRemotesPage() {
     }
   };
 
+  const handleConnectRemote = async (remote: RemoteInfo) => {
+    try {
+      toast.info(`Testing connection to ${remote.name}...`);
+      const result = await getProxmoxCluster(remote.id);
+      if (result !== null) {
+        toast.success(`Connected to ${remote.name}`);
+        setRemotes((prev) =>
+          prev.map((r) => (r.id === remote.id ? { ...r, status: 'connected' } : r))
+        );
+      } else {
+        toast.error(`Cluster ${remote.name} not found`);
+      }
+    } catch (err) {
+      console.error('Failed to connect remote:', err);
+      toast.error('Connection failed: ' + String(err));
+      setRemotes((prev) =>
+        prev.map((r) => (r.id === remote.id ? { ...r, status: 'error' } : r))
+      );
+    }
+  };
+
+  const handleDisconnectRemote = (remote: RemoteInfo) => {
+    setRemotes((prev) =>
+      prev.map((r) => (r.id === remote.id ? { ...r, status: 'disconnected' } : r))
+    );
+    toast.info(`Disconnected from ${remote.name}`);
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -163,6 +191,12 @@ export function ProxmoxRemotesPage() {
         }}
         onDelete={(remote) => {
           setRemovingRemote(remote as RemoteInfo | null);
+        }}
+        onConnect={(remote) => {
+          void handleConnectRemote(remote as RemoteInfo);
+        }}
+        onDisconnect={(remote) => {
+          handleDisconnectRemote(remote as RemoteInfo);
         }}
       />
 
