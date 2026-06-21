@@ -35,7 +35,7 @@ pub async fn list_firewall_rules(
         .await
         .map_err(|e| format!("Failed to list firewall rules: {}", e))?;
 
-    if let Some(rules) = response.get("data").and_then(|d| d.as_array()) {
+    if let Some(rules) = response.as_array() {
         let rule_list: Vec<FirewallRule> = rules
             .iter()
             .filter_map(|rule| {
@@ -68,7 +68,7 @@ pub async fn list_firewall_rules(
 
         Ok(rule_list)
     } else {
-        Err("Invalid response format: missing 'data' field".to_string())
+        Err("Invalid response format".to_string())
     }
 }
 
@@ -191,14 +191,12 @@ pub async fn get_firewall_status(
         .map_err(|e| format!("Failed to get firewall options: {}", e))?;
 
     let enabled = options_response
-        .get("data")
-        .and_then(|d| d.get("enabled"))
+        .get("enabled")
         .and_then(|e| e.as_bool())
         .unwrap_or(false);
 
     let rules: Vec<FirewallRule> = rules_response
-        .get("data")
-        .and_then(|d| d.as_array())
+        .as_array()
         .unwrap_or(&Vec::new())
         .iter()
         .filter_map(|rule| {
@@ -264,10 +262,10 @@ pub async fn list_firewall_zones(
         .await
         .map_err(|e| format!("Failed to list firewall zones: {}", e))?;
 
-    if let Some(zones) = response.get("data").and_then(|d| d.as_array()) {
+    if let Some(zones) = response.as_array() {
         Ok(zones.to_vec())
     } else {
-        Err("Invalid response format: missing 'data' field".to_string())
+        Err("Invalid response format".to_string())
     }
 }
 

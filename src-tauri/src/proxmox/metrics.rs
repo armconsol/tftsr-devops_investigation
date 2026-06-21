@@ -36,7 +36,8 @@ pub async fn get_node_metrics(
         .await
         .map_err(|e| format!("Failed to get node metrics for {}: {}", node, e))?;
 
-    if let Some(data) = response.get("data") {
+    {
+        let data = &response;
         let cpu = data.get("cpu").and_then(|c| c.as_f64()).unwrap_or(0.0);
         let memory = data.get("memory").and_then(|m| m.as_f64()).unwrap_or(0.0);
         let disk = data.get("disk").and_then(|d| d.as_f64()).unwrap_or(0.0);
@@ -52,8 +53,6 @@ pub async fn get_node_metrics(
             load,
             uptime,
         })
-    } else {
-        Err("Invalid response format: missing 'data' field".to_string())
     }
 }
 
@@ -68,7 +67,7 @@ pub async fn list_nodes(
         .await
         .map_err(|e| format!("Failed to list nodes: {}", e))?;
 
-    if let Some(resources) = response.get("data").and_then(|d| d.as_array()) {
+    if let Some(resources) = response.as_array() {
         let node_list: Vec<NodeStatus> = resources
             .iter()
             .filter_map(|resource| {
@@ -107,7 +106,7 @@ pub async fn list_nodes(
 
         Ok(node_list)
     } else {
-        Err("Invalid response format: missing 'data' field".to_string())
+        Ok(vec![])
     }
 }
 

@@ -34,7 +34,7 @@ pub async fn list_evpn_zones(
         .await
         .map_err(|e| format!("Failed to list EVPN zones: {}", e))?;
 
-    if let Some(zones) = response.get("data").and_then(|d| d.as_array()) {
+    if let Some(zones) = response.as_array() {
         let zone_list: Vec<EvpnZone> = zones
             .iter()
             .filter_map(|zone| {
@@ -68,7 +68,7 @@ pub async fn list_evpn_zones(
 
         Ok(zone_list)
     } else {
-        Err("Invalid response format: missing 'data' field".to_string())
+        Err("Invalid response format".to_string())
     }
 }
 
@@ -140,7 +140,7 @@ pub async fn list_vnets(
         .await
         .map_err(|e| format!("Failed to list virtual networks: {}", e))?;
 
-    if let Some(vnets) = response.get("data").and_then(|d| d.as_array()) {
+    if let Some(vnets) = response.as_array() {
         let vnet_list: Vec<VirtualNetwork> = vnets
             .iter()
             .filter_map(|vnet| {
@@ -166,7 +166,7 @@ pub async fn list_vnets(
 
         Ok(vnet_list)
     } else {
-        Err("Invalid response format: missing 'data' field".to_string())
+        Err("Invalid response format".to_string())
     }
 }
 
@@ -252,10 +252,10 @@ pub async fn list_dhcp_leases(
         .await
         .map_err(|e| format!("Failed to list DHCP leases for vnet {}: {}", vnet, e))?;
 
-    if let Some(leases) = response.get("data").and_then(|d| d.as_array()) {
+    if let Some(leases) = response.as_array() {
         Ok(leases.to_vec())
     } else {
-        Err("Invalid response format: missing 'data' field".to_string())
+        Err("Invalid response format".to_string())
     }
 }
 

@@ -53,7 +53,8 @@ pub async fn migrate_vm(
         .await
         .map_err(|e| format!("Failed to migrate VM {}: {}", vm_id, e))?;
 
-    if let Some(data) = response.get("data") {
+    {
+        let data = &response;
         let task_id = data
             .get("taskid")
             .and_then(|t| t.as_str())
@@ -80,8 +81,6 @@ pub async fn migrate_vm(
             end_time: None,
             error: None,
         })
-    } else {
-        Err("Invalid response format: missing 'data' field".to_string())
     }
 }
 
@@ -97,7 +96,7 @@ pub async fn list_migration_status(
         .await
         .map_err(|e| format!("Failed to list migration tasks for node {}: {}", node, e))?;
 
-    if let Some(tasks) = response.get("data").and_then(|d| d.as_array()) {
+    if let Some(tasks) = response.as_array() {
         let task_list: Vec<MigrationTask> = tasks
             .iter()
             .filter_map(|task| {
@@ -145,7 +144,7 @@ pub async fn list_migration_status(
 
         Ok(task_list)
     } else {
-        Err("Invalid response format: missing 'data' field".to_string())
+        Ok(vec![])
     }
 }
 
@@ -162,7 +161,8 @@ pub async fn get_migration_task_status(
         .await
         .map_err(|e| format!("Failed to get migration task {}: {}", task_id, e))?;
 
-    if let Some(data) = response.get("data") {
+    {
+        let data = &response;
         let status = data
             .get("status")
             .and_then(|s| s.as_str())
@@ -187,8 +187,6 @@ pub async fn get_migration_task_status(
             bytes_remaining,
             downtime,
         })
-    } else {
-        Err("Invalid response format: missing 'data' field".to_string())
     }
 }
 

@@ -131,57 +131,54 @@ pub async fn list_vms(
     client: &crate::proxmox::client::ProxmoxClient,
     ticket: &str,
 ) -> Result<Vec<VmInfo>, String> {
-    let path = "cluster/resources";
-    let params = serde_json::json!({
-        "type": "qemu"
-    });
-
+    // cluster/resources is GET-only; handle_response strips the {"data":[...]} envelope.
     let response: serde_json::Value = client
-        .post(path, &params, Some(ticket))
+        .get("cluster/resources?type=vm", Some(ticket))
         .await
         .map_err(|e| format!("Failed to list VMs: {}", e))?;
 
-    // Parse the response to extract VM info
-    // The API returns a list of resources in the "data" field
-    if let Some(resources) = response.get("data").and_then(|d| d.as_array()) {
-        let vms: Vec<VmInfo> = resources
-            .iter()
-            .filter_map(|r| {
-                let vmid = r.get("vmid")?.as_u64()?;
-                let node = r.get("node")?.as_str()?.to_string();
-                let name = r.get("name")?.as_str().map(|s| s.to_string());
-                let status = r.get("status")?.as_str()?.to_string();
-                let cpu = r.get("cpu")?.as_f64()?;
+    let resources = response
+        .as_array()
+        .ok_or_else(|| "Invalid response format".to_string())?;
 
-                Some(VmInfo {
-                    id: vmid as u32,
-                    name,
-                    status,
-                    cpu,
-                    memory: r.get("mem").and_then(|m| m.as_u64()).unwrap_or(0),
-                    disk: r.get("disk").and_then(|d| d.as_u64()).unwrap_or(0),
-                    uptime: r.get("uptime").and_then(|u| u.as_u64()).unwrap_or(0),
-                    node,
-                    template: r.get("template").and_then(|t| t.as_bool()),
-                    agent: r
-                        .get("agent")
-                        .and_then(|a| a.as_str())
-                        .map(|s| s.to_string()),
-                    mem: r.get("mem").and_then(|m| m.as_u64()),
-                    max_mem: r.get("maxmem").and_then(|m| m.as_u64()),
-                    max_disk: r.get("maxdisk").and_then(|d| d.as_u64()),
-                    netin: r.get("netin").and_then(|n| n.as_u64()),
-                    netout: r.get("netout").and_then(|n| n.as_u64()),
-                    diskread: r.get("diskread").and_then(|d| d.as_u64()),
-                    diskwrite: r.get("diskwrite").and_then(|d| d.as_u64()),
-                })
+    let vms: Vec<VmInfo> = resources
+        .iter()
+        .filter_map(|r| {
+            let vmid = r.get("vmid")?.as_u64()?;
+            let node = r.get("node")?.as_str()?.to_string();
+            // Only include qemu VMs (not LXC containers which also appear in cluster/resources?type=vm)
+            let resource_type = r.get("type").and_then(|t| t.as_str()).unwrap_or("");
+            if resource_type != "qemu" {
+                return None;
+            }
+            let name = r.get("name").and_then(|n| n.as_str()).map(|s| s.to_string());
+            let status = r.get("status").and_then(|s| s.as_str()).unwrap_or("unknown").to_string();
+            // cpu may be absent for stopped VMs
+            let cpu = r.get("cpu").and_then(|c| c.as_f64()).unwrap_or(0.0);
+
+            Some(VmInfo {
+                id: vmid as u32,
+                name,
+                status,
+                cpu,
+                memory: r.get("mem").and_then(|m| m.as_u64()).unwrap_or(0),
+                disk: r.get("disk").and_then(|d| d.as_u64()).unwrap_or(0),
+                uptime: r.get("uptime").and_then(|u| u.as_u64()).unwrap_or(0),
+                node,
+                template: r.get("template").and_then(|t| t.as_bool()),
+                agent: r.get("agent").and_then(|a| a.as_str()).map(|s| s.to_string()),
+                mem: r.get("mem").and_then(|m| m.as_u64()),
+                max_mem: r.get("maxmem").and_then(|m| m.as_u64()),
+                max_disk: r.get("maxdisk").and_then(|d| d.as_u64()),
+                netin: r.get("netin").and_then(|n| n.as_u64()),
+                netout: r.get("netout").and_then(|n| n.as_u64()),
+                diskread: r.get("diskread").and_then(|d| d.as_u64()),
+                diskwrite: r.get("diskwrite").and_then(|d| d.as_u64()),
             })
-            .collect();
+        })
+        .collect();
 
-        Ok(vms)
-    } else {
-        Err("Invalid response format: missing 'data' field".to_string())
-    }
+    Ok(vms)
 }
 
 /// Get VM details
@@ -197,8 +194,7 @@ pub async fn get_vm(
         .await
         .map_err(|e| format!("Failed to get VM {}: {}", vmid, e))?;
 
-    // Parse the response to extract VM info
-    let vm = response.get("data").ok_or("Invalid response format")?;
+    let vm = &response;
 
     Ok(VmInfo {
         id: vmid,
@@ -415,11 +411,10 @@ pub async fn list_snapshots(
         .await
         .map_err(|e| format!("Failed to list snapshots for VM {}: {}", vmid, e))?;
 
-    if let Some(snapshots) = response.get("data").and_then(|d| d.as_array()) {
-        Ok(snapshots.to_vec())
-    } else {
-        Err("Invalid response format: missing 'data' field".to_string())
-    }
+    response
+        .as_array()
+        .map(|arr| arr.to_vec())
+        .ok_or_else(|| "Invalid response format".to_string())
 }
 
 #[cfg(test)]

@@ -44,7 +44,7 @@ pub async fn list_acme_accounts(
         .await
         .map_err(|e| format!("Failed to list ACME accounts: {}", e))?;
 
-    if let Some(accounts) = response.get("data").and_then(|d| d.as_array()) {
+    if let Some(accounts) = response.as_array() {
         let account_list: Vec<AcmeAccount> = accounts
             .iter()
             .filter_map(|account| {
@@ -94,7 +94,8 @@ pub async fn register_acme_account(
         .await
         .map_err(|e| format!("Failed to register ACME account: {}", e))?;
 
-    if let Some(data) = response.get("data") {
+    {
+        let data = &response;
         let id = data
             .get("id")
             .and_then(|i| i.as_str())
@@ -117,8 +118,6 @@ pub async fn register_acme_account(
             status,
             created_at,
         })
-    } else {
-        Err("Invalid response format: missing 'data' field".to_string())
     }
 }
 
@@ -134,7 +133,7 @@ pub async fn get_acme_challenges(
         .await
         .map_err(|e| format!("Failed to get ACME challenges for {}: {}", domain, e))?;
 
-    if let Some(challenges) = response.get("data").and_then(|d| d.as_array()) {
+    if let Some(challenges) = response.as_array() {
         let challenge_list: Vec<AcmeChallenge> = challenges
             .iter()
             .filter_map(|challenge| {
@@ -191,7 +190,8 @@ pub async fn request_certificate(
         .await
         .map_err(|e| format!("Failed to request ACME certificate: {}", e))?;
 
-    if let Some(data) = response.get("data") {
+    {
+        let data = &response;
         let id = data
             .get("id")
             .and_then(|i| i.as_str())
@@ -230,8 +230,6 @@ pub async fn request_certificate(
             expires_at,
             issuer,
         })
-    } else {
-        Err("Invalid response format: missing 'data' field".to_string())
     }
 }
 
@@ -247,7 +245,8 @@ pub async fn get_certificate_details(
         .await
         .map_err(|e| format!("Failed to get ACME certificate {}: {}", cert_id, e))?;
 
-    if let Some(data) = response.get("data") {
+    {
+        let data = &response;
         let id = data
             .get("id")
             .and_then(|i| i.as_str())
@@ -286,8 +285,6 @@ pub async fn get_certificate_details(
             expires_at,
             issuer,
         })
-    } else {
-        Err("Invalid response format: missing 'data' field".to_string())
     }
 }
 
