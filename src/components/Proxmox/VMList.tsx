@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { clsx } from 'clsx';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/index';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/index';
 import { Button } from '@/components/ui/index';
@@ -14,6 +15,7 @@ import { Checkbox as UICheckbox } from '@/components/ui/index';
 import { Input } from '@/components/ui/index';
 import { AlertCircle } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/index';
+import type { ClusterInfo } from '@/lib/domain';
 
 interface VMInfo {
   id: string;
@@ -50,6 +52,8 @@ interface RawVMInfo {
 
 interface VMListProps {
   vms: RawVMInfo[];
+  clusterId: string;
+  clusters?: ClusterInfo[];
   onRefresh?: () => void;
   isLoading?: boolean;
   onSnapshotAction?: (vm: VMInfo, action: 'create' | 'list' | 'rollback' | 'delete') => void;
@@ -62,16 +66,16 @@ interface VMListProps {
 
 function formatUptime(seconds: number): string {
   if (seconds <= 0) return '-';
-  
+
   const days = Math.floor(seconds / 86400);
   const hours = Math.floor((seconds % 86400) / 3600);
   const minutes = Math.floor((seconds % 3600) / 60);
-  
+
   const parts: string[] = [];
   if (days > 0) parts.push(`${days}d`);
   if (hours > 0) parts.push(`${hours}h`);
   if (minutes > 0 || parts.length === 0) parts.push(`${minutes}m`);
-  
+
   return parts.join(' ');
 }
 
@@ -85,22 +89,23 @@ function formatBytes(bytes: number): string {
 
 export function VMList({
   vms: rawVms,
+  clusterId,
+  clusters = [],
   onRefresh,
   isLoading,
-  onSnapshotAction,
-  onMigrate,
-  onClone,
-  onDelete,
+  onSnapshotAction: _onSnapshotAction,
+  onMigrate: _onMigrate,
+  onClone: _onClone,
+  onDelete: _onDelete,
   selectedVMs = new Set<string>(),
   onToggleSelect,
 }: VMListProps) {
-  const [clusterId, setClusterId] = useState<string>('');
   const [migrationVM, setMigrationVM] = useState<VMInfo | null>(null);
   const [targetNode, setTargetNode] = useState<string>('');
+  const [targetCluster, setTargetCluster] = useState<string>('');
   const [onlineMigration, setOnlineMigration] = useState(true);
   const [maxDowntime, setMaxDowntime] = useState(30);
 
-  // Transform raw VM data to VMInfo format
   const vms: VMInfo[] = React.useMemo(() => {
     return rawVms.map((vm) => ({
       id: String(vm.id || vm.vmid),
@@ -118,17 +123,13 @@ export function VMList({
     }));
   }, [rawVms]);
 
-  useEffect(() => {
-    invoke<string[]>('list_proxmox_clusters')
-      .then((clusters: any[]) => {
-        if (clusters.length > 0) {
-          setClusterId(clusters[0].id);
-        }
-      })
-      .catch(() => {});
-  }, []);
-
+  // clusterId comes from props (not captured via closure over state), so it is always
+  // current when an action fires even if the user switches clusters mid-session.
   const handleVMAction = useCallback(async (vm: VMInfo, action: string) => {
+    if (!clusterId) {
+      toast.error('No cluster selected');
+      return;
+    }
     try {
       switch (action) {
         case 'start':
@@ -204,7 +205,8 @@ export function VMList({
       .map((v) => v.node)
       .filter((node, index, self) => self.indexOf(node) === index && node !== vm.node);
     setTargetNode(availableNodes[0] || '');
-  }, [vms]);
+    setTargetCluster(clusterId);
+  }, [vms, clusterId]);
 
   const submitMigration = useCallback(async () => {
     if (!migrationVM || !targetNode) {
@@ -212,27 +214,34 @@ export function VMList({
       return;
     }
 
+    const sourceCluster = clusterId;
+    const destCluster = targetCluster || clusterId;
+
     try {
       await invoke('migrate_vm', {
-        clusterId,
+        clusterId: sourceCluster,
         nodeId: migrationVM.node,
         vmId: migrationVM.vmid,
         targetNode,
-        online: onlineMigration,
-        max_downtime: maxDowntime,
+        targetCluster: destCluster,
       });
-      
-      toast.success(`VM ${migrationVM.name} migration started to ${targetNode}`);
+
+      toast.success(`VM ${migrationVM.name} migration started to ${targetNode}${destCluster !== sourceCluster ? ` (cluster: ${destCluster})` : ''}`);
       setMigrationVM(null);
       setTargetNode('');
+      setTargetCluster('');
       onRefresh?.();
     } catch (error) {
       console.error('Failed to migrate VM:', error);
       toast.error(`Failed to migrate VM ${migrationVM.name}: ${error}`);
     }
-  }, [migrationVM, targetNode, onlineMigration, maxDowntime, clusterId, onRefresh]);
+  }, [migrationVM, targetNode, targetCluster, clusterId, onRefresh]);
 
   const handleClone = useCallback(async (vm: VMInfo) => {
+    if (!clusterId) {
+      toast.error('No cluster selected');
+      return;
+    }
     try {
       const nextVmid = Math.max(...vms.map((v) => v.vmid), 100) + 1;
       const newVmidStr = window.prompt(`Enter new VM ID for ${vm.name}:`, `${nextVmid}`);
@@ -250,7 +259,7 @@ export function VMList({
         toast.info('Clone cancelled');
         return;
       }
-      
+
       await invoke('clone_vm', {
         clusterId,
         nodeId: vm.node,
@@ -258,7 +267,7 @@ export function VMList({
         newVmid,
         name: newName,
       });
-      
+
       toast.success(`VM ${vm.name} cloned successfully to VM ${newVmid}`);
       onRefresh?.();
     } catch (error) {
@@ -268,11 +277,15 @@ export function VMList({
   }, [clusterId, vms, onRefresh]);
 
   const handleDelete = useCallback(async (vm: VMInfo) => {
+    if (!clusterId) {
+      toast.error('No cluster selected');
+      return;
+    }
     const confirmed = await confirm(`Are you sure you want to delete VM ${vm.name} (VMID: ${vm.vmid})? This action cannot be undone!`, {
       title: 'Delete VM',
       kind: 'warning',
     });
-    
+
     if (!confirmed) {
       return;
     }
@@ -283,7 +296,7 @@ export function VMList({
         nodeId: vm.node,
         vmId: vm.vmid,
       });
-      
+
       toast.success(`VM ${vm.name} deleted successfully`);
       onRefresh?.();
     } catch (error) {
@@ -309,7 +322,7 @@ export function VMList({
               <TableRow>
                 <TableHead className="w-[40px]">
                   <Checkbox
-                    checked={vms.every((vm) => selectedVMs.has(vm.id))}
+                    checked={vms.length > 0 && vms.every((vm) => selectedVMs.has(vm.id))}
                     onCheckedChange={(checked) => {
                       if (checked) {
                         vms.forEach((vm) => selectedVMs.add(vm.id));
@@ -335,7 +348,7 @@ export function VMList({
                 const cpuPercent = vm.cpu > 0 ? Math.min(vm.cpu * 100, 100) : 0;
                 const memoryPercent = vm.memoryTotal > 0 ? (vm.memory / vm.memoryTotal) * 100 : 0;
                 const diskPercent = vm.diskTotal > 0 ? (vm.disk / vm.diskTotal) * 100 : 0;
-                
+
                 return (
                   <TableRow key={vm.id}>
                     <TableCell>
@@ -413,11 +426,15 @@ export function VMList({
       <MigrationDialog
         vm={migrationVM}
         isOpen={!!migrationVM}
-        onClose={() => setMigrationVM(null)}
+        onClose={() => { setMigrationVM(null); setTargetNode(''); setTargetCluster(''); }}
         onSubmit={submitMigration}
         availableNodes={vms}
+        clusters={clusters}
+        currentClusterId={clusterId}
         targetNode={targetNode}
         onTargetNodeChange={setTargetNode}
+        targetCluster={targetCluster}
+        onTargetClusterChange={setTargetCluster}
         online={onlineMigration}
         onOnlineChange={setOnlineMigration}
         maxDowntime={maxDowntime}
@@ -445,12 +462,13 @@ function VMActionMenu({
   onDelete,
 }: VMActionMenuProps) {
   const [isOpen, setIsOpen] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null);
+  const [flipUpward, setFlipUpward] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const menuContentRef = useRef<HTMLDivElement>(null);
 
-  // Close menu when clicking outside
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
-      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
         setIsOpen(false);
       }
     }
@@ -464,6 +482,14 @@ function VMActionMenu({
     };
   }, [isOpen]);
 
+  // After the menu renders, check whether it overflows the viewport bottom and flip if needed.
+  // Done in useEffect (not during render) to avoid the react-hooks/refs ESLint violation.
+  useEffect(() => {
+    if (!isOpen || !menuContentRef.current) return;
+    const rect = menuContentRef.current.getBoundingClientRect();
+    setFlipUpward(window.innerHeight - rect.bottom < 20);
+  }, [isOpen]);
+
   const toggleMenu = (e: React.MouseEvent) => {
     e.stopPropagation();
     setIsOpen(!isOpen);
@@ -471,45 +497,12 @@ function VMActionMenu({
 
   const handleAction = (action: () => void) => (e: React.MouseEvent) => {
     e.stopPropagation();
-    action();
     setIsOpen(false);
+    action();
   };
-
-  // Calculate menu position to avoid overflow
-  const getMenuPosition = () => {
-    const viewportHeight = window.innerHeight;
-    const viewportWidth = window.innerWidth;
-    const buttonRect = menuRef.current?.querySelector('button')?.getBoundingClientRect();
-    
-    if (!buttonRect) return { top: '100%', left: 0 };
-
-    const menuHeight = 400; // approximate menu height
-    const menuWidth = 192; // approximate menu width (w-48 = 12rem = 192px)
-    const spaceBelow = viewportHeight - buttonRect.bottom;
-    const spaceAbove = buttonRect.top;
-    const spaceRight = viewportWidth - buttonRect.right;
-
-    // Vertical positioning
-    let verticalPos: { top?: string; bottom?: string } = { top: '100%' };
-    if (spaceBelow >= menuHeight) {
-      verticalPos = { top: '100%' };
-    } else if (spaceAbove >= menuHeight) {
-      verticalPos = { bottom: '100%' };
-    }
-
-    // Horizontal positioning - account for overflow on the right
-    let horizontalPos: { left?: number; right?: number } = { left: 0 };
-    if (spaceRight < menuWidth) {
-      horizontalPos = { right: 0 };
-    }
-
-    return { ...verticalPos, ...horizontalPos };
-  };
-
-  const position = getMenuPosition();
 
   return (
-    <div className="relative" ref={menuRef}>
+    <div className="relative" ref={containerRef}>
       <Button
         variant="ghost"
         size="sm"
@@ -520,16 +513,17 @@ function VMActionMenu({
       </Button>
       {isOpen && (
         <div
-          className={`absolute z-50 w-48 rounded-md border bg-background shadow-md ${
-            position.bottom ? 'bottom-full mb-2' : 'top-full mt-2'
-          } ${position.right ? 'right-0' : ''}`}
-          style={{ left: position.left ?? undefined, right: position.right ?? undefined }}
+          ref={menuContentRef}
+          className={clsx(
+            'absolute right-0 z-50 w-48 rounded-md border bg-background shadow-md',
+            flipUpward ? 'bottom-full mb-2' : 'top-full mt-2',
+          )}
         >
           <div className="space-y-1 p-1">
             {vm.status === 'stopped' && (
               <button
                 className="flex w-full items-center rounded-md px-2 py-1.5 text-sm hover:bg-accent"
-                onClick={() => onVMAction(vm, 'start')}
+                onClick={handleAction(() => onVMAction(vm, 'start'))}
               >
                 <Play className="mr-2 h-4 w-4" />
                 Start
@@ -539,28 +533,28 @@ function VMActionMenu({
               <>
                 <button
                   className="flex w-full items-center rounded-md px-2 py-1.5 text-sm hover:bg-accent"
-                  onClick={() => onVMAction(vm, 'stop')}
+                  onClick={handleAction(() => onVMAction(vm, 'stop'))}
                 >
                   <Square className="mr-2 h-4 w-4" />
                   Stop
                 </button>
                 <button
                   className="flex w-full items-center rounded-md px-2 py-1.5 text-sm hover:bg-accent"
-                  onClick={() => onVMAction(vm, 'reboot')}
+                  onClick={handleAction(() => onVMAction(vm, 'reboot'))}
                 >
                   <RotateCcw className="mr-2 h-4 w-4" />
                   Reboot
                 </button>
                 <button
                   className="flex w-full items-center rounded-md px-2 py-1.5 text-sm hover:bg-accent"
-                  onClick={() => onVMAction(vm, 'shutdown')}
+                  onClick={handleAction(() => onVMAction(vm, 'shutdown'))}
                 >
                   <Power className="mr-2 h-4 w-4" />
                   Shutdown
                 </button>
                 <button
                   className="flex w-full items-center rounded-md px-2 py-1.5 text-sm hover:bg-accent"
-                  onClick={() => onVMAction(vm, 'suspend')}
+                  onClick={handleAction(() => onVMAction(vm, 'suspend'))}
                 >
                   <Pause className="mr-2 h-4 w-4" />
                   Suspend
@@ -570,7 +564,7 @@ function VMActionMenu({
             {vm.status === 'paused' && (
               <button
                 className="flex w-full items-center rounded-md px-2 py-1.5 text-sm hover:bg-accent"
-                onClick={() => onVMAction(vm, 'resume')}
+                onClick={handleAction(() => onVMAction(vm, 'resume'))}
               >
                 <PlayCircle className="mr-2 h-4 w-4" />
                 Resume
@@ -579,27 +573,27 @@ function VMActionMenu({
             <div className="h-px bg-border my-1" />
             <button
               className="flex w-full items-center rounded-md px-2 py-1.5 text-sm hover:bg-accent"
-              onClick={() => onSnapshotAction(vm, 'create')}
+              onClick={handleAction(() => onSnapshotAction(vm, 'create'))}
             >
               📸 Create Snapshot
             </button>
             <button
               className="flex w-full items-center rounded-md px-2 py-1.5 text-sm hover:bg-accent"
-              onClick={() => onSnapshotAction(vm, 'list')}
+              onClick={handleAction(() => onSnapshotAction(vm, 'list'))}
             >
               📋 List Snapshots
             </button>
             <div className="h-px bg-border my-1" />
             <button
               className="flex w-full items-center rounded-md px-2 py-1.5 text-sm hover:bg-accent"
-              onClick={() => onMigrate(vm)}
+              onClick={handleAction(() => onMigrate(vm))}
             >
               <MoveRight className="mr-2 h-4 w-4" />
               Migrate
             </button>
             <button
               className="flex w-full items-center rounded-md px-2 py-1.5 text-sm hover:bg-accent"
-              onClick={() => onClone(vm)}
+              onClick={handleAction(() => onClone(vm))}
             >
               <Copy className="mr-2 h-4 w-4" />
               Clone
@@ -607,7 +601,7 @@ function VMActionMenu({
             <div className="h-px bg-border my-1" />
             <button
               className="flex w-full items-center rounded-md px-2 py-1.5 text-sm hover:bg-red-100 hover:text-red-600"
-              onClick={() => onDelete(vm)}
+              onClick={handleAction(() => onDelete(vm))}
             >
               <X className="mr-2 h-4 w-4" />
               Delete
@@ -625,8 +619,12 @@ interface MigrationDialogProps {
   onClose: () => void;
   onSubmit: () => void;
   availableNodes: VMInfo[];
+  clusters: ClusterInfo[];
+  currentClusterId: string;
   targetNode: string;
   onTargetNodeChange: (node: string) => void;
+  targetCluster: string;
+  onTargetClusterChange: (clusterId: string) => void;
   online: boolean;
   onOnlineChange: (online: boolean) => void;
   maxDowntime: number;
@@ -639,8 +637,12 @@ function MigrationDialog({
   onClose,
   onSubmit,
   availableNodes,
+  clusters,
+  currentClusterId,
   targetNode,
   onTargetNodeChange,
+  targetCluster,
+  onTargetClusterChange,
   online,
   onOnlineChange,
   maxDowntime,
@@ -648,9 +650,17 @@ function MigrationDialog({
 }: MigrationDialogProps) {
   if (!vm) return null;
 
+  const isCrossCluster = targetCluster && targetCluster !== currentClusterId;
+
   const availableTargets = availableNodes
     .map((v) => v.node)
     .filter((node, index, self) => self.indexOf(node) === index && node !== vm.node);
+
+  const canSubmitMigration = () => {
+    if (!targetNode) return false;
+    if (isCrossCluster) return true;
+    return availableTargets.length > 0;
+  };
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
@@ -665,25 +675,64 @@ function MigrationDialog({
               Live migration requires the same hardware configuration on both nodes. Ensure storage is accessible from both nodes.
             </AlertDescription>
           </Alert>
-          
+
+          {clusters.length > 1 && (
+            <div className="space-y-2">
+              <Label htmlFor="targetCluster">Target Remote</Label>
+              <Select value={targetCluster || currentClusterId} onValueChange={onTargetClusterChange}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select target cluster" />
+                </SelectTrigger>
+                <SelectContent>
+                  {clusters.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>
+                      {c.name}{c.id === currentClusterId ? ' (current)' : ''}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {isCrossCluster && (
+                <p className="text-xs text-amber-600">
+                  Cross-cluster migration — VM will be moved to a different datacenter.
+                </p>
+              )}
+            </div>
+          )}
+
           <div className="space-y-2">
             <Label htmlFor="targetNode">Target Node</Label>
-            <Select value={targetNode} onValueChange={onTargetNodeChange}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select target node" />
-              </SelectTrigger>
-              <SelectContent>
-                {availableTargets.map((node) => (
-                  <SelectItem key={node} value={node}>
-                    {node}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {availableTargets.length === 0 && (
-              <p className="text-xs text-muted-foreground">
-                No other nodes available for migration
-              </p>
+            {isCrossCluster ? (
+              <>
+                <Input
+                  id="targetNode"
+                  value={targetNode}
+                  onChange={(e) => onTargetNodeChange(e.target.value)}
+                  placeholder="Enter target node name"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Enter the node name on the destination cluster
+                </p>
+              </>
+            ) : (
+              <>
+                <Select value={targetNode} onValueChange={onTargetNodeChange}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select target node" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availableTargets.map((node) => (
+                      <SelectItem key={node} value={node}>
+                        {node}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {availableTargets.length === 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    No other nodes available in this cluster
+                  </p>
+                )}
+              </>
             )}
           </div>
 
@@ -722,7 +771,10 @@ function MigrationDialog({
           <Button variant="outline" onClick={onClose}>
             Cancel
           </Button>
-          <Button onClick={onSubmit} disabled={!targetNode || availableTargets.length === 0}>
+          <Button
+            onClick={onSubmit}
+            disabled={!canSubmitMigration()}
+          >
             Start Migration
           </Button>
         </DialogFooter>

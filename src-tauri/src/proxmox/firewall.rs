@@ -23,7 +23,8 @@ pub struct FirewallStatus {
     pub rule_count: u32,
 }
 
-/// List firewall rules
+/// List firewall rules — returns normalized Vec<FirewallRule> using correct PVE field names.
+/// PVE uses: pos (position), proto (protocol), enable (0/1 integer), src (source), dest (destination).
 pub async fn list_firewall_rules(
     client: &crate::proxmox::client::ProxmoxClient,
     node: &str,
@@ -35,44 +36,60 @@ pub async fn list_firewall_rules(
         .await
         .map_err(|e| format!("Failed to list firewall rules: {}", e))?;
 
-    if let Some(rules) = response.as_array() {
-        let rule_list: Vec<FirewallRule> = rules
-            .iter()
-            .filter_map(|rule| {
-                let rule_num = rule.get("rule_num")?.as_u64()? as u32;
-                let action = rule.get("action")?.as_str()?.to_string();
-                let protocol = rule.get("protocol")?.as_str().unwrap_or("").to_string();
-                let source = rule.get("source")?.as_str().unwrap_or("").to_string();
-                let destination = rule.get("dest")?.as_str().unwrap_or("").to_string();
-                let port = rule
-                    .get("dport")
-                    .or(rule.get("sport"))
-                    .and_then(|p| p.as_str())
-                    .map(|s| s.to_string());
-                let enabled = rule
-                    .get("enabled")
-                    .and_then(|e| e.as_bool())
-                    .unwrap_or(true);
+    let rules = response.as_array().ok_or("Invalid response format")?;
 
-                Some(FirewallRule {
-                    rule_num,
-                    action,
-                    protocol,
-                    source,
-                    destination,
-                    port,
-                    enabled,
-                })
+    let rule_list: Vec<FirewallRule> = rules
+        .iter()
+        .filter_map(|rule| {
+            // PVE uses "pos" for the rule position number
+            let rule_num = rule.get("pos").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
+            let action = rule.get("action").and_then(|v| v.as_str())?.to_string();
+            // PVE uses "proto" not "protocol"
+            let protocol = rule
+                .get("proto")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            // source and dest are optional fields
+            let source = rule
+                .get("source")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let destination = rule
+                .get("dest")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let port = rule
+                .get("dport")
+                .or_else(|| rule.get("sport"))
+                .and_then(|p| p.as_str())
+                .map(|s| s.to_string());
+            // PVE uses "enable" as integer (1=enabled, 0=disabled), not "enabled" bool
+            let enabled = rule
+                .get("enable")
+                .and_then(|e| e.as_i64().map(|n| n != 0).or_else(|| e.as_bool()))
+                .unwrap_or(true);
+
+            Some(FirewallRule {
+                rule_num,
+                action,
+                protocol,
+                source,
+                destination,
+                port,
+                enabled,
             })
-            .collect();
+        })
+        .collect();
 
-        Ok(rule_list)
-    } else {
-        Err("Invalid response format".to_string())
-    }
+    Ok(rule_list)
 }
 
-/// Add firewall rule
+/// Add firewall rule — uses correct PVE API field names (proto, enable, dest).
+/// `rule.rule_num` is intentionally not sent: PVE assigns the position (pos) automatically
+/// on creation. rule_num is only used for update/delete operations on existing rules.
 pub async fn add_rule(
     client: &crate::proxmox::client::ProxmoxClient,
     node: &str,
@@ -80,14 +97,28 @@ pub async fn add_rule(
     ticket: &str,
 ) -> Result<(), String> {
     let path = format!("nodes/{}/firewall/rules", node);
-    let config = serde_json::json!({
+
+    let mut config = serde_json::json!({
         "action": rule.action,
-        "protocol": rule.protocol,
-        "source": rule.source,
-        "dest": rule.destination,
-        "dport": rule.port,
-        "enabled": rule.enabled
+        "type": "in",
+        "enable": if rule.enabled { 1 } else { 0 }
     });
+
+    // Only include optional fields when non-empty
+    if !rule.protocol.is_empty() {
+        config["proto"] = serde_json::Value::String(rule.protocol.clone());
+    }
+    if !rule.source.is_empty() {
+        config["source"] = serde_json::Value::String(rule.source.clone());
+    }
+    if !rule.destination.is_empty() {
+        config["dest"] = serde_json::Value::String(rule.destination.clone());
+    }
+    if let Some(ref port) = rule.port {
+        if !port.is_empty() {
+            config["dport"] = serde_json::Value::String(port.clone());
+        }
+    }
 
     let _response: serde_json::Value = client
         .post(&path, &config, Some(ticket))
@@ -200,19 +231,31 @@ pub async fn get_firewall_status(
         .unwrap_or(&Vec::new())
         .iter()
         .filter_map(|rule| {
-            let rule_num = rule.get("rule_num")?.as_u64()? as u32;
-            let action = rule.get("action")?.as_str()?.to_string();
-            let protocol = rule.get("protocol")?.as_str().unwrap_or("").to_string();
-            let source = rule.get("source")?.as_str().unwrap_or("").to_string();
-            let destination = rule.get("dest")?.as_str().unwrap_or("").to_string();
+            let rule_num = rule.get("pos").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
+            let action = rule.get("action").and_then(|v| v.as_str())?.to_string();
+            let protocol = rule
+                .get("proto")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let source = rule
+                .get("source")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let destination = rule
+                .get("dest")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
             let port = rule
                 .get("dport")
-                .or(rule.get("sport"))
+                .or_else(|| rule.get("sport"))
                 .and_then(|p| p.as_str())
                 .map(|s| s.to_string());
             let enabled = rule
-                .get("enabled")
-                .and_then(|e| e.as_bool())
+                .get("enable")
+                .and_then(|e| e.as_i64().map(|n| n != 0).or_else(|| e.as_bool()))
                 .unwrap_or(true);
 
             Some(FirewallRule {
