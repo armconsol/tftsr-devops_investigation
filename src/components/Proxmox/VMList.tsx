@@ -104,6 +104,7 @@ export function VMList({
   const [onlineMigration, setOnlineMigration] = useState(true);
   const [maxDowntime, setMaxDowntime] = useState(30);
   const [clusterNodes, setClusterNodes] = useState<string[]>([]);
+  const [nodesLoading, setNodesLoading] = useState(false);
 
   const vms: VMInfo[] = React.useMemo(() => {
     return rawVms.map((vm) => ({
@@ -199,6 +200,7 @@ export function VMList({
   const handleMigrate = useCallback(async (vm: VMInfo) => {
     setMigrationVM(vm);
     setTargetCluster(clusterId);
+    setNodesLoading(true);
     try {
       const nodeData: { node?: string; status?: string }[] = await invoke('list_proxmox_nodes', { clusterId });
       const names = nodeData
@@ -212,6 +214,8 @@ export function VMList({
         .filter((node, idx, self) => self.indexOf(node) === idx && node !== vm.node);
       setClusterNodes(fallback);
       setTargetNode(fallback[0] || '');
+    } finally {
+      setNodesLoading(false);
     }
   }, [clusterId, vms]);
 
@@ -417,6 +421,7 @@ export function VMList({
         onClose={() => { setMigrationVM(null); setTargetNode(''); setTargetCluster(''); setClusterNodes([]); }}
         onSubmit={submitMigration}
         availableNodeNames={clusterNodes}
+        nodesLoading={nodesLoading}
         clusters={clusters}
         currentClusterId={clusterId}
         targetNode={targetNode}
@@ -607,6 +612,7 @@ interface MigrationDialogProps {
   onClose: () => void;
   onSubmit: () => void;
   availableNodeNames: string[];
+  nodesLoading: boolean;
   clusters: ClusterInfo[];
   currentClusterId: string;
   targetNode: string;
@@ -625,6 +631,7 @@ function MigrationDialog({
   onClose,
   onSubmit,
   availableNodeNames,
+  nodesLoading,
   clusters,
   currentClusterId,
   targetNode,
@@ -685,7 +692,9 @@ function MigrationDialog({
 
           <div className="space-y-2">
             <Label htmlFor="targetNode">Target Node</Label>
-            {isCrossCluster ? (
+            {nodesLoading ? (
+              <p className="text-sm text-muted-foreground animate-pulse">Loading nodes…</p>
+            ) : isCrossCluster ? (
               <>
                 <Input
                   id="targetNode"
