@@ -477,7 +477,7 @@ jobs:
           if [ -f "/tmp/pr_review.txt" ] && [ -s "/tmp/pr_review.txt" ]; then
             REVIEW_BODY=$(head -c 65536 /tmp/pr_review.txt)
             BODY=$(jq -n \
-              --arg body "Automated PR Review (qwen3.5-122b-think via liteLLM):\n\n${REVIEW_BODY}" \
+              --arg body "Automated PR Review:${REVIEW_BODY}" \
               '{body: $body, event: "COMMENT"}')
           else
             BODY=$(jq -n \
