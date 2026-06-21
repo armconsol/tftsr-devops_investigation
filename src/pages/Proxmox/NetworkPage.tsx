@@ -7,6 +7,7 @@ import { listNetworkInterfaces, listProxmoxClusters, NetworkInterface } from '@/
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/index';
 import { Input } from '@/components/ui/index';
 import { Label } from '@/components/ui/index';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/index';
 import { toast } from 'sonner';
 
 export function ProxmoxNetworkPage() {
@@ -216,12 +217,21 @@ export function ProxmoxNetworkPage() {
             </div>
             <div className="space-y-2">
               <Label htmlFor="type">Interface Type</Label>
-              <Input
-                id="type"
-                value={ifaceType}
-                onChange={(e) => setIfaceType(e.target.value)}
-                placeholder="eth, bond, bridge, vlan"
-              />
+              <Select value={ifaceType} onValueChange={setIfaceType}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select interface type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="eth">eth — Ethernet</SelectItem>
+                  <SelectItem value="bond">bond — Network Bond</SelectItem>
+                  <SelectItem value="bridge">bridge — Linux Bridge</SelectItem>
+                  <SelectItem value="vlan">vlan — VLAN</SelectItem>
+                  <SelectItem value="OVSBridge">OVSBridge — Open vSwitch Bridge</SelectItem>
+                  <SelectItem value="OVSBond">OVSBond — Open vSwitch Bond</SelectItem>
+                  <SelectItem value="OVSIntPort">OVSIntPort — OVS Internal Port</SelectItem>
+                  <SelectItem value="OVSPort">OVSPort — OVS Port</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-2">
               <Label htmlFor="address">IP Address</Label>

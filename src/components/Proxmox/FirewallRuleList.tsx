@@ -19,6 +19,7 @@ interface FirewallRuleListProps {
   rules: FirewallRuleInfo[];
   onRefresh?: () => void;
   isLoading?: boolean;
+  onNewRule?: () => void;
   onEnable?: (rule: FirewallRuleInfo) => void;
   onDisable?: (rule: FirewallRuleInfo) => void;
   onEdit?: (rule: FirewallRuleInfo) => void;
@@ -30,6 +31,7 @@ export function FirewallRuleList({
   rules,
   onRefresh,
   isLoading,
+  onNewRule,
   onEnable,
   onDisable,
   onEdit,
@@ -44,7 +46,7 @@ export function FirewallRuleList({
           <Button variant="outline" size="sm" onClick={onRefresh} disabled={isLoading}>
             Refresh
           </Button>
-          <Button size="sm">
+          <Button size="sm" onClick={onNewRule}>
             <span className="mr-2 h-4 w-4">+</span>
             New Rule
           </Button>
