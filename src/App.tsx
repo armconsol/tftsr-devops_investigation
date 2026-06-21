@@ -21,6 +21,7 @@ import {
   Server as ServerIcon,
   Settings,
 } from "lucide-react";
+import { Toaster } from "sonner";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { getAppVersionCmd, loadAiProvidersCmd, testProviderConnectionCmd, shutdownPortForwardsCmd } from "@/lib/tauriCommands";
 
@@ -337,6 +338,7 @@ export default function App() {
           </Routes>
         </main>
       </div>
+      <Toaster richColors position="top-right" />
     </>
   );
 }

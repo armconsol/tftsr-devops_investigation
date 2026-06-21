@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui/index';
-import { RefreshCw } from 'lucide-react';
-import { VMList } from '@/components/Proxmox';
+import { RefreshCw, Plus } from 'lucide-react';
+import { VMList, CreateVmDialog } from '@/components/Proxmox';
 import { listProxmoxClusters, listProxmoxVms } from '@/lib/proxmoxClient';
 import type { ClusterInfo } from '@/lib/domain';
 import { toast } from 'sonner';
@@ -13,6 +13,7 @@ export function ProxmoxVMsPage() {
   const [vms, setVms] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [selectedVMs, setSelectedVMs] = useState<Set<string>>(new Set());
+  const [showCreateDialog, setShowCreateDialog] = useState(false);
 
   useEffect(() => {
     listProxmoxClusters()
@@ -82,6 +83,10 @@ export function ProxmoxVMsPage() {
             <RefreshCw className="mr-2 h-4 w-4" />
             Refresh
           </Button>
+          <Button size="sm" onClick={() => setShowCreateDialog(true)} disabled={!selectedClusterId}>
+            <Plus className="mr-2 h-4 w-4" />
+            Add VM
+          </Button>
         </div>
       </div>
 
@@ -99,6 +104,13 @@ export function ProxmoxVMsPage() {
             return next;
           });
         }}
+      />
+
+      <CreateVmDialog
+        isOpen={showCreateDialog}
+        clusterId={selectedClusterId}
+        onClose={() => setShowCreateDialog(false)}
+        onCreated={() => loadVms(selectedClusterId)}
       />
     </div>
   );

@@ -26,8 +26,6 @@ interface VMInfo {
   cpu: number;
   memory: number;
   memoryTotal: number;
-  disk: number;
-  diskTotal: number;
   uptime?: number;
   tags?: string[];
 }
@@ -105,6 +103,8 @@ export function VMList({
   const [targetCluster, setTargetCluster] = useState<string>('');
   const [onlineMigration, setOnlineMigration] = useState(true);
   const [maxDowntime, setMaxDowntime] = useState(30);
+  const [clusterNodes, setClusterNodes] = useState<string[]>([]);
+  const [nodesLoading, setNodesLoading] = useState(false);
 
   const vms: VMInfo[] = React.useMemo(() => {
     return rawVms.map((vm) => ({
@@ -116,8 +116,6 @@ export function VMList({
       cpu: vm.cpu || 0,
       memory: vm.mem || vm.memory || 0,
       memoryTotal: vm.max_mem || vm.memoryTotal || 0,
-      disk: vm.disk || 0,
-      diskTotal: vm.max_disk || vm.diskTotal || 0,
       uptime: vm.uptime,
       tags: vm.tags,
     }));
@@ -199,14 +197,27 @@ export function VMList({
     toast.info(`Snapshot ${action} for ${vm.name} - not yet implemented`);
   }, []);
 
-  const handleMigrate = useCallback((vm: VMInfo) => {
+  const handleMigrate = useCallback(async (vm: VMInfo) => {
     setMigrationVM(vm);
-    const availableNodes = vms
-      .map((v) => v.node)
-      .filter((node, index, self) => self.indexOf(node) === index && node !== vm.node);
-    setTargetNode(availableNodes[0] || '');
     setTargetCluster(clusterId);
-  }, [vms, clusterId]);
+    setNodesLoading(true);
+    try {
+      const nodeData: { node?: string; status?: string }[] = await invoke('list_proxmox_nodes', { clusterId });
+      const names = nodeData
+        .filter((n) => n.node && n.node !== vm.node)
+        .map((n) => n.node as string);
+      setClusterNodes(names);
+      setTargetNode(names[0] || '');
+    } catch {
+      const fallback = vms
+        .map((v) => v.node)
+        .filter((node, idx, self) => self.indexOf(node) === idx && node !== vm.node);
+      setClusterNodes(fallback);
+      setTargetNode(fallback[0] || '');
+    } finally {
+      setNodesLoading(false);
+    }
+  }, [clusterId, vms]);
 
   const submitMigration = useCallback(async () => {
     if (!migrationVM || !targetNode) {
@@ -338,7 +349,6 @@ export function VMList({
                 <TableHead>Status</TableHead>
                 <TableHead>CPU</TableHead>
                 <TableHead>Memory</TableHead>
-                <TableHead>Disk</TableHead>
                 <TableHead>Uptime</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
@@ -347,7 +357,6 @@ export function VMList({
               {vms.map((vm) => {
                 const cpuPercent = vm.cpu > 0 ? Math.min(vm.cpu * 100, 100) : 0;
                 const memoryPercent = vm.memoryTotal > 0 ? (vm.memory / vm.memoryTotal) * 100 : 0;
-                const diskPercent = vm.diskTotal > 0 ? (vm.disk / vm.diskTotal) * 100 : 0;
 
                 return (
                   <TableRow key={vm.id}>
@@ -387,23 +396,6 @@ export function VMList({
                         <span className="text-muted-foreground">-</span>
                       )}
                     </TableCell>
-                    <TableCell>
-                      {vm.diskTotal > 0 ? (
-                        <div className="flex items-center gap-2">
-                          <div className="flex-1 h-2 bg-gray-200 rounded-full overflow-hidden">
-                            <div
-                              className="h-full bg-green-500"
-                              style={{ width: `${diskPercent}%` }}
-                            />
-                          </div>
-                          <span className="text-xs text-muted-foreground">
-                            {formatBytes(vm.disk)} / {formatBytes(vm.diskTotal)}
-                          </span>
-                        </div>
-                      ) : (
-                        <span className="text-muted-foreground">-</span>
-                      )}
-                    </TableCell>
                     <TableCell>{formatUptime(vm.uptime || 0)}</TableCell>
                     <TableCell className="text-right">
                       <VMActionMenu
@@ -426,9 +418,10 @@ export function VMList({
       <MigrationDialog
         vm={migrationVM}
         isOpen={!!migrationVM}
-        onClose={() => { setMigrationVM(null); setTargetNode(''); setTargetCluster(''); }}
+        onClose={() => { setMigrationVM(null); setTargetNode(''); setTargetCluster(''); setClusterNodes([]); }}
         onSubmit={submitMigration}
-        availableNodes={vms}
+        availableNodeNames={clusterNodes}
+        nodesLoading={nodesLoading}
         clusters={clusters}
         currentClusterId={clusterId}
         targetNode={targetNode}
@@ -618,7 +611,8 @@ interface MigrationDialogProps {
   isOpen: boolean;
   onClose: () => void;
   onSubmit: () => void;
-  availableNodes: VMInfo[];
+  availableNodeNames: string[];
+  nodesLoading: boolean;
   clusters: ClusterInfo[];
   currentClusterId: string;
   targetNode: string;
@@ -636,7 +630,8 @@ function MigrationDialog({
   isOpen,
   onClose,
   onSubmit,
-  availableNodes,
+  availableNodeNames,
+  nodesLoading,
   clusters,
   currentClusterId,
   targetNode,
@@ -652,14 +647,10 @@ function MigrationDialog({
 
   const isCrossCluster = targetCluster && targetCluster !== currentClusterId;
 
-  const availableTargets = availableNodes
-    .map((v) => v.node)
-    .filter((node, index, self) => self.indexOf(node) === index && node !== vm.node);
-
   const canSubmitMigration = () => {
     if (!targetNode) return false;
     if (isCrossCluster) return true;
-    return availableTargets.length > 0;
+    return availableNodeNames.length > 0;
   };
 
   return (
@@ -701,7 +692,9 @@ function MigrationDialog({
 
           <div className="space-y-2">
             <Label htmlFor="targetNode">Target Node</Label>
-            {isCrossCluster ? (
+            {nodesLoading ? (
+              <p className="text-sm text-muted-foreground animate-pulse">Loading nodes…</p>
+            ) : isCrossCluster ? (
               <>
                 <Input
                   id="targetNode"
@@ -720,14 +713,14 @@ function MigrationDialog({
                     <SelectValue placeholder="Select target node" />
                   </SelectTrigger>
                   <SelectContent>
-                    {availableTargets.map((node) => (
+                    {availableNodeNames.map((node) => (
                       <SelectItem key={node} value={node}>
                         {node}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
-                {availableTargets.length === 0 && (
+                {availableNodeNames.length === 0 && (
                   <p className="text-xs text-muted-foreground">
                     No other nodes available in this cluster
                   </p>

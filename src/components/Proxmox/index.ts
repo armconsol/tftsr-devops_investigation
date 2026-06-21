@@ -35,3 +35,4 @@ export { ContainerOverview } from './ContainerOverview';
 export { AclList } from './AclList';
 export { VMConsole } from './VMConsole';
 export { ContainerConsole } from './ContainerConsole';
+export { CreateVmDialog } from './CreateVmDialog';
