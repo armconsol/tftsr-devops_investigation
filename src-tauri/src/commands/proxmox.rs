@@ -716,7 +716,10 @@ pub async fn list_proxmox_datastores(
                 format!("storage/{}/{}", node_name, storage_name)
             };
             if storage_name.is_empty() {
-                tracing::warn!(node = node_name, "storage entry has empty storage name — skipping");
+                tracing::warn!(
+                    node = node_name,
+                    "storage entry has empty storage name — skipping"
+                );
                 return None;
             }
             tracing::debug!(storage_id = %storage_id, "generated storage ID");
@@ -744,10 +747,7 @@ pub async fn list_proxmox_datastores(
                 .and_then(|v| v.as_str())
                 .unwrap_or("")
                 .to_string();
-            normalized.insert(
-                "content".to_string(),
-                serde_json::Value::String(content),
-            );
+            normalized.insert("content".to_string(), serde_json::Value::String(content));
 
             normalized.insert(
                 "node".to_string(),
@@ -759,9 +759,18 @@ pub async fn list_proxmox_datastores(
             let disk_total = obj.get("maxdisk").and_then(|v| v.as_u64()).unwrap_or(0);
             let disk_avail = disk_total.saturating_sub(disk_used);
 
-            normalized.insert("used".to_string(), serde_json::Value::Number(disk_used.into()));
-            normalized.insert("size".to_string(), serde_json::Value::Number(disk_total.into()));
-            normalized.insert("available".to_string(), serde_json::Value::Number(disk_avail.into()));
+            normalized.insert(
+                "used".to_string(),
+                serde_json::Value::Number(disk_used.into()),
+            );
+            normalized.insert(
+                "size".to_string(),
+                serde_json::Value::Number(disk_total.into()),
+            );
+            normalized.insert(
+                "available".to_string(),
+                serde_json::Value::Number(disk_avail.into()),
+            );
 
             let status = obj
                 .get("status")
