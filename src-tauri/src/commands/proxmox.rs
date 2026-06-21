@@ -652,7 +652,10 @@ fn validate_pve_identifier(value: &str, field: &str) -> Result<(), String> {
     if value.is_empty() {
         return Err(format!("{} must not be empty", field));
     }
-    if !value.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '_') {
+    if !value
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '_')
+    {
         return Err(format!(
             "{} contains invalid characters — only alphanumeric, '.', '-', '_' are allowed",
             field
@@ -709,7 +712,8 @@ pub async fn create_proxmox_vm(
                 .split_once(':')
                 .map(|(store, path)| {
                     !store.is_empty()
-                        && !store.contains(|c: char| !c.is_ascii_alphanumeric() && c != '-' && c != '_')
+                        && !store
+                            .contains(|c: char| !c.is_ascii_alphanumeric() && c != '-' && c != '_')
                         && path.starts_with("iso/")
                         && !path.contains(",")
                 })
