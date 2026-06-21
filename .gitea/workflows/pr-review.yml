@@ -31,7 +31,7 @@ jobs:
           git fetch --depth=1 origin ${{ github.head_ref }}
           git checkout FETCH_HEAD
 
-      - name: Build review context
+      - name: Build review batches
         id: context
         shell: bash
         run: |
@@ -49,13 +49,10 @@ jobs:
           if [ "$FILE_COUNT" -eq 0 ]; then
             echo "No reviewable files changed."
             echo "diff_size=0" >> $GITHUB_OUTPUT
+            echo "batch_count=0" >> $GITHUB_OUTPUT
             exit 0
           fi
 
-          # Build context: full file content for each changed file.
-          # Files <= 500 lines: include complete content.
-          # Files > 500 lines: include the per-file diff with generous context (±50 lines).
-          #
           # Secret scrubbing: match actual credential VALUES only — known API key formats,
           # or keyword="long_quoted_literal" (25+ chars). Never scrub on keyword alone,
           # which would silently delete function signatures, variable declarations, and tests.
@@ -63,35 +60,53 @@ jobs:
           # Only strip lines that are ENTIRELY a long base64 blob (e.g. PEM cert bodies)
           B64_PATTERN='^[[:space:]]*[A-Za-z0-9+/]{60,}={0,2}[[:space:]]*$'
 
-          > /tmp/pr_context.txt
+          # Split changed files into batches capped at MAX_BATCH_LINES each.
+          # File boundaries are always respected — a file is never split across batches.
+          MAX_BATCH_LINES=2500
+          BATCH=1
+          BATCH_LINES=0
+          TOTAL_LINES=0
+          BATCH_FILE="/tmp/pr_batch_001.txt"
+          > "$BATCH_FILE"
+
           while IFS= read -r file; do
             [ -f "$file" ] || continue
-            lines=$(wc -l < "$file" | tr -d ' ')
-            printf '\n════════ FILE: %s (%s lines) ════════\n' "$file" "$lines" >> /tmp/pr_context.txt
-            if [ "$lines" -le 500 ]; then
-              # Full file — model sees the complete implementation
-              grep -v -E "$SECRET_PATTERN" "$file" \
-                | grep -v -E "$B64_PATTERN" \
-                >> /tmp/pr_context.txt || true
-            else
-              # Large file — emit annotated diff hunks (±50 lines of context each)
-              printf '[File too large for full view (%s lines) — showing changed sections only]\n' "$lines" >> /tmp/pr_context.txt
-              git diff -U50 origin/${{ github.base_ref }}..HEAD -- "$file" \
-                | grep -v -E "$SECRET_PATTERN" \
-                | grep -v -E "$B64_PATTERN" \
-                >> /tmp/pr_context.txt || true
+            file_lines=$(wc -l < "$file" | tr -d ' ')
+
+            # Build context for this individual file into a temp file
+            {
+              printf '\n════════ FILE: %s (%s lines) ════════\n' "$file" "$file_lines"
+              if [ "$file_lines" -le 500 ]; then
+                grep -v -E "$SECRET_PATTERN" "$file" | grep -v -E "$B64_PATTERN" || true
+              else
+                printf '[File too large for full view (%s lines) — showing changed sections only]\n' "$file_lines"
+                git diff -U50 origin/${{ github.base_ref }}..HEAD -- "$file" \
+                  | grep -v -E "$SECRET_PATTERN" \
+                  | grep -v -E "$B64_PATTERN" \
+                  || true
+              fi
+            } > /tmp/fc_tmp.txt
+
+            FC_LINES=$(wc -l < /tmp/fc_tmp.txt | tr -d ' ')
+
+            # Start a new batch if this file would overflow the current one (and batch is not empty)
+            if [ "$BATCH_LINES" -gt 0 ] && [ $((BATCH_LINES + FC_LINES)) -gt $MAX_BATCH_LINES ]; then
+              BATCH=$((BATCH + 1))
+              BATCH_LINES=0
+              BATCH_FILE="/tmp/pr_batch_$(printf '%03d' $BATCH).txt"
+              > "$BATCH_FILE"
             fi
+
+            cat /tmp/fc_tmp.txt >> "$BATCH_FILE"
+            BATCH_LINES=$((BATCH_LINES + FC_LINES))
+            TOTAL_LINES=$((TOTAL_LINES + FC_LINES))
           done < /tmp/pr_files.txt
 
-          TOTAL=$(wc -l < /tmp/pr_context.txt | tr -d ' ')
-          echo "diff_size=${TOTAL}" >> $GITHUB_OUTPUT
+          rm -f /tmp/fc_tmp.txt
 
-          # Cap at 6000 lines so we stay within the model's context window
-          if [ "$TOTAL" -gt 6000 ]; then
-            head -n 6000 /tmp/pr_context.txt > /tmp/pr_context_capped.txt
-            mv /tmp/pr_context_capped.txt /tmp/pr_context.txt
-            echo "[CONTEXT TRUNCATED at 6000 lines — ${TOTAL} total]" >> /tmp/pr_context.txt
-          fi
+          echo "batch_count=${BATCH}" >> $GITHUB_OUTPUT
+          echo "diff_size=${TOTAL_LINES}" >> $GITHUB_OUTPUT
+          echo "Built ${BATCH} batch(es) from ${FILE_COUNT} files (${TOTAL_LINES} total lines)"
 
       - name: Build codebase index
         id: index
@@ -175,7 +190,7 @@ jobs:
           echo "comment_lines=${LINES}" >> $GITHUB_OUTPUT
           echo "Fetched PR history: ${LINES} lines"
 
-      - name: Analyze with LLM
+      - name: Analyze iteratively
         id: analyze
         if: steps.context.outputs.diff_size != '0'
         shell: bash
@@ -185,137 +200,197 @@ jobs:
           PR_TITLE: ${{ github.event.pull_request.title }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           PR_BODY: ${{ github.event.pull_request.body }}
+          BATCH_COUNT: ${{ steps.context.outputs.batch_count }}
         run: |
           set -euo pipefail
           CHANGED_FILES=$(tr '\n' ' ' < /tmp/pr_files.txt)
+          > /tmp/pr_all_findings.txt
+          OVERALL_VERDICT="APPROVE"
+          BATCH_SUCCESS=0
+          BATCH_FAILED=0
 
-          # Build prompt file following anthropics/claude-code code-review pattern:
-          # - Multi-agent review (parallel analysis)
-          # - High-signal issues only (no nitpicks, style, or speculative concerns)
-          # - Validate findings against codebase
-          # - Consider PR title/description for author intent
-          # - Check for pre-existing issues
-          {
-            printf '%s\n\n' 'You are a senior engineer performing a code review following the anthropics/claude-code code-review pattern.'
-            printf 'PR Title: %s\n' "$PR_TITLE"
-            printf 'PR Body: %s\n\n' "${PR_BODY:-No description provided}"
-            printf 'Files changed: %s\n\n' "$CHANGED_FILES"
-            printf '%s\n' '---'
-            printf '%s\n\n' '## CODEBASE INDEX'
-            printf '%s\n' 'These are the ONLY Tauri commands, TypeScript exports, Rust public functions,'
-            printf '%s\n' 'and database tables that exist in this project. Before raising any finding,'
-            printf '%s\n' 'confirm that every symbol you cite appears in this list or in the file'
-            printf '%s\n' 'contents below. If it does not appear in either, your finding is fabricated.'
-            printf '%s\n' '---'
-            cat /tmp/codebase_index.txt
-            printf '%s\n\n' '---'
-            printf '%s\n\n' '## CHANGED FILE CONTENTS'
-            printf '%s\n' 'Each section is the COMPLETE, FINAL file after PR changes (not a diff).'
-            printf '%s\n\n' 'Files over 500 lines show only changed sections with surrounding context.'
-            printf '%s\n' '---'
-            cat /tmp/pr_context.txt
-            printf '%s\n\n' '---'
-            if [ -s /tmp/pr_comments.txt ]; then
-              cat /tmp/pr_comments.txt
-              printf '%s\n\n' '---'
-              printf '%s\n' '## CRITICAL: PRIOR REVIEW CONTEXT ABOVE'
-              printf '%s\n' 'Before raising ANY finding, check the review history above.'
-              printf '%s\n' 'SILENTLY DISCARD any finding that has already been:'
-              printf '%s\n' '  - Marked as invalid or incorrect by a reviewer'
-              printf '%s\n' '  - Acknowledged as an intentional design decision or known limitation'
-              printf '%s\n' '  - Confirmed fixed in a prior commit'
-              printf '%s\n\n' 'Raising a previously-refuted finding is a critical error.'
+          for i in $(seq 1 "$BATCH_COUNT"); do
+            BATCH_FILE="/tmp/pr_batch_$(printf '%03d' $i).txt"
+            [ -f "$BATCH_FILE" ] || continue
+
+            # Build the prompt for this batch
+            {
+              printf '%s\n\n' 'You are a senior engineer performing a code review following the anthropics/claude-code code-review pattern.'
+              printf 'PR Title: %s\n' "$PR_TITLE"
+              printf 'PR Body: %s\n\n' "${PR_BODY:-No description provided}"
+              printf 'Files changed: %s\n\n' "$CHANGED_FILES"
+              if [ "$BATCH_COUNT" -gt 1 ]; then
+                printf 'NOTE: This is a large PR split into %s review batches. You are reviewing BATCH %s of %s.\n' "$BATCH_COUNT" "$i" "$BATCH_COUNT"
+                printf 'Focus ONLY on the files shown in this batch. Do not speculate about files not included here.\n\n'
+              fi
               printf '%s\n' '---'
-            fi
-            printf '%s\n\n' '## CODE REVIEW INSTRUCTIONS'
-            printf '%s\n\n' 'You MUST follow this workflow precisely:'
-            printf '%s\n\n' '1. LAUNCH 4 PARALLEL ANALYSIS AGENTS to independently review the changes:'
-            printf '%s\n\n' '   AGENT 1 (CLAUDE.MD COMPLIANCE): Audit changes for CLAUDE.md compliance'
-            printf '%s\n' '   - Only consider CLAUDE.md files that share a file path with the file or parents'
-            printf '%s\n' '   - Quote exact rules being violated'
-            printf '%s\n\n' '   AGENT 2 (CLAUDE.MD COMPLIANCE): Audit changes for CLAUDE.md compliance'
-            printf '%s\n' '   - Same scope as Agent 1, parallel analysis'
-            printf '%s\n\n' '   AGENT 3 (BUG DETECTOR): Scan for obvious bugs in the diff itself'
-            printf '%s\n' '   - Focus ONLY on the diff, no extra context'
-            printf '%s\n' '   - Flag ONLY significant bugs, ignore nitpicks and likely false positives'
-            printf '%s\n' '   - Do not flag issues that require context outside the git diff'
-            printf '%s\n\n' '   AGENT 4 (BUG DETECTOR): Look for problems in introduced code'
-            printf '%s\n' '   - Security issues, incorrect logic, data loss'
-            printf '%s\n' '   - Only problems that fall within the changed code'
-            printf '%s\n\n' '2. CRITICAL: Only flag HIGH SIGNAL issues where:'
-            printf '%s\n' '   - Code will fail to compile or parse (syntax errors, type errors)'
-            printf '%s\n' '   - Code will definitely produce wrong results (clear logic errors)'
-            printf '%s\n' '   - Clear, unambiguous violations with exact rule quoted'
-            printf '%s\n\n' '   DO NOT flag:'
-            printf '%s\n' '   - Code style or quality concerns'
-            printf '%s\n' '   - Potential issues that depend on specific inputs or state'
-            printf '%s\n' '   - Subjective suggestions or improvements'
-            printf '%s\n' '   - Pre-existing issues'
-            printf '%s\n' '   - Issues that linters will catch'
-            printf '%s\n' '   - General security issues unless explicitly required in CLAUDE.md'
-            printf '%s\n\n' '3. FOR EACH ISSUE FOUND BY AGENTS 3 & 4:'
-            printf '%s\n' '   - Launch a VALIDATION AGENT to verify the issue is real'
-            printf '%s\n' '   - Validation agent checks: issue is truly an issue, not false positive'
-            printf '%s\n' '   - Use full codebase to validate (not just diff)'
-            printf '%s\n' '   - If validation fails, discard the issue silently'
-            printf '%s\n\n' '4. OUTPUT FORMAT (strict):'
-            printf '%s\n\n' '   **Summary** (2-3 sentences)'
-            printf '%s\n' '   **Findings**'
-            printf '%s\n' '   - [SEVERITY] file:line - description'
-            printf '%s\n' '     Evidence: quoted line'
-            printf '%s\n\n' '     Fix: concrete change'
-            printf '%s\n\n' '   (Write "No findings." if none.)'
-            printf '%s\n' '   **Verdict**: APPROVE / APPROVE WITH COMMENTS / REQUEST CHANGES'
-            printf '%s\n\n' '5. SEVERITY DEFINITIONS:'
-            printf '%s\n' '   - BLOCKER: fails to compile, corrupts data, or security vulnerability'
-            printf '%s\n' '   - WARNING: real risk to address before merge'
-            printf '%s\n' '   - SUGGESTION: minor improvement, follow-up PR fine'
-            printf '%s\n\n' '6. FOCUS AREAS:'
-            printf '%s\n' '   - Security bugs, logic errors, data loss, injection, unhandled errors'
-            printf '%s\n\n' '7. IGNORE:'
-            printf '%s\n' '   - Style, missing comments, speculative future concerns'
-            printf '%s\n\n' '8. FALSE POSITIVES TO AVOID:'
-            printf '%s\n' '   - Pre-existing issues'
-            printf '%s\n' '   - Something that appears buggy but is actually correct'
-            printf '%s\n' '   - Pedantic nitpicks that senior engineers would not flag'
-            printf '%s\n' '   - Issues that linters will catch'
-            printf '%s\n' '   - General code quality concerns unless explicitly required in CLAUDE.md'
-            printf '%s\n' '   - Issues mentioned in CLAUDE.md but explicitly silenced in code'
-          } > /tmp/prompt.txt
+              cat /tmp/codebase_index.txt
+              printf '%s\n\n' '---'
+              printf '%s\n\n' '## CHANGED FILE CONTENTS (THIS BATCH)'
+              printf '%s\n' 'Each section is the COMPLETE, FINAL file after PR changes (not a diff).'
+              printf '%s\n\n' 'Files over 500 lines show only changed sections with surrounding context.'
+              printf '%s\n' '---'
+              cat "$BATCH_FILE"
+              printf '%s\n\n' '---'
+              if [ -s /tmp/pr_comments.txt ]; then
+                cat /tmp/pr_comments.txt
+                printf '%s\n\n' '---'
+                printf '%s\n' '## CRITICAL: PRIOR REVIEW CONTEXT ABOVE'
+                printf '%s\n' 'Before raising ANY finding, check the review history above.'
+                printf '%s\n' 'SILENTLY DISCARD any finding that has already been:'
+                printf '%s\n' '  - Marked as invalid or incorrect by a reviewer'
+                printf '%s\n' '  - Acknowledged as an intentional design decision or known limitation'
+                printf '%s\n' '  - Confirmed fixed in a prior commit'
+                printf '%s\n\n' 'Raising a previously-refuted finding is a critical error.'
+                printf '%s\n' '---'
+              fi
+              printf '%s\n\n' '## CODE REVIEW INSTRUCTIONS'
+              printf '%s\n\n' 'You MUST follow this workflow precisely:'
+              printf '%s\n\n' '1. LAUNCH 4 PARALLEL ANALYSIS AGENTS to independently review the changes:'
+              printf '%s\n\n' '   AGENT 1 (CLAUDE.MD COMPLIANCE): Audit changes for CLAUDE.md compliance'
+              printf '%s\n' '   - Only consider CLAUDE.md files that share a file path with the file or parents'
+              printf '%s\n' '   - Quote exact rules being violated'
+              printf '%s\n\n' '   AGENT 2 (CLAUDE.MD COMPLIANCE): Audit changes for CLAUDE.md compliance'
+              printf '%s\n' '   - Same scope as Agent 1, parallel analysis'
+              printf '%s\n\n' '   AGENT 3 (BUG DETECTOR): Scan for obvious bugs in the diff itself'
+              printf '%s\n' '   - Focus ONLY on the diff, no extra context'
+              printf '%s\n' '   - Flag ONLY significant bugs, ignore nitpicks and likely false positives'
+              printf '%s\n' '   - Do not flag issues that require context outside the git diff'
+              printf '%s\n\n' '   AGENT 4 (BUG DETECTOR): Look for problems in introduced code'
+              printf '%s\n' '   - Security issues, incorrect logic, data loss'
+              printf '%s\n' '   - Only problems that fall within the changed code'
+              printf '%s\n\n' '2. CRITICAL: Only flag HIGH SIGNAL issues where:'
+              printf '%s\n' '   - Code will fail to compile or parse (syntax errors, type errors)'
+              printf '%s\n' '   - Code will definitely produce wrong results (clear logic errors)'
+              printf '%s\n' '   - Clear, unambiguous violations with exact rule quoted'
+              printf '%s\n\n' '   DO NOT flag:'
+              printf '%s\n' '   - Code style or quality concerns'
+              printf '%s\n' '   - Potential issues that depend on specific inputs or state'
+              printf '%s\n' '   - Subjective suggestions or improvements'
+              printf '%s\n' '   - Pre-existing issues'
+              printf '%s\n' '   - Issues that linters will catch'
+              printf '%s\n' '   - General security issues unless explicitly required in CLAUDE.md'
+              printf '%s\n\n' '3. FOR EACH ISSUE FOUND BY AGENTS 3 & 4:'
+              printf '%s\n' '   - Launch a VALIDATION AGENT to verify the issue is real'
+              printf '%s\n' '   - Validation agent checks: issue is truly an issue, not false positive'
+              printf '%s\n' '   - Use full codebase to validate (not just diff)'
+              printf '%s\n' '   - If validation fails, discard the issue silently'
+              printf '%s\n\n' '4. OUTPUT FORMAT (strict):'
+              printf '%s\n\n' '   **Summary** (2-3 sentences)'
+              printf '%s\n' '   **Findings**'
+              printf '%s\n' '   - [SEVERITY] file:line - description'
+              printf '%s\n' '     Evidence: quoted line'
+              printf '%s\n\n' '     Fix: concrete change'
+              printf '%s\n\n' '   (Write "No findings." if none.)'
+              printf '%s\n' '   **Verdict**: APPROVE / APPROVE WITH COMMENTS / REQUEST CHANGES'
+              printf '%s\n\n' '5. SEVERITY DEFINITIONS:'
+              printf '%s\n' '   - BLOCKER: fails to compile, corrupts data, or security vulnerability'
+              printf '%s\n' '   - WARNING: real risk to address before merge'
+              printf '%s\n' '   - SUGGESTION: minor improvement, follow-up PR fine'
+              printf '%s\n\n' '6. FOCUS AREAS:'
+              printf '%s\n' '   - Security bugs, logic errors, data loss, injection, unhandled errors'
+              printf '%s\n\n' '7. IGNORE:'
+              printf '%s\n' '   - Style, missing comments, speculative future concerns'
+              printf '%s\n\n' '8. FALSE POSITIVES TO AVOID:'
+              printf '%s\n' '   - Pre-existing issues'
+              printf '%s\n' '   - Something that appears buggy but is actually correct'
+              printf '%s\n' '   - Pedantic nitpicks that senior engineers would not flag'
+              printf '%s\n' '   - Issues that linters will catch'
+              printf '%s\n' '   - General code quality concerns unless explicitly required in CLAUDE.md'
+              printf '%s\n' '   - Issues mentioned in CLAUDE.md but explicitly silenced in code'
+            } > /tmp/prompt_batch.txt
 
-          # Write body to file — passing 100KB+ JSON as a shell arg hits ARG_MAX.
-          jq -cn \
-            --arg model "qwen3.5-122b-think" \
-            --rawfile content /tmp/prompt.txt \
-            '{model: $model, messages: [{role: "user", content: $content}], stream: false}' \
-            > /tmp/body.json
-          echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] PR #${PR_NUMBER} - Calling liteLLM API ($(wc -c < /tmp/body.json) bytes)..."
-          HTTP_CODE=$(curl -s --max-time 600 --connect-timeout 30 \
-            --retry 2 --retry-delay 15 --retry-connrefused --retry-max-time 1200 \
-            -o /tmp/llm_response.json -w "%{http_code}" \
-            -X POST "$LITELLM_URL/chat/completions" \
-            -H "Authorization: Bearer $LITELLM_API_KEY" \
-            -H "Content-Type: application/json" \
-            --data @/tmp/body.json)
-          echo "HTTP status: $HTTP_CODE"
-          echo "Response file size: $(wc -c < /tmp/llm_response.json) bytes"
-          if [ "$HTTP_CODE" != "200" ]; then
-            echo "ERROR: liteLLM returned HTTP $HTTP_CODE"
-            cat /tmp/llm_response.json
+            jq -cn \
+              --arg model "qwen3.5-122b-think" \
+              --rawfile content /tmp/prompt_batch.txt \
+              '{model: $model, messages: [{role: "user", content: $content}], stream: false}' \
+              > /tmp/body.json
+
+            echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] PR #${PR_NUMBER} - Batch ${i}/${BATCH_COUNT} ($(wc -c < /tmp/body.json) bytes)..."
+
+            HTTP_CODE=$(curl -s --max-time 600 --connect-timeout 30 \
+              --retry 2 --retry-delay 15 --retry-connrefused --retry-max-time 1200 \
+              -o /tmp/llm_response.json -w "%{http_code}" \
+              -X POST "$LITELLM_URL/chat/completions" \
+              -H "Authorization: Bearer $LITELLM_API_KEY" \
+              -H "Content-Type: application/json" \
+              --data @/tmp/body.json)
+
+            echo "Batch ${i} HTTP status: $HTTP_CODE"
+            echo "Batch ${i} response size: $(wc -c < /tmp/llm_response.json) bytes"
+
+            if [ "$HTTP_CODE" != "200" ]; then
+              echo "ERROR: Batch ${i} failed (HTTP $HTTP_CODE)"
+              cat /tmp/llm_response.json
+              {
+                echo "## Batch ${i} of ${BATCH_COUNT}"
+                echo ""
+                echo "Review unavailable — LLM returned HTTP ${HTTP_CODE}."
+                echo ""
+                echo "---"
+                echo ""
+              } >> /tmp/pr_all_findings.txt
+              BATCH_FAILED=$((BATCH_FAILED + 1))
+              continue
+            fi
+
+            if ! jq empty /tmp/llm_response.json 2>/dev/null; then
+              echo "ERROR: Invalid JSON in batch ${i} response"
+              BATCH_FAILED=$((BATCH_FAILED + 1))
+              continue
+            fi
+
+            BATCH_REVIEW=$(jq -r '.choices[0].message.content // empty' /tmp/llm_response.json)
+            if [ -z "$BATCH_REVIEW" ]; then
+              echo "ERROR: Empty content in batch ${i} response"
+              BATCH_FAILED=$((BATCH_FAILED + 1))
+              continue
+            fi
+
+            echo "Batch ${i} review length: ${#BATCH_REVIEW} chars"
+            BATCH_SUCCESS=$((BATCH_SUCCESS + 1))
+
+            # Track harshest verdict across batches
+            if echo "$BATCH_REVIEW" | grep -q "REQUEST CHANGES"; then
+              OVERALL_VERDICT="REQUEST CHANGES"
+            elif echo "$BATCH_REVIEW" | grep -q "APPROVE WITH COMMENTS" && [ "$OVERALL_VERDICT" != "REQUEST CHANGES" ]; then
+              OVERALL_VERDICT="APPROVE WITH COMMENTS"
+            fi
+
+            if [ "$BATCH_COUNT" -eq 1 ]; then
+              echo "$BATCH_REVIEW" >> /tmp/pr_all_findings.txt
+            else
+              {
+                echo "## Batch ${i} of ${BATCH_COUNT}"
+                echo ""
+                echo "$BATCH_REVIEW"
+                echo ""
+                echo "---"
+                echo ""
+              } >> /tmp/pr_all_findings.txt
+            fi
+          done
+
+          if [ "$BATCH_SUCCESS" -eq 0 ]; then
+            echo "ERROR: All ${BATCH_COUNT} batches failed"
             exit 1
           fi
-          if ! jq empty /tmp/llm_response.json 2>/dev/null; then
-            echo "ERROR: Invalid JSON response from liteLLM"
-            cat /tmp/llm_response.json
-            exit 1
+
+          # Assemble final review
+          if [ "$BATCH_COUNT" -eq 1 ]; then
+            cp /tmp/pr_all_findings.txt /tmp/pr_review.txt
+          else
+            {
+              echo "_This PR was reviewed in ${BATCH_COUNT} batches (${BATCH_FAILED} batch(es) failed)._"
+              echo ""
+              cat /tmp/pr_all_findings.txt
+              echo "---"
+              echo ""
+              echo "**Overall Verdict**: ${OVERALL_VERDICT}"
+              echo ""
+              echo "_Overall verdict reflects the most critical finding across all batches._"
+            } > /tmp/pr_review.txt
           fi
-          REVIEW=$(jq -r '.choices[0].message.content // empty' /tmp/llm_response.json)
-          if [ -z "$REVIEW" ]; then
-            echo "ERROR: No content in liteLLM response"
-            exit 1
-          fi
-          echo "Review length: ${#REVIEW} chars"
-          echo "$REVIEW" > /tmp/pr_review.txt
 
       - name: Verify findings against codebase
         if: steps.analyze.outcome == 'success'
@@ -424,4 +499,9 @@ jobs:
       - name: Cleanup
         if: always()
         shell: bash
-        run: rm -f /tmp/pr_diff.txt /tmp/pr_context.txt /tmp/codebase_index.txt /tmp/pr_comments.txt /tmp/prompt.txt /tmp/body.json /tmp/llm_response.json /tmp/pr_review.txt /tmp/review_post_response.json /tmp/pr_files.txt
+        run: |
+          rm -f /tmp/pr_files.txt /tmp/pr_context.txt /tmp/codebase_index.txt \
+                /tmp/pr_comments.txt /tmp/prompt_batch.txt /tmp/body.json \
+                /tmp/llm_response.json /tmp/pr_review.txt /tmp/pr_all_findings.txt \
+                /tmp/review_post_response.json /tmp/fc_tmp.txt
+          rm -f /tmp/pr_batch_*.txt
