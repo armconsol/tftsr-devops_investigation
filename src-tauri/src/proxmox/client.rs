@@ -349,7 +349,7 @@ mod tests {
     fn test_auth_response_envelope_deserialization() {
         // Validates that the `{"data": {...}}` envelope Proxmox uses is parsed
         // correctly into ProxmoxEnvelope<AuthResponse>.
-        // Note: Proxmox returns lowercase fields (ticket, username, clustername) 
+        // Note: Proxmox returns lowercase fields (ticket, username, clustername)
         // except for CSRFPreventionToken which is PascalCase.
         let json = r#"{
             "data": {
@@ -431,7 +431,7 @@ mod tests {
                 return;
             }
         };
-        
+
         let mut client = ProxmoxClient::new("172.0.0.18", 8006, "root@pam");
         let result = client.authenticate(&password).await;
         match result {
@@ -456,9 +456,12 @@ mod tests {
                 return;
             }
         };
-        
+
         let mut client = ProxmoxClient::new("172.0.0.18", 8006, "root@pam");
-        client.authenticate(&password).await.expect("Authentication failed");
+        client
+            .authenticate(&password)
+            .await
+            .expect("Authentication failed");
 
         #[derive(serde::Deserialize, Debug)]
         struct Resource {
@@ -470,7 +473,9 @@ mod tests {
             status: Option<String>,
         }
 
-        let result: Result<Vec<Resource>, _> = client.get("cluster/resources", client.ticket.as_deref()).await;
+        let result: Result<Vec<Resource>, _> = client
+            .get("cluster/resources", client.ticket.as_deref())
+            .await;
         match result {
             Ok(resources) => {
                 println!("✓ Cluster resources fetched successfully");
@@ -496,9 +501,12 @@ mod tests {
                 return;
             }
         };
-        
+
         let mut client = ProxmoxClient::new("proxmox-server", 8006, "root@pam");
-        client.authenticate(&password).await.expect("Authentication failed");
+        client
+            .authenticate(&password)
+            .await
+            .expect("Authentication failed");
 
         #[derive(serde::Deserialize, Debug)]
         struct Node {
@@ -535,9 +543,12 @@ mod tests {
                 return;
             }
         };
-        
+
         let mut client = ProxmoxClient::new("proxmox-server", 8006, "root@pam");
-        client.authenticate(&password).await.expect("Authentication failed");
+        client
+            .authenticate(&password)
+            .await
+            .expect("Authentication failed");
 
         #[derive(serde::Deserialize, Debug)]
         struct Resource {
@@ -548,10 +559,15 @@ mod tests {
             status: Option<String>,
         }
 
-        let result: Result<Vec<Resource>, _> = client.get("cluster/resources", client.ticket.as_deref()).await;
+        let result: Result<Vec<Resource>, _> = client
+            .get("cluster/resources", client.ticket.as_deref())
+            .await;
         match result {
             Ok(resources) => {
-                let vms: Vec<_> = resources.into_iter().filter(|r| r.r#type.as_deref() == Some("qemu")).collect();
+                let vms: Vec<_> = resources
+                    .into_iter()
+                    .filter(|r| r.r#type.as_deref() == Some("qemu"))
+                    .collect();
                 println!("✓ VMs fetched successfully");
                 println!("  Found {} VMs", vms.len());
             }
