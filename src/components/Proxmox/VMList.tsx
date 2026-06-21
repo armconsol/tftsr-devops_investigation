@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { clsx } from 'clsx';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/index';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/index';
 import { Button } from '@/components/ui/index';
@@ -461,11 +462,13 @@ function VMActionMenu({
   onDelete,
 }: VMActionMenuProps) {
   const [isOpen, setIsOpen] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null);
+  const [flipUpward, setFlipUpward] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const menuContentRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
-      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
         setIsOpen(false);
       }
     }
@@ -477,6 +480,14 @@ function VMActionMenu({
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
+  }, [isOpen]);
+
+  // After the menu renders, check whether it overflows the viewport bottom and flip if needed.
+  // Done in useEffect (not during render) to avoid the react-hooks/refs ESLint violation.
+  useEffect(() => {
+    if (!isOpen || !menuContentRef.current) return;
+    const rect = menuContentRef.current.getBoundingClientRect();
+    setFlipUpward(window.innerHeight - rect.bottom < 20);
   }, [isOpen]);
 
   const toggleMenu = (e: React.MouseEvent) => {
@@ -491,7 +502,7 @@ function VMActionMenu({
   };
 
   return (
-    <div className="relative" ref={menuRef}>
+    <div className="relative" ref={containerRef}>
       <Button
         variant="ghost"
         size="sm"
@@ -501,7 +512,13 @@ function VMActionMenu({
         <MoreHorizontal className="h-4 w-4" />
       </Button>
       {isOpen && (
-        <div className="absolute right-0 top-full z-50 mt-2 w-48 rounded-md border bg-background shadow-md">
+        <div
+          ref={menuContentRef}
+          className={clsx(
+            'absolute right-0 z-50 w-48 rounded-md border bg-background shadow-md',
+            flipUpward ? 'bottom-full mb-2' : 'top-full mt-2',
+          )}
+        >
           <div className="space-y-1 p-1">
             {vm.status === 'stopped' && (
               <button
@@ -639,6 +656,12 @@ function MigrationDialog({
     .map((v) => v.node)
     .filter((node, index, self) => self.indexOf(node) === index && node !== vm.node);
 
+  const canSubmitMigration = () => {
+    if (!targetNode) return false;
+    if (isCrossCluster) return true;
+    return availableTargets.length > 0;
+  };
+
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent>
@@ -748,11 +771,9 @@ function MigrationDialog({
           <Button variant="outline" onClick={onClose}>
             Cancel
           </Button>
-          {/* Disabled when: no target node typed/selected,
-              OR same-cluster migration with no enumerated nodes to choose from */}
           <Button
             onClick={onSubmit}
-            disabled={!targetNode || (!isCrossCluster && availableTargets.length === 0)}
+            disabled={!canSubmitMigration()}
           >
             Start Migration
           </Button>
