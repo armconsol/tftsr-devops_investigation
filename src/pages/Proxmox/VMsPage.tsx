@@ -88,10 +88,6 @@ export function ProxmoxVMsPage() {
       <VMList
         vms={vms}
         onRefresh={() => loadVms(selectedClusterId)}
-        onSnapshotAction={(_vm, _action) => { toast.info('Snapshot action — not yet implemented'); }}
-        onMigrate={(_vm) => { toast.info('Migrate — not yet implemented'); }}
-        onClone={(_vm) => { toast.info('Clone — not yet implemented'); }}
-        onDelete={(_vm) => { toast.info('Delete — not yet implemented'); }}
         selectedVMs={selectedVMs}
         onToggleSelect={(vm) => {
           setSelectedVMs((prev) => {
