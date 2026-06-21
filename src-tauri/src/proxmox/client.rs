@@ -502,7 +502,8 @@ mod tests {
             }
         };
 
-        let mut client = ProxmoxClient::new("proxmox-server", 8006, "root@pam");
+        let host = std::env::var("PROXMOX_HOST").unwrap_or_else(|_| "proxmox-server".to_string());
+        let mut client = ProxmoxClient::new(&host, 8006, "root@pam");
         client
             .authenticate(&password)
             .await
@@ -544,7 +545,8 @@ mod tests {
             }
         };
 
-        let mut client = ProxmoxClient::new("proxmox-server", 8006, "root@pam");
+        let host = std::env::var("PROXMOX_HOST").unwrap_or_else(|_| "proxmox-server".to_string());
+        let mut client = ProxmoxClient::new(&host, 8006, "root@pam");
         client
             .authenticate(&password)
             .await
