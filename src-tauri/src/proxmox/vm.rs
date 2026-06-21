@@ -151,8 +151,15 @@ pub async fn list_vms(
             if resource_type != "qemu" {
                 return None;
             }
-            let name = r.get("name").and_then(|n| n.as_str()).map(|s| s.to_string());
-            let status = r.get("status").and_then(|s| s.as_str()).unwrap_or("unknown").to_string();
+            let name = r
+                .get("name")
+                .and_then(|n| n.as_str())
+                .map(|s| s.to_string());
+            let status = r
+                .get("status")
+                .and_then(|s| s.as_str())
+                .unwrap_or("unknown")
+                .to_string();
             // cpu may be absent for stopped VMs
             let cpu = r.get("cpu").and_then(|c| c.as_f64()).unwrap_or(0.0);
 
@@ -166,7 +173,10 @@ pub async fn list_vms(
                 uptime: r.get("uptime").and_then(|u| u.as_u64()).unwrap_or(0),
                 node,
                 template: r.get("template").and_then(|t| t.as_bool()),
-                agent: r.get("agent").and_then(|a| a.as_str()).map(|s| s.to_string()),
+                agent: r
+                    .get("agent")
+                    .and_then(|a| a.as_str())
+                    .map(|s| s.to_string()),
                 mem: r.get("mem").and_then(|m| m.as_u64()),
                 max_mem: r.get("maxmem").and_then(|m| m.as_u64()),
                 max_disk: r.get("maxdisk").and_then(|d| d.as_u64()),

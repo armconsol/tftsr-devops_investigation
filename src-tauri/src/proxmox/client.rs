@@ -136,7 +136,11 @@ impl ProxmoxClient {
 
     /// Build request headers with authentication.
     /// `include_csrf` should be true for POST / PUT / DELETE requests.
-    fn build_headers(&self, ticket: Option<&str>, include_csrf: bool) -> reqwest::header::HeaderMap {
+    fn build_headers(
+        &self,
+        ticket: Option<&str>,
+        include_csrf: bool,
+    ) -> reqwest::header::HeaderMap {
         let mut headers = reqwest::header::HeaderMap::new();
 
         if let Some(token) = &self.api_token {
@@ -395,7 +399,11 @@ mod tests {
 
         let headers = client.build_headers(Some("my-ticket"), true);
         assert!(headers.contains_key("CSRFPreventionToken"));
-        let csrf_val = headers.get("CSRFPreventionToken").unwrap().to_str().unwrap();
+        let csrf_val = headers
+            .get("CSRFPreventionToken")
+            .unwrap()
+            .to_str()
+            .unwrap();
         assert_eq!(csrf_val, "my-csrf");
     }
 
