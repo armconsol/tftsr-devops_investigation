@@ -535,58 +535,221 @@ pub async fn shutdown_proxmox_vm(
     .map_err(|e| format!("Failed to shutdown VM {}: {}", vm_id, e))
 }
 
-/// List Proxmox Backup Jobs
+/// Resume a paused Proxmox VM
+#[tauri::command]
+pub async fn resume_proxmox_vm(
+    cluster_id: String,
+    node: String,
+    vm_id: u32,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+
+    crate::proxmox::vm::resume_vm(
+        &client_guard,
+        &node,
+        vm_id,
+        client_guard.ticket.as_deref().unwrap_or(""),
+    )
+    .await
+    .map_err(|e| format!("Failed to resume VM {}: {}", vm_id, e))
+}
+
+/// Suspend a running Proxmox VM
+#[tauri::command]
+pub async fn suspend_proxmox_vm(
+    cluster_id: String,
+    node: String,
+    vm_id: u32,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+
+    crate::proxmox::vm::suspend_vm(
+        &client_guard,
+        &node,
+        vm_id,
+        client_guard.ticket.as_deref().unwrap_or(""),
+    )
+    .await
+    .map_err(|e| format!("Failed to suspend VM {}: {}", vm_id, e))
+}
+
+/// Clone a Proxmox VM
+#[tauri::command]
+pub async fn clone_vm(
+    cluster_id: String,
+    node: String,
+    vm_id: u32,
+    new_vmid: u32,
+    name: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+
+    crate::proxmox::vm::clone_vm(
+        &client_guard,
+        &node,
+        vm_id,
+        new_vmid,
+        &name,
+        client_guard.ticket.as_deref().unwrap_or(""),
+    )
+    .await
+    .map_err(|e| format!("Failed to clone VM {}: {}", vm_id, e))
+}
+
+/// Delete a Proxmox VM
+#[tauri::command]
+pub async fn delete_vm(
+    cluster_id: String,
+    node: String,
+    vm_id: u32,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+
+    crate::proxmox::vm::delete_vm(
+        &client_guard,
+        &node,
+        vm_id,
+        client_guard.ticket.as_deref().unwrap_or(""),
+    )
+    .await
+    .map_err(|e| format!("Failed to delete VM {}: {}", vm_id, e))
+}
+
+/// List Proxmox Backup Jobs (cluster-level, not node-level)
 #[tauri::command]
 pub async fn list_proxmox_backup_jobs(
     cluster_id: String,
-    node: String,
+    _node: String, // Node parameter kept for compatibility but not used
     state: State<'_, AppState>,
 ) -> Result<Vec<serde_json::Value>, String> {
     let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
 
-    let jobs = crate::proxmox::backup::list_backup_jobs(
-        &client_guard,
-        &node,
-        client_guard.ticket.as_deref().unwrap_or(""),
-    )
-    .await
-    .map_err(|e| format!("Failed to list backup jobs: {}", e))?;
+    // Proxmox VE backup jobs are at cluster level, not node level
+    let path = "cluster/backup";
+    let response: serde_json::Value = client_guard
+        .get(path, Some(client_guard.ticket.as_deref().unwrap_or("")))
+        .await
+        .map_err(|e| format!("Failed to list backup jobs: {}", e))?;
 
-    let json_jobs: Vec<serde_json::Value> = jobs
-        .into_iter()
-        .map(|job| {
-            serde_json::to_value(job).map_err(|e| format!("Failed to serialize backup job: {}", e))
+    let mut jobs: Vec<serde_json::Value> = response
+        .as_array()
+        .map(|arr| {
+            arr.iter()
+                .cloned()
+                .map(|mut job| {
+                    // Add id field if missing for frontend compatibility
+                    if let Some(job_obj) = job.as_object_mut() {
+                        if !job_obj.contains_key("id") {
+                            if let Some(jobid) = job_obj.get("id").and_then(|v| v.as_str()) {
+                                job_obj.insert(
+                                    "id".to_string(),
+                                    serde_json::Value::String(jobid.to_string()),
+                                );
+                            } else {
+                                let storage = job_obj
+                                    .get("storage")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("unknown")
+                                    .to_string();
+                                job_obj.insert(
+                                    "id".to_string(),
+                                    serde_json::Value::String(format!("backup-{}", storage)),
+                                );
+                            }
+                        }
+                    }
+                    job
+                })
+                .collect()
         })
-        .collect::<Result<Vec<_>, _>>()?;
+        .ok_or_else(|| "Invalid response format".to_string())?;
 
-    Ok(json_jobs)
+    // Apply limit if needed (Proxmox may return many jobs)
+    if jobs.len() > 100 {
+        jobs.truncate(100);
+    }
+
+    Ok(jobs)
 }
 
-/// List Proxmox Datastores
+/// List Proxmox Datastores (Storage per node)
 #[tauri::command]
 pub async fn list_proxmox_datastores(
     cluster_id: String,
-    state: State<'_, AppState>,
+    _state: State<'_, AppState>,
 ) -> Result<Vec<serde_json::Value>, String> {
-    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    // Note: Proxmox VE storage is per-node, not cluster-wide
+    // We need to get all nodes first, then fetch storage for each node
+    let client = get_proxmox_client_for_cluster(&cluster_id, &_state).await?;
     let client_guard = client.lock().await;
 
-    let datastores = crate::proxmox::backup::list_datastores(
-        &client_guard,
-        client_guard.ticket.as_deref().unwrap_or(""),
-    )
-    .await
-    .map_err(|e| format!("Failed to list datastores: {}", e))?;
+    // First, get all nodes
+    let nodes_path = "cluster/resources?type=node";
+    let nodes_response: serde_json::Value = client_guard
+        .get(
+            nodes_path,
+            Some(client_guard.ticket.as_deref().unwrap_or("")),
+        )
+        .await
+        .map_err(|e| format!("Failed to list nodes: {}", e))?;
 
-    let json_datastores: Vec<serde_json::Value> = datastores
-        .into_iter()
-        .map(|ds| {
-            serde_json::to_value(ds).map_err(|e| format!("Failed to serialize datastore: {}", e))
+    let nodes: Vec<String> = nodes_response
+        .as_array()
+        .unwrap_or(&vec![])
+        .iter()
+        .filter_map(|n| {
+            n.get("node")
+                .and_then(|node| node.as_str())
+                .map(|s| s.to_string())
         })
-        .collect::<Result<Vec<_>, _>>()?;
+        .collect();
 
-    Ok(json_datastores)
+    if nodes.is_empty() {
+        return Ok(vec![]);
+    }
+
+    // Fetch storage for each node
+    let mut all_storage: Vec<serde_json::Value> = vec![];
+
+    for node in nodes {
+        let storage_path = format!("nodes/{}/storage", node);
+        let storage_response: serde_json::Value = client_guard
+            .get(
+                &storage_path,
+                Some(client_guard.ticket.as_deref().unwrap_or("")),
+            )
+            .await
+            .map_err(|e| format!("Failed to list storage for node {}: {}", node, e))?;
+
+        if let Some(storage_array) = storage_response.as_array() {
+            for mut storage in storage_array.clone() {
+                // Add node information to each storage entry
+                if let Some(storage_obj) = storage.as_object_mut() {
+                    storage_obj.insert("node".to_string(), serde_json::Value::String(node.clone()));
+                    // Create a unique ID
+                    if let Some(storage_name) = storage_obj.get("storage").and_then(|s| s.as_str())
+                    {
+                        storage_obj.insert(
+                            "id".to_string(),
+                            serde_json::Value::String(format!("storage/{}", storage_name)),
+                        );
+                    }
+                }
+                all_storage.push(storage);
+            }
+        }
+    }
+
+    Ok(all_storage)
 }
 
 /// Trigger Proxmox Backup Job
@@ -1007,8 +1170,17 @@ pub async fn list_views(
         &client_guard,
         client_guard.ticket.as_deref().unwrap_or(""),
     )
-    .await
-    .map_err(|e| format!("Failed to list views: {}", e))?;
+    .await;
+
+    // Handle 501 Not Implemented gracefully - return empty array
+    if let Err(e) = &views {
+        if e.contains("501") || e.contains("Not Implemented") || e.contains("not implemented") {
+            tracing::warn!("Views API not implemented by Proxmox server, returning empty list");
+            return Ok(vec![]);
+        }
+    }
+
+    let views = views.map_err(|e| format!("Failed to list views: {}", e))?;
 
     let json_views: Vec<serde_json::Value> = views
         .into_iter()
@@ -1137,8 +1309,19 @@ pub async fn list_certificates(
         &client_guard,
         client_guard.ticket.as_deref().unwrap_or(""),
     )
-    .await
-    .map_err(|e| format!("Failed to list certificates: {}", e))?;
+    .await;
+
+    // Handle 501 Not Implemented gracefully - return empty array
+    if let Err(e) = &certs {
+        if e.contains("501") || e.contains("Not Implemented") || e.contains("not implemented") {
+            tracing::warn!(
+                "Certificates API not implemented by Proxmox server, returning empty list"
+            );
+            return Ok(vec![]);
+        }
+    }
+
+    let certs = certs.map_err(|e| format!("Failed to list certificates: {}", e))?;
 
     let json_certs: Vec<serde_json::Value> = certs
         .into_iter()
@@ -2086,23 +2269,31 @@ pub async fn get_subscription_status(
 #[tauri::command]
 pub async fn list_cluster_tasks(
     cluster_id: String,
-    limit: Option<u32>,
+    _limit: Option<u32>,
     state: State<'_, AppState>,
 ) -> Result<Vec<serde_json::Value>, String> {
     let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
 
-    let limit_val = limit.unwrap_or(50);
-    let path = format!("cluster/tasks?limit={}", limit_val);
+    // Note: Proxmox API doesn't support limit parameter for cluster/tasks
+    // We fetch all tasks and limit client-side if needed
+    let path = "cluster/tasks";
     let response: serde_json::Value = client_guard
-        .get(&path, Some(client_guard.ticket.as_deref().unwrap_or("")))
+        .get(path, Some(client_guard.ticket.as_deref().unwrap_or("")))
         .await
         .map_err(|e| format!("Failed to list cluster tasks: {}", e))?;
 
-    response
+    let mut tasks: Vec<serde_json::Value> = response
         .as_array()
         .map(|arr| arr.to_vec())
-        .ok_or_else(|| "Invalid response format".to_string())
+        .ok_or_else(|| "Invalid response format".to_string())?;
+
+    // Apply limit client-side if specified
+    if let Some(limit) = _limit {
+        tasks.truncate(limit as usize);
+    }
+
+    Ok(tasks)
 }
 
 /// List Proxmox LXC containers
