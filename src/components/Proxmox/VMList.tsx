@@ -7,6 +7,13 @@ import { MoreHorizontal, Play, Square, RotateCcw, Power, PlayCircle, Pause, X, M
 import { invoke } from '@tauri-apps/api/core';
 import { confirm } from '@tauri-apps/plugin-dialog';
 import { toast } from 'sonner';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/index';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/index';
+import { Label } from '@/components/ui/index';
+import { Checkbox as UICheckbox } from '@/components/ui/index';
+import { Input } from '@/components/ui/index';
+import { AlertCircle } from 'lucide-react';
+import { Alert, AlertDescription } from '@/components/ui/index';
 
 interface VMInfo {
   id: string;
@@ -23,8 +30,24 @@ interface VMInfo {
   tags?: string[];
 }
 
+interface RawVMInfo {
+  id: number;
+  vmid?: number;
+  name?: string;
+  node?: string;
+  status?: string;
+  cpu?: number;
+  mem?: number;
+  max_mem?: number;
+  memory?: number;
+  disk?: number;
+  max_disk?: number;
+  diskTotal?: number;
+  uptime?: number;
+}
+
 interface VMListProps {
-  vms: VMInfo[];
+  vms: RawVMInfo[];
   onRefresh?: () => void;
   isLoading?: boolean;
   onSnapshotAction?: (vm: VMInfo, action: 'create' | 'list' | 'rollback' | 'delete') => void;
@@ -59,7 +82,7 @@ function formatBytes(bytes: number): string {
 }
 
 export function VMList({
-  vms,
+  vms: rawVms,
   onRefresh,
   isLoading,
   onSnapshotAction,
@@ -70,9 +93,30 @@ export function VMList({
   onToggleSelect,
 }: VMListProps) {
   const [clusterId, setClusterId] = useState<string>('');
+  const [migrationVM, setMigrationVM] = useState<VMInfo | null>(null);
+  const [targetNode, setTargetNode] = useState<string>('');
+  const [onlineMigration, setOnlineMigration] = useState(true);
+  const [maxDowntime, setMaxDowntime] = useState(30);
+
+  // Transform raw VM data to VMInfo format
+  const vms: VMInfo[] = React.useMemo(() => {
+    return rawVms.map((vm) => ({
+      id: String(vm.id || vm.vmid),
+      vmid: vm.vmid || vm.id,
+      name: vm.name || `VM-${vm.vmid || vm.id}`,
+      node: vm.node || '',
+      status: (vm.status || 'stopped') as 'running' | 'stopped' | 'paused',
+      cpu: vm.cpu || 0,
+      memory: vm.mem || vm.memory || 0,
+      memoryTotal: vm.max_mem || vm.memoryTotal || 0,
+      disk: vm.disk || 0,
+      diskTotal: vm.max_disk || vm.diskTotal || 0,
+      uptime: vm.uptime,
+      tags: vm.tags,
+    }));
+  }, [rawVms]);
 
   useEffect(() => {
-    // Use list_proxmox_clusters and select the first cluster
     invoke<string[]>('list_proxmox_clusters')
       .then((clusters: any[]) => {
         if (clusters.length > 0) {
@@ -152,48 +196,53 @@ export function VMList({
     toast.info(`Snapshot ${action} for ${vm.name} - not yet implemented`);
   }, []);
 
-  const handleMigrate = useCallback(async (vm: VMInfo) => {
-    try {
-      const targetNodes = vms
-        .map((v) => v.node)
-        .filter((node, index, self) => self.indexOf(node) === index && node !== vm.node);
-      
-      if (targetNodes.length === 0) {
-        toast.error('No target nodes available for migration');
-        return;
-      }
+  const handleMigrate = useCallback((vm: VMInfo) => {
+    setMigrationVM(vm);
+    const availableNodes = vms
+      .map((v) => v.node)
+      .filter((node, index, self) => self.indexOf(node) === index && node !== vm.node);
+    setTargetNode(availableNodes[0] || '');
+  }, [vms]);
 
-      const targetNode = window.prompt(`Select target node: ${targetNodes.join(', ')}`, targetNodes[0]);
-      
-      if (!targetNode) {
-        toast.info('Migration cancelled');
-        return;
-      }
-      
+  const submitMigration = useCallback(async () => {
+    if (!migrationVM || !targetNode) {
+      toast.error('Please select a target node');
+      return;
+    }
+
+    try {
       await invoke('migrate_vm', {
         clusterId,
-        nodeId: vm.node,
-        vmId: vm.vmid,
+        nodeId: migrationVM.node,
+        vmId: migrationVM.vmid,
         targetNode,
-        online: vm.status === 'running',
+        online: onlineMigration,
+        max_downtime: maxDowntime,
       });
       
-      toast.success(`VM ${vm.name} migration started`);
+      toast.success(`VM ${migrationVM.name} migration started to ${targetNode}`);
+      setMigrationVM(null);
+      setTargetNode('');
       onRefresh?.();
     } catch (error) {
       console.error('Failed to migrate VM:', error);
-      toast.error(`Failed to migrate VM ${vm.name}: ${error}`);
+      toast.error(`Failed to migrate VM ${migrationVM.name}: ${error}`);
     }
-  }, [clusterId, vms, onRefresh]);
+  }, [migrationVM, targetNode, onlineMigration, maxDowntime, clusterId, onRefresh]);
 
   const handleClone = useCallback(async (vm: VMInfo) => {
     try {
-      const newVmidStr = window.prompt(`Enter new VM ID for ${vm.name}:`, `${vm.vmid + 1}`);
+      const nextVmid = Math.max(...vms.map((v) => v.vmid), 100) + 1;
+      const newVmidStr = window.prompt(`Enter new VM ID for ${vm.name}:`, `${nextVmid}`);
       if (!newVmidStr) {
         toast.info('Clone cancelled');
         return;
       }
       const newVmid = parseInt(newVmidStr);
+      if (isNaN(newVmid) || newVmid < 100) {
+        toast.error('Invalid VM ID. Must be >= 100');
+        return;
+      }
       const newName = window.prompt(`Enter name for cloned VM:`, `${vm.name}-clone`);
       if (!newName) {
         toast.info('Clone cancelled');
@@ -205,19 +254,24 @@ export function VMList({
         nodeId: vm.node,
         vmId: vm.vmid,
         newVmid,
-        name: newName || `${vm.name}-clone`,
+        name: newName,
       });
       
-      toast.success(`VM ${vm.name} cloned successfully`);
+      toast.success(`VM ${vm.name} cloned successfully to VM ${newVmid}`);
       onRefresh?.();
     } catch (error) {
       console.error('Failed to clone VM:', error);
       toast.error(`Failed to clone VM ${vm.name}: ${error}`);
     }
-  }, [clusterId, onRefresh]);
+  }, [clusterId, vms, onRefresh]);
 
   const handleDelete = useCallback(async (vm: VMInfo) => {
-    if (!confirm(`Are you sure you want to delete VM ${vm.name}?`)) {
+    const confirmed = await confirm(`Are you sure you want to delete VM ${vm.name} (VMID: ${vm.vmid})? This action cannot be undone!`, {
+      title: 'Delete VM',
+      kind: 'warning',
+    });
+    
+    if (!confirmed) {
       return;
     }
 
@@ -228,7 +282,7 @@ export function VMList({
         vmId: vm.vmid,
       });
       
-      toast.success(`VM ${vm.name} deleted`);
+      toast.success(`VM ${vm.name} deleted successfully`);
       onRefresh?.();
     } catch (error) {
       console.error('Failed to delete VM:', error);
@@ -353,6 +407,20 @@ export function VMList({
           </Table>
         </div>
       </CardContent>
+
+      <MigrationDialog
+        vm={migrationVM}
+        isOpen={!!migrationVM}
+        onClose={() => setMigrationVM(null)}
+        onSubmit={submitMigration}
+        availableNodes={vms}
+        targetNode={targetNode}
+        onTargetNodeChange={setTargetNode}
+        online={onlineMigration}
+        onOnlineChange={setOnlineMigration}
+        maxDowntime={maxDowntime}
+        onMaxDowntimeChange={setMaxDowntime}
+      />
     </Card>
   );
 }
@@ -546,5 +614,117 @@ function VMActionMenu({
         </div>
       )}
     </div>
+  );
+}
+
+interface MigrationDialogProps {
+  vm: VMInfo | null;
+  isOpen: boolean;
+  onClose: () => void;
+  onSubmit: () => void;
+  availableNodes: VMInfo[];
+  targetNode: string;
+  onTargetNodeChange: (node: string) => void;
+  online: boolean;
+  onOnlineChange: (online: boolean) => void;
+  maxDowntime: number;
+  onMaxDowntimeChange: (downtime: number) => void;
+}
+
+function MigrationDialog({
+  vm,
+  isOpen,
+  onClose,
+  onSubmit,
+  availableNodes,
+  targetNode,
+  onTargetNodeChange,
+  online,
+  onOnlineChange,
+  maxDowntime,
+  onMaxDowntimeChange,
+}: MigrationDialogProps) {
+  if (!vm) return null;
+
+  const availableTargets = availableNodes
+    .map((v) => v.node)
+    .filter((node, index, self) => self.indexOf(node) === index && node !== vm.node);
+
+  return (
+    <Dialog open={isOpen} onOpenChange={onClose}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Migrate {vm.name} (VM {vm.vmid})</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4 py-4">
+          <Alert variant="destructive">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription>
+              Live migration requires the same hardware configuration on both nodes. Ensure storage is accessible from both nodes.
+            </AlertDescription>
+          </Alert>
+          
+          <div className="space-y-2">
+            <Label htmlFor="targetNode">Target Node</Label>
+            <Select value={targetNode} onValueChange={onTargetNodeChange}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select target node" />
+              </SelectTrigger>
+              <SelectContent>
+                {availableTargets.map((node) => (
+                  <SelectItem key={node} value={node}>
+                    {node}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {availableTargets.length === 0 && (
+              <p className="text-xs text-muted-foreground">
+                No other nodes available for migration
+              </p>
+            )}
+          </div>
+
+          <div className="space-y-2">
+            <div className="flex items-center space-x-2">
+              <UICheckbox
+                id="online"
+                checked={online}
+                onCheckedChange={(checked) => onOnlineChange(checked as boolean)}
+              />
+              <Label htmlFor="online">Live Migration</Label>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {online ? 'Keep VM running during migration' : 'VM will be stopped during migration'}
+            </p>
+          </div>
+
+          {online && (
+            <div className="space-y-2">
+              <Label htmlFor="maxDowntime">Max Downtime (ms)</Label>
+              <Input
+                id="maxDowntime"
+                type="number"
+                value={maxDowntime}
+                onChange={(e) => onMaxDowntimeChange(Number(e.target.value))}
+                min={10}
+                max={10000}
+              />
+              <p className="text-xs text-muted-foreground">
+                Maximum allowed downtime during live migration
+              </p>
+            </div>
+          )}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button onClick={onSubmit} disabled={!targetNode || availableTargets.length === 0}>
+            Start Migration
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

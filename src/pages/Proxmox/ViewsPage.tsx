@@ -25,7 +25,13 @@ export function ProxmoxViewsPage() {
       const v = await listClusterViews(cId);
       setViews(v);
     } catch (e) {
-      setError(String(e));
+      const errorMsg = String(e);
+      // Handle 501 Not Implemented error gracefully
+      if (errorMsg.includes('501') || errorMsg.includes('Not Implemented')) {
+        setError('Cluster views feature is not implemented by this Proxmox server. This is a server-side limitation.');
+      } else {
+        setError(errorMsg);
+      }
     }
   }, []);
 
