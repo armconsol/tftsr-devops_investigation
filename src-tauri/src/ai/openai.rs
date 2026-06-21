@@ -315,11 +315,18 @@ impl OpenAiProvider {
         let api_url = config.api_url.trim_end_matches('/');
         let url = format!("{api_url}{endpoint_path}");
 
-        // Extract system message if present
-        let system_message = messages
+        // Extract ALL system messages and combine them (must be at the beginning)
+        let system_messages: Vec<String> = messages
             .iter()
-            .find(|m| m.role == "system")
-            .map(|m| m.content.clone());
+            .filter(|m| m.role == "system")
+            .map(|m| m.content.clone())
+            .collect();
+
+        let combined_system = if system_messages.is_empty() {
+            None
+        } else {
+            Some(system_messages.join("\n\n"))
+        };
 
         // Get last user message as prompt
         let prompt = messages
@@ -341,7 +348,7 @@ impl OpenAiProvider {
         }
 
         // Add optional system message
-        if let Some(system) = system_message {
+        if let Some(system) = combined_system {
             body["system"] = serde_json::Value::String(system);
         }
 

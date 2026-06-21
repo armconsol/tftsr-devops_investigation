@@ -13,7 +13,7 @@ artifacts/
 # kubectl binaries (downloaded during build)
 src-tauri/binaries/
 
-SECURITY_AUDIT.md
+SECURITYAUDIT.md
 
 # Internal / private documents — never commit
 USER_GUIDE.md
@@ -25,3 +25,7 @@ PR_DESCRIPTION.md
 docs/images/user-guide/
 *.bak
 .DS_Store
+
+# Logs
+.logs/
+*.log
