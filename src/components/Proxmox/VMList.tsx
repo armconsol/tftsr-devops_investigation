@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/index';
 import { Checkbox } from '@/components/ui/index';
 import { MoreHorizontal, Play, Square, RotateCcw, Power, PlayCircle, Pause, X, MoveRight, Copy } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
+import { confirm } from '@tauri-apps/plugin-dialog';
 import { toast } from 'sonner';
 
 interface VMInfo {
@@ -167,7 +168,12 @@ export function VMList({
         return;
       }
 
-      const targetNode = await prompt(`Select target node: ${targetNodes.join(', ')}`, targetNodes[0]);
+      const targetNode = window.prompt(`Select target node: ${targetNodes.join(', ')}`, targetNodes[0]);
+      
+      if (!targetNode) {
+        toast.info('Migration cancelled');
+        return;
+      }
       
       await invoke('migrate_vm', {
         clusterId,
@@ -187,9 +193,17 @@ export function VMList({
 
   const handleClone = useCallback(async (vm: VMInfo) => {
     try {
-      const newVmidStr = await prompt(`Enter new VM ID for ${vm.name}:`, `${vm.vmid + 1}`);
-      const newVmid = newVmidStr ? parseInt(newVmidStr) : vm.vmid + 1;
-      const newName = await prompt(`Enter name for cloned VM:`, `${vm.name}-clone`);
+      const newVmidStr = window.prompt(`Enter new VM ID for ${vm.name}:`, `${vm.vmid + 1}`);
+      if (!newVmidStr) {
+        toast.info('Clone cancelled');
+        return;
+      }
+      const newVmid = parseInt(newVmidStr);
+      const newName = window.prompt(`Enter name for cloned VM:`, `${vm.name}-clone`);
+      if (!newName) {
+        toast.info('Clone cancelled');
+        return;
+      }
       
       await invoke('clone_vm', {
         clusterId,
@@ -399,22 +413,32 @@ function VMActionMenu({
   // Calculate menu position to avoid overflow
   const getMenuPosition = () => {
     const viewportHeight = window.innerHeight;
+    const viewportWidth = window.innerWidth;
     const buttonRect = menuRef.current?.querySelector('button')?.getBoundingClientRect();
     
     if (!buttonRect) return { top: '100%', left: 0 };
 
     const menuHeight = 400; // approximate menu height
+    const menuWidth = 192; // approximate menu width (w-48 = 12rem = 192px)
     const spaceBelow = viewportHeight - buttonRect.bottom;
     const spaceAbove = buttonRect.top;
+    const spaceRight = viewportWidth - buttonRect.right;
 
+    // Vertical positioning
+    let verticalPos: { top?: string; bottom?: string } = { top: '100%' };
     if (spaceBelow >= menuHeight) {
-      return { top: '100%', left: 0 };
+      verticalPos = { top: '100%' };
     } else if (spaceAbove >= menuHeight) {
-      return { bottom: '100%', left: 0 };
-    } else {
-      // Menu will fit somewhere in the middle
-      return { top: '100%', left: 0 };
+      verticalPos = { bottom: '100%' };
     }
+
+    // Horizontal positioning - account for overflow on the right
+    let horizontalPos: { left?: number; right?: number } = { left: 0 };
+    if (spaceRight < menuWidth) {
+      horizontalPos = { right: 0 };
+    }
+
+    return { ...verticalPos, ...horizontalPos };
   };
 
   const position = getMenuPosition();
@@ -433,8 +457,8 @@ function VMActionMenu({
         <div
           className={`absolute z-50 w-48 rounded-md border bg-background shadow-md ${
             position.bottom ? 'bottom-full mb-2' : 'top-full mt-2'
-          }`}
-          style={{ right: 0 }}
+          } ${position.right ? 'right-0' : ''}`}
+          style={{ left: position.left ?? undefined }}
         >
           <div className="space-y-1 p-1">
             {vm.status === 'stopped' && (

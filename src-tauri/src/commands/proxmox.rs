@@ -535,6 +535,94 @@ pub async fn shutdown_proxmox_vm(
     .map_err(|e| format!("Failed to shutdown VM {}: {}", vm_id, e))
 }
 
+/// Resume a paused Proxmox VM
+#[tauri::command]
+pub async fn resume_proxmox_vm(
+    cluster_id: String,
+    node: String,
+    vm_id: u32,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+
+    crate::proxmox::vm::resume_vm(
+        &client_guard,
+        &node,
+        vm_id,
+        client_guard.ticket.as_deref().unwrap_or(""),
+    )
+    .await
+    .map_err(|e| format!("Failed to resume VM {}: {}", vm_id, e))
+}
+
+/// Suspend a running Proxmox VM
+#[tauri::command]
+pub async fn suspend_proxmox_vm(
+    cluster_id: String,
+    node: String,
+    vm_id: u32,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+
+    crate::proxmox::vm::suspend_vm(
+        &client_guard,
+        &node,
+        vm_id,
+        client_guard.ticket.as_deref().unwrap_or(""),
+    )
+    .await
+    .map_err(|e| format!("Failed to suspend VM {}: {}", vm_id, e))
+}
+
+/// Clone a Proxmox VM
+#[tauri::command]
+pub async fn clone_vm(
+    cluster_id: String,
+    node: String,
+    vm_id: u32,
+    new_vmid: u32,
+    name: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+
+    crate::proxmox::vm::clone_vm(
+        &client_guard,
+        &node,
+        vm_id,
+        new_vmid,
+        &name,
+        client_guard.ticket.as_deref().unwrap_or(""),
+    )
+    .await
+    .map_err(|e| format!("Failed to clone VM {}: {}", vm_id, e))
+}
+
+/// Delete a Proxmox VM
+#[tauri::command]
+pub async fn delete_vm(
+    cluster_id: String,
+    node: String,
+    vm_id: u32,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+
+    crate::proxmox::vm::delete_vm(
+        &client_guard,
+        &node,
+        vm_id,
+        client_guard.ticket.as_deref().unwrap_or(""),
+    )
+    .await
+    .map_err(|e| format!("Failed to delete VM {}: {}", vm_id, e))
+}
+
 /// List Proxmox Backup Jobs (cluster-level, not node-level)
 #[tauri::command]
 pub async fn list_proxmox_backup_jobs(
@@ -562,13 +650,20 @@ pub async fn list_proxmox_backup_jobs(
                     if let Some(job_obj) = job.as_object_mut() {
                         if !job_obj.contains_key("id") {
                             if let Some(jobid) = job_obj.get("id").and_then(|v| v.as_str()) {
-                                job_obj.insert("id".to_string(), serde_json::Value::String(jobid.to_string()));
+                                job_obj.insert(
+                                    "id".to_string(),
+                                    serde_json::Value::String(jobid.to_string()),
+                                );
                             } else {
-                                let storage = job_obj.get("storage")
+                                let storage = job_obj
+                                    .get("storage")
                                     .and_then(|v| v.as_str())
                                     .unwrap_or("unknown")
                                     .to_string();
-                                job_obj.insert("id".to_string(), serde_json::Value::String(format!("backup-{}", storage)));
+                                job_obj.insert(
+                                    "id".to_string(),
+                                    serde_json::Value::String(format!("backup-{}", storage)),
+                                );
                             }
                         }
                     }
@@ -600,7 +695,10 @@ pub async fn list_proxmox_datastores(
     // First, get all nodes
     let nodes_path = "cluster/resources?type=node";
     let nodes_response: serde_json::Value = client_guard
-        .get(nodes_path, Some(client_guard.ticket.as_deref().unwrap_or("")))
+        .get(
+            nodes_path,
+            Some(client_guard.ticket.as_deref().unwrap_or("")),
+        )
         .await
         .map_err(|e| format!("Failed to list nodes: {}", e))?;
 
@@ -608,7 +706,11 @@ pub async fn list_proxmox_datastores(
         .as_array()
         .unwrap_or(&vec![])
         .iter()
-        .filter_map(|n| n.get("node").and_then(|node| node.as_str()).map(|s| s.to_string()))
+        .filter_map(|n| {
+            n.get("node")
+                .and_then(|node| node.as_str())
+                .map(|s| s.to_string())
+        })
         .collect();
 
     if nodes.is_empty() {
@@ -621,7 +723,10 @@ pub async fn list_proxmox_datastores(
     for node in nodes {
         let storage_path = format!("nodes/{}/storage", node);
         let storage_response: serde_json::Value = client_guard
-            .get(&storage_path, Some(client_guard.ticket.as_deref().unwrap_or("")))
+            .get(
+                &storage_path,
+                Some(client_guard.ticket.as_deref().unwrap_or("")),
+            )
             .await
             .map_err(|e| format!("Failed to list storage for node {}: {}", node, e))?;
 
@@ -631,8 +736,12 @@ pub async fn list_proxmox_datastores(
                 if let Some(storage_obj) = storage.as_object_mut() {
                     storage_obj.insert("node".to_string(), serde_json::Value::String(node.clone()));
                     // Create a unique ID
-                    if let Some(storage_name) = storage_obj.get("storage").and_then(|s| s.as_str()) {
-                        storage_obj.insert("id".to_string(), serde_json::Value::String(format!("storage/{}", storage_name)));
+                    if let Some(storage_name) = storage_obj.get("storage").and_then(|s| s.as_str())
+                    {
+                        storage_obj.insert(
+                            "id".to_string(),
+                            serde_json::Value::String(format!("storage/{}", storage_name)),
+                        );
                     }
                 }
                 all_storage.push(storage);
@@ -1205,7 +1314,9 @@ pub async fn list_certificates(
     // Handle 501 Not Implemented gracefully - return empty array
     if let Err(e) = &certs {
         if e.contains("501") || e.contains("Not Implemented") || e.contains("not implemented") {
-            tracing::warn!("Certificates API not implemented by Proxmox server, returning empty list");
+            tracing::warn!(
+                "Certificates API not implemented by Proxmox server, returning empty list"
+            );
             return Ok(vec![]);
         }
     }
