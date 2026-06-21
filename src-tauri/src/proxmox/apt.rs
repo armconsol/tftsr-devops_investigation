@@ -37,8 +37,7 @@ pub async fn list_apt_updates(
         .map_err(|e| format!("Failed to list APT updates: {}", e))?;
 
     let updates: Vec<APTUpdate> = response
-        .get("data")
-        .and_then(|d| d.as_array())
+        .as_array()
         .map(|arr| {
             arr.iter()
                 .filter_map(|update| {
@@ -97,47 +96,46 @@ pub async fn list_apt_repositories(
         .await
         .map_err(|e| format!("Failed to list APT repositories: {}", e))?;
 
-    if let Some(repos) = response.get("data").and_then(|d| d.as_array()) {
-        let repo_list: Vec<APTRepository> = repos
-            .iter()
-            .filter_map(|repo| {
-                let id = repo.get("id")?.as_str()?.to_string();
-                let url = repo.get("url")?.as_str().unwrap_or("").to_string();
-                let distribution = repo
-                    .get("distribution")
-                    .and_then(|d| d.as_str())
-                    .unwrap_or("")
-                    .to_string();
-                let component = repo
-                    .get("component")
-                    .and_then(|c| c.as_str())
-                    .unwrap_or("")
-                    .to_string();
-                let enabled = repo
-                    .get("enabled")
-                    .and_then(|e| e.as_bool())
-                    .unwrap_or(true);
-                let type_ = repo
-                    .get("type")
-                    .and_then(|t| t.as_str())
-                    .unwrap_or("deb")
-                    .to_string();
+    let repos = response
+        .as_array()
+        .ok_or_else(|| "Invalid response format: expected array".to_string())?;
+    let repo_list: Vec<APTRepository> = repos
+        .iter()
+        .filter_map(|repo| {
+            let id = repo.get("id")?.as_str()?.to_string();
+            let url = repo.get("url")?.as_str().unwrap_or("").to_string();
+            let distribution = repo
+                .get("distribution")
+                .and_then(|d| d.as_str())
+                .unwrap_or("")
+                .to_string();
+            let component = repo
+                .get("component")
+                .and_then(|c| c.as_str())
+                .unwrap_or("")
+                .to_string();
+            let enabled = repo
+                .get("enabled")
+                .and_then(|e| e.as_bool())
+                .unwrap_or(true);
+            let type_ = repo
+                .get("type")
+                .and_then(|t| t.as_str())
+                .unwrap_or("deb")
+                .to_string();
 
-                Some(APTRepository {
-                    repository_id: id,
-                    url,
-                    distribution,
-                    component,
-                    enabled,
-                    type_,
-                })
+            Some(APTRepository {
+                repository_id: id,
+                url,
+                distribution,
+                component,
+                enabled,
+                type_,
             })
-            .collect();
+        })
+        .collect();
 
-        Ok(repo_list)
-    } else {
-        Err("Invalid response format: missing 'data' field".to_string())
-    }
+    Ok(repo_list)
 }
 
 /// Add APT repository

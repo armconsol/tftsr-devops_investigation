@@ -62,7 +62,7 @@ pub async fn list_auth_realms(
         .await
         .map_err(|e| format!("Failed to list authentication realms: {}", e))?;
 
-    if let Some(realms) = response.get("data").and_then(|d| d.as_array()) {
+    if let Some(realms) = response.as_array() {
         let realm_list: Vec<AuthRealm> = realms
             .iter()
             .filter_map(|realm| {
@@ -89,7 +89,7 @@ pub async fn list_auth_realms(
 
         Ok(realm_list)
     } else {
-        Err("Invalid response format: missing 'data' field".to_string())
+        Ok(vec![])
     }
 }
 

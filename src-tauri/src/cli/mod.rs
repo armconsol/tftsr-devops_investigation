@@ -44,7 +44,7 @@ impl Cli {
 async fn main() {
     let cli = Cli::parse();
 
-    let client = crate::proxmox::client::ProxmoxClient::new(&cli.url, 8006, &cli.username);
+    let mut client = crate::proxmox::client::ProxmoxClient::new(&cli.url, 8006, &cli.username);
 
     let ticket = match client.authenticate(&cli.password).await {
         Ok(t) => t,

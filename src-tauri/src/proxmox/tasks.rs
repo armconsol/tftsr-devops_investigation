@@ -38,7 +38,7 @@ pub async fn list_tasks(
         .await
         .map_err(|e| format!("Failed to list tasks for node {}: {}", node, e))?;
 
-    if let Some(tasks) = response.get("data").and_then(|d| d.as_array()) {
+    if let Some(tasks) = response.as_array() {
         let task_list: Vec<TaskInfo> = tasks
             .iter()
             .filter_map(|task| {
@@ -97,7 +97,7 @@ pub async fn list_tasks(
 
         Ok(task_list)
     } else {
-        Err("Invalid response format: missing 'data' field".to_string())
+        Ok(vec![])
     }
 }
 
@@ -114,7 +114,8 @@ pub async fn get_task_status(
         .await
         .map_err(|e| format!("Failed to get task {}: {}", task_id, e))?;
 
-    if let Some(data) = response.get("data") {
+    {
+        let data = &response;
         let id = data
             .get("id")
             .and_then(|i| i.as_str())
@@ -169,8 +170,6 @@ pub async fn get_task_status(
             exit_status,
             description,
         })
-    } else {
-        Err("Invalid response format: missing 'data' field".to_string())
     }
 }
 
@@ -206,7 +205,7 @@ pub async fn get_task_log(
         .await
         .map_err(|e| format!("Failed to get task log for {}: {}", task_id, e))?;
 
-    if let Some(log_entries) = response.get("data").and_then(|d| d.as_array()) {
+    if let Some(log_entries) = response.as_array() {
         let log_list: Vec<TaskLogEntry> = log_entries
             .iter()
             .map(|entry| {
@@ -236,7 +235,7 @@ pub async fn get_task_log(
 
         Ok(log_list)
     } else {
-        Err("Invalid response format: missing 'data' field".to_string())
+        Ok(vec![])
     }
 }
 
@@ -258,7 +257,8 @@ pub async fn forward_task(
         .await
         .map_err(|e| format!("Failed to forward task {}: {}", task_id, e))?;
 
-    if let Some(data) = response.get("data") {
+    {
+        let data = &response;
         let id = data
             .get("id")
             .and_then(|i| i.as_str())
@@ -283,7 +283,5 @@ pub async fn forward_task(
             exit_status: None,
             description: format!("Forwarded to {}", target_node),
         })
-    } else {
-        Err("Invalid response format: missing 'data' field".to_string())
     }
 }

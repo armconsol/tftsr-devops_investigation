@@ -41,10 +41,15 @@ pub async fn add_proxmox_cluster(
     password: String,
     state: State<'_, AppState>,
 ) -> Result<ClusterInfo, String> {
-    // Create client (no live auth — credentials stored and used on first connect)
-    let client = ProxmoxClient::new(&connection.url, connection.port, &username);
+    // Authenticate immediately — this verifies credentials and gives us a live
+    // ticketed client. If auth fails we return early before touching the DB.
+    let mut client = ProxmoxClient::new(&connection.url, connection.port, &username);
+    client
+        .authenticate(&password)
+        .await
+        .map_err(|e| format!("Failed to authenticate with Proxmox: {}", e))?;
 
-    // Encrypt raw password for storage; auth happens lazily on first API call
+    // Encrypt raw password so we can re-authenticate after app restart.
     let credentials = serde_json::json!({
         "password": password,
         "username": username
@@ -95,7 +100,7 @@ pub async fn add_proxmox_cluster(
         .map_err(|e| format!("Failed to store cluster: {}", e))?;
     }
 
-    // Store in memory connection pool (unauthenticated; ticket set on first use)
+    // Insert the authenticated client into the in-memory pool.
     {
         let mut clusters = state.proxmox_clusters.lock().await;
         clusters.insert(id, Arc::new(Mutex::new(client)));
@@ -1788,9 +1793,9 @@ pub async fn list_acls(
         .await
         .map_err(|e| format!("Failed to list ACLs: {}", e))?;
 
+    // handle_response already unwraps the Proxmox `{"data": ...}` envelope.
     response
-        .get("data")
-        .and_then(|d| d.as_array())
+        .as_array()
         .map(|arr| arr.to_vec())
         .ok_or_else(|| "Invalid response format".to_string())
 }
@@ -1811,8 +1816,7 @@ pub async fn list_users(
         .map_err(|e| format!("Failed to list users: {}", e))?;
 
     response
-        .get("data")
-        .and_then(|d| d.as_array())
+        .as_array()
         .map(|arr| arr.to_vec())
         .ok_or_else(|| "Invalid response format".to_string())
 }
@@ -1857,8 +1861,7 @@ pub async fn get_cluster_notes(
         .map_err(|e| format!("Failed to get cluster notes: {}", e))?;
 
     Ok(response
-        .get("data")
-        .and_then(|d| d.get("notes"))
+        .get("notes")
         .and_then(|n| n.as_str())
         .unwrap_or("")
         .to_string())
@@ -1907,8 +1910,7 @@ pub async fn search_proxmox_resources(
         .map_err(|e| format!("Failed to search resources: {}", e))?;
 
     response
-        .get("data")
-        .and_then(|d| d.as_array())
+        .as_array()
         .map(|arr| arr.to_vec())
         .ok_or_else(|| "Invalid response format".to_string())
 }
@@ -1931,10 +1933,7 @@ pub async fn get_node_status(
         .await
         .map_err(|e| format!("Failed to get node status: {}", e))?;
 
-    response
-        .get("data")
-        .cloned()
-        .ok_or_else(|| "Invalid response format: missing data field".to_string())
+    Ok(response)
 }
 
 // ─── Phase 11 - Syslog ────────────────────────────────────────────────────────
@@ -1958,8 +1957,7 @@ pub async fn get_syslog(
         .map_err(|e| format!("Failed to get syslog: {}", e))?;
 
     response
-        .get("data")
-        .and_then(|d| d.as_array())
+        .as_array()
         .map(|arr| arr.to_vec())
         .ok_or_else(|| "Invalid response format".to_string())
 }
@@ -1983,8 +1981,7 @@ pub async fn list_network_interfaces(
         .map_err(|e| format!("Failed to list network interfaces: {}", e))?;
 
     response
-        .get("data")
-        .and_then(|d| d.as_array())
+        .as_array()
         .map(|arr| arr.to_vec())
         .ok_or_else(|| "Invalid response format".to_string())
 }
@@ -2080,10 +2077,7 @@ pub async fn get_subscription_status(
         .await
         .map_err(|e| format!("Failed to get subscription status: {}", e))?;
 
-    response
-        .get("data")
-        .cloned()
-        .ok_or_else(|| "Invalid response format: missing data field".to_string())
+    Ok(response)
 }
 
 // ─── Phase 15 - Cluster Task Log ─────────────────────────────────────────────
@@ -2106,8 +2100,7 @@ pub async fn list_cluster_tasks(
         .map_err(|e| format!("Failed to list cluster tasks: {}", e))?;
 
     response
-        .get("data")
-        .and_then(|d| d.as_array())
+        .as_array()
         .map(|arr| arr.to_vec())
         .ok_or_else(|| "Invalid response format".to_string())
 }
@@ -2128,10 +2121,84 @@ pub async fn list_proxmox_containers(
         .map_err(|e| format!("Failed to list containers: {}", e))?;
 
     response
-        .get("data")
-        .and_then(|d| d.as_array())
+        .as_array()
         .map(|arr| arr.to_vec())
         .ok_or_else(|| "Invalid response format".to_string())
+}
+
+/// Connect (or re-connect) to a Proxmox cluster that already exists in the DB.
+/// Loads the stored credentials, authenticates, and inserts the ticketed client
+/// into the in-memory pool. Returns `true` on success.
+///
+/// This is the action triggered by the "Connect" button in the Remotes UI and is
+/// the path taken on every app restart for clusters that should be active.
+#[tauri::command]
+pub async fn connect_proxmox_cluster(
+    cluster_id: String,
+    state: State<'_, AppState>,
+) -> Result<bool, String> {
+    let (url, port, username, encrypted_credentials) = {
+        let db = state
+            .db
+            .lock()
+            .map_err(|e| format!("Failed to lock database: {}", e))?;
+
+        let mut stmt = db
+            .prepare(
+                "SELECT url, port, username, encrypted_credentials \
+                 FROM proxmox_clusters WHERE id = ?1",
+            )
+            .map_err(|e| format!("Failed to prepare query: {}", e))?;
+
+        stmt.query_row([&cluster_id], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, u16>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+            ))
+        })
+        .optional()
+        .map_err(|e| format!("Failed to query cluster: {}", e))?
+        .ok_or_else(|| format!("Cluster {} not found in database", cluster_id))?
+    };
+
+    let credentials_json = crate::integrations::auth::decrypt_token(&encrypted_credentials)
+        .map_err(|e| format!("Failed to decrypt credentials: {}", e))?;
+
+    let credentials: serde_json::Value = serde_json::from_str(&credentials_json)
+        .map_err(|e| format!("Failed to parse credentials: {}", e))?;
+
+    let password = credentials
+        .get("password")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| "Password not found in credentials".to_string())?;
+
+    let mut client = crate::proxmox::ProxmoxClient::new(&url, port, &username);
+    client
+        .authenticate(password)
+        .await
+        .map_err(|e| format!("Failed to authenticate with Proxmox: {}", e))?;
+
+    {
+        let mut clusters = state.proxmox_clusters.lock().await;
+        clusters.insert(cluster_id, Arc::new(Mutex::new(client)));
+    }
+
+    Ok(true)
+}
+
+/// Remove a Proxmox cluster's authenticated session from the in-memory pool.
+/// The cluster record and credentials remain in the DB — use `connect_proxmox_cluster`
+/// to reconnect.
+#[tauri::command]
+pub async fn disconnect_proxmox_cluster(
+    cluster_id: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let mut clusters = state.proxmox_clusters.lock().await;
+    clusters.remove(&cluster_id);
+    Ok(())
 }
 
 #[cfg(test)]
@@ -2171,17 +2238,20 @@ mod tests {
     }
 
     #[test]
-    fn test_list_proxmox_containers_error_message() {
+    fn test_cluster_not_found_error_message() {
         let err = format!("Cluster {} not found", "missing-id");
         assert_eq!(err, "Cluster missing-id not found");
     }
 
+    // After the double-unwrap fix, handle_response returns the inner `data`
+    // value directly. Commands call `.as_array()` on the already-unwrapped value.
+
     #[test]
-    fn test_list_proxmox_containers_invalid_response() {
-        let response = serde_json::json!({"other": "field"});
+    fn test_array_response_already_unwrapped_invalid() {
+        // The value returned by handle_response is not an array.
+        let response = serde_json::json!({"some": "object"});
         let result: Result<Vec<serde_json::Value>, String> = response
-            .get("data")
-            .and_then(|d| d.as_array())
+            .as_array()
             .map(|arr| arr.to_vec())
             .ok_or_else(|| "Invalid response format".to_string());
         assert!(result.is_err());
@@ -2189,16 +2259,14 @@ mod tests {
     }
 
     #[test]
-    fn test_list_proxmox_containers_valid_response() {
-        let response = serde_json::json!({
-            "data": [
-                {"vmid": 200, "name": "nginx-proxy", "node": "pve1", "status": "running"},
-                {"vmid": 201, "name": "redis-cache", "node": "pve2", "status": "running"}
-            ]
-        });
+    fn test_array_response_already_unwrapped_valid() {
+        // handle_response strips {"data": [...]}, commands receive the raw array.
+        let response = serde_json::json!([
+            {"vmid": 200, "name": "nginx-proxy", "node": "pve1", "status": "running"},
+            {"vmid": 201, "name": "redis-cache", "node": "pve2", "status": "running"}
+        ]);
         let result: Result<Vec<serde_json::Value>, String> = response
-            .get("data")
-            .and_then(|d| d.as_array())
+            .as_array()
             .map(|arr| arr.to_vec())
             .ok_or_else(|| "Invalid response format".to_string());
         assert!(result.is_ok());
@@ -2209,6 +2277,35 @@ mod tests {
     fn test_update_proxmox_cluster_not_found_error() {
         let err = format!("Cluster {} not found", "missing-id");
         assert_eq!(err, "Cluster missing-id not found");
+    }
+
+    #[test]
+    fn test_cluster_notes_already_unwrapped_present() {
+        let response = serde_json::json!({"notes": "Important info", "name": "pve"});
+        let notes = response
+            .get("notes")
+            .and_then(|n| n.as_str())
+            .unwrap_or("")
+            .to_string();
+        assert_eq!(notes, "Important info");
+    }
+
+    #[test]
+    fn test_cluster_notes_already_unwrapped_missing_defaults_empty() {
+        let response = serde_json::json!({"name": "pve"});
+        let notes = response
+            .get("notes")
+            .and_then(|n| n.as_str())
+            .unwrap_or("")
+            .to_string();
+        assert_eq!(notes, "");
+    }
+
+    #[test]
+    fn test_connect_cluster_db_not_found_error_message() {
+        let msg = format!("Cluster {} not found in database", "unknown-id");
+        assert!(msg.contains("unknown-id"));
+        assert!(msg.contains("not found in database"));
     }
 
     #[test]

@@ -12,16 +12,32 @@ pub struct ProxmoxClient {
     username: String,
     api_token: Option<String>,
     pub ticket: Option<String>,
+    pub csrf_token: Option<String>,
     client: Client,
 }
 
-/// Authentication response from Proxmox
+/// Outer envelope wrapping every Proxmox API response.
 #[derive(Debug, Deserialize)]
+struct ProxmoxEnvelope<T> {
+    data: T,
+}
+
+/// Authentication response from Proxmox (inner `data` object).
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "PascalCase")]
 pub struct AuthResponse {
+    /// Cookie value — `PVEAuthCookie=<ticket>`.
     pub ticket: String,
     pub username: String,
+    /// Seconds since epoch when the ticket expires.
+    #[serde(default)]
     pub expire: u64,
-    pub cap: String,
+    /// Required on mutating requests as `CSRFPreventionToken` header.
+    #[serde(rename = "CSRFPreventionToken")]
+    pub csrf_prevention_token: Option<String>,
+    /// Capability map — structure varies, only needed for display/debug.
+    #[serde(default)]
+    pub cap: Option<serde_json::Value>,
 }
 
 /// API token for authentication
@@ -42,21 +58,28 @@ impl ProxmoxClient {
             username: username.to_string(),
             api_token: None,
             ticket: None,
+            csrf_token: None,
             client: Client::builder()
+                .danger_accept_invalid_certs(true)
                 .timeout(Duration::from_secs(30))
                 .build()
                 .expect("Failed to create HTTP client"),
         }
     }
 
-    /// Set the ticket for authentication
+    /// Set the ticket for cookie-based authentication.
     pub fn set_ticket(&mut self, ticket: &str) {
         self.ticket = Some(ticket.to_string());
     }
 
-    /// Authenticate with root username and password
-    /// Returns the API ticket for subsequent requests
-    pub async fn authenticate(&self, password: &str) -> Result<String> {
+    /// Set the CSRF prevention token (required for mutating requests).
+    pub fn set_csrf_token(&mut self, token: &str) {
+        self.csrf_token = Some(token.to_string());
+    }
+
+    /// Authenticate with username + password.
+    /// Stores the ticket and CSRF token on success; returns the ticket string.
+    pub async fn authenticate(&mut self, password: &str) -> Result<String> {
         let url = format!(
             "https://{}:{}/api2/json/access/ticket",
             self.base_url, self.port
@@ -82,10 +105,16 @@ impl ProxmoxClient {
             ));
         }
 
-        let auth: AuthResponse = response
+        let envelope: ProxmoxEnvelope<AuthResponse> = response
             .json()
             .await
             .map_err(|e| anyhow!("Failed to parse authentication response: {}", e))?;
+
+        let auth = envelope.data;
+        self.ticket = Some(auth.ticket.clone());
+        if let Some(csrf) = auth.csrf_prevention_token {
+            self.csrf_token = Some(csrf);
+        }
 
         Ok(auth.ticket)
     }
@@ -105,12 +134,16 @@ impl ProxmoxClient {
         )
     }
 
-    /// Build request headers with authentication
-    fn build_headers(&self, ticket: Option<&str>) -> reqwest::header::HeaderMap {
+    /// Build request headers with authentication.
+    /// `include_csrf` should be true for POST / PUT / DELETE requests.
+    fn build_headers(
+        &self,
+        ticket: Option<&str>,
+        include_csrf: bool,
+    ) -> reqwest::header::HeaderMap {
         let mut headers = reqwest::header::HeaderMap::new();
 
         if let Some(token) = &self.api_token {
-            // API token format: user@realm!tokenid=tokenvalue
             headers.insert(
                 reqwest::header::AUTHORIZATION,
                 format!("PVEAPIAuth {}", token)
@@ -118,13 +151,20 @@ impl ProxmoxClient {
                     .expect("Invalid auth header"),
             );
         } else if let Some(ticket) = ticket {
-            // Cookie-based authentication
             headers.insert(
                 "Cookie",
                 format!("PVEAuthCookie={}", ticket)
                     .parse()
                     .expect("Invalid cookie header"),
             );
+            if include_csrf {
+                if let Some(csrf) = &self.csrf_token {
+                    headers.insert(
+                        "CSRFPreventionToken",
+                        csrf.parse().expect("Invalid CSRF token header"),
+                    );
+                }
+            }
         }
 
         headers.insert(
@@ -144,7 +184,7 @@ impl ProxmoxClient {
         ticket: Option<&str>,
     ) -> Result<T> {
         let url = self.get_api_url(path);
-        let headers = self.build_headers(ticket);
+        let headers = self.build_headers(ticket, false);
 
         let response = self
             .client
@@ -165,7 +205,7 @@ impl ProxmoxClient {
         ticket: Option<&str>,
     ) -> Result<T> {
         let url = self.get_api_url(path);
-        let headers = self.build_headers(ticket);
+        let headers = self.build_headers(ticket, true);
 
         let response = self
             .client
@@ -187,7 +227,7 @@ impl ProxmoxClient {
         ticket: Option<&str>,
     ) -> Result<T> {
         let url = self.get_api_url(path);
-        let headers = self.build_headers(ticket);
+        let headers = self.build_headers(ticket, true);
 
         let response = self
             .client
@@ -208,7 +248,7 @@ impl ProxmoxClient {
         ticket: Option<&str>,
     ) -> Result<T> {
         let url = self.get_api_url(path);
-        let headers = self.build_headers(ticket);
+        let headers = self.build_headers(ticket, true);
 
         let response = self
             .client
@@ -280,6 +320,8 @@ mod tests {
         assert_eq!(client.base_url(), "pve.example.com");
         assert_eq!(client.port(), 8006);
         assert_eq!(client.username(), "root@pam");
+        assert!(client.ticket.is_none());
+        assert!(client.csrf_token.is_none());
     }
 
     #[test]
@@ -299,5 +341,78 @@ mod tests {
             client.get_api_url("/cluster/resources"),
             "https://pve.example.com:8006/api2/json/cluster/resources"
         );
+    }
+
+    #[test]
+    fn test_auth_response_envelope_deserialization() {
+        // Validates that the `{"data": {...}}` envelope Proxmox uses is parsed
+        // correctly into ProxmoxEnvelope<AuthResponse>.
+        let json = r#"{
+            "data": {
+                "Ticket": "PVE:root@pam:12345",
+                "Username": "root@pam",
+                "Expire": 1800,
+                "CSRFPreventionToken": "abc123",
+                "Cap": null
+            }
+        }"#;
+        let envelope: ProxmoxEnvelope<AuthResponse> =
+            serde_json::from_str(json).expect("envelope should parse");
+        assert_eq!(envelope.data.ticket, "PVE:root@pam:12345");
+        assert_eq!(
+            envelope.data.csrf_prevention_token.as_deref(),
+            Some("abc123")
+        );
+    }
+
+    #[test]
+    fn test_auth_response_envelope_no_csrf() {
+        // Some Proxmox versions or API tokens may omit CSRFPreventionToken.
+        let json = r#"{
+            "data": {
+                "Ticket": "PVE:root@pam:99999",
+                "Username": "root@pam"
+            }
+        }"#;
+        let envelope: ProxmoxEnvelope<AuthResponse> =
+            serde_json::from_str(json).expect("envelope should parse without CSRF");
+        assert_eq!(envelope.data.ticket, "PVE:root@pam:99999");
+        assert!(envelope.data.csrf_prevention_token.is_none());
+    }
+
+    #[test]
+    fn test_build_headers_get_omits_csrf() {
+        let mut client = ProxmoxClient::new("pve.example.com", 8006, "root@pam");
+        client.set_ticket("my-ticket");
+        client.set_csrf_token("my-csrf");
+
+        let headers = client.build_headers(Some("my-ticket"), false);
+        assert!(!headers.contains_key("CSRFPreventionToken"));
+        assert!(headers.contains_key("Cookie"));
+    }
+
+    #[test]
+    fn test_build_headers_post_includes_csrf() {
+        let mut client = ProxmoxClient::new("pve.example.com", 8006, "root@pam");
+        client.set_ticket("my-ticket");
+        client.set_csrf_token("my-csrf");
+
+        let headers = client.build_headers(Some("my-ticket"), true);
+        assert!(headers.contains_key("CSRFPreventionToken"));
+        let csrf_val = headers
+            .get("CSRFPreventionToken")
+            .unwrap()
+            .to_str()
+            .unwrap();
+        assert_eq!(csrf_val, "my-csrf");
+    }
+
+    #[test]
+    fn test_set_ticket_and_csrf_token() {
+        let mut client = ProxmoxClient::new("pve.example.com", 8006, "root@pam");
+        client.set_ticket("ticket-value");
+        client.set_csrf_token("csrf-value");
+        assert_eq!(client.ticket.as_deref(), Some("ticket-value"));
+        assert_eq!(client.csrf_token.as_deref(), Some("csrf-value"));
     }
 }

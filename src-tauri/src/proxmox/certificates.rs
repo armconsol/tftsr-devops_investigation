@@ -45,7 +45,8 @@ pub async fn upload_certificate(
         .await
         .map_err(|e| format!("Failed to upload certificate: {}", e))?;
 
-    if let Some(data) = response.get("data") {
+    {
+        let data = &response;
         let id = data
             .get("id")
             .and_then(|i| i.as_str())
@@ -110,8 +111,6 @@ pub async fn upload_certificate(
             signature_algorithm,
             san,
         })
-    } else {
-        Err("Invalid response format: missing 'data' field".to_string())
     }
 }
 
@@ -127,7 +126,8 @@ pub async fn get_certificate(
         .await
         .map_err(|e| format!("Failed to get certificate {}: {}", cert_id, e))?;
 
-    if let Some(data) = response.get("data") {
+    {
+        let data = &response;
         let id = data
             .get("id")
             .and_then(|i| i.as_str())
@@ -192,8 +192,6 @@ pub async fn get_certificate(
             signature_algorithm,
             san,
         })
-    } else {
-        Err("Invalid response format: missing 'data' field".to_string())
     }
 }
 
@@ -208,7 +206,7 @@ pub async fn list_certificates(
         .await
         .map_err(|e| format!("Failed to list certificates: {}", e))?;
 
-    if let Some(certs) = response.get("data").and_then(|d| d.as_array()) {
+    if let Some(certs) = response.as_array() {
         let cert_list: Vec<Certificate> = certs
             .iter()
             .filter_map(|cert| {
@@ -307,7 +305,7 @@ pub async fn list_node_certificates(
         .await
         .map_err(|e| format!("Failed to list node certificates for {}: {}", node, e))?;
 
-    if let Some(certs) = response.get("data").and_then(|d| d.as_array()) {
+    if let Some(certs) = response.as_array() {
         let cert_list: Vec<Certificate> = certs
             .iter()
             .filter_map(|cert| {
@@ -401,7 +399,8 @@ pub async fn upload_node_certificate(
         .await
         .map_err(|e| format!("Failed to upload node certificate for {}: {}", node, e))?;
 
-    if let Some(data) = response.get("data") {
+    {
+        let data = &response;
         let id = data
             .get("id")
             .and_then(|i| i.as_str())
@@ -466,7 +465,5 @@ pub async fn upload_node_certificate(
             signature_algorithm,
             san,
         })
-    } else {
-        Err("Invalid response format: missing 'data' field".to_string())
     }
 }

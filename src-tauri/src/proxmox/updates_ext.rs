@@ -33,8 +33,7 @@ pub async fn list_updates_all_remotes(
         .map_err(|e| format!("Failed to list updates from all remotes: {}", e))?;
 
     let updates: Vec<RemoteUpdateInfo> = response
-        .get("data")
-        .and_then(|d| d.as_array())
+        .as_array()
         .map(|arr| {
             arr.iter()
                 .filter_map(|update| {
@@ -122,14 +121,10 @@ pub async fn list_pve_remotes(
         .await
         .map_err(|e| format!("Failed to list PVE remotes: {}", e))?;
 
-    if let Some(data) = response.get("data") {
-        if let Some(arr) = data.as_array() {
-            Ok(arr.to_vec())
-        } else {
-            Ok(vec![data.clone()])
-        }
+    if let Some(arr) = response.as_array() {
+        Ok(arr.to_vec())
     } else {
-        Err("Invalid response format: missing 'data' field".to_string())
+        Ok(vec![response])
     }
 }
 
@@ -146,8 +141,7 @@ pub async fn check_remote_updates(
         .map_err(|e| format!("Failed to check updates for remote {}: {}", remote, e))?;
 
     let updates: Vec<RemoteUpdateInfo> = response
-        .get("data")
-        .and_then(|d| d.as_array())
+        .as_array()
         .map(|arr| {
             arr.iter()
                 .filter_map(|update| {

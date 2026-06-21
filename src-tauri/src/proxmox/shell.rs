@@ -24,7 +24,8 @@ pub async fn get_shell_ticket(
         .await
         .map_err(|e| format!("Failed to get shell ticket for remote {}: {}", remote, e))?;
 
-    if let Some(data) = response.get("data") {
+    {
+        let data = &response;
         let ticket_value = data
             .get("ticket")
             .and_then(|t| t.as_str())
@@ -53,8 +54,6 @@ pub async fn get_shell_ticket(
             expires,
             permissions,
         })
-    } else {
-        Err("Invalid response format: missing 'data' field".to_string())
     }
 }
 
@@ -69,7 +68,7 @@ pub async fn validate_shell_ticket(
         .await
         .map_err(|e| format!("Failed to validate shell ticket: {}", e))?;
 
-    Ok(response.get("data").is_some())
+    Ok(!response.is_null())
 }
 
 /// Get shell WebSocket URL

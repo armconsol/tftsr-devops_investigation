@@ -66,8 +66,25 @@ export async function updateProxmoxCluster(
  * Ping a Proxmox cluster — authenticates and calls the version endpoint to verify
  * the API is reachable and credentials are valid.
  */
-export async function pingProxmoxCluster(clusterId: string): Promise<any> {
-  return await invoke<any>("ping_proxmox_cluster", { clusterId });
+export async function pingProxmoxCluster(clusterId: string): Promise<unknown> {
+  return await invoke("ping_proxmox_cluster", { clusterId });
+}
+
+/**
+ * Connect (or re-connect) to a cluster stored in the DB.
+ * Authenticates against the Proxmox API and populates the in-memory pool.
+ * Use after app restart or after an explicit disconnect.
+ */
+export async function connectProxmoxCluster(clusterId: string): Promise<boolean> {
+  return await invoke<boolean>("connect_proxmox_cluster", { clusterId });
+}
+
+/**
+ * Disconnect from a cluster by removing its authenticated session from the
+ * in-memory pool. Credentials are retained in the DB for later reconnection.
+ */
+export async function disconnectProxmoxCluster(clusterId: string): Promise<void> {
+  await invoke("disconnect_proxmox_cluster", { clusterId });
 }
 
 /**

@@ -6,7 +6,7 @@ import { AddRemoteForm } from '@/components/Proxmox';
 import { EditRemoteForm } from '@/components/Proxmox';
 import { RemoveRemoteDialog } from '@/components/Proxmox';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/index';
-import { listProxmoxClusters, addProxmoxCluster, removeProxmoxCluster, updateProxmoxCluster, pingProxmoxCluster } from '@/lib/proxmoxClient';
+import { listProxmoxClusters, addProxmoxCluster, removeProxmoxCluster, updateProxmoxCluster, connectProxmoxCluster, disconnectProxmoxCluster } from '@/lib/proxmoxClient';
 import { ClusterType } from '@/lib/domain';
 import { toast } from 'sonner';
 
@@ -134,8 +134,8 @@ export function ProxmoxRemotesPage() {
 
   const handleConnectRemote = async (remote: RemoteInfo) => {
     try {
-      toast.info(`Testing connection to ${remote.name}...`);
-      await pingProxmoxCluster(remote.id);
+      toast.info(`Connecting to ${remote.name}...`);
+      await connectProxmoxCluster(remote.id);
       toast.success(`Connected to ${remote.name}`);
       setRemotes((prev) =>
         prev.map((r) => (r.id === remote.id ? { ...r, status: 'connected' } : r))
@@ -149,11 +149,17 @@ export function ProxmoxRemotesPage() {
     }
   };
 
-  const handleDisconnectRemote = (remote: RemoteInfo) => {
-    setRemotes((prev) =>
-      prev.map((r) => (r.id === remote.id ? { ...r, status: 'disconnected' } : r))
-    );
-    toast.info(`Disconnected from ${remote.name}`);
+  const handleDisconnectRemote = async (remote: RemoteInfo) => {
+    try {
+      await disconnectProxmoxCluster(remote.id);
+      setRemotes((prev) =>
+        prev.map((r) => (r.id === remote.id ? { ...r, status: 'disconnected' } : r))
+      );
+      toast.info(`Disconnected from ${remote.name}`);
+    } catch (err) {
+      console.error('Failed to disconnect remote:', err);
+      toast.error('Disconnect failed: ' + String(err));
+    }
   };
 
   return (
@@ -184,12 +190,8 @@ export function ProxmoxRemotesPage() {
         onDelete={(remote) => {
           setRemovingRemote(remote as RemoteInfo | null);
         }}
-        onConnect={(remote) => {
-          void handleConnectRemote(remote as RemoteInfo);
-        }}
-        onDisconnect={(remote) => {
-          handleDisconnectRemote(remote as RemoteInfo);
-        }}
+        onConnect={(remote) => { void handleConnectRemote(remote as RemoteInfo); }}
+        onDisconnect={(remote) => { void handleDisconnectRemote(remote as RemoteInfo); }}
       />
 
       {showAddDialog && (

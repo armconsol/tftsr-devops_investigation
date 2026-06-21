@@ -45,7 +45,7 @@ pub async fn list_ceph_clusters(
         .await
         .map_err(|e| format!("Failed to list Ceph clusters: {}", e))?;
 
-    if let Some(clusters) = response.get("data").and_then(|d| d.as_array()) {
+    if let Some(clusters) = response.as_array() {
         let cluster_list: Vec<CephCluster> = clusters
             .iter()
             .filter_map(|cluster| {
@@ -150,7 +150,7 @@ pub async fn list_ceph_clusters(
 
         Ok(cluster_list)
     } else {
-        Err("Invalid response format: missing 'data' field".to_string())
+        Err("Invalid response format".to_string())
     }
 }
 
@@ -166,7 +166,8 @@ pub async fn get_ceph_cluster_status(
         .await
         .map_err(|e| format!("Failed to get Ceph cluster {} status: {}", cluster_id, e))?;
 
-    if let Some(data) = response.get("data") {
+    {
+        let data = &response;
         let id = data
             .get("cluster_id")
             .and_then(|i| i.as_str())
@@ -195,8 +196,6 @@ pub async fn get_ceph_cluster_status(
             osd_map,
             pg_map,
         })
-    } else {
-        Err("Invalid response format: missing 'data' field".to_string())
     }
 }
 
