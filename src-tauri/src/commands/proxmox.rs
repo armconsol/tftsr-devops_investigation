@@ -1423,10 +1423,23 @@ pub async fn list_firewall_rules(
     .await
     .map_err(|e| format!("Failed to list firewall rules: {}", e))?;
 
+    // Normalize to match what FirewallRuleList component expects:
+    // rule (position number), action, protocol, source, destination, port, status
     let json_rules: Vec<serde_json::Value> = rules
         .into_iter()
-        .map(|r| serde_json::to_value(r).map_err(|e| format!("Failed to serialize rule: {}", e)))
-        .collect::<Result<Vec<_>, _>>()?;
+        .map(|r| {
+            serde_json::json!({
+                "id": r.rule_num.to_string(),
+                "rule": r.rule_num,
+                "action": r.action,
+                "protocol": r.protocol,
+                "source": r.source,
+                "destination": r.destination,
+                "port": r.port,
+                "status": if r.enabled { "enabled" } else { "disabled" },
+            })
+        })
+        .collect();
 
     Ok(json_rules)
 }
