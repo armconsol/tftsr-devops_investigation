@@ -45,10 +45,22 @@ pub async fn list_firewall_rules(
             let rule_num = rule.get("pos").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
             let action = rule.get("action").and_then(|v| v.as_str())?.to_string();
             // PVE uses "proto" not "protocol"
-            let protocol = rule.get("proto").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let protocol = rule
+                .get("proto")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
             // source and dest are optional fields
-            let source = rule.get("source").and_then(|v| v.as_str()).unwrap_or("").to_string();
-            let destination = rule.get("dest").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let source = rule
+                .get("source")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let destination = rule
+                .get("dest")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
             let port = rule
                 .get("dport")
                 .or_else(|| rule.get("sport"))
@@ -57,11 +69,7 @@ pub async fn list_firewall_rules(
             // PVE uses "enable" as integer (1=enabled, 0=disabled), not "enabled" bool
             let enabled = rule
                 .get("enable")
-                .and_then(|e| {
-                    e.as_i64()
-                        .map(|n| n != 0)
-                        .or_else(|| e.as_bool())
-                })
+                .and_then(|e| e.as_i64().map(|n| n != 0).or_else(|| e.as_bool()))
                 .unwrap_or(true);
 
             Some(FirewallRule {
@@ -225,9 +233,21 @@ pub async fn get_firewall_status(
         .filter_map(|rule| {
             let rule_num = rule.get("pos").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
             let action = rule.get("action").and_then(|v| v.as_str())?.to_string();
-            let protocol = rule.get("proto").and_then(|v| v.as_str()).unwrap_or("").to_string();
-            let source = rule.get("source").and_then(|v| v.as_str()).unwrap_or("").to_string();
-            let destination = rule.get("dest").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let protocol = rule
+                .get("proto")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let source = rule
+                .get("source")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let destination = rule
+                .get("dest")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
             let port = rule
                 .get("dport")
                 .or_else(|| rule.get("sport"))
@@ -235,11 +255,7 @@ pub async fn get_firewall_status(
                 .map(|s| s.to_string());
             let enabled = rule
                 .get("enable")
-                .and_then(|e| {
-                    e.as_i64()
-                        .map(|n| n != 0)
-                        .or_else(|| e.as_bool())
-                })
+                .and_then(|e| e.as_i64().map(|n| n != 0).or_else(|| e.as_bool()))
                 .unwrap_or(true);
 
             Some(FirewallRule {
