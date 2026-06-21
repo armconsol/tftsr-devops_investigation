@@ -8,7 +8,6 @@ import { toast } from 'sonner';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/index';
 import { Input } from '@/components/ui/index';
 import { Label } from '@/components/ui/index';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/index';
 
 export function ProxmoxBackupPage() {
   const [clusters, setClusters] = useState<ClusterInfo[]>([]);
@@ -40,8 +39,34 @@ export function ProxmoxBackupPage() {
     if (!clusterId) return;
     setIsLoading(true);
     try {
-      const data = await listProxmoxBackupJobs(clusterId, '');
-      setJobs(data);
+      const raw = await listProxmoxBackupJobs(clusterId, '');
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const normalized = (raw as any[]).map((job) => {
+        const enabledRaw = job.enabled ?? job.enable ?? 1;
+        const isEnabled = enabledRaw === 1 || enabledRaw === true || enabledRaw === '1';
+        const nextRunRaw = job['next-run'] ?? job.next_run ?? job.nextRun;
+        const nextRunStr = nextRunRaw
+          ? new Date(Number(nextRunRaw) * 1000).toLocaleString()
+          : undefined;
+        return {
+          id: job.id || String(job.jobid || ''),
+          name: job.id || job.comment || `job-${job.jobid || '?'}`,
+          node: job.node || 'all',
+          schedule: job.schedule || '-',
+          status: isEnabled ? ('idle' as const) : ('idle' as const),
+          lastRun: undefined,
+          nextRun: nextRunStr,
+          size: undefined,
+          count: undefined,
+          enabled: isEnabled,
+          vmid: job.vmid,
+          storage: job.storage,
+          mode: job.mode,
+          compress: job.compress,
+          comment: job.comment,
+        };
+      });
+      setJobs(normalized);
     } catch (err) {
       console.error('Failed to load backup jobs:', err);
       toast.error('Failed to load backup jobs');
@@ -55,26 +80,14 @@ export function ProxmoxBackupPage() {
   }, [selectedClusterId, loadJobs]);
 
   const handleNewJob = () => {
-    setJobName('');
-    setJobNode('');
-    setJobSchedule('');
-    setJobVms('');
-    setShowNewJobDialog(true);
+    toast.warning(
+      'Backup job creation requires additional backend implementation (POST cluster/backup) and is not yet available.',
+    );
   };
 
   const handleSubmitNewJob = async () => {
-    if (!jobName || !jobNode || !jobSchedule) {
-      toast.error('Job name, node, and schedule are required');
-      return;
-    }
-
-    try {
-      toast.info(`Creating backup job ${jobName} - implementation pending`);
-      setShowNewJobDialog(false);
-    } catch (error) {
-      console.error('Failed to create backup job:', error);
-      toast.error(`Failed to create backup job: ${error}`);
-    }
+    toast.warning('Backup job creation is not yet available.');
+    setShowNewJobDialog(false);
   };
 
   if (clusters.length === 0 && !isLoading) {

@@ -87,6 +87,8 @@ export function ProxmoxVMsPage() {
 
       <VMList
         vms={vms}
+        clusterId={selectedClusterId}
+        clusters={clusters}
         onRefresh={() => loadVms(selectedClusterId)}
         selectedVMs={selectedVMs}
         onToggleSelect={(vm) => {

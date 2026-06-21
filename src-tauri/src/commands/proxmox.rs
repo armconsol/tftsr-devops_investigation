@@ -432,7 +432,7 @@ pub async fn list_proxmox_vms(
 #[tauri::command]
 pub async fn get_proxmox_vm(
     cluster_id: String,
-    node: String,
+    node_id: String,
     vm_id: u32,
     state: State<'_, AppState>,
 ) -> Result<serde_json::Value, String> {
@@ -441,7 +441,7 @@ pub async fn get_proxmox_vm(
 
     let vm = crate::proxmox::vm::get_vm(
         &client_guard,
-        &node,
+        &node_id,
         vm_id,
         client_guard.ticket.as_deref().unwrap_or(""),
     )
@@ -455,7 +455,7 @@ pub async fn get_proxmox_vm(
 #[tauri::command]
 pub async fn start_proxmox_vm(
     cluster_id: String,
-    node: String,
+    node_id: String,
     vm_id: u32,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
@@ -464,7 +464,7 @@ pub async fn start_proxmox_vm(
 
     crate::proxmox::vm::start_vm(
         &client_guard,
-        &node,
+        &node_id,
         vm_id,
         client_guard.ticket.as_deref().unwrap_or(""),
     )
@@ -476,7 +476,7 @@ pub async fn start_proxmox_vm(
 #[tauri::command]
 pub async fn stop_proxmox_vm(
     cluster_id: String,
-    node: String,
+    node_id: String,
     vm_id: u32,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
@@ -485,7 +485,7 @@ pub async fn stop_proxmox_vm(
 
     crate::proxmox::vm::stop_vm(
         &client_guard,
-        &node,
+        &node_id,
         vm_id,
         client_guard.ticket.as_deref().unwrap_or(""),
     )
@@ -497,7 +497,7 @@ pub async fn stop_proxmox_vm(
 #[tauri::command]
 pub async fn reboot_proxmox_vm(
     cluster_id: String,
-    node: String,
+    node_id: String,
     vm_id: u32,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
@@ -506,7 +506,7 @@ pub async fn reboot_proxmox_vm(
 
     crate::proxmox::vm::reboot_vm(
         &client_guard,
-        &node,
+        &node_id,
         vm_id,
         client_guard.ticket.as_deref().unwrap_or(""),
     )
@@ -518,7 +518,7 @@ pub async fn reboot_proxmox_vm(
 #[tauri::command]
 pub async fn shutdown_proxmox_vm(
     cluster_id: String,
-    node: String,
+    node_id: String,
     vm_id: u32,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
@@ -527,7 +527,7 @@ pub async fn shutdown_proxmox_vm(
 
     crate::proxmox::vm::shutdown_vm(
         &client_guard,
-        &node,
+        &node_id,
         vm_id,
         client_guard.ticket.as_deref().unwrap_or(""),
     )
@@ -539,7 +539,7 @@ pub async fn shutdown_proxmox_vm(
 #[tauri::command]
 pub async fn resume_proxmox_vm(
     cluster_id: String,
-    node: String,
+    node_id: String,
     vm_id: u32,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
@@ -548,7 +548,7 @@ pub async fn resume_proxmox_vm(
 
     crate::proxmox::vm::resume_vm(
         &client_guard,
-        &node,
+        &node_id,
         vm_id,
         client_guard.ticket.as_deref().unwrap_or(""),
     )
@@ -560,7 +560,7 @@ pub async fn resume_proxmox_vm(
 #[tauri::command]
 pub async fn suspend_proxmox_vm(
     cluster_id: String,
-    node: String,
+    node_id: String,
     vm_id: u32,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
@@ -569,7 +569,7 @@ pub async fn suspend_proxmox_vm(
 
     crate::proxmox::vm::suspend_vm(
         &client_guard,
-        &node,
+        &node_id,
         vm_id,
         client_guard.ticket.as_deref().unwrap_or(""),
     )
@@ -581,7 +581,7 @@ pub async fn suspend_proxmox_vm(
 #[tauri::command]
 pub async fn clone_vm(
     cluster_id: String,
-    node: String,
+    node_id: String,
     vm_id: u32,
     new_vmid: u32,
     name: String,
@@ -592,7 +592,7 @@ pub async fn clone_vm(
 
     crate::proxmox::vm::clone_vm(
         &client_guard,
-        &node,
+        &node_id,
         vm_id,
         new_vmid,
         &name,
@@ -606,7 +606,7 @@ pub async fn clone_vm(
 #[tauri::command]
 pub async fn delete_vm(
     cluster_id: String,
-    node: String,
+    node_id: String,
     vm_id: u32,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
@@ -615,7 +615,7 @@ pub async fn delete_vm(
 
     crate::proxmox::vm::delete_vm(
         &client_guard,
-        &node,
+        &node_id,
         vm_id,
         client_guard.ticket.as_deref().unwrap_or(""),
     )
@@ -681,73 +681,112 @@ pub async fn list_proxmox_backup_jobs(
     Ok(jobs)
 }
 
-/// List Proxmox Datastores (Storage per node)
+/// List Proxmox Datastores (cluster-wide via cluster/resources)
 #[tauri::command]
 pub async fn list_proxmox_datastores(
     cluster_id: String,
     _state: State<'_, AppState>,
 ) -> Result<Vec<serde_json::Value>, String> {
-    // Note: Proxmox VE storage is per-node, not cluster-wide
-    // We need to get all nodes first, then fetch storage for each node
     let client = get_proxmox_client_for_cluster(&cluster_id, &_state).await?;
     let client_guard = client.lock().await;
 
-    // First, get all nodes
-    let nodes_path = "cluster/resources?type=node";
-    let nodes_response: serde_json::Value = client_guard
+    let response: serde_json::Value = client_guard
         .get(
-            nodes_path,
+            "cluster/resources?type=storage",
             Some(client_guard.ticket.as_deref().unwrap_or("")),
         )
         .await
-        .map_err(|e| format!("Failed to list nodes: {}", e))?;
+        .map_err(|e| format!("Failed to list cluster storage: {}", e))?;
 
-    let nodes: Vec<String> = nodes_response
-        .as_array()
-        .unwrap_or(&vec![])
+    let entries = response.as_array().ok_or("Invalid response format")?;
+
+    let all_storage: Vec<serde_json::Value> = entries
         .iter()
-        .filter_map(|n| {
-            n.get("node")
-                .and_then(|node| node.as_str())
-                .map(|s| s.to_string())
+        .filter_map(|entry| {
+            let obj = entry.as_object()?;
+            let mut normalized = serde_json::Map::new();
+
+            let storage_name = obj.get("storage").and_then(|v| v.as_str()).unwrap_or("");
+            let node_name = obj.get("node").and_then(|v| v.as_str()).unwrap_or("");
+
+            // Avoid double-slash when cluster/resources omits "node" for shared storage
+            let storage_id = if node_name.is_empty() {
+                format!("storage/{}", storage_name)
+            } else {
+                format!("storage/{}/{}", node_name, storage_name)
+            };
+            if storage_name.is_empty() {
+                tracing::warn!(
+                    node = node_name,
+                    "storage entry has empty storage name — skipping"
+                );
+                return None;
+            }
+            tracing::debug!(storage_id = %storage_id, "generated storage ID");
+            normalized.insert("id".to_string(), serde_json::Value::String(storage_id));
+            normalized.insert(
+                "storage".to_string(),
+                serde_json::Value::String(storage_name.to_string()),
+            );
+            normalized.insert(
+                "name".to_string(),
+                serde_json::Value::String(storage_name.to_string()),
+            );
+
+            let plugin_type = obj
+                .get("plugintype")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown");
+            normalized.insert(
+                "type".to_string(),
+                serde_json::Value::String(plugin_type.to_string()),
+            );
+
+            let content = obj
+                .get("content")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            normalized.insert("content".to_string(), serde_json::Value::String(content));
+
+            normalized.insert(
+                "node".to_string(),
+                serde_json::Value::String(node_name.to_string()),
+            );
+
+            // cluster/resources uses disk/maxdisk; normalize to used/available/size
+            let disk_used = obj.get("disk").and_then(|v| v.as_u64()).unwrap_or(0);
+            let disk_total = obj.get("maxdisk").and_then(|v| v.as_u64()).unwrap_or(0);
+            let disk_avail = disk_total.saturating_sub(disk_used);
+
+            normalized.insert(
+                "used".to_string(),
+                serde_json::Value::Number(disk_used.into()),
+            );
+            normalized.insert(
+                "size".to_string(),
+                serde_json::Value::Number(disk_total.into()),
+            );
+            normalized.insert(
+                "available".to_string(),
+                serde_json::Value::Number(disk_avail.into()),
+            );
+
+            let status = obj
+                .get("status")
+                .and_then(|v| v.as_str())
+                .unwrap_or("available")
+                .to_string();
+            normalized.insert("status".to_string(), serde_json::Value::String(status));
+
+            // Preserve shared flag if present
+            if let Some(shared) = obj.get("shared") {
+                normalized.insert("shared".to_string(), shared.clone());
+            }
+
+            Some(serde_json::Value::Object(normalized))
         })
         .collect();
-
-    if nodes.is_empty() {
-        return Ok(vec![]);
-    }
-
-    // Fetch storage for each node
-    let mut all_storage: Vec<serde_json::Value> = vec![];
-
-    for node in nodes {
-        let storage_path = format!("nodes/{}/storage", node);
-        let storage_response: serde_json::Value = client_guard
-            .get(
-                &storage_path,
-                Some(client_guard.ticket.as_deref().unwrap_or("")),
-            )
-            .await
-            .map_err(|e| format!("Failed to list storage for node {}: {}", node, e))?;
-
-        if let Some(storage_array) = storage_response.as_array() {
-            for mut storage in storage_array.clone() {
-                // Add node information to each storage entry
-                if let Some(storage_obj) = storage.as_object_mut() {
-                    storage_obj.insert("node".to_string(), serde_json::Value::String(node.clone()));
-                    // Create a unique ID
-                    if let Some(storage_name) = storage_obj.get("storage").and_then(|s| s.as_str())
-                    {
-                        storage_obj.insert(
-                            "id".to_string(),
-                            serde_json::Value::String(format!("storage/{}", storage_name)),
-                        );
-                    }
-                }
-                all_storage.push(storage);
-            }
-        }
-    }
 
     Ok(all_storage)
 }
@@ -756,7 +795,7 @@ pub async fn list_proxmox_datastores(
 #[tauri::command]
 pub async fn trigger_proxmox_backup_job(
     cluster_id: String,
-    node: String,
+    node_id: String,
     job_id: u32,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
@@ -765,7 +804,7 @@ pub async fn trigger_proxmox_backup_job(
 
     crate::proxmox::backup::trigger_backup_job(
         &client_guard,
-        &node,
+        &node_id,
         job_id,
         client_guard.ticket.as_deref().unwrap_or(""),
     )
@@ -1384,7 +1423,7 @@ pub async fn get_certificate(
 #[tauri::command]
 pub async fn list_firewall_rules(
     cluster_id: String,
-    node: String,
+    node_id: String,
     state: State<'_, AppState>,
 ) -> Result<Vec<serde_json::Value>, String> {
     let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
@@ -1392,51 +1431,85 @@ pub async fn list_firewall_rules(
 
     let rules = crate::proxmox::firewall::list_firewall_rules(
         &client_guard,
-        &node,
+        &node_id,
         client_guard.ticket.as_deref().unwrap_or(""),
     )
     .await
     .map_err(|e| format!("Failed to list firewall rules: {}", e))?;
 
+    // Normalize to match what FirewallRuleList component expects:
+    // rule (position number), action, protocol, source, destination, port, status
     let json_rules: Vec<serde_json::Value> = rules
         .into_iter()
-        .map(|r| serde_json::to_value(r).map_err(|e| format!("Failed to serialize rule: {}", e)))
-        .collect::<Result<Vec<_>, _>>()?;
+        .map(|r| {
+            serde_json::json!({
+                "id": r.rule_num.to_string(),
+                "rule": r.rule_num,
+                "action": r.action,
+                "protocol": r.protocol,
+                "source": r.source,
+                "destination": r.destination,
+                "port": r.port,
+                "status": if r.enabled { "enabled" } else { "disabled" },
+            })
+        })
+        .collect();
 
     Ok(json_rules)
 }
 
 /// Add firewall rule
 #[tauri::command]
-#[allow(clippy::too_many_arguments)]
 pub async fn add_firewall_rule(
     cluster_id: String,
-    node: String,
-    action: String,
-    protocol: String,
-    source: String,
-    destination: String,
-    port: Option<String>,
-    enabled: bool,
+    node_id: String,
+    rule: serde_json::Value,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
     let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
 
-    let rule = crate::proxmox::firewall::FirewallRule {
+    let firewall_rule = crate::proxmox::firewall::FirewallRule {
         rule_num: 0,
-        action,
-        protocol,
-        source,
-        destination,
-        port,
-        enabled,
+        action: rule
+            .get("action")
+            .and_then(|v| v.as_str())
+            .unwrap_or("ACCEPT")
+            .to_string(),
+        protocol: rule
+            .get("proto")
+            .and_then(|v| v.as_str())
+            .unwrap_or("tcp")
+            .to_string(),
+        source: rule
+            .get("source")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string(),
+        destination: rule
+            .get("dest")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string(),
+        port: rule
+            .get("dport")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string()),
+        enabled: rule
+            .get("enable")
+            .and_then(|v| {
+                v.as_bool()
+                    .or_else(|| v.as_i64().map(|n| n != 0))
+                    .or_else(|| v.as_str().map(|s| s == "1" || s == "true"))
+            })
+            .unwrap_or(true),
     };
 
     crate::proxmox::firewall::add_rule(
         &client_guard,
-        &node,
-        &rule,
+        &node_id,
+        &firewall_rule,
         client_guard.ticket.as_deref().unwrap_or(""),
     )
     .await
@@ -1447,7 +1520,7 @@ pub async fn add_firewall_rule(
 #[tauri::command]
 pub async fn delete_firewall_rule(
     cluster_id: String,
-    node: String,
+    node_id: String,
     rule_num: u32,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
@@ -1456,7 +1529,7 @@ pub async fn delete_firewall_rule(
 
     crate::proxmox::firewall::delete_rule(
         &client_guard,
-        &node,
+        &node_id,
         rule_num,
         client_guard.ticket.as_deref().unwrap_or(""),
     )
@@ -1594,7 +1667,7 @@ pub async fn get_ceph_cluster_status(
 #[tauri::command]
 pub async fn migrate_vm(
     cluster_id: String,
-    node: String,
+    node_id: String,
     vm_id: u32,
     target_node: String,
     target_cluster: String,
@@ -1605,7 +1678,7 @@ pub async fn migrate_vm(
 
     let task = crate::proxmox::migration::migrate_vm(
         &client_guard,
-        &node,
+        &node_id,
         vm_id,
         &target_node,
         &target_cluster,
@@ -1621,7 +1694,7 @@ pub async fn migrate_vm(
 #[tauri::command]
 pub async fn list_migration_status(
     cluster_id: String,
-    node: String,
+    node_id: String,
     state: State<'_, AppState>,
 ) -> Result<Vec<serde_json::Value>, String> {
     let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
@@ -1629,7 +1702,7 @@ pub async fn list_migration_status(
 
     let tasks = crate::proxmox::migration::list_migration_status(
         &client_guard,
-        &node,
+        &node_id,
         client_guard.ticket.as_deref().unwrap_or(""),
     )
     .await
