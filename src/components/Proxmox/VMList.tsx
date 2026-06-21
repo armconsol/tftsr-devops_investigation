@@ -72,19 +72,14 @@ export function VMList({
   const [clusterId, setClusterId] = useState<string>('');
 
   useEffect(() => {
-    invoke<string>('get_current_proxmox_cluster').catch(() => {
-      // Fallback: try to get first cluster
-      invoke<string[]>('list_proxmox_clusters')
-        .then((clusters: any[]) => {
-          if (clusters.length > 0) {
-            setClusterId(clusters[0].id);
-          }
-        })
-        .catch(() => {});
-    })
-    .then((id) => {
-      if (id) setClusterId(id);
-    });
+    // Use list_proxmox_clusters and select the first cluster
+    invoke<string[]>('list_proxmox_clusters')
+      .then((clusters: any[]) => {
+        if (clusters.length > 0) {
+          setClusterId(clusters[0].id);
+        }
+      })
+      .catch(() => {});
   }, []);
 
   const handleVMAction = useCallback(async (vm: VMInfo, action: string) => {
@@ -458,7 +453,7 @@ function VMActionMenu({
           className={`absolute z-50 w-48 rounded-md border bg-background shadow-md ${
             position.bottom ? 'bottom-full mb-2' : 'top-full mt-2'
           } ${position.right ? 'right-0' : ''}`}
-          style={{ left: position.left ?? undefined }}
+          style={{ left: position.left ?? undefined, right: position.right ?? undefined }}
         >
           <div className="space-y-1 p-1">
             {vm.status === 'stopped' && (
