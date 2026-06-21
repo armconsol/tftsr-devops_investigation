@@ -242,6 +242,8 @@ pub fn run() {
             commands::proxmox::suspend_proxmox_vm,
             commands::proxmox::clone_vm,
             commands::proxmox::delete_vm,
+            commands::proxmox::list_proxmox_nodes,
+            commands::proxmox::create_proxmox_vm,
             commands::proxmox::list_proxmox_backup_jobs,
             commands::proxmox::list_proxmox_datastores,
             commands::proxmox::trigger_proxmox_backup_job,

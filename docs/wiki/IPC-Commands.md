@@ -629,3 +629,48 @@ CREATE TABLE credentials (
 // Backend: src-tauri/src/integrations/auth.rs
 pub fn decrypt_token(encrypted: &str) -> Result<String, String>
 ```
+
+---
+
+## Proxmox VM Commands
+
+Handlers: `src-tauri/src/commands/proxmox.rs` — client wrappers: `src/lib/proxmoxClient.ts`
+
+### `list_proxmox_vms`
+```typescript
+listProxmoxVms(clusterId: string) → any[]
+```
+Lists all QEMU VMs across a cluster via `cluster/resources?type=vm`.
+
+### `list_proxmox_nodes`
+```typescript
+listProxmoxNodes(clusterId: string) → Array<{ node: string; status: string; ... }>
+```
+Lists cluster nodes via `GET /nodes`. Used by the migration dialog to show real target nodes (not just nodes inferred from the VM list).
+
+### `create_proxmox_vm`
+```typescript
+createProxmoxVm(clusterId, { nodeId, vmid, name, memory, cores, sockets, osType, storage, diskSize, netBridge, iso? }) → void
+```
+Creates a new QEMU VM on `nodeId` via `POST nodes/{node}/qemu`. Input validation applied server-side:
+- `vmid`: 100–999 999 999
+- `memory`: 32–1 048 576 MB
+- `cores`: 1–512, `sockets`: 1–4, `diskSize`: 1–65 536 GB
+- `nodeId`, `storage`, `netBridge`: DNS-label characters only (prevents URL path injection)
+- `iso`: must match `storage:iso/filename` format (prevents comma-property injection)
+
+### VM Power Commands
+```typescript
+startProxmoxVm(clusterId, nodeId, vmId) → void    // POST .../status/start
+stopProxmoxVm(clusterId, nodeId, vmId) → void     // POST .../status/stop
+rebootProxmoxVm(clusterId, nodeId, vmId) → void   // POST .../status/reboot
+shutdownProxmoxVm(clusterId, nodeId, vmId) → void // POST .../status/shutdown
+suspendProxmoxVm(clusterId, nodeId, vmId) → void  // POST .../status/suspend
+resumeProxmoxVm(clusterId, nodeId, vmId) → void   // POST .../status/resume
+```
+
+### `migrate_vm`
+```typescript
+invoke('migrate_vm', { clusterId, nodeId, vmId, targetNode, targetCluster }) → void
+```
+Migrates a VM to another node (same or different cluster). Online migration by default.
