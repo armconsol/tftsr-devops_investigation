@@ -12,15 +12,15 @@
 
 ## Problem
 
-Users could not add Proxmox remotes when providing URLs with port numbers (e.g., `https://172.0.0.18:8006`). The error displayed was: **"Failed to add remote"**
+Users could not add Proxmox remotes when providing URLs with port numbers (e.g., `https://proxmox-server:8006`). The error displayed was: **"Failed to add remote"**
 
 ### Root Cause
 The `RemotesPage.tsx` component incorrectly parsed URLs containing ports:
-1. User enters: `https://172.0.0.18:8006`
-2. Code strips protocol → `172.0.0.18:8006`
+1. User enters: `https://proxmox-server:8006`
+2. Code strips protocol → `proxmox-server:8006`
 3. Code uses this **with port still attached** as hostname
 4. Code **also** sends separate port parameter: `8006`
-5. Backend receives malformed: `url: "172.0.0.18:8006"` + `port: 8006`
+5. Backend receives malformed: `url: "proxmox-server:8006"` + `port: 8006`
 6. Connection fails
 
 ---
@@ -43,8 +43,8 @@ if (portMatch) {
 ```
 
 Now correctly handles:
-- ✅ Full URLs with ports: `https://172.0.0.18:8006` → hostname: `172.0.0.18`, port: `8006`
-- ✅ Hostnames only: `172.0.0.18` → hostname: `172.0.0.18`, port: `8006` (default)
+- ✅ Full URLs with ports: `https://proxmox-server:8006` → hostname: `proxmox-server`, port: `8006`
+- ✅ Hostnames only: `proxmox-server` → hostname: `proxmox-server`, port: `8006` (default)
 - ✅ Custom ports: `https://192.168.1.100:8443` → hostname: `192.168.1.100`, port: `8443`
 
 ---
@@ -83,8 +83,8 @@ Now correctly handles:
 - [x] Database corruption fixed (removed 0-byte DB)
 
 ### Required Before Merge
-- [ ] Manual test: Add remote with `https://172.0.0.18:8006`
-- [ ] Manual test: Add remote with `172.0.0.18` (should use port 8006)
+- [ ] Manual test: Add remote with `https://proxmox-server:8006`
+- [ ] Manual test: Add remote with `proxmox-server` (should use port 8006)
 - [ ] Manual test: Add PBS remote with custom port
 - [ ] Manual test: Edit existing remote and verify port changes
 - [ ] Verify remote connection succeeds

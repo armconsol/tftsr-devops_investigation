@@ -24,7 +24,6 @@ struct ProxmoxEnvelope<T> {
 
 /// Authentication response from Proxmox (inner `data` object).
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "PascalCase")]
 pub struct AuthResponse {
     /// Cookie value — `PVEAuthCookie=<ticket>`.
     pub ticket: String,
@@ -38,6 +37,9 @@ pub struct AuthResponse {
     /// Capability map — structure varies, only needed for display/debug.
     #[serde(default)]
     pub cap: Option<serde_json::Value>,
+    /// Cluster name
+    #[serde(default)]
+    pub clustername: Option<String>,
 }
 
 /// API token for authentication
@@ -347,13 +349,16 @@ mod tests {
     fn test_auth_response_envelope_deserialization() {
         // Validates that the `{"data": {...}}` envelope Proxmox uses is parsed
         // correctly into ProxmoxEnvelope<AuthResponse>.
+        // Note: Proxmox returns lowercase fields (ticket, username, clustername)
+        // except for CSRFPreventionToken which is PascalCase.
         let json = r#"{
             "data": {
-                "Ticket": "PVE:root@pam:12345",
-                "Username": "root@pam",
-                "Expire": 1800,
+                "ticket": "PVE:root@pam:12345",
+                "username": "root@pam",
+                "expire": 1800,
                 "CSRFPreventionToken": "abc123",
-                "Cap": null
+                "cap": null,
+                "clustername": "TFTSR"
             }
         }"#;
         let envelope: ProxmoxEnvelope<AuthResponse> =
@@ -370,8 +375,9 @@ mod tests {
         // Some Proxmox versions or API tokens may omit CSRFPreventionToken.
         let json = r#"{
             "data": {
-                "Ticket": "PVE:root@pam:99999",
-                "Username": "root@pam"
+                "ticket": "PVE:root@pam:99999",
+                "username": "root@pam",
+                "clustername": "TFTSR"
             }
         }"#;
         let envelope: ProxmoxEnvelope<AuthResponse> =
@@ -414,5 +420,160 @@ mod tests {
         client.set_csrf_token("csrf-value");
         assert_eq!(client.ticket.as_deref(), Some("ticket-value"));
         assert_eq!(client.csrf_token.as_deref(), Some("csrf-value"));
+    }
+
+    #[tokio::test]
+    async fn test_real_proxmox_auth() {
+        let password = match std::env::var("PROXMOX_PASSWORD") {
+            Ok(p) => p,
+            Err(_) => {
+                println!("Skipping test: PROXMOX_PASSWORD env var not set");
+                return;
+            }
+        };
+
+        let mut client = ProxmoxClient::new("172.0.0.18", 8006, "root@pam");
+        let result = client.authenticate(&password).await;
+        match result {
+            Ok(ticket) => {
+                println!("✓ Authentication successful");
+                println!("  Ticket: {}", &ticket[..50]);
+                assert!(client.ticket.is_some());
+                assert!(client.csrf_token.is_some());
+            }
+            Err(e) => {
+                panic!("Authentication failed: {}", e);
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_real_proxmox_cluster_resources() {
+        let password = match std::env::var("PROXMOX_PASSWORD") {
+            Ok(p) => p,
+            Err(_) => {
+                println!("Skipping test: PROXMOX_PASSWORD env var not set");
+                return;
+            }
+        };
+
+        let mut client = ProxmoxClient::new("172.0.0.18", 8006, "root@pam");
+        client
+            .authenticate(&password)
+            .await
+            .expect("Authentication failed");
+
+        #[derive(serde::Deserialize, Debug)]
+        struct Resource {
+            #[serde(default)]
+            vmid: Option<u32>,
+            name: Option<String>,
+            r#type: Option<String>,
+            node: Option<String>,
+            status: Option<String>,
+        }
+
+        let result: Result<Vec<Resource>, _> = client
+            .get("cluster/resources", client.ticket.as_deref())
+            .await;
+        match result {
+            Ok(resources) => {
+                println!("✓ Cluster resources fetched successfully");
+                println!("  Found {} resources", resources.len());
+            }
+            Err(e) => {
+                panic!("Failed to get cluster resources: {}", e);
+            }
+        }
+    }
+
+    fn get_test_client() -> ProxmoxClient {
+        let host = std::env::var("PROXMOX_HOST").unwrap_or_else(|_| "proxmox-server".to_string());
+        ProxmoxClient::new(&host, 8006, "root@pam")
+    }
+
+    #[tokio::test]
+    async fn test_real_proxmox_nodes() {
+        let password = match std::env::var("PROXMOX_PASSWORD") {
+            Ok(p) => p,
+            Err(_) => {
+                println!("Skipping test: PROXMOX_PASSWORD env var not set");
+                return;
+            }
+        };
+
+        let mut client = ProxmoxClient::new("proxmox-server", 8006, "root@pam");
+        client
+            .authenticate(&password)
+            .await
+            .expect("Authentication failed");
+
+        #[derive(serde::Deserialize, Debug)]
+        struct Node {
+            node: String,
+            status: String,
+            #[serde(default)]
+            level: String,
+            #[serde(default)]
+            cpu: f64,
+            #[serde(default)]
+            uptime: u64,
+        }
+
+        let result: Result<Vec<Node>, _> = client.get("nodes", client.ticket.as_deref()).await;
+        match result {
+            Ok(nodes) => {
+                println!("✓ Nodes fetched successfully");
+                for node in &nodes {
+                    println!("  Node: {} - Status: {}", node.node, node.status);
+                }
+            }
+            Err(e) => {
+                panic!("Failed to get nodes: {}", e);
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_real_proxmox_vms() {
+        let password = match std::env::var("PROXMOX_PASSWORD") {
+            Ok(p) => p,
+            Err(_) => {
+                println!("Skipping test: PROXMOX_PASSWORD env var not set");
+                return;
+            }
+        };
+
+        let mut client = ProxmoxClient::new("proxmox-server", 8006, "root@pam");
+        client
+            .authenticate(&password)
+            .await
+            .expect("Authentication failed");
+
+        #[derive(serde::Deserialize, Debug)]
+        struct Resource {
+            #[serde(default)]
+            vmid: Option<u32>,
+            name: Option<String>,
+            r#type: Option<String>,
+            status: Option<String>,
+        }
+
+        let result: Result<Vec<Resource>, _> = client
+            .get("cluster/resources", client.ticket.as_deref())
+            .await;
+        match result {
+            Ok(resources) => {
+                let vms: Vec<_> = resources
+                    .into_iter()
+                    .filter(|r| r.r#type.as_deref() == Some("qemu"))
+                    .collect();
+                println!("✓ VMs fetched successfully");
+                println!("  Found {} VMs", vms.len());
+            }
+            Err(e) => {
+                panic!("Failed to get VMs: {}", e);
+            }
+        }
     }
 }

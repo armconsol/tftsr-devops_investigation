@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "workspace": {
+    "name": "tftsr-devops_investigation",
+    "createdAt": 1781879156243,
+    "preset": "starter"
+  },
+  "authorizedRoots": [
+    "/home/sarman/Documents/tftsr-devops_investigation"
+  ],
+  "reload": null
+}

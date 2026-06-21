@@ -18,7 +18,7 @@ Created `parseRemoteUrl()` helper function to eliminate code duplication:
  * Helper function to parse a Proxmox URL and extract hostname and port.
  * Handles URLs with or without explicit port numbers.
  *
- * @param url - The full URL (e.g., "https://172.0.0.18:8006" or "https://pve.example.com")
+  * @param url - The full URL (e.g., "https://proxmox-server:8006" or "https://pve.example.com")
  * @param type - The cluster type ('pve' or 'pbs') to determine default port
  * @returns Object with hostname (stripped of protocol and port) and port number
  */
