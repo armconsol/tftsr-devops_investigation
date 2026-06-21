@@ -70,11 +70,11 @@ export function CreateVmDialog({ isOpen, clusterId, onClose, onCreated }: Create
       });
   }, [isOpen, clusterId]);
 
-  const ISO_RE = /^[a-zA-Z0-9_-]+:iso\/.+\.iso$/;
+  const ISO_RE = /^[a-zA-Z0-9_-]+:iso\/[^,]+$/;
 
   const validateIso = (value: string): string => {
     if (!value) return '';
-    return ISO_RE.test(value) ? '' : "Must be in the format 'storage:iso/filename.iso'";
+    return ISO_RE.test(value) ? '' : "Must be in the format 'storage:iso/filename'";
   };
 
   const handleIsoChange = (value: string) => {
@@ -279,7 +279,7 @@ export function CreateVmDialog({ isOpen, clusterId, onClose, onCreated }: Create
             {isoError ? (
               <p className="text-xs text-red-500">{isoError}</p>
             ) : (
-              <p className="text-xs text-muted-foreground">Format: storage:iso/filename.iso</p>
+              <p className="text-xs text-muted-foreground">Format: storage:iso/filename</p>
             )}
           </div>
         </div>
