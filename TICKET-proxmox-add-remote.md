@@ -8,7 +8,7 @@ Clicking "Add Remote" in the Proxmox Remotes page always produces the error dial
 
 2. **Generic error fallback in frontend** (`src/components/Proxmox/AddRemoteForm.tsx`): The catch block uses `err instanceof Error ? err.message : 'Failed to add remote'`. Tauri errors arrive as plain strings, not `Error` objects, so the fallback branch always fires and the real error is hidden.
 
-3. **Missing protocol/port in `ProxmoxClient` URL builder** (`src-tauri/src/proxmox/client.rs`): The frontend strips the protocol via `parseRemoteUrl` before sending just the bare hostname. `get_api_url()` and `authenticate()` were constructing URLs like `"172.0.0.18/api2/json/..."` — no scheme, no port — meaning all subsequent Proxmox API calls (VMs, containers, etc.) would silently fail even after a successful add.
+3. **Missing protocol/port in `ProxmoxClient` URL builder** (`src-tauri/src/proxmox/client.rs`): The frontend strips the protocol via `parseRemoteUrl` before sending just the bare hostname. `get_api_url()` and `authenticate()` were constructing URLs like `"proxmox-server:8006/api2/json/..."` — no scheme, no port — meaning all subsequent Proxmox API calls (VMs, containers, etc.) would silently fail even after a successful add.
 
 ## Acceptance Criteria
 

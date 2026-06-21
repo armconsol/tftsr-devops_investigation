@@ -2,7 +2,7 @@
 
 ## Ticket Context
 **Branch**: `fix/proxmox-remote-add-error`
-**Original Issue**: Proxmox remote URLs with ports (e.g., `https://172.0.0.18:8006`) were incorrectly parsed
+**Original Issue**: Proxmox remote URLs with ports (e.g., `https://proxmox-server:8006`) were incorrectly parsed
 
 ## Automated Review Feedback
 
