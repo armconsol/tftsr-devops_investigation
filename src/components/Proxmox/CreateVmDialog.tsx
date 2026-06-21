@@ -40,6 +40,7 @@ export function CreateVmDialog({ isOpen, clusterId, onClose, onCreated }: Create
   const [diskSize, setDiskSize] = useState(20);
   const [netBridge, setNetBridge] = useState('vmbr0');
   const [iso, setIso] = useState('');
+  const [isoError, setIsoError] = useState('');
 
   useEffect(() => {
     if (!isOpen || !clusterId) return;
@@ -69,10 +70,23 @@ export function CreateVmDialog({ isOpen, clusterId, onClose, onCreated }: Create
       });
   }, [isOpen, clusterId]);
 
+  const ISO_RE = /^[a-zA-Z0-9_-]+:iso\/.+\.iso$/;
+
+  const validateIso = (value: string): string => {
+    if (!value) return '';
+    return ISO_RE.test(value) ? '' : "Must be in the format 'storage:iso/filename.iso'";
+  };
+
+  const handleIsoChange = (value: string) => {
+    setIso(value);
+    setIsoError(validateIso(value));
+  };
+
   const handleSubmit = async () => {
     if (!nodeId) { toast.error('Please select a target node'); return; }
     if (!name.trim()) { toast.error('VM name is required'); return; }
     if (vmid < 100 || vmid > 999999999) { toast.error('VMID must be between 100 and 999999999'); return; }
+    if (isoError) { toast.error(isoError); return; }
 
     setIsSubmitting(true);
     try {
@@ -109,6 +123,7 @@ export function CreateVmDialog({ isOpen, clusterId, onClose, onCreated }: Create
     setDiskSize(20);
     setNetBridge('vmbr0');
     setIso('');
+    setIsoError('');
     onClose();
   };
 
@@ -189,7 +204,7 @@ export function CreateVmDialog({ isOpen, clusterId, onClose, onCreated }: Create
                 id="vm-cores"
                 type="number"
                 min={1}
-                max={128}
+                max={512}
                 value={cores}
                 onChange={(e) => setCores(Number(e.target.value))}
               />
@@ -257,10 +272,15 @@ export function CreateVmDialog({ isOpen, clusterId, onClose, onCreated }: Create
             <Input
               id="vm-iso"
               value={iso}
-              onChange={(e) => setIso(e.target.value)}
+              onChange={(e) => handleIsoChange(e.target.value)}
               placeholder="local:iso/ubuntu-24.04.iso"
+              className={isoError ? 'border-red-500' : ''}
             />
-            <p className="text-xs text-muted-foreground">Format: storage:iso/filename.iso</p>
+            {isoError ? (
+              <p className="text-xs text-red-500">{isoError}</p>
+            ) : (
+              <p className="text-xs text-muted-foreground">Format: storage:iso/filename.iso</p>
+            )}
           </div>
         </div>
 
@@ -268,7 +288,7 @@ export function CreateVmDialog({ isOpen, clusterId, onClose, onCreated }: Create
           <Button variant="outline" onClick={handleClose} disabled={isSubmitting}>
             Cancel
           </Button>
-          <Button onClick={handleSubmit} disabled={isSubmitting || !nodeId || !name.trim()}>
+          <Button onClick={handleSubmit} disabled={isSubmitting || !nodeId || !name.trim() || !!isoError}>
             {isSubmitting ? 'Creating...' : 'Create VM'}
           </Button>
         </DialogFooter>
