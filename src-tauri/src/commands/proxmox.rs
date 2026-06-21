@@ -715,6 +715,11 @@ pub async fn list_proxmox_datastores(
             } else {
                 format!("storage/{}/{}", node_name, storage_name)
             };
+            if storage_name.is_empty() {
+                tracing::warn!(node = node_name, "storage entry has empty storage name — skipping");
+                return None;
+            }
+            tracing::debug!(storage_id = %storage_id, "generated storage ID");
             normalized.insert("id".to_string(), serde_json::Value::String(storage_id));
             normalized.insert(
                 "storage".to_string(),
