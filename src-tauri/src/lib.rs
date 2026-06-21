@@ -227,6 +227,8 @@ pub fn run() {
             commands::proxmox::remove_proxmox_cluster,
             commands::proxmox::update_proxmox_cluster,
             commands::proxmox::ping_proxmox_cluster,
+            commands::proxmox::connect_proxmox_cluster,
+            commands::proxmox::disconnect_proxmox_cluster,
             commands::proxmox::list_proxmox_clusters,
             commands::proxmox::get_proxmox_cluster,
             commands::proxmox::list_proxmox_vms,
