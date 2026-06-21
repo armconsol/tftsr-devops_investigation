@@ -623,6 +623,137 @@ pub async fn delete_vm(
     .map_err(|e| format!("Failed to delete VM {}: {}", vm_id, e))
 }
 
+/// List Proxmox nodes in a cluster
+#[tauri::command]
+pub async fn list_proxmox_nodes(
+    cluster_id: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<serde_json::Value>, String> {
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+
+    let response: serde_json::Value = client_guard
+        .get("nodes", Some(client_guard.ticket.as_deref().unwrap_or("")))
+        .await
+        .map_err(|e| format!("Failed to list nodes: {}", e))?;
+
+    let nodes: Vec<serde_json::Value> = response
+        .as_array()
+        .map(|arr| arr.to_vec())
+        .unwrap_or_default();
+
+    Ok(nodes)
+}
+
+/// Validates a PVE node name or network bridge name (DNS-label characters only).
+/// Prevents path traversal / URL injection when names are interpolated into REST paths
+/// or virtio property strings.
+fn validate_pve_identifier(value: &str, field: &str) -> Result<(), String> {
+    if value.is_empty() {
+        return Err(format!("{} must not be empty", field));
+    }
+    if !value.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '_') {
+        return Err(format!(
+            "{} contains invalid characters — only alphanumeric, '.', '-', '_' are allowed",
+            field
+        ));
+    }
+    Ok(())
+}
+
+/// Create a new Proxmox VM
+#[allow(clippy::too_many_arguments)]
+#[tauri::command]
+pub async fn create_proxmox_vm(
+    cluster_id: String,
+    node_id: String,
+    vmid: u32,
+    name: String,
+    memory: u32,
+    cores: u32,
+    sockets: u32,
+    os_type: String,
+    storage: String,
+    disk_size: u32,
+    net_bridge: String,
+    iso: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    // H2: validate path-interpolated identifiers before sending to PVE
+    validate_pve_identifier(&node_id, "node_id")?;
+    validate_pve_identifier(&storage, "storage")?;
+    validate_pve_identifier(&net_bridge, "net_bridge")?;
+
+    // M4: enforce PVE-defined numeric ranges
+    if !(100..=999_999_999).contains(&vmid) {
+        return Err("vmid must be between 100 and 999999999".to_string());
+    }
+    if !(32..=1_048_576).contains(&memory) {
+        return Err("memory must be between 32 MB and 1048576 MB (1 TB)".to_string());
+    }
+    if !(1..=512).contains(&cores) {
+        return Err("cores must be between 1 and 512".to_string());
+    }
+    if !(1..=4).contains(&sockets) {
+        return Err("sockets must be between 1 and 4".to_string());
+    }
+    if !(1..=65536).contains(&disk_size) {
+        return Err("disk_size must be between 1 GB and 65536 GB".to_string());
+    }
+
+    // H3: validate ISO volume ID format to prevent property string injection
+    // Expected: "storage:iso/filename.iso" — no commas, slashes only in the path portion
+    if let Some(ref iso_val) = iso {
+        if !iso_val.is_empty() {
+            let valid_iso = iso_val
+                .split_once(':')
+                .map(|(store, path)| {
+                    !store.is_empty()
+                        && !store.contains(|c: char| !c.is_ascii_alphanumeric() && c != '-' && c != '_')
+                        && path.starts_with("iso/")
+                        && !path.contains(",")
+                })
+                .unwrap_or(false);
+            if !valid_iso {
+                return Err("iso must be in the format 'storage:iso/filename.iso'".to_string());
+            }
+        }
+    }
+
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+
+    let ide2 = iso
+        .as_deref()
+        .filter(|s| !s.is_empty())
+        .map(|s| format!("{},media=cdrom", s))
+        .unwrap_or_else(|| "none,media=cdrom".to_string());
+
+    let config = serde_json::json!({
+        "vmid": vmid,
+        "name": name,
+        "memory": memory,
+        "cores": cores,
+        "sockets": sockets,
+        "ostype": os_type,
+        "scsihw": "virtio-scsi-pci",
+        "scsi0": format!("{}:{}", storage, disk_size),
+        "ide2": ide2,
+        "net0": format!("virtio,bridge={}", net_bridge),
+        "boot": "order=scsi0;ide2"
+    });
+
+    crate::proxmox::vm::create_vm(
+        &client_guard,
+        &node_id,
+        vmid,
+        &config,
+        client_guard.ticket.as_deref().unwrap_or(""),
+    )
+    .await
+    .map_err(|e| format!("Failed to create VM: {}", e))
+}
+
 /// List Proxmox Backup Jobs (cluster-level, not node-level)
 #[tauri::command]
 pub async fn list_proxmox_backup_jobs(
@@ -2601,5 +2732,146 @@ mod tests {
         let msg = format!("Connection test failed: {}", raw);
         assert!(msg.starts_with("Connection test failed:"));
         assert!(msg.contains("connection refused"));
+    }
+
+    #[test]
+    fn test_list_proxmox_nodes_error_message_format() {
+        let raw = "HTTP 403";
+        let msg = format!("Failed to list nodes: {}", raw);
+        assert!(msg.starts_with("Failed to list nodes:"));
+        assert!(msg.contains("403"));
+    }
+
+    #[test]
+    fn test_create_proxmox_vm_ide2_with_iso() {
+        let iso = Some("local:iso/ubuntu.iso".to_string());
+        let ide2 = iso
+            .as_deref()
+            .filter(|s| !s.is_empty())
+            .map(|s| format!("{},media=cdrom", s))
+            .unwrap_or_else(|| "none,media=cdrom".to_string());
+        assert_eq!(ide2, "local:iso/ubuntu.iso,media=cdrom");
+    }
+
+    #[test]
+    fn test_create_proxmox_vm_ide2_without_iso() {
+        let iso: Option<String> = None;
+        let ide2 = iso
+            .as_deref()
+            .filter(|s| !s.is_empty())
+            .map(|s| format!("{},media=cdrom", s))
+            .unwrap_or_else(|| "none,media=cdrom".to_string());
+        assert_eq!(ide2, "none,media=cdrom");
+    }
+
+    #[test]
+    fn test_create_proxmox_vm_ide2_empty_string_iso() {
+        let iso = Some("".to_string());
+        let ide2 = iso
+            .as_deref()
+            .filter(|s| !s.is_empty())
+            .map(|s| format!("{},media=cdrom", s))
+            .unwrap_or_else(|| "none,media=cdrom".to_string());
+        assert_eq!(ide2, "none,media=cdrom");
+    }
+
+    #[test]
+    fn test_create_proxmox_vm_scsi0_format() {
+        let storage = "local-lvm";
+        let disk_size: u32 = 32;
+        let scsi0 = format!("{}:{}", storage, disk_size);
+        assert_eq!(scsi0, "local-lvm:32");
+    }
+
+    #[test]
+    fn test_create_proxmox_vm_net0_format() {
+        let bridge = "vmbr0";
+        let net0 = format!("virtio,bridge={}", bridge);
+        assert_eq!(net0, "virtio,bridge=vmbr0");
+    }
+
+    #[test]
+    fn test_create_proxmox_vm_error_message_format() {
+        let vmid: u32 = 105;
+        let raw = "storage not found";
+        let msg = format!("Failed to create VM: Failed to create VM {}: {}", vmid, raw);
+        assert!(msg.contains("Failed to create VM"));
+        assert!(msg.contains("105"));
+    }
+
+    #[test]
+    fn test_validate_pve_identifier_valid() {
+        assert!(super::validate_pve_identifier("pve-node1", "node_id").is_ok());
+        assert!(super::validate_pve_identifier("vmbr0", "net_bridge").is_ok());
+        assert!(super::validate_pve_identifier("local-lvm", "storage").is_ok());
+        assert!(super::validate_pve_identifier("node.example", "node_id").is_ok());
+    }
+
+    #[test]
+    fn test_validate_pve_identifier_rejects_path_traversal() {
+        assert!(super::validate_pve_identifier("../../access/users", "node_id").is_err());
+        assert!(super::validate_pve_identifier("node/sub", "node_id").is_err());
+        assert!(super::validate_pve_identifier("node?query=1", "node_id").is_err());
+        assert!(super::validate_pve_identifier("node#anchor", "node_id").is_err());
+    }
+
+    #[test]
+    fn test_validate_pve_identifier_rejects_empty() {
+        assert!(super::validate_pve_identifier("", "node_id").is_err());
+    }
+
+    #[test]
+    fn test_create_vm_vmid_range_validation() {
+        let valid: u32 = 100;
+        assert!((100..=999_999_999).contains(&valid));
+        let too_low: u32 = 99;
+        assert!(!(100..=999_999_999).contains(&too_low));
+        let too_high: u32 = 1_000_000_000;
+        assert!(!(100..=999_999_999).contains(&too_high));
+    }
+
+    #[test]
+    fn test_iso_format_valid() {
+        let iso = "local:iso/ubuntu-24.04.iso";
+        let valid = iso
+            .split_once(':')
+            .map(|(store, path)| {
+                !store.is_empty()
+                    && !store.contains(|c: char| !c.is_ascii_alphanumeric() && c != '-' && c != '_')
+                    && path.starts_with("iso/")
+                    && !path.contains(',')
+            })
+            .unwrap_or(false);
+        assert!(valid, "should accept valid iso path");
+    }
+
+    #[test]
+    fn test_iso_format_rejects_comma_injection() {
+        let iso = "local:iso/x.iso,media=cdrom,backup=0";
+        let valid = iso
+            .split_once(':')
+            .map(|(store, path)| {
+                !store.is_empty()
+                    && !store.contains(|c: char| !c.is_ascii_alphanumeric() && c != '-' && c != '_')
+                    && path.starts_with("iso/")
+                    && !path.contains(',')
+            })
+            .unwrap_or(false);
+        assert!(!valid, "should reject comma injection in iso path");
+    }
+
+    #[test]
+    fn test_iso_format_rejects_missing_colon() {
+        let iso = "local-iso-no-colon";
+        let valid = iso
+            .split_once(':')
+            .map(|(store, path)| {
+                !store.is_empty()
+                    && !store.contains(|c: char| !c.is_ascii_alphanumeric() && c != '-' && c != '_')
+                    && path.starts_with("iso/")
+                    && !path.contains(',')
+            })
+            .unwrap_or(false);
+        assert!(!valid, "should reject iso without storage: prefix");
     }
 }

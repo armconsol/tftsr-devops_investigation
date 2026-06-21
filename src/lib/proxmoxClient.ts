@@ -188,6 +188,60 @@ export async function shutdownProxmoxVm(
   await invoke("shutdown_proxmox_vm", { clusterId, nodeId, vmId });
 }
 
+export async function suspendProxmoxVm(
+  clusterId: string,
+  nodeId: string,
+  vmId: number
+): Promise<void> {
+  await invoke("suspend_proxmox_vm", { clusterId, nodeId, vmId });
+}
+
+export async function resumeProxmoxVm(
+  clusterId: string,
+  nodeId: string,
+  vmId: number
+): Promise<void> {
+  await invoke("resume_proxmox_vm", { clusterId, nodeId, vmId });
+}
+
+export async function listProxmoxNodes(clusterId: string): Promise<any[]> {
+  return await invoke<any[]>("list_proxmox_nodes", { clusterId });
+}
+
+export interface CreateVmParams {
+  nodeId: string;
+  vmid: number;
+  name: string;
+  memory: number;
+  cores: number;
+  sockets: number;
+  osType: string;
+  storage: string;
+  diskSize: number;
+  netBridge: string;
+  iso?: string;
+}
+
+export async function createProxmoxVm(
+  clusterId: string,
+  params: CreateVmParams
+): Promise<void> {
+  await invoke("create_proxmox_vm", {
+    clusterId,
+    nodeId: params.nodeId,
+    vmid: params.vmid,
+    name: params.name,
+    memory: params.memory,
+    cores: params.cores,
+    sockets: params.sockets,
+    osType: params.osType,
+    storage: params.storage,
+    diskSize: params.diskSize,
+    netBridge: params.netBridge,
+    iso: params.iso ?? null,
+  });
+}
+
 /**
  * List Proxmox Backup Jobs
  * @param clusterId - Cluster identifier
