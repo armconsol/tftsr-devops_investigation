@@ -482,6 +482,11 @@ mod tests {
         }
     }
 
+    fn get_test_client() -> ProxmoxClient {
+        let host = std::env::var("PROXMOX_HOST").unwrap_or_else(|_| "172.0.0.18".to_string());
+        ProxmoxClient::new(&host, 8006, "root@pam")
+    }
+
     #[tokio::test]
     async fn test_real_proxmox_nodes() {
         let password = match std::env::var("PROXMOX_PASSWORD") {
@@ -492,7 +497,7 @@ mod tests {
             }
         };
         
-        let mut client = ProxmoxClient::new("172.0.0.18", 8006, "root@pam");
+        let mut client = get_test_client();
         client.authenticate(&password).await.expect("Authentication failed");
 
         #[derive(serde::Deserialize, Debug)]
@@ -531,7 +536,7 @@ mod tests {
             }
         };
         
-        let mut client = ProxmoxClient::new("172.0.0.18", 8006, "root@pam");
+        let mut client = get_test_client();
         client.authenticate(&password).await.expect("Authentication failed");
 
         #[derive(serde::Deserialize, Debug)]
