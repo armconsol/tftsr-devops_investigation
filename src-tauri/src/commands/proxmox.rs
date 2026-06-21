@@ -709,13 +709,13 @@ pub async fn list_proxmox_datastores(
             let storage_name = obj.get("storage").and_then(|v| v.as_str()).unwrap_or("");
             let node_name = obj.get("node").and_then(|v| v.as_str()).unwrap_or("");
 
-            normalized.insert(
-                "id".to_string(),
-                serde_json::Value::String(format!(
-                    "storage/{}/{}",
-                    node_name, storage_name
-                )),
-            );
+            // Avoid double-slash when cluster/resources omits "node" for shared storage
+            let storage_id = if node_name.is_empty() {
+                format!("storage/{}", storage_name)
+            } else {
+                format!("storage/{}/{}", node_name, storage_name)
+            };
+            normalized.insert("id".to_string(), serde_json::Value::String(storage_id));
             normalized.insert(
                 "storage".to_string(),
                 serde_json::Value::String(storage_name.to_string()),

@@ -17,7 +17,7 @@ export function ProxmoxNetworkPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showAddDialog, setShowAddDialog] = useState(false);
-  const [editingInterface, setEditingInterface] = useState<NetworkInterface | null>(null);
+  const [editingInterface] = useState<NetworkInterface | null>(null);
   
   // Form state
   const [ifaceName, setIfaceName] = useState('');
@@ -52,58 +52,24 @@ export function ProxmoxNetworkPage() {
       .catch(console.error);
   }, [loadInterfaces, nodeId]);
 
+  const NOT_IMPLEMENTED_MSG =
+    'Network interface management requires additional backend implementation (POST/PUT/DELETE nodes/{node}/network) and is not yet available.';
+
   const handleAddInterface = () => {
-    setEditingInterface(null);
-    setIfaceName('');
-    setIfaceType('eth');
-    setAddress('');
-    setNetmask('');
-    setGateway('');
-    setActive(true);
-    setShowAddDialog(true);
+    toast.warning(NOT_IMPLEMENTED_MSG);
   };
 
-  const handleEditInterface = (iface: NetworkInterface) => {
-    setEditingInterface(iface);
-    setIfaceName(iface.iface);
-    setIfaceType(iface.type);
-    setAddress(iface.address || '');
-    setNetmask(iface.netmask || '');
-    setGateway(iface.gateway || '');
-    setActive(iface.active);
-    setShowAddDialog(true);
+  const handleEditInterface = (_iface: NetworkInterface) => {
+    toast.warning(NOT_IMPLEMENTED_MSG);
   };
 
   const handleSubmit = async () => {
-    if (!ifaceName || !ifaceType) {
-      toast.error('Interface name and type are required');
-      return;
-    }
-
-    try {
-      if (editingInterface) {
-        toast.info(`Updating interface ${ifaceName} - implementation pending`);
-      } else {
-        toast.info(`Creating interface ${ifaceName} - implementation pending`);
-      }
-      setShowAddDialog(false);
-    } catch (error) {
-      console.error('Failed to save interface:', error);
-      toast.error(`Failed to save interface: ${error}`);
-    }
+    toast.warning(NOT_IMPLEMENTED_MSG);
+    setShowAddDialog(false);
   };
 
-  const handleDeleteInterface = async (iface: NetworkInterface) => {
-    if (!confirm(`Are you sure you want to delete interface ${iface.iface}?`)) {
-      return;
-    }
-
-    try {
-      toast.info(`Deleting interface ${iface.iface} - implementation pending`);
-    } catch (error) {
-      console.error('Failed to delete interface:', error);
-      toast.error(`Failed to delete interface: ${error}`);
-    }
+  const handleDeleteInterface = async (_iface: NetworkInterface) => {
+    toast.warning(NOT_IMPLEMENTED_MSG);
   };
 
   return (
