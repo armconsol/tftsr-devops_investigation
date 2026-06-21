@@ -80,6 +80,8 @@ pub async fn list_firewall_rules(
 }
 
 /// Add firewall rule — uses correct PVE API field names (proto, enable, dest).
+/// `rule.rule_num` is intentionally not sent: PVE assigns the position (pos) automatically
+/// on creation. rule_num is only used for update/delete operations on existing rules.
 pub async fn add_rule(
     client: &crate::proxmox::client::ProxmoxClient,
     node: &str,

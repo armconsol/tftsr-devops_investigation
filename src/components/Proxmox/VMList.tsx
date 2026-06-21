@@ -122,6 +122,8 @@ export function VMList({
     }));
   }, [rawVms]);
 
+  // clusterId comes from props (not captured via closure over state), so it is always
+  // current when an action fires even if the user switches clusters mid-session.
   const handleVMAction = useCallback(async (vm: VMInfo, action: string) => {
     if (!clusterId) {
       toast.error('No cluster selected');
@@ -746,6 +748,8 @@ function MigrationDialog({
           <Button variant="outline" onClick={onClose}>
             Cancel
           </Button>
+          {/* Disabled when: no target node typed/selected,
+              OR same-cluster migration with no enumerated nodes to choose from */}
           <Button
             onClick={onSubmit}
             disabled={!targetNode || (!isCrossCluster && availableTargets.length === 0)}

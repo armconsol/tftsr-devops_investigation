@@ -80,26 +80,14 @@ export function ProxmoxBackupPage() {
   }, [selectedClusterId, loadJobs]);
 
   const handleNewJob = () => {
-    setJobName('');
-    setJobNode('');
-    setJobSchedule('');
-    setJobVms('');
-    setShowNewJobDialog(true);
+    toast.warning(
+      'Backup job creation requires additional backend implementation (POST cluster/backup) and is not yet available.',
+    );
   };
 
   const handleSubmitNewJob = async () => {
-    if (!jobName || !jobNode || !jobSchedule) {
-      toast.error('Job name, node, and schedule are required');
-      return;
-    }
-
-    try {
-      toast.info(`Creating backup job ${jobName} - implementation pending`);
-      setShowNewJobDialog(false);
-    } catch (error) {
-      console.error('Failed to create backup job:', error);
-      toast.error(`Failed to create backup job: ${error}`);
-    }
+    toast.warning('Backup job creation is not yet available.');
+    setShowNewJobDialog(false);
   };
 
   if (clusters.length === 0 && !isLoading) {
