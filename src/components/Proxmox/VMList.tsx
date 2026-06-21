@@ -40,10 +40,12 @@ interface RawVMInfo {
   mem?: number;
   max_mem?: number;
   memory?: number;
+  memoryTotal?: number;
   disk?: number;
   max_disk?: number;
   diskTotal?: number;
   uptime?: number;
+  tags?: string[];
 }
 
 interface VMListProps {

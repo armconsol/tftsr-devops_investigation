@@ -321,7 +321,7 @@ impl OpenAiProvider {
             .filter(|m| m.role == "system")
             .map(|m| m.content.clone())
             .collect();
-        
+
         let combined_system = if system_messages.is_empty() {
             None
         } else {
@@ -348,7 +348,7 @@ impl OpenAiProvider {
         }
 
         // Add optional system message
-        if let Some(system) = system_message {
+        if let Some(system) = combined_system {
             body["system"] = serde_json::Value::String(system);
         }
 
