@@ -169,13 +169,6 @@ impl ProxmoxClient {
             }
         }
 
-        headers.insert(
-            reqwest::header::CONTENT_TYPE,
-            "application/x-www-form-urlencoded"
-                .parse()
-                .expect("Invalid content type"),
-        );
-
         headers
     }
 
@@ -199,7 +192,7 @@ impl ProxmoxClient {
         self.handle_response(response).await
     }
 
-    /// POST request to Proxmox API
+    /// POST request to Proxmox API with JSON body
     pub async fn post<T: for<'de> Deserialize<'de>, B: Serialize>(
         &self,
         path: &str,
@@ -217,6 +210,28 @@ impl ProxmoxClient {
             .send()
             .await
             .map_err(|e| anyhow!("POST request failed: {}", e))?;
+
+        self.handle_response(response).await
+    }
+
+    /// POST request to Proxmox API with form-encoded body
+    pub async fn post_form<T: for<'de> Deserialize<'de>>(
+        &self,
+        path: &str,
+        params: &[(&str, &str)],
+        ticket: Option<&str>,
+    ) -> Result<T> {
+        let url = self.get_api_url(path);
+        let headers = self.build_headers(ticket, true);
+
+        let response = self
+            .client
+            .post(&url)
+            .headers(headers)
+            .form(params)
+            .send()
+            .await
+            .map_err(|e| anyhow!("POST form request failed: {}", e))?;
 
         self.handle_response(response).await
     }
@@ -239,6 +254,28 @@ impl ProxmoxClient {
             .send()
             .await
             .map_err(|e| anyhow!("PUT request failed: {}", e))?;
+
+        self.handle_response(response).await
+    }
+
+    /// POST multipart/form-data to Proxmox API (used for file uploads)
+    pub async fn post_multipart<T: for<'de> Deserialize<'de>>(
+        &self,
+        path: &str,
+        form: reqwest::multipart::Form,
+        ticket: Option<&str>,
+    ) -> Result<T> {
+        let url = self.get_api_url(path);
+        let headers = self.build_headers(ticket, true);
+
+        let response = self
+            .client
+            .post(&url)
+            .headers(headers)
+            .multipart(form)
+            .send()
+            .await
+            .map_err(|e| anyhow!("POST multipart request failed: {}", e))?;
 
         self.handle_response(response).await
     }

@@ -2,13 +2,42 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/index';
 import { Button } from '@/components/ui/index';
 import { Badge } from '@/components/ui/index';
-import { RefreshCw, Network, Plus, Edit, Trash2 } from 'lucide-react';
-import { listNetworkInterfaces, listProxmoxClusters, NetworkInterface } from '@/lib/proxmoxClient';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/index';
 import { Input } from '@/components/ui/index';
 import { Label } from '@/components/ui/index';
+import { Checkbox } from '@/components/ui/index';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/index';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/index';
+import { RefreshCw, Network, Plus, Pencil, Trash2 } from 'lucide-react';
+import {
+  listNetworkInterfaces,
+  createNetworkInterface,
+  updateNetworkInterface,
+  deleteNetworkInterface,
+  listProxmoxClusters,
+  NetworkInterface,
+  NetworkInterfaceConfig,
+} from '@/lib/proxmoxClient';
 import { toast } from 'sonner';
+
+interface FormState {
+  ifaceName: string;
+  ifaceType: string;
+  address: string;
+  netmask: string;
+  gateway: string;
+  autostart: boolean;
+  active: boolean;
+}
+
+const defaultForm: FormState = {
+  ifaceName: '',
+  ifaceType: 'eth',
+  address: '',
+  netmask: '',
+  gateway: '',
+  autostart: false,
+  active: false,
+};
 
 export function ProxmoxNetworkPage() {
   const [interfaces, setInterfaces] = useState<NetworkInterface[]>([]);
@@ -16,16 +45,12 @@ export function ProxmoxNetworkPage() {
   const [nodeId] = useState('localhost');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [showAddDialog, setShowAddDialog] = useState(false);
-  const [editingInterface] = useState<NetworkInterface | null>(null);
-  
-  // Form state
-  const [ifaceName, setIfaceName] = useState('');
-  const [ifaceType, setIfaceType] = useState('eth');
-  const [address, setAddress] = useState('');
-  const [netmask, setNetmask] = useState('');
-  const [gateway, setGateway] = useState('');
-  const [active, setActive] = useState(true);
+
+  const [showDialog, setShowDialog] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editingInterface, setEditingInterface] = useState<NetworkInterface | null>(null);
+  const [form, setForm] = useState<FormState>(defaultForm);
+  const [submitting, setSubmitting] = useState(false);
 
   const loadInterfaces = useCallback(async (cId: string, nId: string) => {
     if (!cId) return;
@@ -52,24 +77,69 @@ export function ProxmoxNetworkPage() {
       .catch(console.error);
   }, [loadInterfaces, nodeId]);
 
-  const NOT_IMPLEMENTED_MSG =
-    'Network interface management requires additional backend implementation (POST/PUT/DELETE nodes/{node}/network) and is not yet available.';
-
   const handleAddInterface = () => {
-    toast.warning(NOT_IMPLEMENTED_MSG);
+    setIsEditing(false);
+    setEditingInterface(null);
+    setForm(defaultForm);
+    setShowDialog(true);
   };
 
-  const handleEditInterface = (_iface: NetworkInterface) => {
-    toast.warning(NOT_IMPLEMENTED_MSG);
+  const handleEditInterface = (iface: NetworkInterface) => {
+    setIsEditing(true);
+    setEditingInterface(iface);
+    setForm({
+      ifaceName: iface.iface,
+      ifaceType: iface.type,
+      address: iface.address ?? '',
+      netmask: iface.netmask ?? '',
+      gateway: iface.gateway ?? '',
+      autostart: iface.autostart,
+      active: iface.active,
+    });
+    setShowDialog(true);
   };
 
-  const handleSubmit = async () => {
-    toast.warning(NOT_IMPLEMENTED_MSG);
-    setShowAddDialog(false);
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!clusterId) return;
+
+    const config: NetworkInterfaceConfig = {
+      iface: form.ifaceName,
+      type: form.ifaceType,
+      address: form.address || undefined,
+      netmask: form.netmask || undefined,
+      gateway: form.gateway || undefined,
+      active: form.active,
+      autostart: form.autostart,
+    };
+
+    setSubmitting(true);
+    try {
+      if (isEditing && editingInterface) {
+        await updateNetworkInterface(clusterId, nodeId, editingInterface.iface, config);
+        toast.success(`Interface "${editingInterface.iface}" updated`);
+      } else {
+        await createNetworkInterface(clusterId, nodeId, config);
+        toast.success(`Interface "${config.iface}" created`);
+      }
+      setShowDialog(false);
+      await loadInterfaces(clusterId, nodeId);
+    } catch (e) {
+      toast.error(String(e));
+    } finally {
+      setSubmitting(false);
+    }
   };
 
-  const handleDeleteInterface = async (_iface: NetworkInterface) => {
-    toast.warning(NOT_IMPLEMENTED_MSG);
+  const handleDeleteInterface = async (iface: NetworkInterface) => {
+    if (!window.confirm(`Delete interface "${iface.iface}"? This cannot be undone.`)) return;
+    try {
+      await deleteNetworkInterface(clusterId, nodeId, iface.iface);
+      toast.success(`Interface "${iface.iface}" deleted`);
+      await loadInterfaces(clusterId, nodeId);
+    } catch (e) {
+      toast.error(String(e));
+    }
   };
 
   return (
@@ -79,14 +149,24 @@ export function ProxmoxNetworkPage() {
           <h1 className="text-2xl font-bold">Network</h1>
           <p className="text-muted-foreground">Network interfaces and bridges</p>
         </div>
-        <div className="flex items-center space-x-2">
-          <Button variant="outline" size="sm" onClick={() => void loadInterfaces(clusterId, nodeId)} disabled={loading || !clusterId}>
-            <RefreshCw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-            Refresh
-          </Button>
-          <Button size="sm" onClick={handleAddInterface}>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleAddInterface}
+            disabled={!clusterId}
+          >
             <Plus className="mr-2 h-4 w-4" />
             Add Interface
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => void loadInterfaces(clusterId, nodeId)}
+            disabled={loading || !clusterId}
+          >
+            <RefreshCw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+            Refresh
           </Button>
         </div>
       </div>
@@ -143,21 +223,24 @@ export function ProxmoxNetworkPage() {
                       </div>
                     )}
                   </div>
-                  <div className="flex items-center gap-2">
-                    <button
-                      className="rounded p-1 hover:bg-accent"
+                  <div className="flex items-center gap-1 shrink-0">
+                    <Button
+                      variant="ghost"
+                      size="sm"
                       onClick={() => handleEditInterface(iface)}
                       title="Edit"
                     >
-                      <Edit className="h-4 w-4" />
-                    </button>
-                    <button
-                      className="rounded p-1 hover:bg-red-100 hover:text-red-600"
-                      onClick={() => handleDeleteInterface(iface)}
+                      <Pencil className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => void handleDeleteInterface(iface)}
                       title="Delete"
+                      className="text-destructive hover:text-destructive"
                     >
                       <Trash2 className="h-4 w-4" />
-                    </button>
+                    </Button>
                   </div>
                 </div>
               ))}
@@ -166,85 +249,113 @@ export function ProxmoxNetworkPage() {
         </CardContent>
       </Card>
 
-      <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
-        <DialogContent>
+      <Dialog open={showDialog} onOpenChange={setShowDialog}>
+        <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>{editingInterface ? 'Edit Network Interface' : 'Add Network Interface'}</DialogTitle>
+            <DialogTitle>{isEditing ? 'Edit Interface' : 'Add Interface'}</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4 py-4">
+          <form onSubmit={(e) => void handleSubmit(e)} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="iface">Interface Name</Label>
+              <Label htmlFor="ifaceName">Interface Name</Label>
               <Input
-                id="iface"
-                value={ifaceName}
-                onChange={(e) => setIfaceName(e.target.value)}
-                placeholder="eth0"
+                id="ifaceName"
+                value={form.ifaceName}
+                onChange={(e) => setForm((f) => ({ ...f, ifaceName: e.target.value }))}
+                placeholder="e.g. vmbr0"
+                disabled={isEditing || submitting}
+                required
               />
             </div>
+
             <div className="space-y-2">
-              <Label htmlFor="type">Interface Type</Label>
-              <Select value={ifaceType} onValueChange={setIfaceType}>
+              <Label>Type</Label>
+              <Select
+                value={form.ifaceType}
+                onValueChange={(v) => setForm((f) => ({ ...f, ifaceType: v }))}
+              >
                 <SelectTrigger>
-                  <SelectValue placeholder="Select interface type" />
+                  <SelectValue placeholder="Select type" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="eth">eth — Ethernet</SelectItem>
-                  <SelectItem value="bond">bond — Network Bond</SelectItem>
-                  <SelectItem value="bridge">bridge — Linux Bridge</SelectItem>
-                  <SelectItem value="vlan">vlan — VLAN</SelectItem>
-                  <SelectItem value="OVSBridge">OVSBridge — Open vSwitch Bridge</SelectItem>
-                  <SelectItem value="OVSBond">OVSBond — Open vSwitch Bond</SelectItem>
-                  <SelectItem value="OVSIntPort">OVSIntPort — OVS Internal Port</SelectItem>
-                  <SelectItem value="OVSPort">OVSPort — OVS Port</SelectItem>
+                  <SelectItem value="eth">eth</SelectItem>
+                  <SelectItem value="bridge">bridge</SelectItem>
+                  <SelectItem value="bond">bond</SelectItem>
+                  <SelectItem value="vlan">vlan</SelectItem>
+                  <SelectItem value="OVSBridge">OVS Bridge</SelectItem>
+                  <SelectItem value="OVSBond">OVS Bond</SelectItem>
+                  <SelectItem value="OVSPort">OVS Port</SelectItem>
                 </SelectContent>
               </Select>
             </div>
+
             <div className="space-y-2">
               <Label htmlFor="address">IP Address</Label>
               <Input
                 id="address"
-                value={address}
-                onChange={(e) => setAddress(e.target.value)}
-                placeholder="192.168.1.100"
+                value={form.address}
+                onChange={(e) => setForm((f) => ({ ...f, address: e.target.value }))}
+                placeholder="e.g. 192.168.1.100"
+                disabled={submitting}
               />
             </div>
+
             <div className="space-y-2">
               <Label htmlFor="netmask">Netmask</Label>
               <Input
                 id="netmask"
-                value={netmask}
-                onChange={(e) => setNetmask(e.target.value)}
-                placeholder="24"
+                value={form.netmask}
+                onChange={(e) => setForm((f) => ({ ...f, netmask: e.target.value }))}
+                placeholder="e.g. 255.255.255.0"
+                disabled={submitting}
               />
             </div>
+
             <div className="space-y-2">
               <Label htmlFor="gateway">Gateway</Label>
               <Input
                 id="gateway"
-                value={gateway}
-                onChange={(e) => setGateway(e.target.value)}
-                placeholder="192.168.1.1"
+                value={form.gateway}
+                onChange={(e) => setForm((f) => ({ ...f, gateway: e.target.value }))}
+                placeholder="e.g. 192.168.1.1"
+                disabled={submitting}
               />
             </div>
-            <div className="flex items-center space-x-2">
-              <input
-                type="checkbox"
-                id="active"
-                checked={active}
-                onChange={(e) => setActive(e.target.checked)}
-                className="rounded"
-              />
-              <Label htmlFor="active">Active</Label>
+
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="autostart"
+                  checked={form.autostart}
+                  onCheckedChange={(v) => setForm((f) => ({ ...f, autostart: v as boolean }))}
+                  disabled={submitting}
+                />
+                <Label htmlFor="autostart">Autostart</Label>
+              </div>
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="active"
+                  checked={form.active}
+                  onCheckedChange={(v) => setForm((f) => ({ ...f, active: v as boolean }))}
+                  disabled={submitting}
+                />
+                <Label htmlFor="active">Active</Label>
+              </div>
             </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowAddDialog(false)}>
-              Cancel
-            </Button>
-            <Button onClick={handleSubmit}>
-              {editingInterface ? 'Update' : 'Create'}
-            </Button>
-          </DialogFooter>
+
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setShowDialog(false)}
+                disabled={submitting}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={submitting}>
+                {submitting ? 'Saving...' : isEditing ? 'Update' : 'Create'}
+              </Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
     </div>
