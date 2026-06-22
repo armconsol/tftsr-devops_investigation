@@ -14,6 +14,7 @@ pub mod firewall;
 pub mod ha;
 pub mod metrics;
 pub mod migration;
+pub mod network;
 pub mod node;
 pub mod sdn;
 pub mod shell;

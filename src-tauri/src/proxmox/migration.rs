@@ -40,48 +40,34 @@ pub async fn migrate_vm(
     ticket: &str,
 ) -> Result<MigrationTask, String> {
     let path = format!("nodes/{}/qemu/{}/migrate", node, vm_id);
-    let config = serde_json::json!({
+    let body = serde_json::json!({
         "target": target_node,
-        "targetcluster": target_cluster,
-        "targetstorage": "",
-        "online": true,
-        "force": false
+        "online": 1,
+        "force": 0,
     });
 
     let response: serde_json::Value = client
-        .post(&path, &config, Some(ticket))
+        .post::<serde_json::Value, _>(&path, &body, Some(ticket))
         .await
         .map_err(|e| format!("Failed to migrate VM {}: {}", vm_id, e))?;
 
-    {
-        let data = &response;
-        let task_id = data
-            .get("taskid")
-            .and_then(|t| t.as_str())
-            .unwrap_or("")
-            .to_string();
-        let status = data
-            .get("status")
-            .and_then(|s| s.as_str())
-            .unwrap_or("running")
-            .to_string();
-        let progress = data.get("progress").and_then(|p| p.as_u64()).unwrap_or(0) as u32;
-        let start_time = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+    // handle_response unwraps the "data" envelope; migrate returns the task UPID as a string.
+    let task_id = response.as_str().unwrap_or("").to_string();
+    let start_time = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
 
-        Ok(MigrationTask {
-            task_id,
-            vm_id,
-            source_node: node.to_string(),
-            target_node: target_node.to_string(),
-            source_cluster: client.base_url().to_string(),
-            target_cluster: target_cluster.to_string(),
-            status,
-            progress,
-            start_time,
-            end_time: None,
-            error: None,
-        })
-    }
+    Ok(MigrationTask {
+        task_id,
+        vm_id,
+        source_node: node.to_string(),
+        target_node: target_node.to_string(),
+        source_cluster: client.base_url().to_string(),
+        target_cluster: target_cluster.to_string(),
+        status: "running".to_string(),
+        progress: 0,
+        start_time,
+        end_time: None,
+        error: None,
+    })
 }
 
 /// List migration tasks
@@ -198,12 +184,10 @@ pub async fn cancel_migration(
     ticket: &str,
 ) -> Result<(), String> {
     let path = format!("nodes/{}/qemu/{}/migrate", node, vm_id);
-    let config = serde_json::json!({
-        "cancel": true
-    });
+    let params = vec![("cancel", "1")];
 
     let _response: serde_json::Value = client
-        .post(&path, &config, Some(ticket))
+        .post_form(&path, &params, Some(ticket))
         .await
         .map_err(|e| format!("Failed to cancel migration for VM {}: {}", vm_id, e))?;
     Ok(())
