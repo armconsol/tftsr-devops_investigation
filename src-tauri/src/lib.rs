@@ -222,6 +222,8 @@ pub fn run() {
             commands::proxmox::create_proxmox_snapshot,
             commands::proxmox::delete_proxmox_snapshot,
             commands::proxmox::rollback_proxmox_snapshot,
+            commands::proxmox::list_iso_images,
+            commands::proxmox::upload_iso_image,
             // Proxmox - Cluster Views typed (Phase 13)
             commands::proxmox::list_cluster_views,
             commands::proxmox::create_cluster_view,

@@ -169,13 +169,6 @@ impl ProxmoxClient {
             }
         }
 
-        headers.insert(
-            reqwest::header::CONTENT_TYPE,
-            "application/x-www-form-urlencoded"
-                .parse()
-                .expect("Invalid content type"),
-        );
-
         headers
     }
 
@@ -261,6 +254,28 @@ impl ProxmoxClient {
             .send()
             .await
             .map_err(|e| anyhow!("PUT request failed: {}", e))?;
+
+        self.handle_response(response).await
+    }
+
+    /// POST multipart/form-data to Proxmox API (used for file uploads)
+    pub async fn post_multipart<T: for<'de> Deserialize<'de>>(
+        &self,
+        path: &str,
+        form: reqwest::multipart::Form,
+        ticket: Option<&str>,
+    ) -> Result<T> {
+        let url = self.get_api_url(path);
+        let headers = self.build_headers(ticket, true);
+
+        let response = self
+            .client
+            .post(&url)
+            .headers(headers)
+            .multipart(form)
+            .send()
+            .await
+            .map_err(|e| anyhow!("POST multipart request failed: {}", e))?;
 
         self.handle_response(response).await
     }
