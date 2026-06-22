@@ -2377,6 +2377,252 @@ pub async fn list_network_interfaces(
         .ok_or_else(|| "Invalid response format".to_string())
 }
 
+/// Network interface configuration for creation/update
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NetworkInterfaceConfig {
+    pub iface: String,
+    #[serde(rename = "type")]
+    pub iface_type: String,
+    #[serde(default)]
+    pub address: Option<String>,
+    #[serde(default)]
+    pub netmask: Option<String>,
+    #[serde(default)]
+    pub gateway: Option<String>,
+    #[serde(default, with = "serde_bool_as_int")]
+    pub active: bool,
+    #[serde(default, with = "serde_bool_as_int")]
+    pub autostart: bool,
+    #[serde(default)]
+    pub comments: Option<String>,
+}
+
+/// Helper module for serde bool-as-int conversion (Proxmox API expects 0/1)
+mod serde_bool_as_int {
+    use serde::{Deserialize, Deserializer, Serializer};
+
+    pub fn serialize<S>(value: &bool, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_i8(if *value { 1 } else { 0 })
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<bool, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let val = i8::deserialize(deserializer)?;
+        Ok(val != 0)
+    }
+}
+
+/// Create a network interface
+#[tauri::command]
+pub async fn create_network_interface(
+    cluster_id: String,
+    node_id: String,
+    config: NetworkInterfaceConfig,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+
+    let mut body = serde_json::json!({
+        "iface": config.iface,
+        "type": config.iface_type,
+    });
+
+    if let Some(addr) = config.address {
+        body["address"] = serde_json::Value::String(addr);
+    }
+    if let Some(mask) = config.netmask {
+        body["netmask"] = serde_json::Value::String(mask);
+    }
+    if let Some(gw) = config.gateway {
+        body["gateway"] = serde_json::Value::String(gw);
+    }
+    if config.active {
+        body["active"] = serde_json::Value::Number(1.into());
+    }
+    if config.autostart {
+        body["autostart"] = serde_json::Value::Number(1.into());
+    }
+    if let Some(com) = config.comments {
+        body["comments"] = serde_json::Value::String(com);
+    }
+
+    let path = format!("nodes/{}/network", node_id);
+    let _response: serde_json::Value = client_guard
+        .post(
+            &path,
+            &body,
+            Some(client_guard.ticket.as_deref().unwrap_or("")),
+        )
+        .await
+        .map_err(|e| format!("Failed to create network interface {}: {}", config.iface, e))?;
+
+    Ok(())
+}
+
+/// Update a network interface
+#[tauri::command]
+pub async fn update_network_interface(
+    cluster_id: String,
+    node_id: String,
+    iface: String,
+    config: NetworkInterfaceConfig,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+
+    let mut body = serde_json::json!({
+        "iface": config.iface,
+        "type": config.iface_type,
+    });
+
+    if let Some(addr) = config.address {
+        body["address"] = serde_json::Value::String(addr);
+    }
+    if let Some(mask) = config.netmask {
+        body["netmask"] = serde_json::Value::String(mask);
+    }
+    if let Some(gw) = config.gateway {
+        body["gateway"] = serde_json::Value::String(gw);
+    }
+    if config.active {
+        body["active"] = serde_json::Value::Number(1.into());
+    }
+    if config.autostart {
+        body["autostart"] = serde_json::Value::Number(1.into());
+    }
+    if let Some(com) = config.comments {
+        body["comments"] = serde_json::Value::String(com);
+    }
+
+    let path = format!("nodes/{}/network/{}", node_id, iface);
+    let _response: serde_json::Value = client_guard
+        .put(
+            &path,
+            &body,
+            Some(client_guard.ticket.as_deref().unwrap_or("")),
+        )
+        .await
+        .map_err(|e| format!("Failed to update network interface {}: {}", iface, e))?;
+
+    Ok(())
+}
+
+/// Delete a network interface
+#[tauri::command]
+pub async fn delete_network_interface(
+    cluster_id: String,
+    node_id: String,
+    iface: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+
+    let path = format!("nodes/{}/network/{}", node_id, iface);
+    let _response: serde_json::Value = client_guard
+        .delete(&path, Some(client_guard.ticket.as_deref().unwrap_or("")))
+        .await
+        .map_err(|e| format!("Failed to delete network interface {}: {}", iface, e))?;
+
+    Ok(())
+}
+
+// ─── Phase 12b - VM Snapshots ────────────────────────────────────────────────
+
+/// List snapshots for a VM
+#[tauri::command]
+pub async fn list_proxmox_snapshots(
+    cluster_id: String,
+    node_id: String,
+    vmid: u32,
+    state: State<'_, AppState>,
+) -> Result<Vec<serde_json::Value>, String> {
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+
+    crate::proxmox::vm::list_snapshots(
+        &client_guard,
+        &node_id,
+        vmid,
+        client_guard.ticket.as_deref().unwrap_or(""),
+    )
+    .await
+}
+
+/// Create a snapshot for a VM
+#[tauri::command]
+pub async fn create_proxmox_snapshot(
+    cluster_id: String,
+    node_id: String,
+    vmid: u32,
+    snapshot_name: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+
+    crate::proxmox::vm::create_snapshot(
+        &client_guard,
+        &node_id,
+        vmid,
+        &snapshot_name,
+        client_guard.ticket.as_deref().unwrap_or(""),
+    )
+    .await
+}
+
+/// Delete a snapshot for a VM
+#[tauri::command]
+pub async fn delete_proxmox_snapshot(
+    cluster_id: String,
+    node_id: String,
+    vmid: u32,
+    snapshot_name: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+
+    crate::proxmox::vm::delete_snapshot(
+        &client_guard,
+        &node_id,
+        vmid,
+        &snapshot_name,
+        client_guard.ticket.as_deref().unwrap_or(""),
+    )
+    .await
+}
+
+/// Rollback a VM to a snapshot
+#[tauri::command]
+pub async fn rollback_proxmox_snapshot(
+    cluster_id: String,
+    node_id: String,
+    vmid: u32,
+    snapshot_name: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+
+    crate::proxmox::vm::rollback_snapshot(
+        &client_guard,
+        &node_id,
+        vmid,
+        &snapshot_name,
+        client_guard.ticket.as_deref().unwrap_or(""),
+    )
+    .await
+}
+
 // ─── Phase 13 - Cluster Views (typed aliases) ─────────────────────────────────
 
 /// List cluster views (typed)

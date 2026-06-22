@@ -984,6 +984,121 @@ export const listNetworkInterfaces = async (
 ): Promise<NetworkInterface[]> =>
   invoke<NetworkInterface[]>("list_network_interfaces", { clusterId, nodeId });
 
+/**
+ * Network interface configuration for creation/update
+ */
+export interface NetworkInterfaceConfig {
+  iface: string;
+  type: string;
+  address?: string;
+  netmask?: string;
+  gateway?: string;
+  active?: boolean;
+  autostart?: boolean;
+  comments?: string;
+}
+
+/**
+ * Create a network interface
+ * @param clusterId - Cluster identifier
+ * @param nodeId - Node identifier
+ * @param config - Network interface configuration
+ */
+export const createNetworkInterface = async (
+  clusterId: string,
+  nodeId: string,
+  config: NetworkInterfaceConfig
+): Promise<void> =>
+  invoke<void>("create_network_interface", { clusterId, nodeId, config });
+
+/**
+ * Update a network interface
+ * @param clusterId - Cluster identifier
+ * @param nodeId - Node identifier
+ * @param iface - Network interface identifier
+ * @param config - Updated network interface configuration
+ */
+export const updateNetworkInterface = async (
+  clusterId: string,
+  nodeId: string,
+  iface: string,
+  config: NetworkInterfaceConfig
+): Promise<void> =>
+  invoke<void>("update_network_interface", { clusterId, nodeId, iface, config });
+
+/**
+ * Delete a network interface
+ * @param clusterId - Cluster identifier
+ * @param nodeId - Node identifier
+ * @param iface - Network interface identifier
+ */
+export const deleteNetworkInterface = async (
+  clusterId: string,
+  nodeId: string,
+  iface: string
+): Promise<void> =>
+  invoke<void>("delete_network_interface", { clusterId, nodeId, iface });
+
+// ─── VM Snapshots ─────────────────────────────────────────────────────────────
+
+/**
+ * List snapshots for a VM
+ * @param clusterId - Cluster identifier
+ * @param nodeId - Node identifier
+ * @param vmid - VM identifier
+ */
+export const listProxmoxSnapshots = async (
+  clusterId: string,
+  nodeId: string,
+  vmid: number
+): Promise<any[]> =>
+  invoke<any[]>("list_proxmox_snapshots", { clusterId, nodeId, vmid });
+
+/**
+ * Create a snapshot for a VM
+ * @param clusterId - Cluster identifier
+ * @param nodeId - Node identifier
+ * @param vmid - VM identifier
+ * @param snapshotName - Snapshot name
+ */
+export const createProxmoxSnapshot = async (
+  clusterId: string,
+  nodeId: string,
+  vmid: number,
+  snapshotName: string
+): Promise<void> =>
+  invoke<void>("create_proxmox_snapshot", { clusterId, nodeId, vmid, snapshotName });
+
+/**
+ * Delete a snapshot for a VM
+ * @param clusterId - Cluster identifier
+ * @param nodeId - Node identifier
+ * @param vmid - VM identifier
+ * @param snapshotName - Snapshot name
+ */
+export const deleteProxmoxSnapshot = async (
+  clusterId: string,
+  nodeId: string,
+  vmid: number,
+  snapshotName: string
+): Promise<void> =>
+  invoke<void>("delete_proxmox_snapshot", { clusterId, nodeId, vmid, snapshotName });
+
+/**
+ * Rollback a VM to a snapshot
+ * @param clusterId - Cluster identifier
+ * @param nodeId - Node identifier
+ * @param vmid - VM identifier
+ * @param snapshotName - Snapshot name
+ */
+export const rollbackProxmoxSnapshot = async (
+  clusterId: string,
+  nodeId: string,
+  vmid: number,
+  snapshotName: string
+): Promise<void> =>
+  invoke<void>("rollback_proxmox_snapshot", { clusterId, nodeId, vmid, snapshotName });
+
 // ─── Cluster Views (typed) ────────────────────────────────────────────────────
 
 export interface ClusterView {

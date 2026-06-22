@@ -193,9 +193,66 @@ export function VMList({
     }
   }, [clusterId, onRefresh]);
 
-  const handleSnapshotAction = useCallback((vm: VMInfo, action: 'create' | 'list' | 'rollback' | 'delete') => {
-    toast.info(`Snapshot ${action} for ${vm.name} - not yet implemented`);
-  }, []);
+  const handleSnapshotAction = useCallback(async (vm: VMInfo, action: 'create' | 'list' | 'rollback' | 'delete') => {
+    try {
+      switch (action) {
+        case 'create': {
+          const snapshotName = window.prompt('Enter snapshot name:');
+          if (!snapshotName) return;
+          await invoke('create_proxmox_snapshot', {
+            clusterId,
+            nodeId: vm.node,
+            vmid: vm.vmid,
+            snapshotName,
+          });
+          toast.success(`Snapshot "${snapshotName}" created for ${vm.name}`);
+          break;
+        }
+        case 'list': {
+          const snapshots = await invoke<any[]>('list_proxmox_snapshots', {
+            clusterId,
+            nodeId: vm.node,
+            vmid: vm.vmid,
+          });
+          console.log('Snapshots for', vm.name, ':', snapshots);
+          toast.success(`Found ${snapshots.length} snapshot(s) for ${vm.name}`);
+          break;
+        }
+        case 'rollback': {
+          const snapshotName = window.prompt('Enter snapshot name to rollback to:');
+          if (!snapshotName) return;
+          if (await confirm(`Are you sure you want to rollback ${vm.name} to "${snapshotName}"?`)) {
+            await invoke('rollback_proxmox_snapshot', {
+              clusterId,
+              nodeId: vm.node,
+              vmid: vm.vmid,
+              snapshotName,
+            });
+            toast.success(`Rolled back ${vm.name} to "${snapshotName}"`);
+          }
+          break;
+        }
+        case 'delete': {
+          const snapshotName = window.prompt('Enter snapshot name to delete:');
+          if (!snapshotName) return;
+          if (await confirm(`Are you sure you want to delete snapshot "${snapshotName}" for ${vm.name}?`)) {
+            await invoke('delete_proxmox_snapshot', {
+              clusterId,
+              nodeId: vm.node,
+              vmid: vm.vmid,
+              snapshotName,
+            });
+            toast.success(`Deleted snapshot "${snapshotName}" for ${vm.name}`);
+          }
+          break;
+        }
+      }
+      onRefresh?.();
+    } catch (error) {
+      console.error(`Failed to ${action} snapshot for ${vm.name}:`, error);
+      toast.error(`Failed to ${action} snapshot: ${error}`);
+    }
+  }, [clusterId, onRefresh]);
 
   const handleMigrate = useCallback(async (vm: VMInfo) => {
     setMigrationVM(vm);

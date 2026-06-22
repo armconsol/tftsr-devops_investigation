@@ -45,7 +45,7 @@ pub async fn start_vm(
 ) -> Result<(), String> {
     let path = format!("nodes/{}/qemu/{}/status/start", node, vmid);
     let _response: serde_json::Value = client
-        .post(&path, &serde_json::json!({}), Some(ticket))
+        .post_form(&path, &[], Some(ticket))
         .await
         .map_err(|e| format!("Failed to start VM {}: {}", vmid, e))?;
     Ok(())
@@ -60,7 +60,7 @@ pub async fn stop_vm(
 ) -> Result<(), String> {
     let path = format!("nodes/{}/qemu/{}/status/stop", node, vmid);
     let _response: serde_json::Value = client
-        .post(&path, &serde_json::json!({}), Some(ticket))
+        .post_form(&path, &[], Some(ticket))
         .await
         .map_err(|e| format!("Failed to stop VM {}: {}", vmid, e))?;
     Ok(())
@@ -75,7 +75,7 @@ pub async fn reboot_vm(
 ) -> Result<(), String> {
     let path = format!("nodes/{}/qemu/{}/status/reboot", node, vmid);
     let _response: serde_json::Value = client
-        .post(&path, &serde_json::json!({}), Some(ticket))
+        .post_form(&path, &[], Some(ticket))
         .await
         .map_err(|e| format!("Failed to reboot VM {}: {}", vmid, e))?;
     Ok(())
@@ -90,7 +90,7 @@ pub async fn shutdown_vm(
 ) -> Result<(), String> {
     let path = format!("nodes/{}/qemu/{}/status/shutdown", node, vmid);
     let _response: serde_json::Value = client
-        .post(&path, &serde_json::json!({}), Some(ticket))
+        .post_form(&path, &[], Some(ticket))
         .await
         .map_err(|e| format!("Failed to shutdown VM {}: {}", vmid, e))?;
     Ok(())
@@ -105,7 +105,7 @@ pub async fn resume_vm(
 ) -> Result<(), String> {
     let path = format!("nodes/{}/qemu/{}/status/resume", node, vmid);
     let _response: serde_json::Value = client
-        .post(&path, &serde_json::json!({}), Some(ticket))
+        .post_form(&path, &[], Some(ticket))
         .await
         .map_err(|e| format!("Failed to resume VM {}: {}", vmid, e))?;
     Ok(())
@@ -120,7 +120,7 @@ pub async fn suspend_vm(
 ) -> Result<(), String> {
     let path = format!("nodes/{}/qemu/{}/status/suspend", node, vmid);
     let _response: serde_json::Value = client
-        .post(&path, &serde_json::json!({}), Some(ticket))
+        .post_form(&path, &[], Some(ticket))
         .await
         .map_err(|e| format!("Failed to suspend VM {}: {}", vmid, e))?;
     Ok(())
@@ -274,8 +274,33 @@ pub async fn create_vm(
     ticket: &str,
 ) -> Result<(), String> {
     let path = format!("nodes/{}/qemu", node);
+
+    // Convert JSON config to form-encoded params
+    let mut params: Vec<(&str, &str)> = Vec::new();
+    let mut string_values: Vec<String> = Vec::new();
+
+    if let Some(obj) = config.as_object() {
+        // First pass: collect all non-string values
+        for (_key, value) in obj {
+            if value.as_str().is_none() {
+                string_values.push(value.to_string());
+            }
+        }
+
+        // Second pass: build params
+        let mut string_idx = 0;
+        for (key, value) in obj {
+            if let Some(str_val) = value.as_str() {
+                params.push((key.as_str(), str_val));
+            } else {
+                params.push((key.as_str(), string_values[string_idx].as_str()));
+                string_idx += 1;
+            }
+        }
+    }
+
     let _response: serde_json::Value = client
-        .post(&path, config, Some(ticket))
+        .post_form(&path, &params, Some(ticket))
         .await
         .map_err(|e| format!("Failed to create VM {}: {}", vmid, e))?;
     Ok(())
@@ -306,14 +331,11 @@ pub async fn clone_vm(
     ticket: &str,
 ) -> Result<(), String> {
     let path = format!("nodes/{}/qemu/{}/clone", node, vmid);
-    let config = serde_json::json!({
-        "newid": new_vmid,
-        "name": name,
-        "full": 1
-    });
+    let newid_str = new_vmid.to_string();
+    let params = vec![("newid", newid_str.as_str()), ("name", name), ("full", "1")];
 
     let _response: serde_json::Value = client
-        .post(&path, &config, Some(ticket))
+        .post_form(&path, &params, Some(ticket))
         .await
         .map_err(|e| format!("Failed to clone VM {} to {}: {}", vmid, new_vmid, e))?;
     Ok(())
@@ -328,13 +350,10 @@ pub async fn migrate_vm(
     ticket: &str,
 ) -> Result<(), String> {
     let path = format!("nodes/{}/qemu/{}/migrate", source_node, vmid);
-    let config = serde_json::json!({
-        "target": target_node,
-        "online": true
-    });
+    let params = vec![("target", target_node), ("online", "1")];
 
     let _response: serde_json::Value = client
-        .post(&path, &config, Some(ticket))
+        .post_form(&path, &params, Some(ticket))
         .await
         .map_err(|e| format!("Failed to migrate VM {} to {}: {}", vmid, target_node, e))?;
     Ok(())
@@ -349,20 +368,17 @@ pub async fn create_snapshot(
     ticket: &str,
 ) -> Result<(), String> {
     let path = format!("nodes/{}/qemu/{}/snapshot", node, vmid);
-    let config = serde_json::json!({
-        "snapname": snapshot_name
-    });
+    let params = vec![("snapname", snapshot_name)];
 
-    let _response: serde_json::Value =
-        client
-            .post(&path, &config, Some(ticket))
-            .await
-            .map_err(|e| {
-                format!(
-                    "Failed to create snapshot {} for VM {}: {}",
-                    snapshot_name, vmid, e
-                )
-            })?;
+    let _response: serde_json::Value = client
+        .post_form(&path, &params, Some(ticket))
+        .await
+        .map_err(|e| {
+            format!(
+                "Failed to create snapshot {} for VM {}: {}",
+                snapshot_name, vmid, e
+            )
+        })?;
     Ok(())
 }
 
@@ -396,15 +412,16 @@ pub async fn rollback_snapshot(
         "nodes/{}/qemu/{}/snapshot/{}/rollback",
         node, vmid, snapshot_name
     );
-    let _response: serde_json::Value = client
-        .post(&path, &serde_json::json!({}), Some(ticket))
-        .await
-        .map_err(|e| {
-            format!(
-                "Failed to rollback VM {} to snapshot {}: {}",
-                vmid, snapshot_name, e
-            )
-        })?;
+    let _response: serde_json::Value =
+        client
+            .post_form(&path, &[], Some(ticket))
+            .await
+            .map_err(|e| {
+                format!(
+                    "Failed to rollback VM {} to snapshot {}: {}",
+                    vmid, snapshot_name, e
+                )
+            })?;
     Ok(())
 }
 
