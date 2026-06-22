@@ -114,6 +114,10 @@ export function VMList({
   }>({ isOpen: false, vm: null, action: null, snapshots: [] });
   const [snapshotName, setSnapshotName] = useState('');
   const [selectedSnapshot, setSelectedSnapshot] = useState('');
+  const [cloneDialog, setCloneDialog] = useState<{ isOpen: boolean; vm: VMInfo | null }>({ isOpen: false, vm: null });
+  const [cloneVmid, setCloneVmid] = useState('');
+  const [cloneName, setCloneName] = useState('');
+  const [cloneSubmitting, setCloneSubmitting] = useState(false);
 
   const vms: VMInfo[] = React.useMemo(() => {
     return rawVms.map((vm) => ({
@@ -349,44 +353,42 @@ export function VMList({
     }
   }, [migrationVM, targetNode, targetCluster, clusterId, onRefresh]);
 
-  const handleClone = useCallback(async (vm: VMInfo) => {
-    if (!clusterId) {
-      toast.error('No cluster selected');
-      return;
-    }
-    try {
-      const nextVmid = Math.max(...vms.map((v) => v.vmid), 100) + 1;
-      const newVmidStr = window.prompt(`Enter new VM ID for ${vm.name}:`, `${nextVmid}`);
-      if (!newVmidStr) {
-        toast.info('Clone cancelled');
-        return;
-      }
-      const newVmid = parseInt(newVmidStr);
-      if (isNaN(newVmid) || newVmid < 100) {
-        toast.error('Invalid VM ID. Must be >= 100');
-        return;
-      }
-      const newName = window.prompt(`Enter name for cloned VM:`, `${vm.name}-clone`);
-      if (!newName) {
-        toast.info('Clone cancelled');
-        return;
-      }
+  const handleClone = useCallback((vm: VMInfo) => {
+    if (!clusterId) { toast.error('No cluster selected'); return; }
+    const nextVmid = Math.max(...vms.map((v) => v.vmid), 100) + 1;
+    setCloneVmid(String(nextVmid));
+    setCloneName(`${vm.name}-clone`);
+    setCloneDialog({ isOpen: true, vm });
+  }, [clusterId, vms]);
 
+  const handleCloneSubmit = useCallback(async () => {
+    if (!cloneDialog.vm || !clusterId) return;
+    const vm = cloneDialog.vm;
+    const newVmid = parseInt(cloneVmid);
+    if (isNaN(newVmid) || newVmid < 100) { toast.error('VM ID must be ≥ 100'); return; }
+    if (!cloneName.trim()) { toast.error('Clone name is required'); return; }
+    setCloneSubmitting(true);
+    try {
       await invoke('clone_vm', {
         clusterId,
         nodeId: vm.node,
         vmId: vm.vmid,
         newVmid,
-        name: newName,
+        name: cloneName.trim(),
       });
-
-      toast.success(`VM ${vm.name} cloned successfully to VM ${newVmid}`);
+      toast.success(`VM ${vm.name} cloned to VM ${newVmid}`);
+      setCloneDialog({ isOpen: false, vm: null });
       onRefresh?.();
     } catch (error) {
-      console.error('Failed to clone VM:', error);
       toast.error(`Failed to clone VM ${vm.name}: ${error}`);
+    } finally {
+      setCloneSubmitting(false);
     }
-  }, [clusterId, vms, onRefresh]);
+  }, [cloneDialog, clusterId, cloneVmid, cloneName, onRefresh]);
+
+  const handleCloneClose = useCallback(() => {
+    setCloneDialog({ isOpen: false, vm: null });
+  }, []);
 
   const handleDelete = useCallback(async (vm: VMInfo) => {
     if (!clusterId) {
@@ -546,6 +548,18 @@ export function VMList({
         onSelectedSnapshotChange={setSelectedSnapshot}
         onSubmit={handleSnapshotSubmit}
         onClose={handleSnapshotClose}
+      />
+
+      <CloneDialog
+        isOpen={cloneDialog.isOpen}
+        vm={cloneDialog.vm}
+        vmid={cloneVmid}
+        name={cloneName}
+        submitting={cloneSubmitting}
+        onVmidChange={setCloneVmid}
+        onNameChange={setCloneName}
+        onSubmit={() => void handleCloneSubmit()}
+        onClose={handleCloneClose}
       />
     </Card>
   );
@@ -1003,6 +1017,64 @@ function SnapshotDialog({
             {action === 'list' && 'Close'}
             {action === 'rollback' && 'Rollback'}
             {action === 'delete' && 'Delete Snapshot'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── Clone Dialog ─────────────────────────────────────────────────────────────
+
+interface CloneDialogProps {
+  isOpen: boolean;
+  vm: VMInfo | null;
+  vmid: string;
+  name: string;
+  submitting: boolean;
+  onVmidChange: (v: string) => void;
+  onNameChange: (v: string) => void;
+  onSubmit: () => void;
+  onClose: () => void;
+}
+
+function CloneDialog({ isOpen, vm, vmid, name, submitting, onVmidChange, onNameChange, onSubmit, onClose }: CloneDialogProps) {
+  if (!vm) return null;
+  return (
+    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Clone {vm.name} (VM {vm.vmid})</DialogTitle>
+          <DialogDescription>Enter details for the cloned VM.</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4 py-2">
+          <div className="space-y-1">
+            <Label htmlFor="clone-vmid">New VM ID</Label>
+            <Input
+              id="clone-vmid"
+              type="number"
+              min={100}
+              max={999999999}
+              value={vmid}
+              onChange={(e) => onVmidChange(e.target.value)}
+              disabled={submitting}
+            />
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor="clone-name">New VM Name</Label>
+            <Input
+              id="clone-name"
+              value={name}
+              onChange={(e) => onNameChange(e.target.value)}
+              placeholder={`${vm.name}-clone`}
+              disabled={submitting}
+            />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={submitting}>Cancel</Button>
+          <Button onClick={onSubmit} disabled={submitting || !name.trim()}>
+            {submitting ? 'Cloning…' : 'Clone VM'}
           </Button>
         </DialogFooter>
       </DialogContent>
