@@ -40,16 +40,16 @@ pub async fn migrate_vm(
     ticket: &str,
 ) -> Result<MigrationTask, String> {
     let path = format!("nodes/{}/qemu/{}/migrate", node, vm_id);
-    let config = serde_json::json!({
-        "target": target_node,
-        "targetcluster": target_cluster,
-        "targetstorage": "",
-        "online": true,
-        "force": false
-    });
+    let params = vec![
+        ("target", target_node),
+        ("targetcluster", target_cluster),
+        ("targetstorage", ""),
+        ("online", "1"),
+        ("force", "0"),
+    ];
 
     let response: serde_json::Value = client
-        .post(&path, &config, Some(ticket))
+        .post_form(&path, &params, Some(ticket))
         .await
         .map_err(|e| format!("Failed to migrate VM {}: {}", vm_id, e))?;
 
@@ -198,12 +198,10 @@ pub async fn cancel_migration(
     ticket: &str,
 ) -> Result<(), String> {
     let path = format!("nodes/{}/qemu/{}/migrate", node, vm_id);
-    let config = serde_json::json!({
-        "cancel": true
-    });
+    let params = vec![("cancel", "1")];
 
     let _response: serde_json::Value = client
-        .post(&path, &config, Some(ticket))
+        .post_form(&path, &params, Some(ticket))
         .await
         .map_err(|e| format!("Failed to cancel migration for VM {}: {}", vm_id, e))?;
     Ok(())

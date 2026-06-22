@@ -214,6 +214,14 @@ pub fn run() {
             commands::proxmox::get_syslog,
             // Proxmox - Network Interfaces (Phase 12)
             commands::proxmox::list_network_interfaces,
+            commands::proxmox::create_network_interface,
+            commands::proxmox::update_network_interface,
+            commands::proxmox::delete_network_interface,
+            // Proxmox - VM Snapshots (Phase 12b)
+            commands::proxmox::list_proxmox_snapshots,
+            commands::proxmox::create_proxmox_snapshot,
+            commands::proxmox::delete_proxmox_snapshot,
+            commands::proxmox::rollback_proxmox_snapshot,
             // Proxmox - Cluster Views typed (Phase 13)
             commands::proxmox::list_cluster_views,
             commands::proxmox::create_cluster_view,
