@@ -2355,6 +2355,8 @@ pub async fn get_syslog(
 
 // ─── Phase 12 - Network Interfaces ───────────────────────────────────────────
 
+use crate::proxmox::network::NetworkInterfaceConfig;
+
 /// List network interfaces on a node
 #[tauri::command]
 pub async fn list_network_interfaces(
@@ -2375,47 +2377,6 @@ pub async fn list_network_interfaces(
         .as_array()
         .map(|arr| arr.to_vec())
         .ok_or_else(|| "Invalid response format".to_string())
-}
-
-/// Network interface configuration for creation/update
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct NetworkInterfaceConfig {
-    pub iface: String,
-    #[serde(rename = "type")]
-    pub iface_type: String,
-    #[serde(default)]
-    pub address: Option<String>,
-    #[serde(default)]
-    pub netmask: Option<String>,
-    #[serde(default)]
-    pub gateway: Option<String>,
-    #[serde(default, with = "serde_bool_as_int")]
-    pub active: bool,
-    #[serde(default, with = "serde_bool_as_int")]
-    pub autostart: bool,
-    #[serde(default)]
-    pub comments: Option<String>,
-}
-
-/// Helper module for serde bool-as-int conversion (Proxmox API expects 0/1)
-mod serde_bool_as_int {
-    use serde::{Deserialize, Deserializer, Serializer};
-
-    pub fn serialize<S>(value: &bool, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        serializer.serialize_i8(if *value { 1 } else { 0 })
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<bool, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let val = i8::deserialize(deserializer)?;
-        Ok(val != 0)
-    }
 }
 
 /// Create a network interface

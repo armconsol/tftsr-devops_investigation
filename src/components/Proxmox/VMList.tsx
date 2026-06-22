@@ -8,7 +8,7 @@ import { MoreHorizontal, Play, Square, RotateCcw, Power, PlayCircle, Pause, X, M
 import { invoke } from '@tauri-apps/api/core';
 import { confirm } from '@tauri-apps/plugin-dialog';
 import { toast } from 'sonner';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/index';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/index';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/index';
 import { Label } from '@/components/ui/index';
 import { Checkbox as UICheckbox } from '@/components/ui/index';
@@ -28,6 +28,15 @@ interface VMInfo {
   memoryTotal: number;
   uptime?: number;
   tags?: string[];
+}
+
+interface ProxmoxSnapshot {
+  snapname: string;
+  vmid: number;
+  name?: string;
+  ctime: number;
+  parent?: string;
+  description?: string;
 }
 
 interface RawVMInfo {
@@ -105,6 +114,14 @@ export function VMList({
   const [maxDowntime, setMaxDowntime] = useState(30);
   const [clusterNodes, setClusterNodes] = useState<string[]>([]);
   const [nodesLoading, setNodesLoading] = useState(false);
+  const [snapshotDialog, setSnapshotDialog] = useState<{
+    isOpen: boolean;
+    vm: VMInfo | null;
+    action: 'create' | 'list' | 'rollback' | 'delete' | null;
+    snapshots: ProxmoxSnapshot[];
+  }>({ isOpen: false, vm: null, action: null, snapshots: [] });
+  const [snapshotName, setSnapshotName] = useState('');
+  const [selectedSnapshot, setSelectedSnapshot] = useState('');
 
   const vms: VMInfo[] = React.useMemo(() => {
     return rawVms.map((vm) => ({
@@ -194,65 +211,100 @@ export function VMList({
   }, [clusterId, onRefresh]);
 
   const handleSnapshotAction = useCallback(async (vm: VMInfo, action: 'create' | 'list' | 'rollback' | 'delete') => {
+    if (action === 'list') {
+      try {
+        const snapshots = await invoke<ProxmoxSnapshot[]>('list_proxmox_snapshots', {
+          clusterId,
+          nodeId: vm.node,
+          vmid: vm.vmid,
+        });
+        setSnapshotDialog({ isOpen: true, vm, action: 'list', snapshots });
+      } catch (error) {
+        console.error('Failed to list snapshots:', error);
+        toast.error(`Failed to list snapshots: ${error}`);
+      }
+      return;
+    }
+
+    if (action === 'rollback' || action === 'delete') {
+      try {
+        const snapshots = await invoke<ProxmoxSnapshot[]>('list_proxmox_snapshots', {
+          clusterId,
+          nodeId: vm.node,
+          vmid: vm.vmid,
+        });
+        if (snapshots.length === 0) {
+          toast.error(`No snapshots found for ${vm.name}`);
+          return;
+        }
+        setSnapshotDialog({ isOpen: true, vm, action, snapshots });
+      } catch (error) {
+        console.error('Failed to list snapshots:', error);
+        toast.error(`Failed to list snapshots: ${error}`);
+      }
+      return;
+    }
+
+    if (action === 'create') {
+      setSnapshotName('');
+      setSnapshotDialog({ isOpen: true, vm, action: 'create', snapshots: [] });
+    }
+  }, [clusterId]);
+
+  const handleSnapshotSubmit = useCallback(async () => {
+    if (!snapshotDialog.vm || !snapshotDialog.action) return;
+
+    const { vm, action } = snapshotDialog;
+
     try {
-      switch (action) {
-        case 'create': {
-          const snapshotName = window.prompt('Enter snapshot name:');
-          if (!snapshotName) return;
-          await invoke('create_proxmox_snapshot', {
+      if (action === 'create') {
+        if (!snapshotName.trim()) {
+          toast.error('Snapshot name is required');
+          return;
+        }
+        await invoke('create_proxmox_snapshot', {
+          clusterId,
+          nodeId: vm.node,
+          vmid: vm.vmid,
+          snapshotName: snapshotName.trim(),
+        });
+        toast.success(`Snapshot "${snapshotName}" created for ${vm.name}`);
+      } else if (action === 'rollback' && selectedSnapshot) {
+        if (await confirm(`Are you sure you want to rollback ${vm.name} to "${selectedSnapshot}"? This may cause downtime.`)) {
+          await invoke('rollback_proxmox_snapshot', {
             clusterId,
             nodeId: vm.node,
             vmid: vm.vmid,
-            snapshotName,
+            snapshotName: selectedSnapshot,
           });
-          toast.success(`Snapshot "${snapshotName}" created for ${vm.name}`);
-          break;
+          toast.success(`Rolled back ${vm.name} to "${selectedSnapshot}"`);
         }
-        case 'list': {
-          const snapshots = await invoke<any[]>('list_proxmox_snapshots', {
+      } else if (action === 'delete' && selectedSnapshot) {
+        if (await confirm(`Are you sure you want to delete snapshot "${selectedSnapshot}" for ${vm.name}?`)) {
+          await invoke('delete_proxmox_snapshot', {
             clusterId,
             nodeId: vm.node,
             vmid: vm.vmid,
+            snapshotName: selectedSnapshot,
           });
-          console.log('Snapshots for', vm.name, ':', snapshots);
-          toast.success(`Found ${snapshots.length} snapshot(s) for ${vm.name}`);
-          break;
-        }
-        case 'rollback': {
-          const snapshotName = window.prompt('Enter snapshot name to rollback to:');
-          if (!snapshotName) return;
-          if (await confirm(`Are you sure you want to rollback ${vm.name} to "${snapshotName}"?`)) {
-            await invoke('rollback_proxmox_snapshot', {
-              clusterId,
-              nodeId: vm.node,
-              vmid: vm.vmid,
-              snapshotName,
-            });
-            toast.success(`Rolled back ${vm.name} to "${snapshotName}"`);
-          }
-          break;
-        }
-        case 'delete': {
-          const snapshotName = window.prompt('Enter snapshot name to delete:');
-          if (!snapshotName) return;
-          if (await confirm(`Are you sure you want to delete snapshot "${snapshotName}" for ${vm.name}?`)) {
-            await invoke('delete_proxmox_snapshot', {
-              clusterId,
-              nodeId: vm.node,
-              vmid: vm.vmid,
-              snapshotName,
-            });
-            toast.success(`Deleted snapshot "${snapshotName}" for ${vm.name}`);
-          }
-          break;
+          toast.success(`Deleted snapshot "${selectedSnapshot}" for ${vm.name}`);
         }
       }
+      setSnapshotDialog({ isOpen: false, vm: null, action: null, snapshots: [] });
+      setSnapshotName('');
+      setSelectedSnapshot('');
       onRefresh?.();
     } catch (error) {
-      console.error(`Failed to ${action} snapshot for ${vm.name}:`, error);
+      console.error(`Failed to ${action} snapshot:`, error);
       toast.error(`Failed to ${action} snapshot: ${error}`);
     }
-  }, [clusterId, onRefresh]);
+  }, [snapshotDialog, clusterId, snapshotName, selectedSnapshot, onRefresh]);
+
+  const handleSnapshotClose = useCallback(() => {
+    setSnapshotDialog({ isOpen: false, vm: null, action: null, snapshots: [] });
+    setSnapshotName('');
+    setSelectedSnapshot('');
+  }, []);
 
   const handleMigrate = useCallback(async (vm: VMInfo) => {
     setMigrationVM(vm);
@@ -485,10 +537,23 @@ export function VMList({
         onTargetNodeChange={setTargetNode}
         targetCluster={targetCluster}
         onTargetClusterChange={setTargetCluster}
-        online={onlineMigration}
-        onOnlineChange={setOnlineMigration}
+        onlineMigration={onlineMigration}
+        onOnlineMigrationChange={setOnlineMigration}
         maxDowntime={maxDowntime}
         onMaxDowntimeChange={setMaxDowntime}
+      />
+
+      <SnapshotDialog
+        isOpen={snapshotDialog.isOpen}
+        vm={snapshotDialog.vm}
+        action={snapshotDialog.action}
+        snapshots={snapshotDialog.snapshots}
+        snapshotName={snapshotName}
+        selectedSnapshot={selectedSnapshot}
+        onSnapshotNameChange={setSnapshotName}
+        onSelectedSnapshotChange={setSelectedSnapshot}
+        onSubmit={handleSnapshotSubmit}
+        onClose={handleSnapshotClose}
       />
     </Card>
   );
@@ -676,8 +741,8 @@ interface MigrationDialogProps {
   onTargetNodeChange: (node: string) => void;
   targetCluster: string;
   onTargetClusterChange: (clusterId: string) => void;
-  online: boolean;
-  onOnlineChange: (online: boolean) => void;
+  onlineMigration: boolean;
+  onOnlineMigrationChange: (online: boolean) => void;
   maxDowntime: number;
   onMaxDowntimeChange: (downtime: number) => void;
 }
@@ -695,8 +760,8 @@ function MigrationDialog({
   onTargetNodeChange,
   targetCluster,
   onTargetClusterChange,
-  online,
-  onOnlineChange,
+  onlineMigration,
+  onOnlineMigrationChange,
   maxDowntime,
   onMaxDowntimeChange,
 }: MigrationDialogProps) {
@@ -789,18 +854,18 @@ function MigrationDialog({
           <div className="space-y-2">
             <div className="flex items-center space-x-2">
               <UICheckbox
-                id="online"
-                checked={online}
-                onCheckedChange={(checked) => onOnlineChange(checked as boolean)}
+                id="onlineMigration"
+                checked={onlineMigration}
+                onCheckedChange={(checked) => onOnlineMigrationChange(checked as boolean)}
               />
-              <Label htmlFor="online">Live Migration</Label>
+              <Label htmlFor="onlineMigration">Live Migration</Label>
             </div>
             <p className="text-xs text-muted-foreground">
-              {online ? 'Keep VM running during migration' : 'VM will be stopped during migration'}
+              {onlineMigration ? 'Keep VM running during migration' : 'VM will be stopped during migration'}
             </p>
           </div>
 
-          {online && (
+          {onlineMigration && (
             <div className="space-y-2">
               <Label htmlFor="maxDowntime">Max Downtime (ms)</Label>
               <Input
@@ -826,6 +891,126 @@ function MigrationDialog({
             disabled={!canSubmitMigration()}
           >
             Start Migration
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── Snapshot Dialog ──────────────────────────────────────────────────────────
+
+interface SnapshotDialogProps {
+  isOpen: boolean;
+  vm: VMInfo | null;
+  action: 'create' | 'list' | 'rollback' | 'delete' | null;
+  snapshots: ProxmoxSnapshot[];
+  snapshotName: string;
+  selectedSnapshot: string;
+  onSnapshotNameChange: (value: string) => void;
+  onSelectedSnapshotChange: (value: string) => void;
+  onSubmit: () => void;
+  onClose: () => void;
+}
+
+function SnapshotDialog({
+  isOpen,
+  vm,
+  action,
+  snapshots,
+  snapshotName,
+  selectedSnapshot,
+  onSnapshotNameChange,
+  onSelectedSnapshotChange,
+  onSubmit,
+  onClose,
+}: SnapshotDialogProps) {
+  if (!vm) return null;
+
+  return (
+    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>
+            {action === 'create' && `Create Snapshot for ${vm.name}`}
+            {action === 'list' && `Snapshots for ${vm.name}`}
+            {action === 'rollback' && `Rollback ${vm.name}`}
+            {action === 'delete' && `Delete Snapshot for ${vm.name}`}
+          </DialogTitle>
+          <DialogDescription>
+            {action === 'create' && 'Enter a name for the new snapshot'}
+            {action === 'list' && 'View all snapshots for this VM'}
+            {action === 'rollback' && 'Select a snapshot to rollback to'}
+            {action === 'delete' && 'Select a snapshot to delete'}
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4 py-4">
+          {action === 'create' && (
+            <div className="space-y-2">
+              <Label htmlFor="snapshot-name">Snapshot Name</Label>
+              <Input
+                id="snapshot-name"
+                value={snapshotName}
+                onChange={(e) => onSnapshotNameChange(e.target.value)}
+                placeholder="e.g., before-upgrade"
+              />
+            </div>
+          )}
+
+          {(action === 'list' || action === 'rollback' || action === 'delete') && (
+            <div className="space-y-2">
+              <Label>Available Snapshots</Label>
+              {snapshots.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No snapshots found</p>
+              ) : (
+                <Select value={selectedSnapshot} onValueChange={onSelectedSnapshotChange}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select a snapshot" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {snapshots.map((snap) => (
+                      <SelectItem key={snap.snapname} value={snap.snapname}>
+                        {snap.snapname}
+                        {snap.ctime && (
+                          <span className="text-xs text-muted-foreground ml-2">
+                            ({new Date(snap.ctime * 1000).toLocaleString()})
+                          </span>
+                        )}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+
+              {action === 'list' && snapshots.length > 0 && (
+                <div className="mt-4 space-y-2">
+                  <Label>Snapshot Details</Label>
+                  {snapshots.map((snap) => (
+                    <div key={snap.snapname} className="p-3 border rounded-lg">
+                      <div className="font-medium">{snap.snapname}</div>
+                      <div className="text-sm text-muted-foreground">
+                        Created: {new Date(snap.ctime * 1000).toLocaleString()}
+                        {snap.description && <div>Description: {snap.description}</div>}
+                        {snap.parent && <div>Parent: {snap.parent}</div>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button onClick={onSubmit}>
+            {action === 'create' && 'Create Snapshot'}
+            {action === 'list' && 'Close'}
+            {action === 'rollback' && 'Rollback'}
+            {action === 'delete' && 'Delete Snapshot'}
           </Button>
         </DialogFooter>
       </DialogContent>
