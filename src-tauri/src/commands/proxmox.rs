@@ -2364,6 +2364,7 @@ pub async fn list_network_interfaces(
     node_id: String,
     state: State<'_, AppState>,
 ) -> Result<Vec<serde_json::Value>, String> {
+    validate_pve_identifier(&node_id, "node_id")?;
     let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
 
@@ -2387,6 +2388,8 @@ pub async fn create_network_interface(
     config: NetworkInterfaceConfig,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
+    validate_pve_identifier(&node_id, "node_id")?;
+    validate_pve_identifier(&config.iface, "iface")?;
     let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
 
@@ -2436,6 +2439,8 @@ pub async fn update_network_interface(
     config: NetworkInterfaceConfig,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
+    validate_pve_identifier(&node_id, "node_id")?;
+    validate_pve_identifier(&iface, "iface")?;
     let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
 
@@ -2484,6 +2489,8 @@ pub async fn delete_network_interface(
     iface: String,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
+    validate_pve_identifier(&node_id, "node_id")?;
+    validate_pve_identifier(&iface, "iface")?;
     let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
 
@@ -2506,6 +2513,7 @@ pub async fn list_proxmox_snapshots(
     vmid: u32,
     state: State<'_, AppState>,
 ) -> Result<Vec<serde_json::Value>, String> {
+    validate_pve_identifier(&node_id, "node_id")?;
     let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
 
@@ -2527,6 +2535,8 @@ pub async fn create_proxmox_snapshot(
     snapshot_name: String,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
+    validate_pve_identifier(&node_id, "node_id")?;
+    validate_pve_identifier(&snapshot_name, "snapshot_name")?;
     let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
 
@@ -2549,6 +2559,8 @@ pub async fn delete_proxmox_snapshot(
     snapshot_name: String,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
+    validate_pve_identifier(&node_id, "node_id")?;
+    validate_pve_identifier(&snapshot_name, "snapshot_name")?;
     let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
 
@@ -2571,6 +2583,8 @@ pub async fn rollback_proxmox_snapshot(
     snapshot_name: String,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
+    validate_pve_identifier(&node_id, "node_id")?;
+    validate_pve_identifier(&snapshot_name, "snapshot_name")?;
     let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
 
@@ -2579,6 +2593,73 @@ pub async fn rollback_proxmox_snapshot(
         &node_id,
         vmid,
         &snapshot_name,
+        client_guard.ticket.as_deref().unwrap_or(""),
+    )
+    .await
+}
+
+// ─── ISO Image Listing ────────────────────────────────────────────────────────
+
+/// List ISO images available in a Proxmox storage
+#[tauri::command]
+pub async fn list_iso_images(
+    cluster_id: String,
+    node_id: String,
+    storage_id: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<serde_json::Value>, String> {
+    validate_pve_identifier(&node_id, "node_id")?;
+    validate_pve_identifier(&storage_id, "storage_id")?;
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+
+    crate::proxmox::storage::list_storage_content_iso(
+        &client_guard,
+        &node_id,
+        &storage_id,
+        client_guard.ticket.as_deref().unwrap_or(""),
+    )
+    .await
+}
+
+/// Upload an ISO image to a Proxmox storage pool.
+/// `file_path` is the local filesystem path selected by the user via file dialog.
+/// Returns the Proxmox task UPID which can be polled for completion.
+#[tauri::command]
+pub async fn upload_iso_image(
+    cluster_id: String,
+    node_id: String,
+    storage_id: String,
+    file_path: String,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    validate_pve_identifier(&node_id, "node_id")?;
+    validate_pve_identifier(&storage_id, "storage_id")?;
+
+    let filename = std::path::Path::new(&file_path)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .ok_or_else(|| "Invalid file path: cannot determine filename".to_string())?
+        .to_string();
+
+    // Enforce .iso extension
+    if !filename.to_lowercase().ends_with(".iso") {
+        return Err("Only .iso files are supported".to_string());
+    }
+
+    let file_bytes = tokio::fs::read(&file_path)
+        .await
+        .map_err(|e| format!("Failed to read file '{}': {}", file_path, e))?;
+
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+
+    crate::proxmox::storage::upload_iso(
+        &client_guard,
+        &node_id,
+        &storage_id,
+        &filename,
+        file_bytes,
         client_guard.ticket.as_deref().unwrap_or(""),
     )
     .await

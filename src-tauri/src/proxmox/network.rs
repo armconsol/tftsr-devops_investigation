@@ -47,7 +47,7 @@ pub struct NetworkInterfaceConfig {
 
 /// Helper module for serde bool-as-int conversion (Proxmox API expects 0/1)
 mod serde_bool_as_int {
-    use serde::{Deserialize, Deserializer, Serializer};
+    use serde::{Deserializer, Serializer};
 
     pub fn serialize<S>(value: &bool, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -60,8 +60,29 @@ mod serde_bool_as_int {
     where
         D: Deserializer<'de>,
     {
-        let value = i8::deserialize(deserializer)?;
-        Ok(value != 0)
+        struct BoolOrInt;
+
+        impl<'de> serde::de::Visitor<'de> for BoolOrInt {
+            type Value = bool;
+
+            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                f.write_str("integer or boolean")
+            }
+
+            fn visit_bool<E: serde::de::Error>(self, v: bool) -> Result<bool, E> {
+                Ok(v)
+            }
+
+            fn visit_i64<E: serde::de::Error>(self, v: i64) -> Result<bool, E> {
+                Ok(v != 0)
+            }
+
+            fn visit_u64<E: serde::de::Error>(self, v: u64) -> Result<bool, E> {
+                Ok(v != 0)
+            }
+        }
+
+        deserializer.deserialize_any(BoolOrInt)
     }
 }
 

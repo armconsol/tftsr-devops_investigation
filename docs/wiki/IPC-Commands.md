@@ -669,6 +669,66 @@ suspendProxmoxVm(clusterId, nodeId, vmId) → void  // POST .../status/suspend
 resumeProxmoxVm(clusterId, nodeId, vmId) → void   // POST .../status/resume
 ```
 
+### `list_proxmox_snapshots`
+```typescript
+listProxmoxSnapshots(clusterId, nodeId, vmid) → ProxmoxSnapshot[]
+```
+Lists snapshots for a VM via `GET nodes/{node}/qemu/{vmid}/snapshot`. Returns typed `ProxmoxSnapshot[]` with `snapname`, `vmid`, `ctime`, `parent?`, `description?`.
+
+### `create_proxmox_snapshot`
+```typescript
+createProxmoxSnapshot(clusterId, nodeId, vmid, snapshotName) → void
+```
+Creates a VM snapshot via `POST nodes/{node}/qemu/{vmid}/snapshot`.
+
+### `delete_proxmox_snapshot`
+```typescript
+deleteProxmoxSnapshot(clusterId, nodeId, vmid, snapshotName) → void
+```
+Deletes a VM snapshot via `DELETE nodes/{node}/qemu/{vmid}/snapshot/{snapname}`.
+
+### `rollback_proxmox_snapshot`
+```typescript
+rollbackProxmoxSnapshot(clusterId, nodeId, vmid, snapshotName) → void
+```
+Rolls back a VM to a snapshot via `POST nodes/{node}/qemu/{vmid}/snapshot/{snapname}/rollback`.
+
+### `list_network_interfaces`
+```typescript
+listNetworkInterfaces(clusterId, nodeId) → NetworkInterface[]
+```
+Lists network interfaces on a node via `GET nodes/{node}/network`.
+
+### `create_network_interface`
+```typescript
+createNetworkInterface(clusterId, nodeId, config: NetworkInterfaceConfig) → void
+```
+Creates a network interface via `POST nodes/{node}/network`.
+
+### `update_network_interface`
+```typescript
+updateNetworkInterface(clusterId, nodeId, iface, config: NetworkInterfaceConfig) → void
+```
+Updates a network interface via `PUT nodes/{node}/network/{iface}`.
+
+### `delete_network_interface`
+```typescript
+deleteNetworkInterface(clusterId, nodeId, iface) → void
+```
+Deletes a network interface via `DELETE nodes/{node}/network/{iface}`.
+
+### `list_iso_images`
+```typescript
+listIsoImages(clusterId, nodeId, storageId) → Array<{ volid: string; name?: string; size?: number }>
+```
+Lists ISO images in a storage pool via `GET nodes/{node}/storage/{storage}/content`, filtering for `content == "iso"`. Used by CreateVmDialog to populate the ISO dropdown.
+
+### `upload_iso_image`
+```typescript
+uploadIsoImage(clusterId, nodeId, storageId, filePath) → string
+```
+Uploads a local `.iso` file to a Proxmox storage pool via multipart `POST nodes/{node}/storage/{storage}/upload`. `filePath` is the absolute local path from the OS file picker dialog. Returns the Proxmox task UPID. The `.iso` extension is enforced server-side before the file is read.
+
 ### `migrate_vm`
 ```typescript
 invoke('migrate_vm', { clusterId, nodeId, vmId, targetNode, targetCluster }) → void

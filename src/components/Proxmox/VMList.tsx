@@ -16,6 +16,7 @@ import { Input } from '@/components/ui/index';
 import { AlertCircle } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/index';
 import type { ClusterInfo } from '@/lib/domain';
+import type { ProxmoxSnapshot } from '@/lib/proxmoxClient';
 
 interface VMInfo {
   id: string;
@@ -28,15 +29,6 @@ interface VMInfo {
   memoryTotal: number;
   uptime?: number;
   tags?: string[];
-}
-
-interface ProxmoxSnapshot {
-  snapname: string;
-  vmid: number;
-  name?: string;
-  ctime: number;
-  parent?: string;
-  description?: string;
 }
 
 interface RawVMInfo {

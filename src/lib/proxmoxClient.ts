@@ -1041,6 +1041,15 @@ export const deleteNetworkInterface = async (
 
 // ─── VM Snapshots ─────────────────────────────────────────────────────────────
 
+export interface ProxmoxSnapshot {
+  snapname: string;
+  vmid: number;
+  name?: string;
+  ctime: number;
+  parent?: string;
+  description?: string;
+}
+
 /**
  * List snapshots for a VM
  * @param clusterId - Cluster identifier
@@ -1051,8 +1060,8 @@ export const listProxmoxSnapshots = async (
   clusterId: string,
   nodeId: string,
   vmid: number
-): Promise<any[]> =>
-  invoke<any[]>("list_proxmox_snapshots", { clusterId, nodeId, vmid });
+): Promise<ProxmoxSnapshot[]> =>
+  invoke<ProxmoxSnapshot[]>("list_proxmox_snapshots", { clusterId, nodeId, vmid });
 
 /**
  * Create a snapshot for a VM
@@ -1186,4 +1195,64 @@ export const listClusterTasks = async (
   invoke<ClusterTask[]>("list_cluster_tasks", {
     clusterId,
     limit: limit ?? 50,
+  });
+
+// ─── Storage Per-Node ─────────────────────────────────────────────────────────
+
+/**
+ * List storage pools visible on a specific node (filtered from cluster resources)
+ */
+export const listProxmoxStorages = async (
+  clusterId: string,
+  nodeId: string
+): Promise<{ storage: string; type: string; content?: string }[]> => {
+  const all = await listProxmoxDatastores(clusterId);
+  return (all as Array<{ storage?: string; node?: string; type?: string; content?: string }>)
+    .filter((s) => s.node === nodeId || !s.node)
+    .map((s) => ({
+      storage: s.storage ?? '',
+      type: s.type ?? '',
+      content: s.content,
+    }))
+    .filter((s) => s.storage !== '');
+};
+
+// ─── ISO Images ───────────────────────────────────────────────────────────────
+
+/**
+ * List ISO images available in a Proxmox storage
+ * @param clusterId - Cluster identifier
+ * @param nodeId - Node identifier
+ * @param storageId - Storage pool identifier
+ */
+export const listIsoImages = async (
+  clusterId: string,
+  nodeId: string,
+  storageId: string
+): Promise<{ volid: string; name?: string; size?: number }[]> =>
+  invoke<{ volid: string; name?: string; size?: number }[]>("list_iso_images", {
+    clusterId,
+    nodeId,
+    storageId,
+  });
+
+/**
+ * Upload an ISO file to a Proxmox storage pool.
+ * @param clusterId - Cluster identifier
+ * @param nodeId - Node identifier
+ * @param storageId - Storage pool identifier
+ * @param filePath - Absolute local path to the .iso file (from file dialog)
+ * @returns Proxmox task UPID
+ */
+export const uploadIsoImage = async (
+  clusterId: string,
+  nodeId: string,
+  storageId: string,
+  filePath: string
+): Promise<string> =>
+  invoke<string>("upload_iso_image", {
+    clusterId,
+    nodeId,
+    storageId,
+    filePath,
   });
