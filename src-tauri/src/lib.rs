@@ -402,6 +402,11 @@ pub fn run() {
             // Kubernetes Metrics
             commands::metrics::get_pod_metrics,
             commands::metrics::get_node_metrics,
+            // Proxmox HA resource management
+            commands::proxmox::disable_ha_resource,
+            commands::proxmox::delete_ha_resource,
+            // Proxmox Firewall Rule Update
+            commands::proxmox::update_proxmox_firewall_rule,
             // Proxmox SDN CRUD
             commands::proxmox::create_sdn_zone,
             commands::proxmox::update_sdn_zone,
