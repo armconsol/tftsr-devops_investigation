@@ -664,6 +664,40 @@ fn validate_pve_identifier(value: &str, field: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Like `validate_pve_identifier` but also allows `@` for PVE user IDs (`user@realm`).
+fn validate_pve_userid(value: &str, field: &str) -> Result<(), String> {
+    if value.is_empty() {
+        return Err(format!("{} must not be empty", field));
+    }
+    if !value
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '_' || c == '@')
+    {
+        return Err(format!(
+            "{} contains invalid characters — only alphanumeric, '.', '-', '_', '@' are allowed",
+            field
+        ));
+    }
+    Ok(())
+}
+
+/// Validates an HA resource SID (format `type:vmid`, e.g. `qemu:100`).
+fn validate_pve_ha_resource(value: &str, field: &str) -> Result<(), String> {
+    if value.is_empty() {
+        return Err(format!("{} must not be empty", field));
+    }
+    if !value
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '_' || c == ':')
+    {
+        return Err(format!(
+            "{} contains invalid characters — only alphanumeric, '.', '-', '_', ':' are allowed",
+            field
+        ));
+    }
+    Ok(())
+}
+
 /// Create a new Proxmox VM
 #[allow(clippy::too_many_arguments)]
 #[tauri::command]
@@ -2249,6 +2283,7 @@ pub async fn delete_ha_resource(
     resource: String,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
+    validate_pve_ha_resource(&resource, "resource")?;
     let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
     let ticket = client_guard.ticket.as_deref().unwrap_or("");
@@ -2992,6 +3027,7 @@ pub async fn create_sdn_zone(
     vni: u32,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
+    validate_pve_identifier(&zone, "zone")?;
     let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
     let ticket = client_guard.ticket.as_deref().unwrap_or("");
@@ -3009,6 +3045,7 @@ pub async fn update_sdn_zone(
     vni: u32,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
+    validate_pve_identifier(&zone, "zone")?;
     let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
     let ticket = client_guard.ticket.as_deref().unwrap_or("");
@@ -3024,6 +3061,7 @@ pub async fn delete_sdn_zone(
     zone: String,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
+    validate_pve_identifier(&zone, "zone")?;
     let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
     let ticket = client_guard.ticket.as_deref().unwrap_or("");
@@ -3041,6 +3079,8 @@ pub async fn create_sdn_vnet(
     l2vni: u32,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
+    validate_pve_identifier(&vnet, "vnet")?;
+    validate_pve_identifier(&zone, "zone")?;
     let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
     let ticket = client_guard.ticket.as_deref().unwrap_or("");
@@ -3058,6 +3098,8 @@ pub async fn update_sdn_vnet(
     l2vni: u32,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
+    validate_pve_identifier(&vnet, "vnet")?;
+    validate_pve_identifier(&zone, "zone")?;
     let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
     let ticket = client_guard.ticket.as_deref().unwrap_or("");
@@ -3073,6 +3115,7 @@ pub async fn delete_sdn_vnet(
     vnet: String,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
+    validate_pve_identifier(&vnet, "vnet")?;
     let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
     let ticket = client_guard.ticket.as_deref().unwrap_or("");
@@ -3132,6 +3175,7 @@ pub async fn update_proxmox_backup_job(
     enabled: Option<bool>,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
+    validate_pve_identifier(&job_id, "job_id")?;
     let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
     let ticket = client_guard.ticket.as_deref().unwrap_or("");
@@ -3168,6 +3212,7 @@ pub async fn delete_proxmox_backup_job(
     job_id: String,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
+    validate_pve_identifier(&job_id, "job_id")?;
     let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
     let ticket = client_guard.ticket.as_deref().unwrap_or("");
@@ -3190,6 +3235,7 @@ pub async fn start_proxmox_container(
     vm_id: u32,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
+    validate_pve_identifier(&node_id, "node_id")?;
     let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
     let ticket = client_guard.ticket.as_deref().unwrap_or("");
@@ -3209,6 +3255,7 @@ pub async fn stop_proxmox_container(
     vm_id: u32,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
+    validate_pve_identifier(&node_id, "node_id")?;
     let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
     let ticket = client_guard.ticket.as_deref().unwrap_or("");
@@ -3228,6 +3275,7 @@ pub async fn reboot_proxmox_container(
     vm_id: u32,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
+    validate_pve_identifier(&node_id, "node_id")?;
     let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
     let ticket = client_guard.ticket.as_deref().unwrap_or("");
@@ -3247,6 +3295,7 @@ pub async fn shutdown_proxmox_container(
     vm_id: u32,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
+    validate_pve_identifier(&node_id, "node_id")?;
     let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
     let ticket = client_guard.ticket.as_deref().unwrap_or("");
@@ -3266,6 +3315,7 @@ pub async fn suspend_proxmox_container(
     vm_id: u32,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
+    validate_pve_identifier(&node_id, "node_id")?;
     let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
     let ticket = client_guard.ticket.as_deref().unwrap_or("");
@@ -3285,6 +3335,7 @@ pub async fn resume_proxmox_container(
     vm_id: u32,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
+    validate_pve_identifier(&node_id, "node_id")?;
     let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
     let ticket = client_guard.ticket.as_deref().unwrap_or("");
@@ -3408,6 +3459,7 @@ pub async fn update_proxmox_user(
     enabled: Option<bool>,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
+    validate_pve_userid(&userid, "userid")?;
     let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
     let ticket = client_guard.ticket.as_deref().unwrap_or("");
@@ -3438,6 +3490,7 @@ pub async fn delete_proxmox_user(
     userid: String,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
+    validate_pve_userid(&userid, "userid")?;
     let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
     let ticket = client_guard.ticket.as_deref().unwrap_or("");
@@ -3461,6 +3514,7 @@ pub async fn create_proxmox_realm(
     comment: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
+    validate_pve_identifier(&realm, "realm")?;
     let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
     let ticket = client_guard.ticket.as_deref().unwrap_or("");
@@ -3486,6 +3540,7 @@ pub async fn update_proxmox_realm(
     comment: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
+    validate_pve_identifier(&realm, "realm")?;
     let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
     let ticket = client_guard.ticket.as_deref().unwrap_or("");
@@ -3510,6 +3565,7 @@ pub async fn delete_proxmox_realm(
     realm: String,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
+    validate_pve_identifier(&realm, "realm")?;
     let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
     let ticket = client_guard.ticket.as_deref().unwrap_or("");
