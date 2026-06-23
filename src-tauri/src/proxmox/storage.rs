@@ -43,10 +43,12 @@ pub async fn list_storage_content_iso(
     ticket: &str,
 ) -> Result<Vec<serde_json::Value>, String> {
     let path = format!("nodes/{}/storage/{}/content", node, storage);
-    let response: serde_json::Value = client
-        .get(&path, Some(ticket))
-        .await
-        .map_err(|e| format!("Failed to list storage content for {}/{}: {}", node, storage, e))?;
+    let response: serde_json::Value = client.get(&path, Some(ticket)).await.map_err(|e| {
+        format!(
+            "Failed to list storage content for {}/{}: {}",
+            node, storage, e
+        )
+    })?;
 
     response
         .as_array()
