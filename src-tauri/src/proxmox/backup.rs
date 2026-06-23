@@ -38,7 +38,7 @@ pub async fn list_backup_jobs(
         .await
         .map_err(|e| format!("Failed to list backup jobs: {}", e))?;
 
-    if let Some(jobs) = response.as_array() {
+    if let Some(jobs) = response.get("data").and_then(|d| d.as_array()) {
         let backup_jobs: Vec<BackupJob> = jobs
             .iter()
             .filter_map(|job| {
@@ -64,7 +64,7 @@ pub async fn list_backup_jobs(
 
         Ok(backup_jobs)
     } else {
-        Ok(vec![])
+        Err("Invalid response format: missing 'data' field".to_string())
     }
 }
 
@@ -142,7 +142,7 @@ pub async fn trigger_backup_job(
 ) -> Result<(), String> {
     let path = format!("nodes/{}/backup/jobs/{}/run", node, job_id);
     let _response: serde_json::Value = client
-        .post(&path, &serde_json::json!({}), Some(ticket))
+        .post_form(&path, &[], Some(ticket))
         .await
         .map_err(|e| format!("Failed to trigger backup job {}: {}", job_id, e))?;
     Ok(())
@@ -159,7 +159,7 @@ pub async fn list_datastores(
         .await
         .map_err(|e| format!("Failed to list datastores: {}", e))?;
 
-    if let Some(datastores) = response.as_array() {
+    if let Some(datastores) = response.get("data").and_then(|d| d.as_array()) {
         let datastore_list: Vec<DatastoreInfo> = datastores
             .iter()
             .filter_map(|ds| {
@@ -183,7 +183,7 @@ pub async fn list_datastores(
 
         Ok(datastore_list)
     } else {
-        Ok(vec![])
+        Err("Invalid response format: missing 'data' field".to_string())
     }
 }
 
@@ -200,7 +200,7 @@ pub async fn get_datastore_status(
         .await
         .map_err(|e| format!("Failed to get datastore status: {}", e))?;
 
-    let ds = &response;
+    let ds = response.get("data").ok_or("Invalid response format")?;
 
     Ok(DatastoreInfo {
         datastore: datastore.to_string(),
@@ -229,10 +229,10 @@ pub async fn list_backup_snapshots(
         .await
         .map_err(|e| format!("Failed to list backup snapshots: {}", e))?;
 
-    if let Some(snapshots) = response.as_array() {
+    if let Some(snapshots) = response.get("data").and_then(|d| d.as_array()) {
         Ok(snapshots.to_vec())
     } else {
-        Ok(vec![])
+        Err("Invalid response format: missing 'data' field".to_string())
     }
 }
 

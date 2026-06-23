@@ -2,7 +2,13 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui/index';
 import { RefreshCw, Plus } from 'lucide-react';
 import { BackupJobList } from '@/components/Proxmox';
-import { listProxmoxClusters, listProxmoxBackupJobs } from '@/lib/proxmoxClient';
+import {
+  listProxmoxClusters,
+  listProxmoxBackupJobs,
+  createProxmoxBackupJob,
+  updateProxmoxBackupJob,
+  deleteProxmoxBackupJob,
+} from '@/lib/proxmoxClient';
 import type { ClusterInfo } from '@/lib/domain';
 import { toast } from 'sonner';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/index';
@@ -18,10 +24,10 @@ export function ProxmoxBackupPage() {
   const [showNewJobDialog, setShowNewJobDialog] = useState(false);
   
   // New job form state
-  const [jobName, setJobName] = useState('');
-  const [jobNode, setJobNode] = useState('');
-  const [jobSchedule, setJobSchedule] = useState('');
-  const [jobVms, setJobVms] = useState('');
+  const [jobStorage, setJobStorage] = useState('');
+  const [jobSchedule, setJobSchedule] = useState('0 2 * * *');
+  const [jobVms, setJobVms] = useState('all');
+  const [jobMode, setJobMode] = useState('snapshot');
 
   useEffect(() => {
     listProxmoxClusters()
@@ -80,14 +86,63 @@ export function ProxmoxBackupPage() {
   }, [selectedClusterId, loadJobs]);
 
   const handleNewJob = () => {
-    toast.warning(
-      'Backup job creation requires additional backend implementation (POST cluster/backup) and is not yet available.',
-    );
+    setJobStorage('');
+    setJobSchedule('0 2 * * *');
+    setJobVms('all');
+    setJobMode('snapshot');
+    setShowNewJobDialog(true);
   };
 
   const handleSubmitNewJob = async () => {
-    toast.warning('Backup job creation is not yet available.');
-    setShowNewJobDialog(false);
+    if (!jobStorage.trim()) { toast.error('Storage is required'); return; }
+    try {
+      await createProxmoxBackupJob({
+        clusterId: selectedClusterId,
+        storage: jobStorage.trim(),
+        vmid: jobVms.trim() || 'all',
+        mode: jobMode,
+        schedule: jobSchedule.trim() || '0 2 * * *',
+        enabled: true,
+      });
+      toast.success('Backup job created');
+      setShowNewJobDialog(false);
+      await loadJobs(selectedClusterId);
+    } catch (err) {
+      toast.error(`Failed to create backup job: ${err}`);
+    }
+  };
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const handleDeleteJob = async (job: any) => {
+    try {
+      await deleteProxmoxBackupJob(selectedClusterId, job.id);
+      toast.success('Backup job deleted');
+      await loadJobs(selectedClusterId);
+    } catch (err) {
+      toast.error(`Failed to delete backup job: ${err}`);
+    }
+  };
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const handleEnableJob = async (job: any) => {
+    try {
+      await updateProxmoxBackupJob(selectedClusterId, job.id, { enabled: true });
+      toast.success('Backup job enabled');
+      await loadJobs(selectedClusterId);
+    } catch (err) {
+      toast.error(`Failed to enable backup job: ${err}`);
+    }
+  };
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const handleDisableJob = async (job: any) => {
+    try {
+      await updateProxmoxBackupJob(selectedClusterId, job.id, { enabled: false });
+      toast.success('Backup job disabled');
+      await loadJobs(selectedClusterId);
+    } catch (err) {
+      toast.error(`Failed to disable backup job: ${err}`);
+    }
   };
 
   if (clusters.length === 0 && !isLoading) {
@@ -138,6 +193,9 @@ export function ProxmoxBackupPage() {
       <BackupJobList
         jobs={jobs}
         onRefresh={() => loadJobs(selectedClusterId)}
+        onDelete={handleDeleteJob}
+        onEnable={handleEnableJob}
+        onDisable={handleDisableJob}
       />
 
       <Dialog open={showNewJobDialog} onOpenChange={setShowNewJobDialog}>
@@ -147,21 +205,12 @@ export function ProxmoxBackupPage() {
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="jobName">Job Name</Label>
+              <Label htmlFor="jobStorage">Storage</Label>
               <Input
-                id="jobName"
-                value={jobName}
-                onChange={(e) => setJobName(e.target.value)}
-                placeholder="daily-backup"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="jobNode">Node</Label>
-              <Input
-                id="jobNode"
-                value={jobNode}
-                onChange={(e) => setJobNode(e.target.value)}
-                placeholder="pve"
+                id="jobStorage"
+                value={jobStorage}
+                onChange={(e) => setJobStorage(e.target.value)}
+                placeholder="e.g. local"
               />
             </div>
             <div className="space-y-2">
@@ -172,18 +221,29 @@ export function ProxmoxBackupPage() {
                 onChange={(e) => setJobSchedule(e.target.value)}
                 placeholder="0 2 * * *"
               />
-              <p className="text-xs text-muted-foreground">
-                Example: "0 2 * * *" for daily at 2:00 AM
-              </p>
+              <p className="text-xs text-muted-foreground">Example: "0 2 * * *" for daily at 2:00 AM</p>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="jobVms">VMs to Backup (comma-separated IDs)</Label>
+              <Label htmlFor="jobVms">VM IDs (comma-separated, or "all")</Label>
               <Input
                 id="jobVms"
                 value={jobVms}
                 onChange={(e) => setJobVms(e.target.value)}
-                placeholder="100, 101, 102"
+                placeholder="all"
               />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="jobMode">Mode</Label>
+              <select
+                id="jobMode"
+                className="w-full rounded-md border px-3 py-2 text-sm bg-background"
+                value={jobMode}
+                onChange={(e) => setJobMode(e.target.value)}
+              >
+                <option value="snapshot">Snapshot</option>
+                <option value="suspend">Suspend</option>
+                <option value="stop">Stop</option>
+              </select>
             </div>
           </div>
           <DialogFooter>

@@ -617,15 +617,15 @@ export async function migrateVm(
   clusterId: string,
   nodeId: string,
   vmId: number,
-  targetClusterId: string,
-  online: boolean
+  targetNode: string,
+  targetCluster: string
 ): Promise<void> {
   await invoke("migrate_vm", {
     clusterId,
     nodeId,
     vmId,
-    targetClusterId,
-    online,
+    targetNode,
+    targetCluster,
   });
 }
 
@@ -803,7 +803,17 @@ export const listHaResources = async (
 export const enableHaResource = async (
   clusterId: string,
   id: string
-): Promise<void> => invoke<void>("enable_ha_resource", { clusterId, id });
+): Promise<void> => invoke<void>("enable_ha_resource", { clusterId, resource: id });
+
+export const disableHaResource = async (
+  clusterId: string,
+  id: string
+): Promise<void> => invoke<void>("disable_ha_resource", { clusterId, resource: id });
+
+export const deleteHaResource = async (
+  clusterId: string,
+  id: string
+): Promise<void> => invoke<void>("delete_ha_resource", { clusterId, resource: id });
 
 // ─── ACL / User Management ────────────────────────────────────────────────────
 
@@ -1256,3 +1266,231 @@ export const uploadIsoImage = async (
     storageId,
     filePath,
   });
+
+// ─── VM clone / delete ────────────────────────────────────────────────────────
+
+export interface CloneVmParams extends Record<string, unknown> {
+  clusterId: string;
+  nodeId: string;
+  vmId: number;
+  newVmId: number;
+  name?: string;
+  full?: boolean;
+}
+
+export const cloneVm = (params: CloneVmParams): Promise<void> =>
+  invoke("clone_vm", params);
+
+export const deleteVm = (
+  clusterId: string,
+  nodeId: string,
+  vmId: number
+): Promise<void> => invoke("delete_vm", { clusterId, nodeId, vmId });
+
+// ─── LXC Container Power ──────────────────────────────────────────────────────
+
+export const startProxmoxContainer = (
+  clusterId: string,
+  nodeId: string,
+  vmId: number
+): Promise<void> =>
+  invoke("start_proxmox_container", { clusterId, nodeId, vmId });
+
+export const stopProxmoxContainer = (
+  clusterId: string,
+  nodeId: string,
+  vmId: number
+): Promise<void> =>
+  invoke("stop_proxmox_container", { clusterId, nodeId, vmId });
+
+export const rebootProxmoxContainer = (
+  clusterId: string,
+  nodeId: string,
+  vmId: number
+): Promise<void> =>
+  invoke("reboot_proxmox_container", { clusterId, nodeId, vmId });
+
+export const shutdownProxmoxContainer = (
+  clusterId: string,
+  nodeId: string,
+  vmId: number
+): Promise<void> =>
+  invoke("shutdown_proxmox_container", { clusterId, nodeId, vmId });
+
+export const suspendProxmoxContainer = (
+  clusterId: string,
+  nodeId: string,
+  vmId: number
+): Promise<void> =>
+  invoke("suspend_proxmox_container", { clusterId, nodeId, vmId });
+
+export const resumeProxmoxContainer = (
+  clusterId: string,
+  nodeId: string,
+  vmId: number
+): Promise<void> =>
+  invoke("resume_proxmox_container", { clusterId, nodeId, vmId });
+
+// ─── SDN CRUD ─────────────────────────────────────────────────────────────────
+
+export const createSdnZone = (
+  clusterId: string,
+  zone: string,
+  asn: number,
+  vni: number
+): Promise<void> => invoke("create_sdn_zone", { clusterId, zone, asn, vni });
+
+export const updateSdnZone = (
+  clusterId: string,
+  zone: string,
+  asn: number,
+  vni: number
+): Promise<void> => invoke("update_sdn_zone", { clusterId, zone, asn, vni });
+
+export const deleteSdnZone = (
+  clusterId: string,
+  zone: string
+): Promise<void> => invoke("delete_sdn_zone", { clusterId, zone });
+
+export const createSdnVnet = (
+  clusterId: string,
+  vnet: string,
+  zone: string,
+  l2vni: number
+): Promise<void> =>
+  invoke("create_sdn_vnet", { clusterId, vnet, zone, l2vni });
+
+export const updateSdnVnet = (
+  clusterId: string,
+  vnet: string,
+  zone: string,
+  l2vni: number
+): Promise<void> =>
+  invoke("update_sdn_vnet", { clusterId, vnet, zone, l2vni });
+
+export const deleteSdnVnet = (
+  clusterId: string,
+  vnet: string
+): Promise<void> => invoke("delete_sdn_vnet", { clusterId, vnet });
+
+// ─── Backup Job CRUD ──────────────────────────────────────────────────────────
+
+export interface BackupJobParams extends Record<string, unknown> {
+  clusterId: string;
+  storage: string;
+  vmid?: string;
+  mode?: string;
+  schedule?: string;
+  enabled?: boolean;
+}
+
+export const createProxmoxBackupJob = (
+  params: BackupJobParams
+): Promise<void> => invoke("create_proxmox_backup_job", params);
+
+export const updateProxmoxBackupJob = (
+  clusterId: string,
+  jobId: string,
+  updates: Partial<Omit<BackupJobParams, "clusterId">>
+): Promise<void> =>
+  invoke("update_proxmox_backup_job", { clusterId, jobId, ...updates });
+
+export const deleteProxmoxBackupJob = (
+  clusterId: string,
+  jobId: string
+): Promise<void> =>
+  invoke("delete_proxmox_backup_job", { clusterId, jobId });
+
+// ─── ACL CRUD ─────────────────────────────────────────────────────────────────
+
+export const createProxmoxAcl = (
+  clusterId: string,
+  path: string,
+  roles: string,
+  users?: string,
+  groups?: string,
+  propagate?: boolean
+): Promise<void> =>
+  invoke("create_proxmox_acl", { clusterId, path, roles, users, groups, propagate });
+
+export const deleteProxmoxAcl = (
+  clusterId: string,
+  path: string,
+  roles: string,
+  users?: string,
+  groups?: string
+): Promise<void> =>
+  invoke("delete_proxmox_acl", { clusterId, path, roles, users, groups });
+
+// ─── User CRUD ────────────────────────────────────────────────────────────────
+
+export const createProxmoxUser = (
+  clusterId: string,
+  userid: string,
+  password: string,
+  comment?: string,
+  email?: string,
+  enabled?: boolean
+): Promise<void> =>
+  invoke("create_proxmox_user", {
+    clusterId,
+    userid,
+    password,
+    comment,
+    email,
+    enabled,
+  });
+
+export const updateProxmoxUser = (
+  clusterId: string,
+  userid: string,
+  comment?: string,
+  email?: string,
+  enabled?: boolean
+): Promise<void> =>
+  invoke("update_proxmox_user", { clusterId, userid, comment, email, enabled });
+
+export const deleteProxmoxUser = (
+  clusterId: string,
+  userid: string
+): Promise<void> => invoke("delete_proxmox_user", { clusterId, userid });
+
+// ─── Realm CRUD ───────────────────────────────────────────────────────────────
+
+export const createProxmoxRealm = (
+  clusterId: string,
+  realm: string,
+  realmType: string,
+  comment?: string
+): Promise<void> =>
+  invoke("create_proxmox_realm", { clusterId, realm, realmType, comment });
+
+export const updateProxmoxRealm = (
+  clusterId: string,
+  realm: string,
+  comment?: string
+): Promise<void> =>
+  invoke("update_proxmox_realm", { clusterId, realm, comment });
+
+export const deleteProxmoxRealm = (
+  clusterId: string,
+  realm: string
+): Promise<void> => invoke("delete_proxmox_realm", { clusterId, realm });
+
+// ─── Firewall rule update ─────────────────────────────────────────────────────
+
+export const updateFirewallRule = (
+  clusterId: string,
+  nodeId: string,
+  ruleNum: number,
+  rule: {
+    action: string;
+    protocol?: string;
+    source?: string;
+    destination?: string;
+    port?: string;
+    enabled: boolean;
+    comment?: string;
+  }
+): Promise<void> =>
+  invoke("update_proxmox_firewall_rule", { clusterId, nodeId, ruleNum, rule });

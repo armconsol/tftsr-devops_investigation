@@ -33,7 +33,8 @@ pub async fn list_updates_all_remotes(
         .map_err(|e| format!("Failed to list updates from all remotes: {}", e))?;
 
     let updates: Vec<RemoteUpdateInfo> = response
-        .as_array()
+        .get("data")
+        .and_then(|d| d.as_array())
         .map(|arr| {
             arr.iter()
                 .filter_map(|update| {
@@ -69,7 +70,7 @@ pub async fn refresh_updates_all(
 ) -> Result<(), String> {
     let path = "remotes/updates";
     let _response: serde_json::Value = client
-        .post(path, &serde_json::json!({}), Some(ticket))
+        .post_form(path, &[], Some(ticket))
         .await
         .map_err(|e| format!("Failed to refresh updates: {}", e))?;
     Ok(())
@@ -121,10 +122,14 @@ pub async fn list_pve_remotes(
         .await
         .map_err(|e| format!("Failed to list PVE remotes: {}", e))?;
 
-    if let Some(arr) = response.as_array() {
-        Ok(arr.to_vec())
+    if let Some(data) = response.get("data") {
+        if let Some(arr) = data.as_array() {
+            Ok(arr.to_vec())
+        } else {
+            Ok(vec![data.clone()])
+        }
     } else {
-        Ok(vec![response])
+        Err("Invalid response format: missing 'data' field".to_string())
     }
 }
 
@@ -141,7 +146,8 @@ pub async fn check_remote_updates(
         .map_err(|e| format!("Failed to check updates for remote {}: {}", remote, e))?;
 
     let updates: Vec<RemoteUpdateInfo> = response
-        .as_array()
+        .get("data")
+        .and_then(|d| d.as_array())
         .map(|arr| {
             arr.iter()
                 .filter_map(|update| {
