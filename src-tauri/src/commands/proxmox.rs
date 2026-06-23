@@ -1672,6 +1672,66 @@ pub async fn delete_firewall_rule(
     .map_err(|e| format!("Failed to delete firewall rule {}: {}", rule_num, e))
 }
 
+/// Update an existing firewall rule
+#[tauri::command]
+pub async fn update_proxmox_firewall_rule(
+    cluster_id: String,
+    node_id: String,
+    rule_num: u32,
+    rule: serde_json::Value,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+
+    let firewall_rule = crate::proxmox::firewall::FirewallRule {
+        rule_num,
+        action: rule
+            .get("action")
+            .and_then(|v| v.as_str())
+            .unwrap_or("ACCEPT")
+            .to_string(),
+        protocol: rule
+            .get("proto")
+            .and_then(|v| v.as_str())
+            .unwrap_or("tcp")
+            .to_string(),
+        source: rule
+            .get("source")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string(),
+        destination: rule
+            .get("dest")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string(),
+        port: rule
+            .get("dport")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string()),
+        enabled: rule
+            .get("enable")
+            .and_then(|v| {
+                v.as_bool()
+                    .or_else(|| v.as_i64().map(|n| n != 0))
+                    .or_else(|| v.as_str().map(|s| s == "1" || s == "true"))
+            })
+            .unwrap_or(true),
+    };
+
+    crate::proxmox::firewall::update_rule(
+        &client_guard,
+        &node_id,
+        rule_num,
+        &firewall_rule,
+        client_guard.ticket.as_deref().unwrap_or(""),
+    )
+    .await
+    .map_err(|e| format!("Failed to update firewall rule {}: {}", rule_num, e))
+}
+
 // SDN commands (extended from existing)
 /// List SDN controllers
 #[tauri::command]
@@ -2165,6 +2225,39 @@ pub async fn enable_ha_resource(
     )
     .await
     .map_err(|e| format!("Failed to enable HA resource: {}", e))
+}
+
+/// Disable HA resource
+#[tauri::command]
+pub async fn disable_ha_resource(
+    cluster_id: String,
+    resource: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+    let ticket = client_guard.ticket.as_deref().unwrap_or("");
+    crate::proxmox::ha::disable_ha_resource(&client_guard, &resource, ticket)
+        .await
+        .map_err(|e| format!("Failed to disable HA resource: {}", e))
+}
+
+/// Delete (remove) an HA resource
+#[tauri::command]
+pub async fn delete_ha_resource(
+    cluster_id: String,
+    resource: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+    let ticket = client_guard.ticket.as_deref().unwrap_or("");
+    let path = format!("cluster/ha/resources/{}", resource);
+    let _: serde_json::Value = client_guard
+        .delete(&path, Some(ticket))
+        .await
+        .map_err(|e| format!("Failed to delete HA resource {}: {}", resource, e))?;
+    Ok(())
 }
 
 // ─── Phase 7 - ACL / Users / Realms ──────────────────────────────────────────

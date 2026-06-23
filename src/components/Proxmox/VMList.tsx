@@ -5,7 +5,6 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Button } from '@/components/ui/index';
 import { Checkbox } from '@/components/ui/index';
 import { MoreHorizontal, Play, Square, RotateCcw, Power, PlayCircle, Pause, X, MoveRight, Copy } from 'lucide-react';
-import { invoke } from '@tauri-apps/api/core';
 import { confirm } from '@tauri-apps/plugin-dialog';
 import { toast } from 'sonner';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/index';
@@ -17,6 +16,22 @@ import { AlertCircle } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/index';
 import type { ClusterInfo } from '@/lib/domain';
 import type { ProxmoxSnapshot } from '@/lib/proxmoxClient';
+import {
+  cloneVm,
+  deleteVm,
+  startProxmoxVm,
+  stopProxmoxVm,
+  rebootProxmoxVm,
+  shutdownProxmoxVm,
+  suspendProxmoxVm,
+  resumeProxmoxVm,
+  listProxmoxSnapshots,
+  createProxmoxSnapshot,
+  deleteProxmoxSnapshot,
+  rollbackProxmoxSnapshot,
+  listProxmoxNodes,
+  migrateVm,
+} from '@/lib/proxmoxClient';
 
 interface VMInfo {
   id: string;
@@ -144,56 +159,32 @@ export function VMList({
     try {
       switch (action) {
         case 'start':
-          await invoke('start_proxmox_vm', {
-            clusterId,
-            nodeId: vm.node,
-            vmId: vm.vmid,
-          });
+          await startProxmoxVm(clusterId, vm.node, vm.vmid);
           toast.success(`VM ${vm.name} started`);
           onRefresh?.();
           break;
         case 'stop':
-          await invoke('stop_proxmox_vm', {
-            clusterId,
-            nodeId: vm.node,
-            vmId: vm.vmid,
-          });
+          await stopProxmoxVm(clusterId, vm.node, vm.vmid);
           toast.success(`VM ${vm.name} stopped`);
           onRefresh?.();
           break;
         case 'reboot':
-          await invoke('reboot_proxmox_vm', {
-            clusterId,
-            nodeId: vm.node,
-            vmId: vm.vmid,
-          });
+          await rebootProxmoxVm(clusterId, vm.node, vm.vmid);
           toast.success(`VM ${vm.name} rebooting`);
           onRefresh?.();
           break;
         case 'shutdown':
-          await invoke('shutdown_proxmox_vm', {
-            clusterId,
-            nodeId: vm.node,
-            vmId: vm.vmid,
-          });
+          await shutdownProxmoxVm(clusterId, vm.node, vm.vmid);
           toast.success(`VM ${vm.name} shutting down`);
           onRefresh?.();
           break;
         case 'resume':
-          await invoke('resume_proxmox_vm', {
-            clusterId,
-            nodeId: vm.node,
-            vmId: vm.vmid,
-          });
+          await resumeProxmoxVm(clusterId, vm.node, vm.vmid);
           toast.success(`VM ${vm.name} resumed`);
           onRefresh?.();
           break;
         case 'suspend':
-          await invoke('suspend_proxmox_vm', {
-            clusterId,
-            nodeId: vm.node,
-            vmId: vm.vmid,
-          });
+          await suspendProxmoxVm(clusterId, vm.node, vm.vmid);
           toast.success(`VM ${vm.name} suspended`);
           onRefresh?.();
           break;
@@ -209,11 +200,7 @@ export function VMList({
   const handleSnapshotAction = useCallback(async (vm: VMInfo, action: 'create' | 'list' | 'rollback' | 'delete') => {
     if (action === 'list') {
       try {
-        const snapshots = await invoke<ProxmoxSnapshot[]>('list_proxmox_snapshots', {
-          clusterId,
-          nodeId: vm.node,
-          vmid: vm.vmid,
-        });
+        const snapshots = await listProxmoxSnapshots(clusterId, vm.node, vm.vmid);
         setSnapshotDialog({ isOpen: true, vm, action: 'list', snapshots });
       } catch (error) {
         console.error('Failed to list snapshots:', error);
@@ -224,11 +211,7 @@ export function VMList({
 
     if (action === 'rollback' || action === 'delete') {
       try {
-        const snapshots = await invoke<ProxmoxSnapshot[]>('list_proxmox_snapshots', {
-          clusterId,
-          nodeId: vm.node,
-          vmid: vm.vmid,
-        });
+        const snapshots = await listProxmoxSnapshots(clusterId, vm.node, vm.vmid);
         if (snapshots.length === 0) {
           toast.error(`No snapshots found for ${vm.name}`);
           return;
@@ -258,31 +241,16 @@ export function VMList({
           toast.error('Snapshot name is required');
           return;
         }
-        await invoke('create_proxmox_snapshot', {
-          clusterId,
-          nodeId: vm.node,
-          vmid: vm.vmid,
-          snapshotName: snapshotName.trim(),
-        });
+        await createProxmoxSnapshot(clusterId, vm.node, vm.vmid, snapshotName.trim());
         toast.success(`Snapshot "${snapshotName}" created for ${vm.name}`);
       } else if (action === 'rollback' && selectedSnapshot) {
         if (await confirm(`Are you sure you want to rollback ${vm.name} to "${selectedSnapshot}"? This may cause downtime.`)) {
-          await invoke('rollback_proxmox_snapshot', {
-            clusterId,
-            nodeId: vm.node,
-            vmid: vm.vmid,
-            snapshotName: selectedSnapshot,
-          });
+          await rollbackProxmoxSnapshot(clusterId, vm.node, vm.vmid, selectedSnapshot);
           toast.success(`Rolled back ${vm.name} to "${selectedSnapshot}"`);
         }
       } else if (action === 'delete' && selectedSnapshot) {
         if (await confirm(`Are you sure you want to delete snapshot "${selectedSnapshot}" for ${vm.name}?`)) {
-          await invoke('delete_proxmox_snapshot', {
-            clusterId,
-            nodeId: vm.node,
-            vmid: vm.vmid,
-            snapshotName: selectedSnapshot,
-          });
+          await deleteProxmoxSnapshot(clusterId, vm.node, vm.vmid, selectedSnapshot);
           toast.success(`Deleted snapshot "${selectedSnapshot}" for ${vm.name}`);
         }
       }
@@ -307,7 +275,7 @@ export function VMList({
     setTargetCluster(clusterId);
     setNodesLoading(true);
     try {
-      const nodeData: { node?: string; status?: string }[] = await invoke('list_proxmox_nodes', { clusterId });
+      const nodeData: { node?: string; status?: string }[] = await listProxmoxNodes(clusterId) as { node?: string; status?: string }[];
       const names = nodeData
         .filter((n) => n.node && n.node !== vm.node)
         .map((n) => n.node as string);
@@ -334,13 +302,7 @@ export function VMList({
     const destCluster = targetCluster || clusterId;
 
     try {
-      await invoke('migrate_vm', {
-        clusterId: sourceCluster,
-        nodeId: migrationVM.node,
-        vmId: migrationVM.vmid,
-        targetNode,
-        targetCluster: destCluster,
-      });
+      await migrateVm(sourceCluster, migrationVM.node, migrationVM.vmid, targetNode, destCluster);
 
       toast.success(`VM ${migrationVM.name} migration started to ${targetNode}${destCluster !== sourceCluster ? ` (cluster: ${destCluster})` : ''}`);
       setMigrationVM(null);
@@ -369,11 +331,11 @@ export function VMList({
     if (!cloneName.trim()) { toast.error('Clone name is required'); return; }
     setCloneSubmitting(true);
     try {
-      await invoke('clone_vm', {
+      await cloneVm({
         clusterId,
         nodeId: vm.node,
         vmId: vm.vmid,
-        newVmid,
+        newVmId: newVmid,
         name: cloneName.trim(),
       });
       toast.success(`VM ${vm.name} cloned to VM ${newVmid}`);
@@ -405,11 +367,7 @@ export function VMList({
     }
 
     try {
-      await invoke('delete_vm', {
-        clusterId,
-        nodeId: vm.node,
-        vmId: vm.vmid,
-      });
+      await deleteVm(clusterId, vm.node, vm.vmid);
 
       toast.success(`VM ${vm.name} deleted successfully`);
       onRefresh?.();

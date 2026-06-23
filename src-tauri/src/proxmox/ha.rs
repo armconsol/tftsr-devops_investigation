@@ -16,6 +16,7 @@ pub struct HaGroup {
 /// HA resource information
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HaResource {
+    #[serde(rename = "sid")]
     pub resource: String,
     pub group: Option<String>,
     pub node: Option<String>,

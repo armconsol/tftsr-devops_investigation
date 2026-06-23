@@ -1,13 +1,18 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/index';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/index';
+import { Input } from '@/components/ui/index';
+import { Label } from '@/components/ui/index';
 import { HAGroupsList, HAResourcesList } from '@/components/Proxmox';
 import {
   listProxmoxClusters,
   listHaGroups,
   listHaResources,
+  createHaGroup,
   deleteHaGroup,
   enableHaResource,
+  deleteHaResource,
   HaGroup,
   HaResource,
 } from '@/lib/proxmoxClient';
@@ -21,6 +26,9 @@ export function ProxmoxHAPage() {
   const [resources, setResources] = useState<HaResource[]>([]);
   const [isLoadingGroups, setIsLoadingGroups] = useState(false);
   const [isLoadingResources, setIsLoadingResources] = useState(false);
+  const [createGroupOpen, setCreateGroupOpen] = useState(false);
+  const [newGroupId, setNewGroupId] = useState('');
+  const [newGroupNodes, setNewGroupNodes] = useState('');
 
   // Load clusters on mount and auto-select the first one
   useEffect(() => {
@@ -94,8 +102,24 @@ export function ProxmoxHAPage() {
   };
 
   const handleCreateGroup = () => {
-    // Placeholder: create dialog integration to be wired when dialog component is available
-    toast.info('Create HA group — not yet implemented');
+    setNewGroupId('');
+    setNewGroupNodes('');
+    setCreateGroupOpen(true);
+  };
+
+  const handleCreateGroupSubmit = async () => {
+    if (!newGroupId.trim()) { toast.error('Group ID is required'); return; }
+    try {
+      await createHaGroup(selectedClusterId, {
+        id: newGroupId.trim(),
+        nodes: newGroupNodes,
+      });
+      toast.success(`HA group "${newGroupId}" created`);
+      setCreateGroupOpen(false);
+      await loadGroups(selectedClusterId);
+    } catch (err) {
+      toast.error(`Failed to create HA group: ${err}`);
+    }
   };
 
   const handleEnableResource = async (resource: HaResource) => {
@@ -110,8 +134,14 @@ export function ProxmoxHAPage() {
   };
 
   const handleRemoveResource = async (resource: HaResource) => {
-    // Placeholder: removal command to be wired when backend command is available
-    toast.info(`Remove resource: ${resource.sid}`);
+    try {
+      await deleteHaResource(selectedClusterId, resource.sid);
+      toast.success(`HA resource "${resource.sid}" removed`);
+      await loadResources(selectedClusterId);
+    } catch (err) {
+      console.error('Failed to remove HA resource:', err);
+      toast.error(`Failed to remove HA resource: ${err}`);
+    }
   };
 
   return (
@@ -160,6 +190,36 @@ export function ProxmoxHAPage() {
           onRemove={handleRemoveResource}
         />
       </div>
+
+      <Dialog open={createGroupOpen} onOpenChange={setCreateGroupOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Create HA Group</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-1">
+              <Label>Group ID</Label>
+              <Input
+                value={newGroupId}
+                onChange={(e) => setNewGroupId(e.target.value)}
+                placeholder="e.g. ha-group-1"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label>Nodes (comma-separated)</Label>
+              <Input
+                value={newGroupNodes}
+                onChange={(e) => setNewGroupNodes(e.target.value)}
+                placeholder="e.g. vmhost1,vmhost2"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCreateGroupOpen(false)}>Cancel</Button>
+            <Button onClick={handleCreateGroupSubmit}>Create</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
