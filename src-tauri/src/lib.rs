@@ -402,6 +402,35 @@ pub fn run() {
             // Kubernetes Metrics
             commands::metrics::get_pod_metrics,
             commands::metrics::get_node_metrics,
+            // Proxmox SDN CRUD
+            commands::proxmox::create_sdn_zone,
+            commands::proxmox::update_sdn_zone,
+            commands::proxmox::delete_sdn_zone,
+            commands::proxmox::create_sdn_vnet,
+            commands::proxmox::update_sdn_vnet,
+            commands::proxmox::delete_sdn_vnet,
+            // Proxmox Backup Job CRUD
+            commands::proxmox::create_proxmox_backup_job,
+            commands::proxmox::update_proxmox_backup_job,
+            commands::proxmox::delete_proxmox_backup_job,
+            // Proxmox LXC Container Power
+            commands::proxmox::start_proxmox_container,
+            commands::proxmox::stop_proxmox_container,
+            commands::proxmox::reboot_proxmox_container,
+            commands::proxmox::shutdown_proxmox_container,
+            commands::proxmox::suspend_proxmox_container,
+            commands::proxmox::resume_proxmox_container,
+            // Proxmox ACL CRUD
+            commands::proxmox::create_proxmox_acl,
+            commands::proxmox::delete_proxmox_acl,
+            // Proxmox User CRUD
+            commands::proxmox::create_proxmox_user,
+            commands::proxmox::update_proxmox_user,
+            commands::proxmox::delete_proxmox_user,
+            // Proxmox Realm CRUD
+            commands::proxmox::create_proxmox_realm,
+            commands::proxmox::update_proxmox_realm,
+            commands::proxmox::delete_proxmox_realm,
         ])
         .run(tauri::generate_context!())
         .expect("Error running Troubleshooting and RCA Assistant application");
