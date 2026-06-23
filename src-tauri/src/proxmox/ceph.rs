@@ -55,7 +55,7 @@ pub async fn list_pools(
         .await
         .map_err(|e| format!("Failed to list Ceph pools: {}", e))?;
 
-    if let Some(pools) = response.as_array() {
+    if let Some(pools) = response.get("data").and_then(|d| d.as_array()) {
         let pool_list: Vec<CephPool> = pools
             .iter()
             .filter_map(|pool| {
@@ -87,7 +87,7 @@ pub async fn list_pools(
 
         Ok(pool_list)
     } else {
-        Err("Invalid response format".to_string())
+        Err("Invalid response format: missing 'data' field".to_string())
     }
 }
 
@@ -155,7 +155,7 @@ pub async fn list_osds(
         .await
         .map_err(|e| format!("Failed to list Ceph OSDs: {}", e))?;
 
-    if let Some(osds) = response.as_array() {
+    if let Some(osds) = response.get("data").and_then(|d| d.as_array()) {
         let osd_list: Vec<CephOsd> = osds
             .iter()
             .filter_map(|osd| {
@@ -179,7 +179,7 @@ pub async fn list_osds(
 
         Ok(osd_list)
     } else {
-        Err("Invalid response format".to_string())
+        Err("Invalid response format: missing 'data' field".to_string())
     }
 }
 
@@ -210,7 +210,7 @@ pub async fn osd_out(
 ) -> Result<(), String> {
     let path = format!("cluster/ceph/osd/{}/out", osd_id);
     let _response: serde_json::Value = client
-        .post(&path, &serde_json::json!({}), Some(ticket))
+        .post_form(&path, &[], Some(ticket))
         .await
         .map_err(|e| format!("Failed to mark OSD {} out: {}", osd_id, e))?;
     Ok(())
@@ -224,7 +224,7 @@ pub async fn osd_in(
 ) -> Result<(), String> {
     let path = format!("cluster/ceph/osd/{}/in", osd_id);
     let _response: serde_json::Value = client
-        .post(&path, &serde_json::json!({}), Some(ticket))
+        .post_form(&path, &[], Some(ticket))
         .await
         .map_err(|e| format!("Failed to mark OSD {} in: {}", osd_id, e))?;
     Ok(())
@@ -241,10 +241,10 @@ pub async fn list_mds(
         .await
         .map_err(|e| format!("Failed to list Ceph MDS: {}", e))?;
 
-    if let Some(mds) = response.as_array() {
+    if let Some(mds) = response.get("data").and_then(|d| d.as_array()) {
         Ok(mds.to_vec())
     } else {
-        Err("Invalid response format".to_string())
+        Err("Invalid response format: missing 'data' field".to_string())
     }
 }
 
@@ -269,7 +269,7 @@ pub async fn mds_failover(
 ) -> Result<(), String> {
     let path = format!("cluster/ceph/mds/{}/failover", mds);
     let _response: serde_json::Value = client
-        .post(&path, &serde_json::json!({}), Some(ticket))
+        .post_form(&path, &[], Some(ticket))
         .await
         .map_err(|e| format!("Failed to trigger MDS failover {}: {}", mds, e))?;
     Ok(())
@@ -287,10 +287,10 @@ pub async fn list_rbd(
         .await
         .map_err(|e| format!("Failed to list RBD images in pool {}: {}", pool, e))?;
 
-    if let Some(images) = response.as_array() {
+    if let Some(images) = response.get("data").and_then(|d| d.as_array()) {
         Ok(images.to_vec())
     } else {
-        Err("Invalid response format".to_string())
+        Err("Invalid response format: missing 'data' field".to_string())
     }
 }
 
@@ -415,7 +415,7 @@ pub async fn list_monitors(
         .await
         .map_err(|e| format!("Failed to list Ceph monitors: {}", e))?;
 
-    if let Some(mons) = response.as_array() {
+    if let Some(mons) = response.get("data").and_then(|d| d.as_array()) {
         let mon_list: Vec<CephMonitor> = mons
             .iter()
             .filter_map(|mon| {
@@ -439,7 +439,7 @@ pub async fn list_monitors(
 
         Ok(mon_list)
     } else {
-        Err("Invalid response format".to_string())
+        Err("Invalid response format: missing 'data' field".to_string())
     }
 }
 
@@ -479,7 +479,7 @@ pub async fn get_ceph_health(
         .await
         .map_err(|e| format!("Failed to get Ceph health: {}", e))?;
 
-    let health = &response;
+    let health = response.get("data").ok_or("Invalid response format")?;
 
     let details: Vec<String> = health
         .get("details")

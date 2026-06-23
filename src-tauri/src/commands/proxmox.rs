@@ -664,6 +664,40 @@ fn validate_pve_identifier(value: &str, field: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Like `validate_pve_identifier` but also allows `@` for PVE user IDs (`user@realm`).
+fn validate_pve_userid(value: &str, field: &str) -> Result<(), String> {
+    if value.is_empty() {
+        return Err(format!("{} must not be empty", field));
+    }
+    if !value
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '_' || c == '@')
+    {
+        return Err(format!(
+            "{} contains invalid characters — only alphanumeric, '.', '-', '_', '@' are allowed",
+            field
+        ));
+    }
+    Ok(())
+}
+
+/// Validates an HA resource SID (format `type:vmid`, e.g. `qemu:100`).
+fn validate_pve_ha_resource(value: &str, field: &str) -> Result<(), String> {
+    if value.is_empty() {
+        return Err(format!("{} must not be empty", field));
+    }
+    if !value
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '_' || c == ':')
+    {
+        return Err(format!(
+            "{} contains invalid characters — only alphanumeric, '.', '-', '_', ':' are allowed",
+            field
+        ));
+    }
+    Ok(())
+}
+
 /// Create a new Proxmox VM
 #[allow(clippy::too_many_arguments)]
 #[tauri::command]
@@ -1672,6 +1706,66 @@ pub async fn delete_firewall_rule(
     .map_err(|e| format!("Failed to delete firewall rule {}: {}", rule_num, e))
 }
 
+/// Update an existing firewall rule
+#[tauri::command]
+pub async fn update_proxmox_firewall_rule(
+    cluster_id: String,
+    node_id: String,
+    rule_num: u32,
+    rule: serde_json::Value,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+
+    let firewall_rule = crate::proxmox::firewall::FirewallRule {
+        rule_num,
+        action: rule
+            .get("action")
+            .and_then(|v| v.as_str())
+            .unwrap_or("ACCEPT")
+            .to_string(),
+        protocol: rule
+            .get("proto")
+            .and_then(|v| v.as_str())
+            .unwrap_or("tcp")
+            .to_string(),
+        source: rule
+            .get("source")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string(),
+        destination: rule
+            .get("dest")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string(),
+        port: rule
+            .get("dport")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string()),
+        enabled: rule
+            .get("enable")
+            .and_then(|v| {
+                v.as_bool()
+                    .or_else(|| v.as_i64().map(|n| n != 0))
+                    .or_else(|| v.as_str().map(|s| s == "1" || s == "true"))
+            })
+            .unwrap_or(true),
+    };
+
+    crate::proxmox::firewall::update_rule(
+        &client_guard,
+        &node_id,
+        rule_num,
+        &firewall_rule,
+        client_guard.ticket.as_deref().unwrap_or(""),
+    )
+    .await
+    .map_err(|e| format!("Failed to update firewall rule {}: {}", rule_num, e))
+}
+
 // SDN commands (extended from existing)
 /// List SDN controllers
 #[tauri::command]
@@ -2165,6 +2259,40 @@ pub async fn enable_ha_resource(
     )
     .await
     .map_err(|e| format!("Failed to enable HA resource: {}", e))
+}
+
+/// Disable HA resource
+#[tauri::command]
+pub async fn disable_ha_resource(
+    cluster_id: String,
+    resource: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+    let ticket = client_guard.ticket.as_deref().unwrap_or("");
+    crate::proxmox::ha::disable_ha_resource(&client_guard, &resource, ticket)
+        .await
+        .map_err(|e| format!("Failed to disable HA resource: {}", e))
+}
+
+/// Delete (remove) an HA resource
+#[tauri::command]
+pub async fn delete_ha_resource(
+    cluster_id: String,
+    resource: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    validate_pve_ha_resource(&resource, "resource")?;
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+    let ticket = client_guard.ticket.as_deref().unwrap_or("");
+    let path = format!("cluster/ha/resources/{}", resource);
+    let _: serde_json::Value = client_guard
+        .delete(&path, Some(ticket))
+        .await
+        .map_err(|e| format!("Failed to delete HA resource {}: {}", resource, e))?;
+    Ok(())
 }
 
 // ─── Phase 7 - ACL / Users / Realms ──────────────────────────────────────────
@@ -2885,6 +3013,568 @@ pub async fn disconnect_proxmox_cluster(
 ) -> Result<(), String> {
     let mut clusters = state.proxmox_clusters.lock().await;
     clusters.remove(&cluster_id);
+    Ok(())
+}
+
+// ─── SDN CRUD ─────────────────────────────────────────────────────────────────
+
+/// Create an EVPN SDN zone
+#[tauri::command]
+pub async fn create_sdn_zone(
+    cluster_id: String,
+    zone: String,
+    asn: u32,
+    vni: u32,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    validate_pve_identifier(&zone, "zone")?;
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+    let ticket = client_guard.ticket.as_deref().unwrap_or("");
+    crate::proxmox::sdn::create_evpn_zone(&client_guard, &zone, asn, vni, ticket)
+        .await
+        .map_err(|e| format!("Failed to create SDN zone: {}", e))
+}
+
+/// Update an EVPN SDN zone
+#[tauri::command]
+pub async fn update_sdn_zone(
+    cluster_id: String,
+    zone: String,
+    asn: u32,
+    vni: u32,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    validate_pve_identifier(&zone, "zone")?;
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+    let ticket = client_guard.ticket.as_deref().unwrap_or("");
+    crate::proxmox::sdn::update_evpn_zone(&client_guard, &zone, asn, vni, ticket)
+        .await
+        .map_err(|e| format!("Failed to update SDN zone: {}", e))
+}
+
+/// Delete an SDN zone
+#[tauri::command]
+pub async fn delete_sdn_zone(
+    cluster_id: String,
+    zone: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    validate_pve_identifier(&zone, "zone")?;
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+    let ticket = client_guard.ticket.as_deref().unwrap_or("");
+    crate::proxmox::sdn::delete_evpn_zone(&client_guard, &zone, ticket)
+        .await
+        .map_err(|e| format!("Failed to delete SDN zone: {}", e))
+}
+
+/// Create an SDN virtual network
+#[tauri::command]
+pub async fn create_sdn_vnet(
+    cluster_id: String,
+    vnet: String,
+    zone: String,
+    l2vni: u32,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    validate_pve_identifier(&vnet, "vnet")?;
+    validate_pve_identifier(&zone, "zone")?;
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+    let ticket = client_guard.ticket.as_deref().unwrap_or("");
+    crate::proxmox::sdn::create_vnet(&client_guard, &vnet, &zone, l2vni, ticket)
+        .await
+        .map_err(|e| format!("Failed to create SDN vnet: {}", e))
+}
+
+/// Update an SDN virtual network
+#[tauri::command]
+pub async fn update_sdn_vnet(
+    cluster_id: String,
+    vnet: String,
+    zone: String,
+    l2vni: u32,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    validate_pve_identifier(&vnet, "vnet")?;
+    validate_pve_identifier(&zone, "zone")?;
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+    let ticket = client_guard.ticket.as_deref().unwrap_or("");
+    crate::proxmox::sdn::update_vnet(&client_guard, &vnet, &zone, l2vni, ticket)
+        .await
+        .map_err(|e| format!("Failed to update SDN vnet: {}", e))
+}
+
+/// Delete an SDN virtual network
+#[tauri::command]
+pub async fn delete_sdn_vnet(
+    cluster_id: String,
+    vnet: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    validate_pve_identifier(&vnet, "vnet")?;
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+    let ticket = client_guard.ticket.as_deref().unwrap_or("");
+    crate::proxmox::sdn::delete_vnet(&client_guard, &vnet, ticket)
+        .await
+        .map_err(|e| format!("Failed to delete SDN vnet: {}", e))
+}
+
+// ─── Backup Job CRUD ──────────────────────────────────────────────────────────
+
+/// Create a cluster-level backup job
+#[tauri::command]
+pub async fn create_proxmox_backup_job(
+    cluster_id: String,
+    storage: String,
+    vmid: Option<String>,
+    mode: Option<String>,
+    schedule: Option<String>,
+    enabled: Option<bool>,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+    let ticket = client_guard.ticket.as_deref().unwrap_or("");
+
+    let storage_s = storage.as_str();
+    let vmid_s = vmid.as_deref().unwrap_or("all");
+    let mode_s = mode.as_deref().unwrap_or("snapshot");
+    let schedule_s = schedule.as_deref().unwrap_or("0 2 * * *");
+    let enabled_s = if enabled.unwrap_or(true) { "1" } else { "0" };
+
+    let params: &[(&str, &str)] = &[
+        ("storage", storage_s),
+        ("vmid", vmid_s),
+        ("mode", mode_s),
+        ("schedule", schedule_s),
+        ("enabled", enabled_s),
+    ];
+
+    let _: serde_json::Value = client_guard
+        .post_form("cluster/backup", params, Some(ticket))
+        .await
+        .map_err(|e| format!("Failed to create backup job: {}", e))?;
+    Ok(())
+}
+
+/// Update a cluster-level backup job
+#[allow(clippy::too_many_arguments)]
+#[tauri::command]
+pub async fn update_proxmox_backup_job(
+    cluster_id: String,
+    job_id: String,
+    storage: Option<String>,
+    vmid: Option<String>,
+    mode: Option<String>,
+    schedule: Option<String>,
+    enabled: Option<bool>,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    validate_pve_identifier(&job_id, "job_id")?;
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+    let ticket = client_guard.ticket.as_deref().unwrap_or("");
+
+    let mut body = serde_json::json!({});
+    if let Some(s) = storage {
+        body["storage"] = serde_json::Value::String(s);
+    }
+    if let Some(v) = vmid {
+        body["vmid"] = serde_json::Value::String(v);
+    }
+    if let Some(m) = mode {
+        body["mode"] = serde_json::Value::String(m);
+    }
+    if let Some(sc) = schedule {
+        body["schedule"] = serde_json::Value::String(sc);
+    }
+    if let Some(en) = enabled {
+        body["enabled"] = serde_json::Value::Number(if en { 1.into() } else { 0.into() });
+    }
+
+    let path = format!("cluster/backup/{}", job_id);
+    let _: serde_json::Value = client_guard
+        .put(&path, &body, Some(ticket))
+        .await
+        .map_err(|e| format!("Failed to update backup job {}: {}", job_id, e))?;
+    Ok(())
+}
+
+/// Delete a cluster-level backup job
+#[tauri::command]
+pub async fn delete_proxmox_backup_job(
+    cluster_id: String,
+    job_id: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    validate_pve_identifier(&job_id, "job_id")?;
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+    let ticket = client_guard.ticket.as_deref().unwrap_or("");
+
+    let path = format!("cluster/backup/{}", job_id);
+    let _: serde_json::Value = client_guard
+        .delete(&path, Some(ticket))
+        .await
+        .map_err(|e| format!("Failed to delete backup job {}: {}", job_id, e))?;
+    Ok(())
+}
+
+// ─── LXC Container Power ──────────────────────────────────────────────────────
+
+/// Start an LXC container
+#[tauri::command]
+pub async fn start_proxmox_container(
+    cluster_id: String,
+    node_id: String,
+    vm_id: u32,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    validate_pve_identifier(&node_id, "node_id")?;
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+    let ticket = client_guard.ticket.as_deref().unwrap_or("");
+    let path = format!("nodes/{}/lxc/{}/status/start", node_id, vm_id);
+    let _: serde_json::Value = client_guard
+        .post_form(&path, &[], Some(ticket))
+        .await
+        .map_err(|e| format!("Failed to start container {}: {}", vm_id, e))?;
+    Ok(())
+}
+
+/// Stop an LXC container
+#[tauri::command]
+pub async fn stop_proxmox_container(
+    cluster_id: String,
+    node_id: String,
+    vm_id: u32,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    validate_pve_identifier(&node_id, "node_id")?;
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+    let ticket = client_guard.ticket.as_deref().unwrap_or("");
+    let path = format!("nodes/{}/lxc/{}/status/stop", node_id, vm_id);
+    let _: serde_json::Value = client_guard
+        .post_form(&path, &[], Some(ticket))
+        .await
+        .map_err(|e| format!("Failed to stop container {}: {}", vm_id, e))?;
+    Ok(())
+}
+
+/// Reboot an LXC container
+#[tauri::command]
+pub async fn reboot_proxmox_container(
+    cluster_id: String,
+    node_id: String,
+    vm_id: u32,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    validate_pve_identifier(&node_id, "node_id")?;
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+    let ticket = client_guard.ticket.as_deref().unwrap_or("");
+    let path = format!("nodes/{}/lxc/{}/status/reboot", node_id, vm_id);
+    let _: serde_json::Value = client_guard
+        .post_form(&path, &[], Some(ticket))
+        .await
+        .map_err(|e| format!("Failed to reboot container {}: {}", vm_id, e))?;
+    Ok(())
+}
+
+/// Gracefully shut down an LXC container
+#[tauri::command]
+pub async fn shutdown_proxmox_container(
+    cluster_id: String,
+    node_id: String,
+    vm_id: u32,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    validate_pve_identifier(&node_id, "node_id")?;
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+    let ticket = client_guard.ticket.as_deref().unwrap_or("");
+    let path = format!("nodes/{}/lxc/{}/status/shutdown", node_id, vm_id);
+    let _: serde_json::Value = client_guard
+        .post_form(&path, &[], Some(ticket))
+        .await
+        .map_err(|e| format!("Failed to shutdown container {}: {}", vm_id, e))?;
+    Ok(())
+}
+
+/// Suspend an LXC container
+#[tauri::command]
+pub async fn suspend_proxmox_container(
+    cluster_id: String,
+    node_id: String,
+    vm_id: u32,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    validate_pve_identifier(&node_id, "node_id")?;
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+    let ticket = client_guard.ticket.as_deref().unwrap_or("");
+    let path = format!("nodes/{}/lxc/{}/status/suspend", node_id, vm_id);
+    let _: serde_json::Value = client_guard
+        .post_form(&path, &[], Some(ticket))
+        .await
+        .map_err(|e| format!("Failed to suspend container {}: {}", vm_id, e))?;
+    Ok(())
+}
+
+/// Resume an LXC container
+#[tauri::command]
+pub async fn resume_proxmox_container(
+    cluster_id: String,
+    node_id: String,
+    vm_id: u32,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    validate_pve_identifier(&node_id, "node_id")?;
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+    let ticket = client_guard.ticket.as_deref().unwrap_or("");
+    let path = format!("nodes/{}/lxc/{}/status/resume", node_id, vm_id);
+    let _: serde_json::Value = client_guard
+        .post_form(&path, &[], Some(ticket))
+        .await
+        .map_err(|e| format!("Failed to resume container {}: {}", vm_id, e))?;
+    Ok(())
+}
+
+// ─── ACL CRUD ─────────────────────────────────────────────────────────────────
+
+/// Create (or update) an ACL entry at the given path
+#[tauri::command]
+pub async fn create_proxmox_acl(
+    cluster_id: String,
+    path: String,
+    roles: String,
+    users: Option<String>,
+    groups: Option<String>,
+    propagate: Option<bool>,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+    let ticket = client_guard.ticket.as_deref().unwrap_or("");
+
+    let mut body = serde_json::json!({ "path": path, "roles": roles });
+    if let Some(u) = users {
+        body["users"] = serde_json::Value::String(u);
+    }
+    if let Some(g) = groups {
+        body["groups"] = serde_json::Value::String(g);
+    }
+    if let Some(p) = propagate {
+        body["propagate"] = serde_json::Value::Bool(p);
+    }
+
+    let _: serde_json::Value = client_guard
+        .put("access/acl", &body, Some(ticket))
+        .await
+        .map_err(|e| format!("Failed to create ACL: {}", e))?;
+    Ok(())
+}
+
+/// Remove an ACL entry
+#[tauri::command]
+pub async fn delete_proxmox_acl(
+    cluster_id: String,
+    path: String,
+    roles: String,
+    users: Option<String>,
+    groups: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+    let ticket = client_guard.ticket.as_deref().unwrap_or("");
+
+    let mut body = serde_json::json!({ "path": path, "roles": roles, "delete": 1 });
+    if let Some(u) = users {
+        body["users"] = serde_json::Value::String(u);
+    }
+    if let Some(g) = groups {
+        body["groups"] = serde_json::Value::String(g);
+    }
+
+    let _: serde_json::Value = client_guard
+        .put("access/acl", &body, Some(ticket))
+        .await
+        .map_err(|e| format!("Failed to delete ACL: {}", e))?;
+    Ok(())
+}
+
+// ─── User CRUD ────────────────────────────────────────────────────────────────
+
+/// Create a PVE user account
+#[tauri::command]
+pub async fn create_proxmox_user(
+    cluster_id: String,
+    userid: String,
+    password: String,
+    comment: Option<String>,
+    email: Option<String>,
+    enabled: Option<bool>,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+    let ticket = client_guard.ticket.as_deref().unwrap_or("");
+
+    let userid_s = userid.as_str();
+    let password_s = password.as_str();
+    let comment_s = comment.as_deref().unwrap_or("");
+    let email_s = email.as_deref().unwrap_or("");
+    let enabled_s = if enabled.unwrap_or(true) { "1" } else { "0" };
+
+    let params: &[(&str, &str)] = &[
+        ("userid", userid_s),
+        ("password", password_s),
+        ("comment", comment_s),
+        ("email", email_s),
+        ("enable", enabled_s),
+    ];
+
+    let _: serde_json::Value = client_guard
+        .post_form("access/users", params, Some(ticket))
+        .await
+        .map_err(|e| format!("Failed to create user {}: {}", userid, e))?;
+    Ok(())
+}
+
+/// Update a PVE user account
+#[tauri::command]
+pub async fn update_proxmox_user(
+    cluster_id: String,
+    userid: String,
+    comment: Option<String>,
+    email: Option<String>,
+    enabled: Option<bool>,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    validate_pve_userid(&userid, "userid")?;
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+    let ticket = client_guard.ticket.as_deref().unwrap_or("");
+
+    let mut body = serde_json::json!({});
+    if let Some(c) = comment {
+        body["comment"] = serde_json::Value::String(c);
+    }
+    if let Some(e) = email {
+        body["email"] = serde_json::Value::String(e);
+    }
+    if let Some(en) = enabled {
+        body["enable"] = serde_json::Value::Number(if en { 1.into() } else { 0.into() });
+    }
+
+    let path = format!("access/users/{}", userid);
+    let _: serde_json::Value = client_guard
+        .put(&path, &body, Some(ticket))
+        .await
+        .map_err(|e| format!("Failed to update user {}: {}", userid, e))?;
+    Ok(())
+}
+
+/// Delete a PVE user account
+#[tauri::command]
+pub async fn delete_proxmox_user(
+    cluster_id: String,
+    userid: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    validate_pve_userid(&userid, "userid")?;
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+    let ticket = client_guard.ticket.as_deref().unwrap_or("");
+
+    let path = format!("access/users/{}", userid);
+    let _: serde_json::Value = client_guard
+        .delete(&path, Some(ticket))
+        .await
+        .map_err(|e| format!("Failed to delete user {}: {}", userid, e))?;
+    Ok(())
+}
+
+// ─── Realm CRUD ───────────────────────────────────────────────────────────────
+
+/// Create an authentication realm
+#[tauri::command]
+pub async fn create_proxmox_realm(
+    cluster_id: String,
+    realm: String,
+    realm_type: String,
+    comment: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    validate_pve_identifier(&realm, "realm")?;
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+    let ticket = client_guard.ticket.as_deref().unwrap_or("");
+
+    let realm_s = realm.as_str();
+    let type_s = realm_type.as_str();
+    let comment_s = comment.as_deref().unwrap_or("");
+
+    let params: &[(&str, &str)] = &[("realm", realm_s), ("type", type_s), ("comment", comment_s)];
+
+    let _: serde_json::Value = client_guard
+        .post_form("access/domains", params, Some(ticket))
+        .await
+        .map_err(|e| format!("Failed to create realm {}: {}", realm, e))?;
+    Ok(())
+}
+
+/// Update an authentication realm
+#[tauri::command]
+pub async fn update_proxmox_realm(
+    cluster_id: String,
+    realm: String,
+    comment: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    validate_pve_identifier(&realm, "realm")?;
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+    let ticket = client_guard.ticket.as_deref().unwrap_or("");
+
+    let mut body = serde_json::json!({});
+    if let Some(c) = comment {
+        body["comment"] = serde_json::Value::String(c);
+    }
+
+    let path = format!("access/domains/{}", realm);
+    let _: serde_json::Value = client_guard
+        .put(&path, &body, Some(ticket))
+        .await
+        .map_err(|e| format!("Failed to update realm {}: {}", realm, e))?;
+    Ok(())
+}
+
+/// Delete an authentication realm
+#[tauri::command]
+pub async fn delete_proxmox_realm(
+    cluster_id: String,
+    realm: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    validate_pve_identifier(&realm, "realm")?;
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+    let ticket = client_guard.ticket.as_deref().unwrap_or("");
+
+    let path = format!("access/domains/{}", realm);
+    let _: serde_json::Value = client_guard
+        .delete(&path, Some(ticket))
+        .await
+        .map_err(|e| format!("Failed to delete realm {}: {}", realm, e))?;
     Ok(())
 }
 

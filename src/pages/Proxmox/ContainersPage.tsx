@@ -3,7 +3,14 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/index'
 import { Button } from '@/components/ui/index';
 import { RefreshCw } from 'lucide-react';
 import { ContainerOverview } from '@/components/Proxmox';
-import { listProxmoxClusters, listProxmoxContainers } from '@/lib/proxmoxClient';
+import {
+  listProxmoxClusters,
+  listProxmoxContainers,
+  startProxmoxContainer,
+  stopProxmoxContainer,
+  rebootProxmoxContainer,
+  shutdownProxmoxContainer,
+} from '@/lib/proxmoxClient';
 import type { ClusterInfo } from '@/lib/domain';
 import { toast } from 'sonner';
 
@@ -91,8 +98,23 @@ export function ProxmoxContainersPage() {
         <ContainerOverview
           container={selectedContainer}
           onRefresh={() => loadContainers(selectedClusterId)}
-          onPowerAction={(_action) => { toast.info('Power action — not yet implemented'); }}
-          onConsole={() => { toast.info('Console — not yet implemented'); }}
+          onPowerAction={async (action) => {
+            const ct = selectedContainer;
+            if (!ct || !selectedClusterId) return;
+            const vmId: number = ct.vmid ?? ct.id;
+            const nodeId: string = ct.node ?? '';
+            try {
+              if (action === 'start') await startProxmoxContainer(selectedClusterId, nodeId, vmId);
+              else if (action === 'stop') await stopProxmoxContainer(selectedClusterId, nodeId, vmId);
+              else if (action === 'reboot') await rebootProxmoxContainer(selectedClusterId, nodeId, vmId);
+              else if (action === 'shutdown') await shutdownProxmoxContainer(selectedClusterId, nodeId, vmId);
+              toast.success(`Container ${action} initiated`);
+              loadContainers(selectedClusterId);
+            } catch (err) {
+              toast.error(`Failed to ${action} container: ${err}`);
+            }
+          }}
+          onConsole={() => { toast.info('Terminal access via VNC coming in a future release'); }}
         />
       ) : (
         <div className="grid grid-cols-1 gap-4">
