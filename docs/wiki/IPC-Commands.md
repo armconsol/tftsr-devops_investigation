@@ -734,3 +734,70 @@ Uploads a local `.iso` file to a Proxmox storage pool via multipart `POST nodes/
 invoke('migrate_vm', { clusterId, nodeId, vmId, targetNode, targetCluster }) → void
 ```
 Migrates a VM to another node (same or different cluster). Online migration by default.
+
+### `update_proxmox_firewall_rule`
+```typescript
+updateFirewallRule(clusterId, nodeId, ruleNum, rule) → void
+```
+Updates an existing firewall rule via `PUT nodes/{node}/firewall/rules/{pos}`. Uses `proto` and `enable` (integer) field names as required by the PVE API.
+
+### `create_sdn_zone` / `update_sdn_zone` / `delete_sdn_zone`
+```typescript
+createSdnZone(clusterId, zone, asn, vni) → void
+updateSdnZone(clusterId, zone, asn, vni) → void
+deleteSdnZone(clusterId, zone) → void
+```
+CRUD for EVPN SDN zones via `POST/PUT/DELETE cluster/sdn/zones[/{zone}]`.
+
+### `create_sdn_vnet` / `update_sdn_vnet` / `delete_sdn_vnet`
+```typescript
+createSdnVnet(clusterId, vnet, zone, l2vni) → void
+updateSdnVnet(clusterId, vnet, zone, l2vni) → void
+deleteSdnVnet(clusterId, vnet) → void
+```
+CRUD for SDN virtual networks via `POST/PUT/DELETE cluster/sdn/vnets[/{vnet}]`.
+
+### `create_proxmox_backup_job` / `update_proxmox_backup_job` / `delete_proxmox_backup_job`
+```typescript
+createProxmoxBackupJob({ clusterId, storage, vmid?, mode?, schedule?, enabled? }) → void
+updateProxmoxBackupJob(clusterId, jobId, updates) → void
+deleteProxmoxBackupJob(clusterId, jobId) → void
+```
+CRUD for cluster-level backup jobs via `POST/PUT/DELETE cluster/backup[/{id}]`. Uses form-encoded POST (not JSON) to match PVE API requirements.
+
+### `start_proxmox_container` / `stop_proxmox_container` / `reboot_proxmox_container` / `shutdown_proxmox_container` / `suspend_proxmox_container` / `resume_proxmox_container`
+```typescript
+startProxmoxContainer(clusterId, nodeId, vmId) → void
+// (and stop/reboot/shutdown/suspend/resume variants)
+```
+LXC container power management via `POST nodes/{node}/lxc/{vmid}/status/{action}` with empty form body (same pattern as QEMU).
+
+### `create_proxmox_acl` / `delete_proxmox_acl`
+```typescript
+createProxmoxAcl(clusterId, path, roles, users?, groups?, propagate?) → void
+deleteProxmoxAcl(clusterId, path, roles, users?, groups?) → void
+```
+ACL management via `PUT /access/acl`. Delete passes `delete: 1` in the JSON body.
+
+### `create_proxmox_user` / `update_proxmox_user` / `delete_proxmox_user`
+```typescript
+createProxmoxUser(clusterId, userid, password, comment?, email?, enabled?) → void
+updateProxmoxUser(clusterId, userid, comment?, email?, enabled?) → void
+deleteProxmoxUser(clusterId, userid) → void
+```
+PVE user management via `POST/PUT/DELETE /access/users[/{userid}]`.
+
+### `create_proxmox_realm` / `update_proxmox_realm` / `delete_proxmox_realm`
+```typescript
+createProxmoxRealm(clusterId, realm, realmType, comment?) → void
+updateProxmoxRealm(clusterId, realm, comment?) → void
+deleteProxmoxRealm(clusterId, realm) → void
+```
+Authentication realm management via `POST/PUT/DELETE /access/domains[/{realm}]`.
+
+### `disable_ha_resource` / `delete_ha_resource`
+```typescript
+disableHaResource(clusterId, id) → void
+deleteHaResource(clusterId, id) → void
+```
+HA resource management. `HaResource.sid` now correctly serialized from Rust (previously used `resource` field name, now renamed via `#[serde(rename = "sid")]`).
