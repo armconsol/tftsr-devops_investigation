@@ -34,7 +34,7 @@ pub async fn list_ha_groups(
         .await
         .map_err(|e| format!("Failed to list HA groups: {}", e))?;
 
-    if let Some(groups) = response.as_array() {
+    if let Some(groups) = response.get("data").and_then(|d| d.as_array()) {
         let group_list: Vec<HaGroup> = groups
             .iter()
             .filter_map(|group| {
@@ -68,7 +68,7 @@ pub async fn list_ha_groups(
 
         Ok(group_list)
     } else {
-        Err("Invalid response format".to_string())
+        Err("Invalid response format: missing 'data' field".to_string())
     }
 }
 
@@ -144,7 +144,7 @@ pub async fn list_ha_resources(
         .await
         .map_err(|e| format!("Failed to list HA resources: {}", e))?;
 
-    if let Some(resources) = response.as_array() {
+    if let Some(resources) = response.get("data").and_then(|d| d.as_array()) {
         let resource_list: Vec<HaResource> = resources
             .iter()
             .filter_map(|resource| {
@@ -179,7 +179,7 @@ pub async fn list_ha_resources(
 
         Ok(resource_list)
     } else {
-        Err("Invalid response format".to_string())
+        Err("Invalid response format: missing 'data' field".to_string())
     }
 }
 
@@ -191,7 +191,7 @@ pub async fn enable_ha_resource(
 ) -> Result<(), String> {
     let path = format!("cluster/ha/resources/{}/enable", resource);
     let _response: serde_json::Value = client
-        .post(&path, &serde_json::json!({}), Some(ticket))
+        .post_form(&path, &[], Some(ticket))
         .await
         .map_err(|e| format!("Failed to enable HA resource {}: {}", resource, e))?;
     Ok(())
@@ -205,7 +205,7 @@ pub async fn disable_ha_resource(
 ) -> Result<(), String> {
     let path = format!("cluster/ha/resources/{}/disable", resource);
     let _response: serde_json::Value = client
-        .post(&path, &serde_json::json!({}), Some(ticket))
+        .post_form(&path, &[], Some(ticket))
         .await
         .map_err(|e| format!("Failed to disable HA resource {}: {}", resource, e))?;
     Ok(())
@@ -220,7 +220,7 @@ pub async fn manage_ha_resource(
 ) -> Result<(), String> {
     let path = format!("cluster/ha/resources/{}/{}", resource, action);
     let _response: serde_json::Value = client
-        .post(&path, &serde_json::json!({}), Some(ticket))
+        .post_form(&path, &[], Some(ticket))
         .await
         .map_err(|e| format!("Failed to manage HA resource {}: {}", resource, e))?;
     Ok(())
