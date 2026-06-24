@@ -405,6 +405,7 @@ pub fn run() {
             // Proxmox HA resource management
             commands::proxmox::disable_ha_resource,
             commands::proxmox::delete_ha_resource,
+            commands::proxmox::update_ha_resource,
             // Proxmox Firewall Rule Update
             commands::proxmox::update_proxmox_firewall_rule,
             // Proxmox SDN CRUD

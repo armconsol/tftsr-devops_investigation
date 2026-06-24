@@ -770,6 +770,7 @@ export interface HaResource {
   state: string;
   maxRestart?: number;
   maxRelocate?: number;
+  comment?: string;
 }
 
 /**
@@ -782,24 +783,42 @@ export const listHaGroups = async (clusterId: string): Promise<HaGroup[]> =>
 /**
  * Create an HA group
  * @param clusterId - Cluster identifier
- * @param config - HA group configuration
+ * @param config - HA group configuration (group id + node list)
  */
 export const createHaGroup = async (
   clusterId: string,
-  config: Partial<HaGroup>
-): Promise<void> => invoke<void>("create_ha_group", { clusterId, config });
+  config: { id: string; nodes: string[] }
+): Promise<void> =>
+  invoke<void>("create_ha_group", {
+    clusterId,
+    group: config.id,
+    nodes: config.nodes,
+  });
 
 /**
  * Update an HA group
  * @param clusterId - Cluster identifier
  * @param id - HA group identifier
- * @param config - HA group configuration
+ * @param config - HA group fields to update
  */
 export const updateHaGroup = async (
   clusterId: string,
   id: string,
-  config: Partial<HaGroup>
-): Promise<void> => invoke<void>("update_ha_group", { clusterId, id, config });
+  config: {
+    nodes: string[];
+    comment?: string;
+    restricted?: boolean;
+    nofailback?: boolean;
+  }
+): Promise<void> =>
+  invoke<void>("update_ha_group", {
+    clusterId,
+    group: id,
+    nodes: config.nodes,
+    comment: config.comment,
+    restricted: config.restricted,
+    nofailback: config.nofailback,
+  });
 
 /**
  * Delete an HA group
@@ -809,7 +828,7 @@ export const updateHaGroup = async (
 export const deleteHaGroup = async (
   clusterId: string,
   id: string
-): Promise<void> => invoke<void>("delete_ha_group", { clusterId, id });
+): Promise<void> => invoke<void>("delete_ha_group", { clusterId, group: id });
 
 /**
  * List HA resources
@@ -819,6 +838,33 @@ export const listHaResources = async (
   clusterId: string
 ): Promise<HaResource[]> =>
   invoke<HaResource[]>("list_ha_resources", { clusterId });
+
+/**
+ * Update (edit) an HA resource
+ * @param clusterId - Cluster identifier
+ * @param sid - HA resource identifier (e.g. "vm:100")
+ * @param config - fields to update
+ */
+export const updateHaResource = async (
+  clusterId: string,
+  sid: string,
+  config: {
+    group?: string;
+    state?: string;
+    maxRestart?: number;
+    maxRelocate?: number;
+    comment?: string;
+  }
+): Promise<void> =>
+  invoke<void>("update_ha_resource", {
+    clusterId,
+    resource: sid,
+    group: config.group,
+    stateValue: config.state,
+    maxRestart: config.maxRestart,
+    maxRelocate: config.maxRelocate,
+    comment: config.comment,
+  });
 
 /**
  * Enable an HA resource

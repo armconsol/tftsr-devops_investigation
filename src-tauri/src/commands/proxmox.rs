@@ -792,6 +792,54 @@ pub async fn create_proxmox_vm(
     .map_err(|e| format!("Failed to create VM: {}", e))
 }
 
+/// Normalize the `cluster/backup` API response into a list of backup jobs.
+///
+/// Proxmox returns an array of job objects, but on some remotes (e.g. a
+/// standalone node with no jobs configured) the `data` field is `null` rather
+/// than an empty array. Treat any non-array response as "no jobs" so the UI
+/// shows an empty list instead of a hard error. Each job is guaranteed to carry
+/// a stable `id` field for the frontend.
+fn normalize_backup_jobs(response: &serde_json::Value) -> Vec<serde_json::Value> {
+    let arr = match response.as_array() {
+        Some(arr) => arr,
+        None => return Vec::new(),
+    };
+
+    let mut jobs: Vec<serde_json::Value> = arr
+        .iter()
+        .cloned()
+        .map(|mut job| {
+            // Ensure a stable id field exists for frontend compatibility.
+            if let Some(job_obj) = job.as_object_mut() {
+                let has_id = job_obj
+                    .get("id")
+                    .and_then(|v| v.as_str())
+                    .map(|s| !s.is_empty())
+                    .unwrap_or(false);
+                if !has_id {
+                    let storage = job_obj
+                        .get("storage")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("unknown")
+                        .to_string();
+                    job_obj.insert(
+                        "id".to_string(),
+                        serde_json::Value::String(format!("backup-{}", storage)),
+                    );
+                }
+            }
+            job
+        })
+        .collect();
+
+    // Apply limit if needed (Proxmox may return many jobs)
+    if jobs.len() > 100 {
+        jobs.truncate(100);
+    }
+
+    jobs
+}
+
 /// List Proxmox Backup Jobs (cluster-level, not node-level)
 #[tauri::command]
 pub async fn list_proxmox_backup_jobs(
@@ -809,45 +857,7 @@ pub async fn list_proxmox_backup_jobs(
         .await
         .map_err(|e| format!("Failed to list backup jobs: {}", e))?;
 
-    let mut jobs: Vec<serde_json::Value> = response
-        .as_array()
-        .map(|arr| {
-            arr.iter()
-                .cloned()
-                .map(|mut job| {
-                    // Add id field if missing for frontend compatibility
-                    if let Some(job_obj) = job.as_object_mut() {
-                        if !job_obj.contains_key("id") {
-                            if let Some(jobid) = job_obj.get("id").and_then(|v| v.as_str()) {
-                                job_obj.insert(
-                                    "id".to_string(),
-                                    serde_json::Value::String(jobid.to_string()),
-                                );
-                            } else {
-                                let storage = job_obj
-                                    .get("storage")
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or("unknown")
-                                    .to_string();
-                                job_obj.insert(
-                                    "id".to_string(),
-                                    serde_json::Value::String(format!("backup-{}", storage)),
-                                );
-                            }
-                        }
-                    }
-                    job
-                })
-                .collect()
-        })
-        .ok_or_else(|| "Invalid response format".to_string())?;
-
-    // Apply limit if needed (Proxmox may return many jobs)
-    if jobs.len() > 100 {
-        jobs.truncate(100);
-    }
-
-    Ok(jobs)
+    Ok(normalize_backup_jobs(&response))
 }
 
 /// List Proxmox Datastores (cluster-wide via cluster/resources)
@@ -2156,15 +2166,11 @@ pub async fn list_ha_groups(
 }
 
 /// Create HA group
-/// `_max_failures` and `_max_relocate` are accepted for frontend API compatibility
-/// but not forwarded — the PVE HA groups API does not expose these fields.
 #[tauri::command]
 pub async fn create_ha_group(
     cluster_id: String,
     group: String,
     nodes: Vec<String>,
-    _max_failures: u32,
-    _max_relocate: u32,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
     validate_pve_identifier(&group, "group")?;
@@ -2185,15 +2191,16 @@ pub async fn create_ha_group(
 }
 
 /// Update HA group
-/// `_max_failures` and `_max_relocate` are accepted for frontend API compatibility
-/// but not forwarded — the PVE HA groups API does not expose these fields.
+///
+/// `comment`, `restricted` and `nofailback` are optional PVE HA group fields.
 #[tauri::command]
 pub async fn update_ha_group(
     cluster_id: String,
     group: String,
     nodes: Vec<String>,
-    _max_failures: u32,
-    _max_relocate: u32,
+    comment: Option<String>,
+    restricted: Option<bool>,
+    nofailback: Option<bool>,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
     validate_pve_identifier(&group, "group")?;
@@ -2207,6 +2214,9 @@ pub async fn update_ha_group(
         &client_guard,
         &group,
         &nodes,
+        comment.as_deref(),
+        restricted,
+        nofailback,
         client_guard.ticket.as_deref().unwrap_or(""),
     )
     .await
@@ -2305,6 +2315,43 @@ pub async fn delete_ha_resource(
         .await
         .map_err(|e| format!("Failed to delete HA resource {}: {}", resource, e))?;
     Ok(())
+}
+
+/// Update (edit) an HA resource
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub async fn update_ha_resource(
+    cluster_id: String,
+    resource: String,
+    group: Option<String>,
+    state_value: Option<String>,
+    max_restart: Option<u32>,
+    max_relocate: Option<u32>,
+    comment: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    validate_pve_ha_resource(&resource, "resource")?;
+    if let Some(g) = group.as_deref() {
+        if !g.is_empty() {
+            validate_pve_identifier(g, "group")?;
+        }
+    }
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+    let ticket = client_guard.ticket.as_deref().unwrap_or("");
+
+    crate::proxmox::ha::update_ha_resource(
+        &client_guard,
+        &resource,
+        group.as_deref().filter(|g| !g.is_empty()),
+        state_value.as_deref(),
+        max_restart,
+        max_relocate,
+        comment.as_deref(),
+        ticket,
+    )
+    .await
+    .map_err(|e| format!("Failed to update HA resource: {}", e))
 }
 
 // ─── Phase 7 - ACL / Users / Realms ──────────────────────────────────────────
@@ -4348,6 +4395,46 @@ pub async fn update_subscription(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_normalize_backup_jobs_null_returns_empty() {
+        // Standalone remotes with no jobs return `data: null`; must not error.
+        let jobs = normalize_backup_jobs(&serde_json::Value::Null);
+        assert!(jobs.is_empty());
+    }
+
+    #[test]
+    fn test_normalize_backup_jobs_empty_array() {
+        let jobs = normalize_backup_jobs(&serde_json::json!([]));
+        assert!(jobs.is_empty());
+    }
+
+    #[test]
+    fn test_normalize_backup_jobs_preserves_existing_id() {
+        let jobs = normalize_backup_jobs(&serde_json::json!([
+            { "id": "backup-abc", "storage": "local", "schedule": "0 2 * * *" }
+        ]));
+        assert_eq!(jobs.len(), 1);
+        assert_eq!(jobs[0]["id"], "backup-abc");
+    }
+
+    #[test]
+    fn test_normalize_backup_jobs_synthesizes_missing_id() {
+        let jobs = normalize_backup_jobs(&serde_json::json!([
+            { "storage": "nas01", "schedule": "0 3 * * *" }
+        ]));
+        assert_eq!(jobs.len(), 1);
+        assert_eq!(jobs[0]["id"], "backup-nas01");
+    }
+
+    #[test]
+    fn test_normalize_backup_jobs_caps_at_100() {
+        let many: Vec<serde_json::Value> = (0..150)
+            .map(|i| serde_json::json!({ "id": format!("backup-{}", i) }))
+            .collect();
+        let jobs = normalize_backup_jobs(&serde_json::Value::Array(many));
+        assert_eq!(jobs.len(), 100);
+    }
 
     #[test]
     fn test_cluster_type_serialization() {
