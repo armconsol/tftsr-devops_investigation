@@ -1193,6 +1193,27 @@ PVE `vncwebsocket` endpoint, injecting the `PVEAuthCookie` and accepting the
 node's self-signed TLS certificate. The frontend connects noVNC to `local_url`
 using `ticket` as the RFB password (route `/proxmox/console/:clusterId/:node/:vmid/:kind`).
 
+### `open_node_shell`
+```typescript
+openNodeShell(clusterId: string, node: string) → NodeShellSession
+// NodeShellSession: { kind: "novnc" | "xterm"; localUrl: string; ticket: string;
+//                     localPort: number; password: string | null; user: string }
+```
+Opens a host (node) shell for a stored remote, reusing the local WebSocket proxy
+(`start_vnc_proxy`). The renderer is chosen by the remote's `cluster_type`:
+- **PVE** → `POST nodes/{node}/vncshell?websocket=1` (graphical RFB) rendered with
+  noVNC. PVE returns a separate `password` used as the RFB password; the `ticket`
+  is the `vncticket`. Cookie: `PVEAuthCookie`.
+- **PBS** → `POST nodes/{node}/termproxy` (text terminal) rendered with xterm.js
+  (PBS has no `vncshell`). The frontend speaks the term-proxy wire protocol
+  (login line `"<user>:<ticket>\n"`, framed `0:<len>:<data>` / `1:<cols>:<rows>:`
+  / ping `2`). Cookie: `PBSAuthCookie`; PBS requires a `user@pam` ticket.
+
+The local proxy injects the correct auth cookie and accepts the node's
+self-signed TLS certificate. From **Proxmox | Remotes**, the "Console (Shell)"
+action shows a node picker (auto-skipped for single-node remotes) and navigates
+to `/proxmox/shell/:clusterId/:node`.
+
 ### `start_remote_migration`
 ```typescript
 startRemoteMigration(clusterId, node, vmId, destClusterId, targetNode,

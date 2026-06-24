@@ -4149,7 +4149,13 @@ pub async fn open_vnc_console(
         &proxy.port,
         &proxy.ticket,
     );
-    crate::proxmox::console::start_vnc_proxy(upstream, auth_ticket, proxy.ticket).await
+    crate::proxmox::console::start_vnc_proxy(
+        upstream,
+        "PVEAuthCookie".to_string(),
+        auth_ticket,
+        proxy.ticket,
+    )
+    .await
 }
 
 /// Open an in-app noVNC console for an LXC container.
@@ -4185,10 +4191,123 @@ pub async fn open_lxc_console(
         &proxy.port,
         &proxy.ticket,
     );
-    crate::proxmox::console::start_vnc_proxy(upstream, auth_ticket, proxy.ticket).await
+    crate::proxmox::console::start_vnc_proxy(
+        upstream,
+        "PVEAuthCookie".to_string(),
+        auth_ticket,
+        proxy.ticket,
+    )
+    .await
 }
 
-// ─── Container (LXC) Management ───────────────────────────────────────────
+/// Tagged host-shell session: which renderer the frontend should use plus the
+/// local proxy URL and credentials.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NodeShellSession {
+    /// `"novnc"` (PVE graphical shell) or `"xterm"` (PBS terminal).
+    pub kind: String,
+    /// Local websocket URL the renderer connects to.
+    pub local_url: String,
+    /// VNC ticket / terminal ticket.
+    pub ticket: String,
+    /// Bound local port (diagnostics).
+    pub local_port: u16,
+    /// RFB password for noVNC shells (PVE vncshell only).
+    pub password: Option<String>,
+    /// The session user (needed for the xterm termproxy login line).
+    pub user: String,
+}
+
+/// Open a host (node) shell for a stored remote.
+///
+/// - **PVE** remotes use `vncshell` (graphical, rendered with noVNC).
+/// - **PBS** remotes use `termproxy` (text terminal, rendered with xterm.js).
+///
+/// In both cases a local WebSocket proxy is started that injects the correct
+/// auth cookie (`PVEAuthCookie` / `PBSAuthCookie`) and accepts the node's
+/// self-signed TLS certificate.
+#[tauri::command]
+pub async fn open_node_shell(
+    cluster_id: String,
+    node: String,
+    state: State<'_, AppState>,
+) -> Result<NodeShellSession, String> {
+    // Resolve the cluster type so we know which shell API + cookie to use.
+    let is_pbs = {
+        let db = state
+            .db
+            .lock()
+            .map_err(|e| format!("Failed to lock database: {}", e))?;
+        let ct: String = db
+            .query_row(
+                "SELECT cluster_type FROM proxmox_clusters WHERE id = ?1",
+                [&cluster_id],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()
+            .map_err(|e| format!("Failed to query cluster: {}", e))?
+            .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+        ct.eq_ignore_ascii_case("pbs")
+    };
+
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let (proxy, host, port, auth_ticket, user) = {
+        let guard = client.lock().await;
+        let auth_ticket = guard
+            .ticket
+            .clone()
+            .ok_or_else(|| "No active session ticket for this remote".to_string())?;
+        let proxy = if is_pbs {
+            crate::proxmox::console::termproxy_node(&guard, &node, &auth_ticket).await?
+        } else {
+            crate::proxmox::console::vncshell_node(&guard, &node, &auth_ticket).await?
+        };
+        let user = if proxy.user.is_empty() {
+            guard.username().to_string()
+        } else {
+            proxy.user.clone()
+        };
+        (
+            proxy,
+            guard.base_url().to_string(),
+            guard.port(),
+            auth_ticket,
+            user,
+        )
+    };
+
+    let upstream = crate::proxmox::console::build_node_vncwebsocket_url(
+        &host,
+        port,
+        &node,
+        &proxy.port,
+        &proxy.ticket,
+    );
+
+    let cookie_name = if is_pbs {
+        "PBSAuthCookie"
+    } else {
+        "PVEAuthCookie"
+    };
+
+    let session = crate::proxmox::console::start_vnc_proxy(
+        upstream,
+        cookie_name.to_string(),
+        auth_ticket,
+        proxy.ticket.clone(),
+    )
+    .await?;
+
+    Ok(NodeShellSession {
+        kind: if is_pbs { "xterm" } else { "novnc" }.to_string(),
+        local_url: session.local_url,
+        ticket: session.ticket,
+        local_port: session.local_port,
+        password: proxy.password,
+        user,
+    })
+}
 
 #[tauri::command]
 pub async fn get_container_config(
