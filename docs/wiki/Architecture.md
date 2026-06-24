@@ -54,6 +54,10 @@ All command handlers receive `State<'_, AppState>` as a Tauri-injected parameter
 | `db/models.rs` | All DB types — see `IssueDetail` note below |
 | `docs/rca.rs` + `docs/postmortem.rs` | Markdown template builders |
 | `audit/log.rs` | `write_audit_event()` — called before every external send |
+| `proxmox/lxc.rs` | LXC container config retrieval and creation |
+| `proxmox/tfa.rs` | Two-factor authentication entry management |
+| `proxmox/pbs.rs` | Proxmox Backup Server datastore, namespace, snapshot, and task queries |
+| `proxmox/validate.rs` | Shared input validation (node names, vmid range) used across proxmox modules |
 
 ### Directory Structure
 

@@ -1494,3 +1494,442 @@ export const updateFirewallRule = (
   }
 ): Promise<void> =>
   invoke("update_proxmox_firewall_rule", { clusterId, nodeId, ruleNum, rule });
+
+// ─── Node DNS ─────────────────────────────────────────────────────────────────
+
+export interface NodeDns {
+  search: string;
+  dns1?: string;
+  dns2?: string;
+  dns3?: string;
+}
+
+// ─── Node Time ────────────────────────────────────────────────────────────────
+
+export interface NodeTime {
+  localtime: number;
+  time: number;
+  timezone: string;
+}
+
+// ─── VM Pending Config Entry ──────────────────────────────────────────────────
+
+export interface VmPendingEntry {
+  key: string;
+  value?: unknown;
+  pending?: unknown;
+  delete?: number;
+}
+
+// ─── Ceph ─────────────────────────────────────────────────────────────────────
+
+export interface CephMonitor {
+  name: string;
+  quorum: boolean;
+  address: string;
+  version?: string;
+}
+
+export interface CephMgr {
+  name: string;
+  addr?: string;
+  state?: string;
+}
+
+export interface CephFs {
+  name: string;
+  metadataPool?: string;
+  dataPoolIds?: number[];
+}
+
+// ─── Cluster Firewall Status ──────────────────────────────────────────────────
+
+export interface ClusterFirewallStatus {
+  enable?: number;
+  policyIn?: string;
+  policyOut?: string;
+}
+
+// ─── TFA ──────────────────────────────────────────────────────────────────────
+
+export interface TfaEntry {
+  id: string;
+  userid: string;
+  tfaType: string;
+  description?: string;
+  enable?: boolean;
+  created?: number;
+}
+
+// ─── User Tokens ──────────────────────────────────────────────────────────────
+
+export interface UserToken {
+  tokenid: string;
+  comment?: string;
+  privsep?: number;
+  expire?: number;
+}
+
+export interface UserTokenCreateResult {
+  fullTokenid?: string;
+  info?: unknown;
+  value?: string;
+}
+
+// ─── PBS ──────────────────────────────────────────────────────────────────────
+
+export interface PbsDatastore {
+  store: string;
+  path?: string;
+  total?: number;
+  used?: number;
+  avail?: number;
+  storeType?: string;
+}
+
+export interface PbsNamespace {
+  ns: string;
+  comment?: string;
+}
+
+export interface PbsSnapshot {
+  backupId: string;
+  backupTime: number;
+  backupType: string;
+  size?: number;
+  files?: unknown[];
+  verifyState?: string;
+  notes?: string;
+}
+
+export interface PbsTask {
+  upid: string;
+  node: string;
+  taskType: string;
+  status?: string;
+  starttime: number;
+  endtime?: number;
+}
+
+// ─── Node Administration ──────────────────────────────────────────────────────
+
+export const getNodeDns = (
+  clusterId: string,
+  node: string
+): Promise<NodeDns> => invoke("get_node_dns", { clusterId, node });
+
+export const updateNodeDns = (
+  clusterId: string,
+  node: string,
+  search: string,
+  dns1?: string,
+  dns2?: string,
+  dns3?: string
+): Promise<void> =>
+  invoke("update_node_dns", { clusterId, node, search, dns1, dns2, dns3 });
+
+export const getNodeTime = (
+  clusterId: string,
+  node: string
+): Promise<NodeTime> => invoke("get_node_time", { clusterId, node });
+
+export const updateNodeTime = (
+  clusterId: string,
+  node: string,
+  timezone: string
+): Promise<void> => invoke("update_node_time", { clusterId, node, timezone });
+
+export const rebootNode = (
+  clusterId: string,
+  node: string
+): Promise<string> => invoke("reboot_node", { clusterId, node });
+
+export const shutdownNode = (
+  clusterId: string,
+  node: string
+): Promise<string> => invoke("shutdown_node", { clusterId, node });
+
+export const getNodeJournal = (
+  clusterId: string,
+  node: string,
+  lastentries?: number
+): Promise<string[]> =>
+  invoke("get_node_journal", { clusterId, node, lastentries });
+
+export const getNodeReport = (
+  clusterId: string,
+  node: string
+): Promise<string> => invoke("get_node_report", { clusterId, node });
+
+// ─── Network ──────────────────────────────────────────────────────────────────
+
+export const reloadNetworkConfig = (
+  clusterId: string,
+  node: string
+): Promise<string> => invoke("reload_network_config", { clusterId, node });
+
+// ─── VM Config ────────────────────────────────────────────────────────────────
+
+export const getVmConfig = (
+  clusterId: string,
+  node: string,
+  vmId: number
+): Promise<Record<string, unknown>> =>
+  invoke("get_vm_config", { clusterId, node, vmId });
+
+export const getVmPendingConfig = (
+  clusterId: string,
+  node: string,
+  vmId: number
+): Promise<VmPendingEntry[]> =>
+  invoke("get_vm_pending_config", { clusterId, node, vmId });
+
+export const remoteMigrateVm = (
+  clusterId: string,
+  node: string,
+  vmId: number,
+  targetNode: string,
+  targetStorage: string,
+  online: boolean
+): Promise<string> =>
+  invoke("remote_migrate_vm", {
+    clusterId,
+    node,
+    vmId,
+    targetNode,
+    targetStorage,
+    online,
+  });
+
+// ─── Container (LXC) ──────────────────────────────────────────────────────────
+
+export const getContainerConfig = (
+  clusterId: string,
+  node: string,
+  vmId: number
+): Promise<Record<string, unknown>> =>
+  invoke("get_container_config", { clusterId, node, vmId });
+
+export interface ContainerCreateParams {
+  vmid: number;
+  ostemplate: string;
+  hostname?: string;
+  memory?: number;
+  cores?: number;
+  rootfs?: string;
+  net0?: string;
+  password?: string;
+  unprivileged?: boolean;
+  start?: boolean;
+}
+
+export const createProxmoxContainer = (
+  clusterId: string,
+  node: string,
+  params: ContainerCreateParams
+): Promise<string> =>
+  invoke("create_proxmox_container", { clusterId, node, ...params });
+
+// ─── RRD Metrics ──────────────────────────────────────────────────────────────
+
+export type RrdTimeframe = "hour" | "day" | "week" | "month" | "year";
+
+export const getNodeRrdData = (
+  clusterId: string,
+  node: string,
+  timeframe: RrdTimeframe
+): Promise<Record<string, unknown>[]> =>
+  invoke("get_node_rrd_data", { clusterId, node, timeframe });
+
+export const getVmRrdData = (
+  clusterId: string,
+  node: string,
+  vmId: number,
+  timeframe: RrdTimeframe
+): Promise<Record<string, unknown>[]> =>
+  invoke("get_vm_rrd_data", { clusterId, node, vmId, timeframe });
+
+export const getStorageRrdData = (
+  clusterId: string,
+  node: string,
+  storage: string,
+  timeframe: RrdTimeframe
+): Promise<Record<string, unknown>[]> =>
+  invoke("get_storage_rrd_data", { clusterId, node, storage, timeframe });
+
+// ─── Ceph Advanced ────────────────────────────────────────────────────────────
+
+export const listCephMonitors = (clusterId: string): Promise<CephMonitor[]> =>
+  invoke("list_ceph_monitors", { clusterId });
+
+export const listCephManagers = (
+  clusterId: string,
+  node: string
+): Promise<CephMgr[]> => invoke("list_ceph_managers", { clusterId, node });
+
+export const listCephfs = (
+  clusterId: string,
+  node: string
+): Promise<CephFs[]> => invoke("list_cephfs", { clusterId, node });
+
+export const getCephFlags = (
+  clusterId: string,
+  node: string
+): Promise<Record<string, unknown>> =>
+  invoke("get_ceph_flags", { clusterId, node });
+
+// ─── Firewall (cluster + guest) ───────────────────────────────────────────────
+
+export const listClusterFirewallRules = (
+  clusterId: string
+): Promise<any[]> => invoke("list_cluster_firewall_rules", { clusterId });
+
+export const getClusterFirewallStatus = (
+  clusterId: string
+): Promise<ClusterFirewallStatus> =>
+  invoke("get_cluster_firewall_status", { clusterId });
+
+export const listGuestFirewallRules = (
+  clusterId: string,
+  node: string,
+  vmId: number
+): Promise<any[]> =>
+  invoke("list_guest_firewall_rules", { clusterId, node, vmId });
+
+export const addGuestFirewallRule = (
+  clusterId: string,
+  node: string,
+  vmId: number,
+  action: string,
+  proto?: string,
+  source?: string,
+  dest?: string,
+  dport?: string,
+  enable?: boolean
+): Promise<void> =>
+  invoke("add_guest_firewall_rule", {
+    clusterId,
+    node,
+    vmId,
+    action,
+    proto,
+    source,
+    dest,
+    dport,
+    enable,
+  });
+
+export const deleteGuestFirewallRule = (
+  clusterId: string,
+  node: string,
+  vmId: number,
+  pos: number
+): Promise<void> =>
+  invoke("delete_guest_firewall_rule", { clusterId, node, vmId, pos });
+
+// ─── TFA Management ───────────────────────────────────────────────────────────
+
+export const listTfaEntries = (clusterId: string): Promise<TfaEntry[]> =>
+  invoke("list_tfa_entries", { clusterId });
+
+export const addTfaEntry = (
+  clusterId: string,
+  userid: string,
+  tfaType: string,
+  description?: string,
+  totp?: string,
+  value?: string,
+  key?: string
+): Promise<unknown> =>
+  invoke("add_tfa_entry", {
+    clusterId,
+    userid,
+    tfaType,
+    description,
+    totp,
+    value,
+    key,
+  });
+
+export const deleteTfaEntry = (
+  clusterId: string,
+  userid: string,
+  id: string
+): Promise<void> => invoke("delete_tfa_entry", { clusterId, userid, id });
+
+// ─── User API Tokens ──────────────────────────────────────────────────────────
+
+export const listUserTokens = (
+  clusterId: string,
+  userid: string
+): Promise<UserToken[]> =>
+  invoke("list_user_tokens", { clusterId, userid });
+
+export const createUserToken = (
+  clusterId: string,
+  userid: string,
+  tokenname: string,
+  comment?: string,
+  privsep?: boolean,
+  expire?: number
+): Promise<UserTokenCreateResult> =>
+  invoke("create_user_token", {
+    clusterId,
+    userid,
+    tokenname,
+    comment,
+    privsep,
+    expire,
+  });
+
+export const deleteUserToken = (
+  clusterId: string,
+  userid: string,
+  tokenname: string
+): Promise<void> =>
+  invoke("delete_user_token", { clusterId, userid, tokenname });
+
+// ─── PBS Management ───────────────────────────────────────────────────────────
+
+export const listPbsDatastores = (
+  clusterId: string
+): Promise<PbsDatastore[]> => invoke("list_pbs_datastores", { clusterId });
+
+export const getPbsDatastoreStatus = (
+  clusterId: string,
+  store: string
+): Promise<Record<string, unknown>> =>
+  invoke("get_pbs_datastore_status", { clusterId, store });
+
+export const listPbsNamespaces = (
+  clusterId: string,
+  store: string
+): Promise<PbsNamespace[]> =>
+  invoke("list_pbs_namespaces", { clusterId, store });
+
+export const listPbsSnapshots = (
+  clusterId: string,
+  store: string,
+  ns?: string
+): Promise<PbsSnapshot[]> =>
+  invoke("list_pbs_snapshots", { clusterId, store, ns });
+
+export const listPbsTasks = (
+  clusterId: string,
+  node: string
+): Promise<PbsTask[]> => invoke("list_pbs_tasks", { clusterId, node });
+
+export const getPbsNodeStatus = (
+  clusterId: string,
+  node: string
+): Promise<Record<string, unknown>> =>
+  invoke("get_pbs_node_status", { clusterId, node });
+
+// ─── Subscription ─────────────────────────────────────────────────────────────
+
+export const updateSubscription = (
+  clusterId: string,
+  node: string,
+  key: string
+): Promise<void> =>
+  invoke("update_subscription", { clusterId, node, key });

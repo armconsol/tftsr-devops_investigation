@@ -404,6 +404,132 @@ pub async fn create_snapshot(
     Ok(())
 }
 
+fn validate_node(node: &str) -> Result<(), String> {
+    if node.is_empty() || node.len() > 64 {
+        return Err("Node name must be between 1 and 64 characters".to_string());
+    }
+    if !node.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
+        return Err(format!(
+            "Invalid node name '{}': only alphanumeric characters and hyphens are allowed",
+            node
+        ));
+    }
+    Ok(())
+}
+
+/// Ceph manager information
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CephMgr {
+    pub name: String,
+    pub addr: Option<String>,
+    pub state: Option<String>,
+}
+
+/// List Ceph managers on a specific node
+pub async fn list_managers(
+    client: &crate::proxmox::client::ProxmoxClient,
+    node: &str,
+    ticket: &str,
+) -> Result<Vec<CephMgr>, String> {
+    validate_node(node)?;
+    let path = format!("nodes/{}/ceph/mgr", node);
+    let response: serde_json::Value = client
+        .get(&path, Some(ticket))
+        .await
+        .map_err(|e| format!("Failed to list Ceph managers on node {}: {}", node, e))?;
+
+    let managers = response
+        .as_array()
+        .ok_or_else(|| "Invalid response format".to_string())?;
+
+    let mgr_list = managers
+        .iter()
+        .filter_map(|mgr| {
+            let name = mgr.get("name")?.as_str()?.to_string();
+            let addr = mgr
+                .get("addr")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+            let state = mgr
+                .get("state")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+            Some(CephMgr { name, addr, state })
+        })
+        .collect();
+
+    Ok(mgr_list)
+}
+
+/// CephFS filesystem information
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CephFs {
+    pub name: String,
+    pub metadata_pool: Option<String>,
+    pub data_pool_ids: Option<Vec<i64>>,
+}
+
+/// List CephFS filesystems on a specific node
+pub async fn list_cephfs(
+    client: &crate::proxmox::client::ProxmoxClient,
+    node: &str,
+    ticket: &str,
+) -> Result<Vec<CephFs>, String> {
+    validate_node(node)?;
+    let path = format!("nodes/{}/ceph/fs", node);
+    let response: serde_json::Value = client
+        .get(&path, Some(ticket))
+        .await
+        .map_err(|e| format!("Failed to list CephFS on node {}: {}", node, e))?;
+
+    let filesystems = response
+        .as_array()
+        .ok_or_else(|| "Invalid response format".to_string())?;
+
+    let fs_list = filesystems
+        .iter()
+        .filter_map(|fs| {
+            let name = fs.get("name")?.as_str()?.to_string();
+            let metadata_pool = fs
+                .get("metadata_pool")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+            let data_pool_ids = fs
+                .get("data_pool_ids")
+                .and_then(|v| v.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|id| id.as_i64())
+                        .collect::<Vec<i64>>()
+                });
+            Some(CephFs {
+                name,
+                metadata_pool,
+                data_pool_ids,
+            })
+        })
+        .collect();
+
+    Ok(fs_list)
+}
+
+/// Get Ceph runtime flags on a specific node
+///
+/// Returns a polymorphic object of flag states — kept as `Value` because the
+/// set of flags varies with the Ceph release and cluster configuration.
+pub async fn get_ceph_flags(
+    client: &crate::proxmox::client::ProxmoxClient,
+    node: &str,
+    ticket: &str,
+) -> Result<serde_json::Value, String> {
+    validate_node(node)?;
+    let path = format!("nodes/{}/ceph/flags", node);
+    client
+        .get(&path, Some(ticket))
+        .await
+        .map_err(|e| format!("Failed to get Ceph flags on node {}: {}", node, e))
+}
+
 /// List Ceph monitors
 pub async fn list_monitors(
     client: &crate::proxmox::client::ProxmoxClient,
@@ -582,5 +708,129 @@ mod tests {
 
         assert_eq!(health.status, deserialized.status);
         assert_eq!(health.summary, deserialized.summary);
+    }
+
+    #[test]
+    fn test_ceph_mgr_deserialization_from_fixture() {
+        let fixture = serde_json::json!([
+            {"name": "pve-mgr-0", "addr": "10.0.0.1:6800", "state": "active"},
+            {"name": "pve-mgr-1", "addr": "10.0.0.2:6800", "state": "standby"},
+            {"name": "pve-mgr-orphan"}
+        ]);
+
+        let managers: Vec<CephMgr> = fixture
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|mgr| {
+                let name = mgr.get("name")?.as_str()?.to_string();
+                let addr = mgr
+                    .get("addr")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string());
+                let state = mgr
+                    .get("state")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string());
+                Some(CephMgr { name, addr, state })
+            })
+            .collect();
+
+        assert_eq!(managers.len(), 3);
+        assert_eq!(managers[0].name, "pve-mgr-0");
+        assert_eq!(managers[0].addr.as_deref(), Some("10.0.0.1:6800"));
+        assert_eq!(managers[0].state.as_deref(), Some("active"));
+        assert_eq!(managers[1].state.as_deref(), Some("standby"));
+        assert!(
+            managers[2].addr.is_none(),
+            "orphan manager should have no addr"
+        );
+        assert!(
+            managers[2].state.is_none(),
+            "orphan manager should have no state"
+        );
+    }
+
+    #[test]
+    fn test_ceph_mgr_roundtrip_serialization() {
+        let mgr = CephMgr {
+            name: "pve-mgr-0".to_string(),
+            addr: Some("10.0.0.1:6800".to_string()),
+            state: Some("active".to_string()),
+        };
+        let json = serde_json::to_string(&mgr).unwrap();
+        let deserialized: CephMgr = serde_json::from_str(&json).unwrap();
+        assert_eq!(mgr.name, deserialized.name);
+        assert_eq!(mgr.addr, deserialized.addr);
+        assert_eq!(mgr.state, deserialized.state);
+    }
+
+    #[test]
+    fn test_ceph_fs_deserialization_from_fixture() {
+        let fixture = serde_json::json!([
+            {"name": "cephfs", "metadata_pool": "cephfs_metadata", "data_pool_ids": [2, 3]},
+            {"name": "bare-fs"}
+        ]);
+
+        let filesystems: Vec<CephFs> = fixture
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|fs| {
+                let name = fs.get("name")?.as_str()?.to_string();
+                let metadata_pool = fs
+                    .get("metadata_pool")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string());
+                let data_pool_ids = fs
+                    .get("data_pool_ids")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|id| id.as_i64())
+                            .collect::<Vec<i64>>()
+                    });
+                Some(CephFs {
+                    name,
+                    metadata_pool,
+                    data_pool_ids,
+                })
+            })
+            .collect();
+
+        assert_eq!(filesystems.len(), 2);
+        assert_eq!(filesystems[0].name, "cephfs");
+        assert_eq!(
+            filesystems[0].metadata_pool.as_deref(),
+            Some("cephfs_metadata")
+        );
+        assert_eq!(
+            filesystems[0].data_pool_ids.as_deref(),
+            Some(vec![2i64, 3i64].as_slice())
+        );
+        assert!(filesystems[1].metadata_pool.is_none());
+        assert!(filesystems[1].data_pool_ids.is_none());
+    }
+
+    #[test]
+    fn test_validate_node_rejects_path_traversal() {
+        assert!(validate_node("../etc").is_err());
+        assert!(validate_node("node/bad").is_err());
+        assert!(validate_node("node\\bad").is_err());
+        assert!(validate_node("node with space").is_err());
+    }
+
+    #[test]
+    fn test_validate_node_accepts_valid_names() {
+        assert!(validate_node("pve-node-01").is_ok());
+        assert!(validate_node("pve1").is_ok());
+        assert!(validate_node("NODE").is_ok());
+    }
+
+    #[test]
+    fn test_validate_node_rejects_empty_and_too_long() {
+        assert!(validate_node("").is_err());
+        assert!(validate_node(&"a".repeat(65)).is_err());
+        assert!(validate_node(&"a".repeat(64)).is_ok());
     }
 }

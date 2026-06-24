@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/index'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/index';
 import { Button } from '@/components/ui/index';
 import { Checkbox } from '@/components/ui/index';
-import { MoreHorizontal, Play, Square, RotateCcw, Power, PlayCircle, Pause, X, MoveRight, Copy } from 'lucide-react';
+import { MoreHorizontal, Play, Square, RotateCcw, Power, PlayCircle, Pause, X, MoveRight, Copy, Settings } from 'lucide-react';
 import { confirm } from '@tauri-apps/plugin-dialog';
 import { toast } from 'sonner';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/index';
@@ -76,6 +76,7 @@ interface VMListProps {
   onDelete?: (vm: VMInfo) => void;
   selectedVMs?: Set<string>;
   onToggleSelect?: (vm: VMInfo) => void;
+  onViewConfig?: (node: string, vmid: number) => void;
 }
 
 function formatUptime(seconds: number): string {
@@ -113,6 +114,7 @@ export function VMList({
   onDelete: _onDelete,
   selectedVMs = new Set<string>(),
   onToggleSelect,
+  onViewConfig,
 }: VMListProps) {
   const [migrationVM, setMigrationVM] = useState<VMInfo | null>(null);
   const [targetNode, setTargetNode] = useState<string>('');
@@ -459,14 +461,27 @@ export function VMList({
                     </TableCell>
                     <TableCell>{formatUptime(vm.uptime || 0)}</TableCell>
                     <TableCell className="text-right">
-                      <VMActionMenu
-                        vm={vm}
-                        onVMAction={handleVMAction}
-                        onSnapshotAction={handleSnapshotAction}
-                        onMigrate={handleMigrate}
-                        onClone={handleClone}
-                        onDelete={handleDelete}
-                      />
+                      <div className="flex items-center justify-end gap-1">
+                        {onViewConfig && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 w-8 p-0"
+                            title="View Config"
+                            onClick={() => onViewConfig(vm.node, vm.vmid)}
+                          >
+                            <Settings className="h-4 w-4" />
+                          </Button>
+                        )}
+                        <VMActionMenu
+                          vm={vm}
+                          onVMAction={handleVMAction}
+                          onSnapshotAction={handleSnapshotAction}
+                          onMigrate={handleMigrate}
+                          onClone={handleClone}
+                          onDelete={handleDelete}
+                        />
+                      </div>
                     </TableCell>
                   </TableRow>
                 );
