@@ -316,6 +316,20 @@ async fn get_proxmox_client_for_cluster(
     Ok(client_arc)
 }
 
+/// Look up a cluster's stored TLS `ssl_fingerprint` (if any). Returns `None`
+/// when unset/empty so callers can fall back to self-signed acceptance.
+fn stored_ssl_fingerprint(cluster_id: &str, state: &State<'_, AppState>) -> Option<String> {
+    let db = state.db.lock().ok()?;
+    db.query_row(
+        "SELECT ssl_fingerprint FROM proxmox_clusters WHERE id = ?1",
+        [cluster_id],
+        |row| row.get::<_, Option<String>>(0),
+    )
+    .ok()
+    .flatten()
+    .filter(|s| !s.trim().is_empty())
+}
+
 /// Ping a Proxmox cluster — authenticates and calls the version endpoint to verify
 /// that the API is reachable and credentials are valid.
 #[tauri::command]
@@ -792,6 +806,59 @@ pub async fn create_proxmox_vm(
     .map_err(|e| format!("Failed to create VM: {}", e))
 }
 
+/// Normalize the `cluster/backup` API response into a list of backup jobs.
+///
+/// Proxmox returns an array of job objects, but on some remotes (e.g. a
+/// standalone node with no jobs configured) the `data` field is `null` rather
+/// than an empty array. Treat any non-array response as "no jobs" so the UI
+/// shows an empty list instead of a hard error. Each job is guaranteed to carry
+/// a stable `id` field for the frontend.
+fn normalize_backup_jobs(response: &serde_json::Value) -> Vec<serde_json::Value> {
+    let arr = match response.as_array() {
+        Some(arr) => arr,
+        None => return Vec::new(),
+    };
+
+    let mut jobs: Vec<serde_json::Value> = arr
+        .iter()
+        .cloned()
+        .map(|mut job| {
+            // Ensure a stable id field exists for frontend compatibility.
+            if let Some(job_obj) = job.as_object_mut() {
+                let has_id = job_obj
+                    .get("id")
+                    .and_then(|v| v.as_str())
+                    .map(|s| !s.is_empty())
+                    .unwrap_or(false);
+                if !has_id {
+                    let storage = job_obj
+                        .get("storage")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("unknown")
+                        .to_string();
+                    job_obj.insert(
+                        "id".to_string(),
+                        serde_json::Value::String(format!("backup-{}", storage)),
+                    );
+                }
+            }
+            job
+        })
+        .collect();
+
+    // Apply limit if needed (Proxmox may return many jobs). Log when truncating
+    // so an incomplete list is observable rather than silently dropped.
+    if jobs.len() > 100 {
+        tracing::warn!(
+            "Backup job list truncated from {} to 100 entries",
+            jobs.len()
+        );
+        jobs.truncate(100);
+    }
+
+    jobs
+}
+
 /// List Proxmox Backup Jobs (cluster-level, not node-level)
 #[tauri::command]
 pub async fn list_proxmox_backup_jobs(
@@ -809,45 +876,7 @@ pub async fn list_proxmox_backup_jobs(
         .await
         .map_err(|e| format!("Failed to list backup jobs: {}", e))?;
 
-    let mut jobs: Vec<serde_json::Value> = response
-        .as_array()
-        .map(|arr| {
-            arr.iter()
-                .cloned()
-                .map(|mut job| {
-                    // Add id field if missing for frontend compatibility
-                    if let Some(job_obj) = job.as_object_mut() {
-                        if !job_obj.contains_key("id") {
-                            if let Some(jobid) = job_obj.get("id").and_then(|v| v.as_str()) {
-                                job_obj.insert(
-                                    "id".to_string(),
-                                    serde_json::Value::String(jobid.to_string()),
-                                );
-                            } else {
-                                let storage = job_obj
-                                    .get("storage")
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or("unknown")
-                                    .to_string();
-                                job_obj.insert(
-                                    "id".to_string(),
-                                    serde_json::Value::String(format!("backup-{}", storage)),
-                                );
-                            }
-                        }
-                    }
-                    job
-                })
-                .collect()
-        })
-        .ok_or_else(|| "Invalid response format".to_string())?;
-
-    // Apply limit if needed (Proxmox may return many jobs)
-    if jobs.len() > 100 {
-        jobs.truncate(100);
-    }
-
-    Ok(jobs)
+    Ok(normalize_backup_jobs(&response))
 }
 
 /// List Proxmox Datastores (cluster-wide via cluster/resources)
@@ -960,7 +989,95 @@ pub async fn list_proxmox_datastores(
     Ok(all_storage)
 }
 
-/// Trigger Proxmox Backup Job
+/// Build the form parameters for a `PUT /storage/{storage}` update.
+///
+/// Only provided fields are included so we never clear values the user did not
+/// touch. `content` is a comma-separated list of content types, `nodes` a
+/// comma-separated node restriction list (empty = all nodes), and `disable`
+/// toggles the storage on/off.
+fn build_storage_update_params(
+    content: Option<&str>,
+    nodes: Option<&str>,
+    disable: Option<bool>,
+) -> Vec<(String, String)> {
+    let mut params: Vec<(String, String)> = Vec::new();
+    if let Some(c) = content {
+        params.push(("content".to_string(), c.to_string()));
+    }
+    if let Some(n) = nodes {
+        params.push(("nodes".to_string(), n.to_string()));
+    }
+    if let Some(d) = disable {
+        params.push(("disable".to_string(), if d { "1" } else { "0" }.to_string()));
+    }
+    params
+}
+
+/// Get the configuration of a single datacenter-level storage.
+#[tauri::command]
+pub async fn get_proxmox_storage_config(
+    cluster_id: String,
+    storage: String,
+    state: State<'_, AppState>,
+) -> Result<serde_json::Value, String> {
+    validate_pve_identifier(&storage, "storage")?;
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+    let path = format!("storage/{}", storage);
+    client_guard
+        .get(&path, Some(client_guard.ticket.as_deref().unwrap_or("")))
+        .await
+        .map_err(|e| format!("Failed to get storage config for {}: {}", storage, e))
+}
+
+/// Update a datacenter-level storage configuration.
+#[tauri::command]
+pub async fn update_proxmox_storage(
+    cluster_id: String,
+    storage: String,
+    content: Option<String>,
+    nodes: Option<String>,
+    disable: Option<bool>,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    validate_pve_identifier(&storage, "storage")?;
+    let params = build_storage_update_params(content.as_deref(), nodes.as_deref(), disable);
+    if params.is_empty() {
+        return Err("No storage fields provided to update".to_string());
+    }
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+    let ticket = client_guard.ticket.as_deref().unwrap_or("");
+    let path = format!("storage/{}", storage);
+    let body: serde_json::Map<String, serde_json::Value> = params
+        .into_iter()
+        .map(|(k, v)| (k, serde_json::Value::String(v)))
+        .collect();
+    let _: serde_json::Value = client_guard
+        .put(&path, &serde_json::Value::Object(body), Some(ticket))
+        .await
+        .map_err(|e| format!("Failed to update storage {}: {}", storage, e))?;
+    Ok(())
+}
+
+/// Delete a datacenter-level storage configuration.
+#[tauri::command]
+pub async fn delete_proxmox_storage(
+    cluster_id: String,
+    storage: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    validate_pve_identifier(&storage, "storage")?;
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+    let ticket = client_guard.ticket.as_deref().unwrap_or("");
+    let path = format!("storage/{}", storage);
+    let _: serde_json::Value = client_guard
+        .delete(&path, Some(ticket))
+        .await
+        .map_err(|e| format!("Failed to delete storage {}: {}", storage, e))?;
+    Ok(())
+}
 #[tauri::command]
 pub async fn trigger_proxmox_backup_job(
     cluster_id: String,
@@ -2156,15 +2273,11 @@ pub async fn list_ha_groups(
 }
 
 /// Create HA group
-/// `_max_failures` and `_max_relocate` are accepted for frontend API compatibility
-/// but not forwarded — the PVE HA groups API does not expose these fields.
 #[tauri::command]
 pub async fn create_ha_group(
     cluster_id: String,
     group: String,
     nodes: Vec<String>,
-    _max_failures: u32,
-    _max_relocate: u32,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
     validate_pve_identifier(&group, "group")?;
@@ -2185,15 +2298,16 @@ pub async fn create_ha_group(
 }
 
 /// Update HA group
-/// `_max_failures` and `_max_relocate` are accepted for frontend API compatibility
-/// but not forwarded — the PVE HA groups API does not expose these fields.
+///
+/// `comment`, `restricted` and `nofailback` are optional PVE HA group fields.
 #[tauri::command]
 pub async fn update_ha_group(
     cluster_id: String,
     group: String,
     nodes: Vec<String>,
-    _max_failures: u32,
-    _max_relocate: u32,
+    comment: Option<String>,
+    restricted: Option<bool>,
+    nofailback: Option<bool>,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
     validate_pve_identifier(&group, "group")?;
@@ -2207,6 +2321,9 @@ pub async fn update_ha_group(
         &client_guard,
         &group,
         &nodes,
+        comment.as_deref(),
+        restricted,
+        nofailback,
         client_guard.ticket.as_deref().unwrap_or(""),
     )
     .await
@@ -2305,6 +2422,43 @@ pub async fn delete_ha_resource(
         .await
         .map_err(|e| format!("Failed to delete HA resource {}: {}", resource, e))?;
     Ok(())
+}
+
+/// Update (edit) an HA resource
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub async fn update_ha_resource(
+    cluster_id: String,
+    resource: String,
+    group: Option<String>,
+    state_value: Option<String>,
+    max_restart: Option<u32>,
+    max_relocate: Option<u32>,
+    comment: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    validate_pve_ha_resource(&resource, "resource")?;
+    if let Some(g) = group.as_deref() {
+        if !g.is_empty() {
+            validate_pve_identifier(g, "group")?;
+        }
+    }
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+    let ticket = client_guard.ticket.as_deref().unwrap_or("");
+
+    crate::proxmox::ha::update_ha_resource(
+        &client_guard,
+        &resource,
+        group.as_deref().filter(|g| !g.is_empty()),
+        state_value.as_deref(),
+        max_restart,
+        max_relocate,
+        comment.as_deref(),
+        ticket,
+    )
+    .await
+    .map_err(|e| format!("Failed to update HA resource: {}", e))
 }
 
 // ─── Phase 7 - ACL / Users / Realms ──────────────────────────────────────────
@@ -3821,7 +3975,375 @@ pub async fn remote_migrate_vm(
     .await
 }
 
-// ─── Container (LXC) Management ───────────────────────────────────────────
+/// Result of starting a cross-datacenter (remote) migration.
+///
+/// Carries the task UPID for polling and the temporary destination API token
+/// details so the frontend can delete the token after the task completes.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct RemoteMigrationStart {
+    pub upid: String,
+    pub source_node: String,
+    pub dest_cluster_id: String,
+    pub dest_userid: String,
+    pub dest_tokenname: String,
+}
+
+/// Start a cross-datacenter (remote) VM migration.
+///
+/// Creates a temporary API token on the destination remote (from its stored
+/// credentials), resolves the destination TLS fingerprint (stored override or
+/// auto-fetched), issues a PVE `remote-migrate` on the source node, and returns
+/// the task UPID plus the temporary token details for later cleanup.
+#[allow(clippy::too_many_arguments)]
+#[tauri::command]
+pub async fn start_remote_migration(
+    cluster_id: String,
+    node: String,
+    vm_id: u32,
+    dest_cluster_id: String,
+    target_node: String,
+    target_storage: String,
+    target_bridge: String,
+    online: bool,
+    state: State<'_, AppState>,
+) -> Result<RemoteMigrationStart, String> {
+    // Resolve an optional stored fingerprint for the destination remote.
+    let stored_fingerprint: Option<String> = {
+        let db = state
+            .db
+            .lock()
+            .map_err(|e| format!("Failed to lock database: {}", e))?;
+        db.query_row(
+            "SELECT ssl_fingerprint FROM proxmox_clusters WHERE id = ?1",
+            rusqlite::params![dest_cluster_id],
+            |row| row.get::<_, Option<String>>(0),
+        )
+        .ok()
+        .flatten()
+        .filter(|s| !s.trim().is_empty())
+    };
+
+    // Destination client: host/port/user + fingerprint + temp token.
+    let dest_client = get_proxmox_client_for_cluster(&dest_cluster_id, &state).await?;
+    let (dest_host, dest_port, dest_userid, fingerprint, full_tokenid, token_secret, tokenname) = {
+        let dest_guard = dest_client.lock().await;
+        let dest_ticket = dest_guard.ticket.as_deref().unwrap_or("").to_string();
+        let dest_host = dest_guard.base_url().to_string();
+        let dest_port = dest_guard.port();
+        let dest_userid = dest_guard.username().to_string();
+
+        // Resolve fingerprint: stored override, else auto-fetch from target node.
+        let fingerprint = match stored_fingerprint {
+            Some(fp) => fp,
+            None => {
+                crate::proxmox::migration::get_node_fingerprint(
+                    &dest_guard,
+                    &target_node,
+                    &dest_ticket,
+                )
+                .await?
+            }
+        };
+
+        // Create a short-lived, non-privilege-separated token on the destination.
+        let tokenname = format!(
+            "tftsr-migrate-{}-{}",
+            vm_id,
+            chrono::Utc::now().timestamp_millis()
+        );
+        let token = crate::proxmox::auth_realm::create_user_token(
+            &dest_guard,
+            &dest_ticket,
+            &dest_userid,
+            &tokenname,
+            Some("Temporary token for TRCAA cross-DC migration"),
+            false,
+            None,
+        )
+        .await?;
+        let full_tokenid = token.full_tokenid.ok_or_else(|| {
+            "Destination did not return a full token id for the migration token".to_string()
+        })?;
+        let token_secret = token.value.ok_or_else(|| {
+            "Destination did not return a secret for the migration token".to_string()
+        })?;
+
+        (
+            dest_host,
+            dest_port,
+            dest_userid,
+            fingerprint,
+            full_tokenid,
+            token_secret,
+            tokenname,
+        )
+    };
+
+    let target_endpoint = crate::proxmox::migration::build_remote_target_endpoint(
+        &full_tokenid,
+        &token_secret,
+        &dest_host,
+        dest_port,
+        Some(&fingerprint),
+    );
+
+    // Issue the remote-migrate on the source node. If it fails, clean up token.
+    let source_client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let migrate_result = {
+        let src_guard = source_client.lock().await;
+        crate::proxmox::migration::remote_migrate_vm(
+            &src_guard,
+            &node,
+            vm_id,
+            &target_endpoint,
+            &target_bridge,
+            &target_storage,
+            online,
+            src_guard.ticket.as_deref().unwrap_or(""),
+        )
+        .await
+    };
+
+    let upid = match migrate_result {
+        Ok(upid) => upid,
+        Err(e) => {
+            // Best-effort cleanup of the temp token before surfacing the error.
+            let dest_guard = dest_client.lock().await;
+            if let Err(cleanup_err) = crate::proxmox::auth_realm::delete_user_token(
+                &dest_guard,
+                dest_guard.ticket.as_deref().unwrap_or(""),
+                &dest_userid,
+                &tokenname,
+            )
+            .await
+            {
+                tracing::warn!(
+                    "Failed to clean up temporary migration token '{}': {}",
+                    tokenname,
+                    cleanup_err
+                );
+            }
+            return Err(e);
+        }
+    };
+
+    // NOTE: On a successful start the token is intentionally NOT deleted here.
+    // The destination pulls the VM asynchronously using this token while the
+    // source task runs, so it must outlive this call. The caller removes it via
+    // `delete_user_token` once `get_task_status` reports the task has finished
+    // (see the migration poller in the frontend / RemoteMigrationStart result).
+    Ok(RemoteMigrationStart {
+        upid,
+        source_node: node,
+        dest_cluster_id,
+        dest_userid,
+        dest_tokenname: tokenname,
+    })
+}
+
+// ─── VM Console (noVNC) ───────────────────────────────────────────────────
+
+/// Open an in-app noVNC console for a QEMU VM.
+///
+/// Requests a `vncproxy` ticket from PVE, starts a local WebSocket proxy that
+/// injects the auth cookie and accepts the node's self-signed TLS cert, and
+/// returns the local websocket URL + VNC ticket for the noVNC client.
+#[tauri::command]
+pub async fn open_vnc_console(
+    cluster_id: String,
+    node: String,
+    vm_id: u32,
+    state: State<'_, AppState>,
+) -> Result<crate::proxmox::console::VncConsoleSession, String> {
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let (proxy, host, port, auth_ticket) = {
+        let guard = client.lock().await;
+        let auth_ticket = guard
+            .ticket
+            .clone()
+            .ok_or_else(|| "No active session ticket for this remote".to_string())?;
+        let proxy =
+            crate::proxmox::console::vncproxy_vm(&guard, &node, vm_id, &auth_ticket).await?;
+        (
+            proxy,
+            guard.base_url().to_string(),
+            guard.port(),
+            auth_ticket,
+        )
+    };
+
+    let upstream = crate::proxmox::console::build_vncwebsocket_url(
+        &host,
+        port,
+        &node,
+        vm_id,
+        &proxy.port,
+        &proxy.ticket,
+    );
+    let fingerprint = stored_ssl_fingerprint(&cluster_id, &state);
+    crate::proxmox::console::start_vnc_proxy(
+        upstream,
+        "PVEAuthCookie".to_string(),
+        auth_ticket,
+        proxy.ticket,
+        fingerprint,
+    )
+    .await
+}
+
+/// Open an in-app noVNC console for an LXC container.
+#[tauri::command]
+pub async fn open_lxc_console(
+    cluster_id: String,
+    node: String,
+    vm_id: u32,
+    state: State<'_, AppState>,
+) -> Result<crate::proxmox::console::VncConsoleSession, String> {
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let (proxy, host, port, auth_ticket) = {
+        let guard = client.lock().await;
+        let auth_ticket = guard
+            .ticket
+            .clone()
+            .ok_or_else(|| "No active session ticket for this remote".to_string())?;
+        let proxy =
+            crate::proxmox::console::vncproxy_lxc(&guard, &node, vm_id, &auth_ticket).await?;
+        (
+            proxy,
+            guard.base_url().to_string(),
+            guard.port(),
+            auth_ticket,
+        )
+    };
+
+    let upstream = crate::proxmox::console::build_lxc_vncwebsocket_url(
+        &host,
+        port,
+        &node,
+        vm_id,
+        &proxy.port,
+        &proxy.ticket,
+    );
+    let fingerprint = stored_ssl_fingerprint(&cluster_id, &state);
+    crate::proxmox::console::start_vnc_proxy(
+        upstream,
+        "PVEAuthCookie".to_string(),
+        auth_ticket,
+        proxy.ticket,
+        fingerprint,
+    )
+    .await
+}
+
+/// Tagged host-shell session: which renderer the frontend should use plus the
+/// local proxy URL and credentials.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NodeShellSession {
+    /// `"novnc"` (PVE graphical shell) or `"xterm"` (PBS terminal).
+    pub kind: String,
+    /// Local websocket URL the renderer connects to.
+    pub local_url: String,
+    /// VNC ticket / terminal ticket.
+    pub ticket: String,
+    /// Bound local port (diagnostics).
+    pub local_port: u16,
+    /// RFB password for noVNC shells (PVE vncshell only).
+    pub password: Option<String>,
+    /// The session user (needed for the xterm termproxy login line).
+    pub user: String,
+}
+
+/// Open a host (node) shell for a stored remote.
+///
+/// - **PVE** remotes use `vncshell` (graphical, rendered with noVNC).
+/// - **PBS** remotes use `termproxy` (text terminal, rendered with xterm.js).
+///
+/// In both cases a local WebSocket proxy is started that injects the correct
+/// auth cookie (`PVEAuthCookie` / `PBSAuthCookie`) and accepts the node's
+/// self-signed TLS certificate.
+#[tauri::command]
+pub async fn open_node_shell(
+    cluster_id: String,
+    node: String,
+    state: State<'_, AppState>,
+) -> Result<NodeShellSession, String> {
+    // Resolve the cluster type so we know which shell API + cookie to use.
+    let is_pbs = {
+        let db = state
+            .db
+            .lock()
+            .map_err(|e| format!("Failed to lock database: {}", e))?;
+        let ct: String = db
+            .query_row(
+                "SELECT cluster_type FROM proxmox_clusters WHERE id = ?1",
+                [&cluster_id],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()
+            .map_err(|e| format!("Failed to query cluster: {}", e))?
+            .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+        ct.eq_ignore_ascii_case("pbs")
+    };
+
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let (proxy, host, port, auth_ticket, user) = {
+        let guard = client.lock().await;
+        let auth_ticket = guard
+            .ticket
+            .clone()
+            .ok_or_else(|| "No active session ticket for this remote".to_string())?;
+        let proxy = if is_pbs {
+            crate::proxmox::console::termproxy_node(&guard, &node, &auth_ticket).await?
+        } else {
+            crate::proxmox::console::vncshell_node(&guard, &node, &auth_ticket).await?
+        };
+        let user = if proxy.user.is_empty() {
+            guard.username().to_string()
+        } else {
+            proxy.user.clone()
+        };
+        (
+            proxy,
+            guard.base_url().to_string(),
+            guard.port(),
+            auth_ticket,
+            user,
+        )
+    };
+
+    let upstream = crate::proxmox::console::build_node_vncwebsocket_url(
+        &host,
+        port,
+        &node,
+        &proxy.port,
+        &proxy.ticket,
+    );
+
+    let cookie_name = if is_pbs {
+        "PBSAuthCookie"
+    } else {
+        "PVEAuthCookie"
+    };
+
+    let session = crate::proxmox::console::start_vnc_proxy(
+        upstream,
+        cookie_name.to_string(),
+        auth_ticket,
+        proxy.ticket.clone(),
+        stored_ssl_fingerprint(&cluster_id, &state),
+    )
+    .await?;
+
+    Ok(NodeShellSession {
+        kind: if is_pbs { "xterm" } else { "novnc" }.to_string(),
+        local_url: session.local_url,
+        ticket: session.ticket,
+        local_port: session.local_port,
+        password: proxy.password,
+        user,
+    })
+}
 
 #[tauri::command]
 pub async fn get_container_config(
@@ -4348,6 +4870,70 @@ pub async fn update_subscription(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_build_storage_update_params_only_includes_provided() {
+        let p = build_storage_update_params(Some("images,iso"), None, None);
+        assert_eq!(p, vec![("content".to_string(), "images,iso".to_string())]);
+    }
+
+    #[test]
+    fn test_build_storage_update_params_empty_when_none() {
+        assert!(build_storage_update_params(None, None, None).is_empty());
+    }
+
+    #[test]
+    fn test_build_storage_update_params_disable_flag() {
+        let p = build_storage_update_params(None, Some("vmhost1,vmhost2"), Some(true));
+        assert!(p.contains(&("nodes".to_string(), "vmhost1,vmhost2".to_string())));
+        assert!(p.contains(&("disable".to_string(), "1".to_string())));
+    }
+
+    #[test]
+    fn test_build_storage_update_params_enable_flag() {
+        let p = build_storage_update_params(None, None, Some(false));
+        assert_eq!(p, vec![("disable".to_string(), "0".to_string())]);
+    }
+
+    #[test]
+    fn test_normalize_backup_jobs_null_returns_empty() {
+        // Standalone remotes with no jobs return `data: null`; must not error.
+        let jobs = normalize_backup_jobs(&serde_json::Value::Null);
+        assert!(jobs.is_empty());
+    }
+
+    #[test]
+    fn test_normalize_backup_jobs_empty_array() {
+        let jobs = normalize_backup_jobs(&serde_json::json!([]));
+        assert!(jobs.is_empty());
+    }
+
+    #[test]
+    fn test_normalize_backup_jobs_preserves_existing_id() {
+        let jobs = normalize_backup_jobs(&serde_json::json!([
+            { "id": "backup-abc", "storage": "local", "schedule": "0 2 * * *" }
+        ]));
+        assert_eq!(jobs.len(), 1);
+        assert_eq!(jobs[0]["id"], "backup-abc");
+    }
+
+    #[test]
+    fn test_normalize_backup_jobs_synthesizes_missing_id() {
+        let jobs = normalize_backup_jobs(&serde_json::json!([
+            { "storage": "nas01", "schedule": "0 3 * * *" }
+        ]));
+        assert_eq!(jobs.len(), 1);
+        assert_eq!(jobs[0]["id"], "backup-nas01");
+    }
+
+    #[test]
+    fn test_normalize_backup_jobs_caps_at_100() {
+        let many: Vec<serde_json::Value> = (0..150)
+            .map(|i| serde_json::json!({ "id": format!("backup-{}", i) }))
+            .collect();
+        let jobs = normalize_backup_jobs(&serde_json::Value::Array(many));
+        assert_eq!(jobs.len(), 100);
+    }
 
     #[test]
     fn test_cluster_type_serialization() {

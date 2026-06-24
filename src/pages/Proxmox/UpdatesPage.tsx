@@ -3,8 +3,9 @@ import { RefreshCw, Package, Database } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/index';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/index';
 import { Button } from '@/components/ui/index';
-import { Input } from '@/components/ui/index';
 import { Badge } from '@/components/ui/index';
+import { NodeSelect } from '@/components/Proxmox';
+import { useProxmoxNodes } from '@/hooks/useProxmoxNodes';
 import {
   Table,
   TableBody,
@@ -26,8 +27,8 @@ import { toast } from 'sonner';
 export function ProxmoxUpdatesPage() {
   const [clusters, setClusters] = useState<ClusterInfo[]>([]);
   const [clusterId, setClusterId] = useState('');
-  const [nodeInputValue, setNodeInputValue] = useState('localhost');
-  const [nodeId, setNodeId] = useState('localhost');
+  const { nodeNames, selectedNode: nodeId, setSelectedNode, loading: nodesLoading } =
+    useProxmoxNodes(clusterId);
   const [activeTab, setActiveTab] = useState('updates');
 
   const [updates, setUpdates] = useState<AptPackage[]>([]);
@@ -49,7 +50,7 @@ export function ProxmoxUpdatesPage() {
   }, []);
 
   const loadUpdates = useCallback(async (cId: string, nId: string) => {
-    if (!cId) return;
+    if (!cId || !nId) return;
     setIsLoadingUpdates(true);
     try {
       const data = await listAptUpdates(cId, nId);
@@ -63,7 +64,7 @@ export function ProxmoxUpdatesPage() {
   }, []);
 
   const loadRepositories = useCallback(async (cId: string, nId: string) => {
-    if (!cId) return;
+    if (!cId || !nId) return;
     setIsLoadingRepos(true);
     try {
       const data = await listAptRepositories(cId, nId);
@@ -77,7 +78,7 @@ export function ProxmoxUpdatesPage() {
   }, []);
 
   useEffect(() => {
-    if (!clusterId) return;
+    if (!clusterId || !nodeId) return;
     if (activeTab === 'updates') {
       void loadUpdates(clusterId, nodeId);
     } else if (activeTab === 'repos') {
@@ -85,12 +86,8 @@ export function ProxmoxUpdatesPage() {
     }
   }, [activeTab, clusterId, nodeId, loadUpdates, loadRepositories]);
 
-  const applyNodeId = () => {
-    setNodeId(nodeInputValue.trim() || 'localhost');
-  };
-
   const handleRefreshCache = async () => {
-    if (!clusterId) return;
+    if (!clusterId || !nodeId) return;
     setIsRefreshing(true);
     try {
       await updateAptRepos(clusterId, nodeId);
@@ -130,18 +127,13 @@ export function ProxmoxUpdatesPage() {
         </div>
         <div className="flex items-center gap-2">
           <span className="text-sm text-muted-foreground">Node:</span>
-          <Input
-            className="w-36 h-8 text-sm"
-            value={nodeInputValue}
-            onChange={(e) => setNodeInputValue(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') applyNodeId();
-            }}
-            placeholder="localhost"
+          <NodeSelect
+            nodeNames={nodeNames}
+            value={nodeId}
+            onChange={setSelectedNode}
+            loading={nodesLoading}
+            disabled={!clusterId}
           />
-          <Button variant="outline" size="sm" onClick={applyNodeId}>
-            Apply
-          </Button>
         </div>
       </div>
 

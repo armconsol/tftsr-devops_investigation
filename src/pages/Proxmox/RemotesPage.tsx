@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/index';
-import { RefreshCw } from 'lucide-react';
+import { RefreshCw, Loader2 } from 'lucide-react';
 import { RemotesList } from '@/components/Proxmox';
 import { AddRemoteForm } from '@/components/Proxmox';
 import { EditRemoteForm } from '@/components/Proxmox';
 import { RemoveRemoteDialog } from '@/components/Proxmox';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/index';
-import { listProxmoxClusters, addProxmoxCluster, removeProxmoxCluster, updateProxmoxCluster, connectProxmoxCluster, disconnectProxmoxCluster, pingProxmoxCluster } from '@/lib/proxmoxClient';
+import { listProxmoxClusters, addProxmoxCluster, removeProxmoxCluster, updateProxmoxCluster, connectProxmoxCluster, disconnectProxmoxCluster, pingProxmoxCluster, listProxmoxNodes } from '@/lib/proxmoxClient';
 import { ClusterType } from '@/lib/domain';
 import { toast } from 'sonner';
 
@@ -20,10 +21,14 @@ interface RemoteInfo {
 }
 
 export function ProxmoxRemotesPage() {
+  const navigate = useNavigate();
   const [remotes, setRemotes] = useState<RemoteInfo[]>([]);
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [editingRemote, setEditingRemote] = useState<RemoteInfo | null>(null);
   const [removingRemote, setRemovingRemote] = useState<RemoteInfo | null>(null);
+  const [shellRemote, setShellRemote] = useState<RemoteInfo | null>(null);
+  const [shellNodes, setShellNodes] = useState<string[]>([]);
+  const [shellNodesLoading, setShellNodesLoading] = useState(false);
 
   const loadRemotes = async () => {
     try {
@@ -165,6 +170,37 @@ export function ProxmoxRemotesPage() {
     }
   };
 
+  const handleOpenShell = async (remote: RemoteInfo) => {
+    setShellRemote(remote);
+    setShellNodes([]);
+    setShellNodesLoading(true);
+    try {
+      const nodes = await listProxmoxNodes(remote.id);
+      const names = nodes
+        .map((n) => (n as { node?: string }).node)
+        .filter((n): n is string => Boolean(n));
+      setShellNodes(names);
+      if (names.length === 1) {
+        // Single node — skip the picker and open directly.
+        setShellRemote(null);
+        navigate(`/proxmox/shell/${encodeURIComponent(remote.id)}/${encodeURIComponent(names[0])}`);
+      }
+    } catch (err) {
+      console.error('Failed to load nodes:', err);
+      toast.error('Failed to load nodes: ' + String(err));
+      setShellRemote(null);
+    } finally {
+      setShellNodesLoading(false);
+    }
+  };
+
+  const handlePickShellNode = (node: string) => {
+    if (!shellRemote) return;
+    const remoteId = shellRemote.id;
+    setShellRemote(null);
+    navigate(`/proxmox/shell/${encodeURIComponent(remoteId)}/${encodeURIComponent(node)}`);
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -195,6 +231,7 @@ export function ProxmoxRemotesPage() {
         }}
         onConnect={(remote) => { void handleConnectRemote(remote as RemoteInfo); }}
         onDisconnect={(remote) => { void handleDisconnectRemote(remote as RemoteInfo); }}
+        onShell={(remote) => { void handleOpenShell(remote as RemoteInfo); }}
       />
 
       {showAddDialog && (
@@ -234,6 +271,41 @@ export function ProxmoxRemotesPage() {
               onConfirm={handleRemoveRemote}
               onCancel={() => setRemovingRemote(null)}
             />
+          </DialogContent>
+        </Dialog>
+      )}
+      {shellRemote !== null && (
+        <Dialog open={true} onOpenChange={() => setShellRemote(null)}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Select a node — {shellRemote.name}</DialogTitle>
+            </DialogHeader>
+            {shellNodesLoading ? (
+              <div className="flex items-center gap-2 py-6 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Loading nodes…
+              </div>
+            ) : shellNodes.length === 0 ? (
+              <p className="py-6 text-sm text-muted-foreground">No nodes found for this remote.</p>
+            ) : (
+              <div className="space-y-2 py-2">
+                <p className="text-sm text-muted-foreground">
+                  Choose which node's host shell to open.
+                </p>
+                <div className="flex flex-col gap-1">
+                  {shellNodes.map((node) => (
+                    <Button
+                      key={node}
+                      variant="outline"
+                      className="justify-start"
+                      onClick={() => handlePickShellNode(node)}
+                    >
+                      {node}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            )}
           </DialogContent>
         </Dialog>
       )}

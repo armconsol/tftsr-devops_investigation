@@ -2,78 +2,77 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/index';
 import { Button } from '@/components/ui/index';
 import { Plus, Trash2, Eye } from 'lucide-react';
+import { listProxmoxClusters } from '@/lib/proxmoxClient';
+import type { ClusterInfo } from '@/lib/domain';
 import {
-  listClusterViews,
-  createClusterView,
-  deleteClusterView,
-  listProxmoxClusters,
-  ClusterView,
-} from '@/lib/proxmoxClient';
+  listSavedViews,
+  createSavedView,
+  deleteSavedView,
+  SavedView,
+} from '@/lib/savedViews';
 
 export function ProxmoxViewsPage() {
-  const [views, setViews] = useState<ClusterView[]>([]);
+  const [clusters, setClusters] = useState<ClusterInfo[]>([]);
+  const [views, setViews] = useState<SavedView[]>([]);
   const [clusterId, setClusterId] = useState('');
   const [showCreate, setShowCreate] = useState(false);
   const [newViewName, setNewViewName] = useState('');
+  const [newViewDescription, setNewViewDescription] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const [deleting, setDeleting] = useState<string | null>(null);
 
-  const loadViews = useCallback(async (cId: string) => {
-    if (!cId) return;
+  const loadViews = useCallback((cId: string) => {
     setError(null);
     try {
-      const v = await listClusterViews(cId);
-      setViews(v);
+      setViews(listSavedViews(cId));
     } catch (e) {
-      const errorMsg = String(e);
-      // Handle 501 Not Implemented error gracefully
-      if (errorMsg.includes('501') || errorMsg.includes('Not Implemented')) {
-        setError('Cluster views feature is not implemented by this Proxmox server. This is a server-side limitation.');
-      } else {
-        setError(errorMsg);
-      }
+      console.error('Error loading views:', e);
+      setError('Failed to load saved views');
     }
   }, []);
 
   useEffect(() => {
     listProxmoxClusters()
       .then((cls) => {
+        setClusters(cls);
         if (cls.length > 0) {
           setClusterId(cls[0].id);
-          void loadViews(cls[0].id);
+          loadViews(cls[0].id);
         }
       })
-      .catch(console.error);
+      .catch((err) => {
+        console.error('Failed to load Proxmox clusters:', err);
+        setError('Failed to load Proxmox clusters');
+      });
   }, [loadViews]);
 
-  const handleCreate = async () => {
+  const handleClusterChange = (cId: string) => {
+    setClusterId(cId);
+    loadViews(cId);
+  };
+
+  const handleCreate = () => {
     const trimmed = newViewName.trim();
     if (!trimmed || !clusterId) return;
     setError(null);
     try {
-      // Generate a simple ID from the name (lowercase, hyphenated)
-      const viewId = trimmed.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
-      await createClusterView(clusterId, viewId, trimmed);
+      createSavedView(clusterId, {
+        name: trimmed,
+        description: newViewDescription.trim() || undefined,
+      });
       setNewViewName('');
+      setNewViewDescription('');
       setShowCreate(false);
-      void loadViews(clusterId);
+      loadViews(clusterId);
     } catch (e) {
       setError(String(e));
     }
   };
 
-  const handleDelete = async (viewId: string) => {
+  const handleDelete = (viewId: string) => {
     if (!clusterId) return;
-    setDeleting(viewId);
     setError(null);
-    try {
-      await deleteClusterView(clusterId, viewId);
-      void loadViews(clusterId);
-    } catch (e) {
-      setError(String(e));
-    } finally {
-      setDeleting(null);
-    }
+    deleteSavedView(clusterId, viewId);
+    loadViews(clusterId);
   };
 
   return (
@@ -81,15 +80,30 @@ export function ProxmoxViewsPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Views</h1>
-          <p className="text-muted-foreground">Custom resource views and dashboards</p>
+          <p className="text-muted-foreground">
+            Saved resource views, stored locally per datacenter
+          </p>
         </div>
-        <Button
-          onClick={() => setShowCreate(true)}
-          disabled={!clusterId || showCreate}
-        >
-          <Plus className="mr-2 h-4 w-4" />
-          New View
-        </Button>
+        <div className="flex items-center space-x-2">
+          {clusters.length > 1 && (
+            <select
+              className="rounded-md border px-3 py-1.5 text-sm bg-background"
+              value={clusterId}
+              onChange={(e) => handleClusterChange(e.target.value)}
+            >
+              {clusters.map((c) => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+            </select>
+          )}
+          <Button
+            onClick={() => setShowCreate(true)}
+            disabled={!clusterId || showCreate}
+          >
+            <Plus className="mr-2 h-4 w-4" />
+            New View
+          </Button>
+        </div>
       </div>
 
       {error && (
@@ -103,24 +117,39 @@ export function ProxmoxViewsPage() {
           <CardHeader>
             <CardTitle>Create View</CardTitle>
           </CardHeader>
-          <CardContent className="flex gap-2">
+          <CardContent className="space-y-2">
             <input
-              className="flex-1 rounded border bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring"
+              className="w-full rounded border bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring"
               placeholder="View name"
               value={newViewName}
               onChange={(e) => setNewViewName(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === 'Enter') void handleCreate();
+                if (e.key === 'Enter') handleCreate();
                 if (e.key === 'Escape') setShowCreate(false);
               }}
               autoFocus
             />
-            <Button onClick={() => void handleCreate()} disabled={!newViewName.trim()}>
-              Create
-            </Button>
-            <Button variant="outline" onClick={() => { setShowCreate(false); setNewViewName(''); }}>
-              Cancel
-            </Button>
+            <input
+              className="w-full rounded border bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring"
+              placeholder="Description (optional)"
+              value={newViewDescription}
+              onChange={(e) => setNewViewDescription(e.target.value)}
+            />
+            <div className="flex gap-2">
+              <Button onClick={handleCreate} disabled={!newViewName.trim()}>
+                Create
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setShowCreate(false);
+                  setNewViewName('');
+                  setNewViewDescription('');
+                }}
+              >
+                Cancel
+              </Button>
+            </div>
           </CardContent>
         </Card>
       )}
@@ -128,7 +157,7 @@ export function ProxmoxViewsPage() {
       {views.length === 0 && !showCreate ? (
         <Card>
           <CardContent className="pt-4 text-sm text-muted-foreground">
-            {clusterId ? 'No custom views configured.' : 'No cluster configured.'}
+            {clusterId ? 'No saved views yet. Create one to get started.' : 'No datacenter configured.'}
           </CardContent>
         </Card>
       ) : (
@@ -148,8 +177,7 @@ export function ProxmoxViewsPage() {
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={() => void handleDelete(v.view_id)}
-                  disabled={deleting === v.view_id}
+                  onClick={() => handleDelete(v.view_id)}
                   title="Delete view"
                 >
                   <Trash2 className="h-4 w-4 text-destructive" />

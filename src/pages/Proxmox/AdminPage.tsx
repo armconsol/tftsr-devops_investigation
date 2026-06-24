@@ -112,12 +112,15 @@ export function ProxmoxAdminPage() {
     }
   };
 
-  const formatBytes = (bytes: number) =>
-    bytes >= 1073741824
+  const formatBytes = (bytes: number | undefined | null) => {
+    if (bytes == null || Number.isNaN(bytes)) return '—';
+    return bytes >= 1073741824
       ? `${(bytes / 1073741824).toFixed(1)} GB`
       : `${Math.round(bytes / 1048576)} MB`;
+  };
 
-  const formatUptime = (seconds: number) => {
+  const formatUptime = (seconds: number | undefined | null) => {
+    if (seconds == null || Number.isNaN(seconds)) return '—';
     const d = Math.floor(seconds / 86400);
     const h = Math.floor((seconds % 86400) / 3600);
     const m = Math.floor((seconds % 3600) / 60);
@@ -200,19 +203,19 @@ export function ProxmoxAdminPage() {
                   <div className="grid grid-cols-2 gap-4 text-sm">
                     <div>
                       <span className="text-muted-foreground">CPU:</span>{' '}
-                      {(nodeStatus.cpu * 100).toFixed(1)}%
+                      {((nodeStatus.cpu ?? 0) * 100).toFixed(1)}%
                     </div>
                     <div>
                       <span className="text-muted-foreground">Memory:</span>{' '}
-                      {formatBytes(nodeStatus.memory.used)} / {formatBytes(nodeStatus.memory.total)}
+                      {formatBytes(nodeStatus.memory?.used)} / {formatBytes(nodeStatus.memory?.total)}
                     </div>
                     <div>
                       <span className="text-muted-foreground">Swap:</span>{' '}
-                      {formatBytes(nodeStatus.swap.used)} / {formatBytes(nodeStatus.swap.total)}
+                      {formatBytes(nodeStatus.swap?.used)} / {formatBytes(nodeStatus.swap?.total)}
                     </div>
                     <div>
                       <span className="text-muted-foreground">Disk:</span>{' '}
-                      {formatBytes(nodeStatus.disk.used)} / {formatBytes(nodeStatus.disk.total)}
+                      {formatBytes(nodeStatus.disk?.used)} / {formatBytes(nodeStatus.disk?.total)}
                     </div>
                     <div>
                       <span className="text-muted-foreground">Uptime:</span>{' '}
@@ -222,10 +225,10 @@ export function ProxmoxAdminPage() {
                       <span className="text-muted-foreground">Version:</span>{' '}
                       {nodeStatus.version}
                     </div>
-                    {nodeStatus.loadAvg.length > 0 && (
+                    {(nodeStatus.loadAvg?.length ?? 0) > 0 && (
                       <div className="col-span-2">
                         <span className="text-muted-foreground">Load Avg:</span>{' '}
-                        {nodeStatus.loadAvg.map((v) => v.toFixed(2)).join(' / ')}
+                        {(nodeStatus.loadAvg ?? []).map((v) => v.toFixed(2)).join(' / ')}
                       </div>
                     )}
                   </div>
