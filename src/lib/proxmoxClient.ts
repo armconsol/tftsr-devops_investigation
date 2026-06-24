@@ -290,6 +290,49 @@ export async function listProxmoxDatastores(
 }
 
 /**
+ * Get the configuration of a single datacenter-level storage.
+ */
+export async function getProxmoxStorageConfig(
+  clusterId: string,
+  storage: string
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+): Promise<Record<string, any>> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return await invoke<Record<string, any>>("get_proxmox_storage_config", {
+    clusterId,
+    storage,
+  });
+}
+
+/**
+ * Update a datacenter-level storage configuration.
+ * Only provided fields are changed.
+ */
+export async function updateProxmoxStorage(
+  clusterId: string,
+  storage: string,
+  config: { content?: string; nodes?: string; disable?: boolean }
+): Promise<void> {
+  return await invoke<void>("update_proxmox_storage", {
+    clusterId,
+    storage,
+    content: config.content,
+    nodes: config.nodes,
+    disable: config.disable,
+  });
+}
+
+/**
+ * Delete a datacenter-level storage configuration.
+ */
+export async function deleteProxmoxStorage(
+  clusterId: string,
+  storage: string
+): Promise<void> {
+  return await invoke<void>("delete_proxmox_storage", { clusterId, storage });
+}
+
+/**
  * Trigger Proxmox Backup Job
  * @param clusterId - Cluster identifier
  * @param nodeId - Node identifier

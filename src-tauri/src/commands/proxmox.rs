@@ -970,7 +970,95 @@ pub async fn list_proxmox_datastores(
     Ok(all_storage)
 }
 
-/// Trigger Proxmox Backup Job
+/// Build the form parameters for a `PUT /storage/{storage}` update.
+///
+/// Only provided fields are included so we never clear values the user did not
+/// touch. `content` is a comma-separated list of content types, `nodes` a
+/// comma-separated node restriction list (empty = all nodes), and `disable`
+/// toggles the storage on/off.
+fn build_storage_update_params(
+    content: Option<&str>,
+    nodes: Option<&str>,
+    disable: Option<bool>,
+) -> Vec<(String, String)> {
+    let mut params: Vec<(String, String)> = Vec::new();
+    if let Some(c) = content {
+        params.push(("content".to_string(), c.to_string()));
+    }
+    if let Some(n) = nodes {
+        params.push(("nodes".to_string(), n.to_string()));
+    }
+    if let Some(d) = disable {
+        params.push(("disable".to_string(), if d { "1" } else { "0" }.to_string()));
+    }
+    params
+}
+
+/// Get the configuration of a single datacenter-level storage.
+#[tauri::command]
+pub async fn get_proxmox_storage_config(
+    cluster_id: String,
+    storage: String,
+    state: State<'_, AppState>,
+) -> Result<serde_json::Value, String> {
+    validate_pve_identifier(&storage, "storage")?;
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+    let path = format!("storage/{}", storage);
+    client_guard
+        .get(&path, Some(client_guard.ticket.as_deref().unwrap_or("")))
+        .await
+        .map_err(|e| format!("Failed to get storage config for {}: {}", storage, e))
+}
+
+/// Update a datacenter-level storage configuration.
+#[tauri::command]
+pub async fn update_proxmox_storage(
+    cluster_id: String,
+    storage: String,
+    content: Option<String>,
+    nodes: Option<String>,
+    disable: Option<bool>,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    validate_pve_identifier(&storage, "storage")?;
+    let params = build_storage_update_params(content.as_deref(), nodes.as_deref(), disable);
+    if params.is_empty() {
+        return Err("No storage fields provided to update".to_string());
+    }
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+    let ticket = client_guard.ticket.as_deref().unwrap_or("");
+    let path = format!("storage/{}", storage);
+    let body: serde_json::Map<String, serde_json::Value> = params
+        .into_iter()
+        .map(|(k, v)| (k, serde_json::Value::String(v)))
+        .collect();
+    let _: serde_json::Value = client_guard
+        .put(&path, &serde_json::Value::Object(body), Some(ticket))
+        .await
+        .map_err(|e| format!("Failed to update storage {}: {}", storage, e))?;
+    Ok(())
+}
+
+/// Delete a datacenter-level storage configuration.
+#[tauri::command]
+pub async fn delete_proxmox_storage(
+    cluster_id: String,
+    storage: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    validate_pve_identifier(&storage, "storage")?;
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+    let ticket = client_guard.ticket.as_deref().unwrap_or("");
+    let path = format!("storage/{}", storage);
+    let _: serde_json::Value = client_guard
+        .delete(&path, Some(ticket))
+        .await
+        .map_err(|e| format!("Failed to delete storage {}: {}", storage, e))?;
+    Ok(())
+}
 #[tauri::command]
 pub async fn trigger_proxmox_backup_job(
     cluster_id: String,
@@ -4395,6 +4483,30 @@ pub async fn update_subscription(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_build_storage_update_params_only_includes_provided() {
+        let p = build_storage_update_params(Some("images,iso"), None, None);
+        assert_eq!(p, vec![("content".to_string(), "images,iso".to_string())]);
+    }
+
+    #[test]
+    fn test_build_storage_update_params_empty_when_none() {
+        assert!(build_storage_update_params(None, None, None).is_empty());
+    }
+
+    #[test]
+    fn test_build_storage_update_params_disable_flag() {
+        let p = build_storage_update_params(None, Some("vmhost1,vmhost2"), Some(true));
+        assert!(p.contains(&("nodes".to_string(), "vmhost1,vmhost2".to_string())));
+        assert!(p.contains(&("disable".to_string(), "1".to_string())));
+    }
+
+    #[test]
+    fn test_build_storage_update_params_enable_flag() {
+        let p = build_storage_update_params(None, None, Some(false));
+        assert_eq!(p, vec![("disable".to_string(), "0".to_string())]);
+    }
 
     #[test]
     fn test_normalize_backup_jobs_null_returns_empty() {
