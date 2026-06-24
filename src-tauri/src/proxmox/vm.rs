@@ -444,6 +444,90 @@ pub async fn list_snapshots(
         .ok_or_else(|| "Invalid response format".to_string())
 }
 
+use crate::proxmox::validate::{validate_node, validate_vmid};
+
+/// Pending config entry returned by /nodes/{node}/qemu/{vmid}/pending
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VmPendingEntry {
+    pub key: String,
+    pub value: Option<serde_json::Value>,
+    pub pending: Option<serde_json::Value>,
+    pub delete: Option<i64>,
+}
+
+/// Get the current VM configuration (raw polymorphic object)
+/// GET /nodes/{node}/qemu/{vmid}/config
+pub async fn get_vm_config_raw(
+    client: &crate::proxmox::client::ProxmoxClient,
+    node: &str,
+    vmid: u32,
+    ticket: &str,
+) -> Result<serde_json::Value, String> {
+    validate_node(node)?;
+    validate_vmid(vmid)?;
+    let path = format!("nodes/{}/qemu/{}/config", node, vmid);
+    client
+        .get(&path, Some(ticket))
+        .await
+        .map_err(|e| format!("Failed to get VM config for vmid {}: {}", vmid, e))
+}
+
+/// Get pending config changes for a VM
+/// GET /nodes/{node}/qemu/{vmid}/pending
+pub async fn get_vm_pending_config(
+    client: &crate::proxmox::client::ProxmoxClient,
+    node: &str,
+    vmid: u32,
+    ticket: &str,
+) -> Result<Vec<VmPendingEntry>, String> {
+    validate_node(node)?;
+    validate_vmid(vmid)?;
+    let path = format!("nodes/{}/qemu/{}/pending", node, vmid);
+    let response: serde_json::Value = client
+        .get(&path, Some(ticket))
+        .await
+        .map_err(|e| format!("Failed to get VM pending config for vmid {}: {}", vmid, e))?;
+
+    let entries: Vec<VmPendingEntry> = serde_json::from_value(response)
+        .map_err(|e| format!("Failed to deserialize pending config entries: {}", e))?;
+    Ok(entries)
+}
+
+/// Migrate a VM to a remote cluster
+/// POST /nodes/{node}/qemu/{vmid}/remote-migrate
+/// Returns the UPID task string.
+pub async fn remote_migrate_vm(
+    client: &crate::proxmox::client::ProxmoxClient,
+    node: &str,
+    vmid: u32,
+    target_node: &str,
+    target_storage: &str,
+    online: bool,
+    ticket: &str,
+) -> Result<String, String> {
+    validate_node(node)?;
+    validate_vmid(vmid)?;
+
+    let online_str = if online { "1" } else { "0" };
+    let path = format!("nodes/{}/qemu/{}/remote-migrate", node, vmid);
+    let params: &[(&str, &str)] = &[
+        ("target", target_node),
+        ("targetstorage", target_storage),
+        ("online", online_str),
+    ];
+
+    let response: serde_json::Value = client
+        .post_form(&path, params, Some(ticket))
+        .await
+        .map_err(|e| format!("Failed to remote-migrate VM {}: {}", vmid, e))?;
+
+    let upid = response
+        .as_str()
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| response.to_string());
+    Ok(upid)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -485,5 +569,62 @@ mod tests {
 
         let running: VmState = serde_json::from_str("\"running\"").unwrap();
         assert_eq!(running, VmState::Running);
+    }
+
+    #[test]
+    fn test_vm_pending_entry_deserialization() {
+        let fixture = r#"[
+            {"key": "startup", "value": "order=2"},
+            {"key": "ostype", "value": "l26"},
+            {"key": "memory", "value": 2048, "pending": 4096},
+            {"key": "net0", "delete": 1}
+        ]"#;
+        let entries: Vec<VmPendingEntry> = serde_json::from_str(fixture).unwrap();
+        assert_eq!(entries.len(), 4);
+
+        assert_eq!(entries[0].key, "startup");
+        assert_eq!(
+            entries[0].value.as_ref().unwrap().as_str().unwrap(),
+            "order=2"
+        );
+        assert!(entries[0].pending.is_none());
+        assert!(entries[0].delete.is_none());
+
+        assert_eq!(entries[2].key, "memory");
+        assert_eq!(entries[2].value.as_ref().unwrap().as_u64().unwrap(), 2048);
+        assert_eq!(entries[2].pending.as_ref().unwrap().as_u64().unwrap(), 4096);
+
+        assert_eq!(entries[3].key, "net0");
+        assert_eq!(entries[3].delete.unwrap(), 1);
+        assert!(entries[3].value.is_none());
+    }
+
+    #[test]
+    fn test_validate_node_valid() {
+        assert!(validate_node("pve-node-1").is_ok());
+        assert!(validate_node("node01").is_ok());
+        assert!(validate_node("a").is_ok());
+    }
+
+    #[test]
+    fn test_validate_node_invalid() {
+        assert!(validate_node("").is_err());
+        assert!(validate_node("node/evil").is_err());
+        assert!(validate_node("node..evil").is_err());
+        assert!(validate_node(&"a".repeat(65)).is_err());
+    }
+
+    #[test]
+    fn test_validate_vmid_valid() {
+        assert!(validate_vmid(100).is_ok());
+        assert!(validate_vmid(200).is_ok());
+        assert!(validate_vmid(999_999_999).is_ok());
+    }
+
+    #[test]
+    fn test_validate_vmid_invalid() {
+        assert!(validate_vmid(0).is_err());
+        assert!(validate_vmid(99).is_err());
+        assert!(validate_vmid(1_000_000_000).is_err());
     }
 }

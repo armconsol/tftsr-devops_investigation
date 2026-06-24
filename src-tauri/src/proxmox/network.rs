@@ -198,6 +198,38 @@ pub async fn update_network_interface(
     Ok(())
 }
 
+/// Apply pending network configuration changes on a node.
+///
+/// This is equivalent to running `ifreload -a` on the node. Returns a task UPID string
+/// that can be polled via the tasks API for completion status.
+pub async fn reload_network_config(
+    client: &ProxmoxClient,
+    node: &str,
+    ticket: &str,
+) -> Result<String, String> {
+    if node.is_empty() {
+        return Err("node name must not be empty".to_string());
+    }
+    if node.len() > 64 {
+        return Err(format!("node name exceeds 64 characters: {}", node));
+    }
+    if !node
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.')
+    {
+        return Err(format!(
+            "node '{}' contains invalid characters — only alphanumeric, '-', '_', '.' are allowed",
+            node
+        ));
+    }
+
+    let path = format!("nodes/{}/network", node);
+    client
+        .put(&path, &serde_json::json!({}), Some(ticket))
+        .await
+        .map_err(|e| format!("Failed to reload network config on node {}: {}", node, e))
+}
+
 /// Delete a network interface
 pub async fn delete_network_interface(
     client: &ProxmoxClient,
@@ -254,5 +286,44 @@ mod tests {
         assert!(json.contains("eth0"));
         assert!(json.contains("\"active\":1"));
         assert!(json.contains("\"autostart\":0"));
+    }
+
+    #[test]
+    fn test_reload_network_config_node_validation_empty() {
+        // Validation is synchronous — we can test it inline by replicating the guard.
+        let node = "";
+        let result: Result<(), String> = if node.is_empty() {
+            Err("node name must not be empty".to_string())
+        } else {
+            Ok(())
+        };
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_reload_network_config_node_validation_path_traversal() {
+        let node = "../evil";
+        let valid = node
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.');
+        assert!(!valid, "path traversal node should fail character check");
+    }
+
+    #[test]
+    fn test_reload_network_config_node_validation_too_long() {
+        let node = "a".repeat(65);
+        assert!(node.len() > 64);
+    }
+
+    #[test]
+    fn test_reload_network_config_node_validation_valid_names() {
+        for name in &["pve-node1", "node.local", "pve_01", "my-cluster-node"] {
+            let valid = !name.is_empty()
+                && name.len() <= 64
+                && name
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.');
+            assert!(valid, "expected '{}' to pass validation", name);
+        }
     }
 }

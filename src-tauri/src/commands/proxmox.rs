@@ -1695,6 +1695,7 @@ pub async fn delete_firewall_rule(
     rule_num: u32,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
+    validate_pve_identifier(&node_id, "node_id")?;
     let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
 
@@ -3586,6 +3587,753 @@ pub async fn delete_proxmox_realm(
         .delete(&path, Some(ticket))
         .await
         .map_err(|e| format!("Failed to delete realm {}: {}", realm, e))?;
+    Ok(())
+}
+
+// ─── Node Administration ───────────────────────────────────────────────────
+
+#[tauri::command]
+pub async fn get_node_dns(
+    cluster_id: String,
+    node: String,
+    state: State<'_, AppState>,
+) -> Result<crate::proxmox::node::NodeDns, String> {
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+    crate::proxmox::node::get_node_dns(
+        &client_guard,
+        &node,
+        client_guard.ticket.as_deref().unwrap_or(""),
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn update_node_dns(
+    cluster_id: String,
+    node: String,
+    search: String,
+    dns1: Option<String>,
+    dns2: Option<String>,
+    dns3: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+    crate::proxmox::node::update_node_dns(
+        &client_guard,
+        &node,
+        &search,
+        dns1.as_deref(),
+        dns2.as_deref(),
+        dns3.as_deref(),
+        client_guard.ticket.as_deref().unwrap_or(""),
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn get_node_time(
+    cluster_id: String,
+    node: String,
+    state: State<'_, AppState>,
+) -> Result<crate::proxmox::node::NodeTime, String> {
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+    crate::proxmox::node::get_node_time(
+        &client_guard,
+        &node,
+        client_guard.ticket.as_deref().unwrap_or(""),
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn update_node_time(
+    cluster_id: String,
+    node: String,
+    timezone: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+    crate::proxmox::node::update_node_time(
+        &client_guard,
+        &node,
+        &timezone,
+        client_guard.ticket.as_deref().unwrap_or(""),
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn reboot_node(
+    cluster_id: String,
+    node: String,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+    crate::proxmox::node::reboot_node(
+        &client_guard,
+        &node,
+        client_guard.ticket.as_deref().unwrap_or(""),
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn shutdown_node(
+    cluster_id: String,
+    node: String,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+    crate::proxmox::node::shutdown_node(
+        &client_guard,
+        &node,
+        client_guard.ticket.as_deref().unwrap_or(""),
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn get_node_journal(
+    cluster_id: String,
+    node: String,
+    lastentries: Option<u32>,
+    state: State<'_, AppState>,
+) -> Result<Vec<String>, String> {
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+    crate::proxmox::node::get_node_journal(
+        &client_guard,
+        &node,
+        lastentries.unwrap_or(200),
+        client_guard.ticket.as_deref().unwrap_or(""),
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn get_node_report(
+    cluster_id: String,
+    node: String,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+    crate::proxmox::node::get_node_report(
+        &client_guard,
+        &node,
+        client_guard.ticket.as_deref().unwrap_or(""),
+    )
+    .await
+}
+
+// ─── Network Administration ────────────────────────────────────────────────
+
+#[tauri::command]
+pub async fn reload_network_config(
+    cluster_id: String,
+    node: String,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+    crate::proxmox::network::reload_network_config(
+        &client_guard,
+        &node,
+        client_guard.ticket.as_deref().unwrap_or(""),
+    )
+    .await
+}
+
+// ─── VM Configuration ─────────────────────────────────────────────────────
+
+#[tauri::command]
+pub async fn get_vm_config(
+    cluster_id: String,
+    node: String,
+    vm_id: u32,
+    state: State<'_, AppState>,
+) -> Result<serde_json::Value, String> {
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+    crate::proxmox::vm::get_vm_config_raw(
+        &client_guard,
+        &node,
+        vm_id,
+        client_guard.ticket.as_deref().unwrap_or(""),
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn get_vm_pending_config(
+    cluster_id: String,
+    node: String,
+    vm_id: u32,
+    state: State<'_, AppState>,
+) -> Result<Vec<crate::proxmox::vm::VmPendingEntry>, String> {
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+    crate::proxmox::vm::get_vm_pending_config(
+        &client_guard,
+        &node,
+        vm_id,
+        client_guard.ticket.as_deref().unwrap_or(""),
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn remote_migrate_vm(
+    cluster_id: String,
+    node: String,
+    vm_id: u32,
+    target_node: String,
+    target_storage: String,
+    online: bool,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+    crate::proxmox::vm::remote_migrate_vm(
+        &client_guard,
+        &node,
+        vm_id,
+        &target_node,
+        &target_storage,
+        online,
+        client_guard.ticket.as_deref().unwrap_or(""),
+    )
+    .await
+}
+
+// ─── Container (LXC) Management ───────────────────────────────────────────
+
+#[tauri::command]
+pub async fn get_container_config(
+    cluster_id: String,
+    node: String,
+    vm_id: u32,
+    state: State<'_, AppState>,
+) -> Result<serde_json::Value, String> {
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+    crate::proxmox::lxc::get_container_config(
+        &client_guard,
+        &node,
+        vm_id,
+        client_guard.ticket.as_deref().unwrap_or(""),
+    )
+    .await
+}
+
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub async fn create_proxmox_container(
+    cluster_id: String,
+    node: String,
+    vmid: u32,
+    ostemplate: String,
+    hostname: Option<String>,
+    memory: Option<u32>,
+    cores: Option<u32>,
+    rootfs: Option<String>,
+    net0: Option<String>,
+    password: Option<String>,
+    unprivileged: Option<bool>,
+    start: Option<bool>,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    let params = crate::proxmox::lxc::ContainerCreateParams {
+        vmid,
+        ostemplate,
+        hostname,
+        memory,
+        cores,
+        rootfs,
+        net0,
+        password,
+        unprivileged,
+        start,
+    };
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+    crate::proxmox::lxc::create_proxmox_container(
+        &client_guard,
+        &node,
+        params,
+        client_guard.ticket.as_deref().unwrap_or(""),
+    )
+    .await
+}
+
+// ─── RRD Metrics ──────────────────────────────────────────────────────────
+
+#[tauri::command]
+pub async fn get_node_rrd_data(
+    cluster_id: String,
+    node: String,
+    timeframe: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<serde_json::Value>, String> {
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+    crate::proxmox::metrics::get_node_rrd_data(
+        &client_guard,
+        &node,
+        &timeframe,
+        client_guard.ticket.as_deref().unwrap_or(""),
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn get_vm_rrd_data(
+    cluster_id: String,
+    node: String,
+    vm_id: u32,
+    timeframe: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<serde_json::Value>, String> {
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+    crate::proxmox::metrics::get_vm_rrd_data(
+        &client_guard,
+        &node,
+        vm_id,
+        &timeframe,
+        client_guard.ticket.as_deref().unwrap_or(""),
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn get_storage_rrd_data(
+    cluster_id: String,
+    node: String,
+    storage: String,
+    timeframe: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<serde_json::Value>, String> {
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+    crate::proxmox::metrics::get_storage_rrd_data(
+        &client_guard,
+        &node,
+        &storage,
+        &timeframe,
+        client_guard.ticket.as_deref().unwrap_or(""),
+    )
+    .await
+}
+
+// ─── Ceph Advanced ────────────────────────────────────────────────────────
+
+#[tauri::command]
+pub async fn list_ceph_monitors(
+    cluster_id: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<crate::proxmox::ceph::CephMonitor>, String> {
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+    crate::proxmox::ceph::list_monitors(&client_guard, client_guard.ticket.as_deref().unwrap_or(""))
+        .await
+}
+
+#[tauri::command]
+pub async fn list_ceph_managers(
+    cluster_id: String,
+    node: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<crate::proxmox::ceph::CephMgr>, String> {
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+    crate::proxmox::ceph::list_managers(
+        &client_guard,
+        &node,
+        client_guard.ticket.as_deref().unwrap_or(""),
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn list_cephfs(
+    cluster_id: String,
+    node: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<crate::proxmox::ceph::CephFs>, String> {
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+    crate::proxmox::ceph::list_cephfs(
+        &client_guard,
+        &node,
+        client_guard.ticket.as_deref().unwrap_or(""),
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn get_ceph_flags(
+    cluster_id: String,
+    node: String,
+    state: State<'_, AppState>,
+) -> Result<serde_json::Value, String> {
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+    crate::proxmox::ceph::get_ceph_flags(
+        &client_guard,
+        &node,
+        client_guard.ticket.as_deref().unwrap_or(""),
+    )
+    .await
+}
+
+// ─── Firewall (cluster + guest level) ─────────────────────────────────────
+
+#[tauri::command]
+pub async fn list_cluster_firewall_rules(
+    cluster_id: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<crate::proxmox::firewall::FirewallRule>, String> {
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+    crate::proxmox::firewall::list_cluster_firewall_rules(
+        &client_guard,
+        client_guard.ticket.as_deref().unwrap_or(""),
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn get_cluster_firewall_status(
+    cluster_id: String,
+    state: State<'_, AppState>,
+) -> Result<crate::proxmox::firewall::ClusterFirewallStatus, String> {
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+    crate::proxmox::firewall::get_cluster_firewall_status(
+        &client_guard,
+        client_guard.ticket.as_deref().unwrap_or(""),
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn list_guest_firewall_rules(
+    cluster_id: String,
+    node: String,
+    vm_id: u32,
+    state: State<'_, AppState>,
+) -> Result<Vec<crate::proxmox::firewall::FirewallRule>, String> {
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+    crate::proxmox::firewall::list_guest_firewall_rules(
+        &client_guard,
+        &node,
+        vm_id,
+        client_guard.ticket.as_deref().unwrap_or(""),
+    )
+    .await
+}
+
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub async fn add_guest_firewall_rule(
+    cluster_id: String,
+    node: String,
+    vm_id: u32,
+    action: String,
+    proto: Option<String>,
+    source: Option<String>,
+    dest: Option<String>,
+    dport: Option<String>,
+    enable: Option<bool>,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let rule = crate::proxmox::firewall::FirewallRule {
+        rule_num: 0,
+        action,
+        protocol: proto.unwrap_or_default(),
+        source: source.unwrap_or_default(),
+        destination: dest.unwrap_or_default(),
+        port: dport,
+        enabled: enable.unwrap_or(true),
+    };
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+    crate::proxmox::firewall::add_guest_firewall_rule(
+        &client_guard,
+        &node,
+        vm_id,
+        &rule,
+        client_guard.ticket.as_deref().unwrap_or(""),
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn delete_guest_firewall_rule(
+    cluster_id: String,
+    node: String,
+    vm_id: u32,
+    pos: u32,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+    crate::proxmox::firewall::delete_guest_firewall_rule(
+        &client_guard,
+        &node,
+        vm_id,
+        pos,
+        client_guard.ticket.as_deref().unwrap_or(""),
+    )
+    .await
+}
+
+// ─── TFA Management ───────────────────────────────────────────────────────
+
+#[tauri::command]
+pub async fn list_tfa_entries(
+    cluster_id: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<crate::proxmox::tfa::TfaEntry>, String> {
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+    crate::proxmox::tfa::list_tfa_entries(
+        &client_guard,
+        client_guard.ticket.as_deref().unwrap_or(""),
+    )
+    .await
+}
+
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub async fn add_tfa_entry(
+    cluster_id: String,
+    userid: String,
+    tfa_type: String,
+    description: Option<String>,
+    totp: Option<String>,
+    value: Option<String>,
+    key: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<serde_json::Value, String> {
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+    crate::proxmox::tfa::add_tfa_entry(
+        &client_guard,
+        client_guard.ticket.as_deref().unwrap_or(""),
+        &userid,
+        &tfa_type,
+        description.as_deref(),
+        totp.as_deref(),
+        value.as_deref(),
+        key.as_deref(),
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn delete_tfa_entry(
+    cluster_id: String,
+    userid: String,
+    id: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+    crate::proxmox::tfa::delete_tfa_entry(
+        &client_guard,
+        client_guard.ticket.as_deref().unwrap_or(""),
+        &userid,
+        &id,
+    )
+    .await
+}
+
+// ─── User API Tokens ──────────────────────────────────────────────────────
+
+#[tauri::command]
+pub async fn list_user_tokens(
+    cluster_id: String,
+    userid: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<crate::proxmox::auth_realm::UserToken>, String> {
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+    crate::proxmox::auth_realm::list_user_tokens(
+        &client_guard,
+        client_guard.ticket.as_deref().unwrap_or(""),
+        &userid,
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn create_user_token(
+    cluster_id: String,
+    userid: String,
+    tokenname: String,
+    comment: Option<String>,
+    privsep: Option<bool>,
+    expire: Option<i64>,
+    state: State<'_, AppState>,
+) -> Result<crate::proxmox::auth_realm::UserTokenCreateResult, String> {
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+    crate::proxmox::auth_realm::create_user_token(
+        &client_guard,
+        client_guard.ticket.as_deref().unwrap_or(""),
+        &userid,
+        &tokenname,
+        comment.as_deref(),
+        privsep.unwrap_or(true),
+        expire,
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn delete_user_token(
+    cluster_id: String,
+    userid: String,
+    tokenname: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+    crate::proxmox::auth_realm::delete_user_token(
+        &client_guard,
+        client_guard.ticket.as_deref().unwrap_or(""),
+        &userid,
+        &tokenname,
+    )
+    .await
+}
+
+// ─── PBS Management ───────────────────────────────────────────────────────
+
+#[tauri::command]
+pub async fn list_pbs_datastores(
+    cluster_id: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<crate::proxmox::pbs::PbsDatastore>, String> {
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+    crate::proxmox::pbs::list_pbs_datastores(
+        &client_guard,
+        client_guard.ticket.as_deref().unwrap_or(""),
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn get_pbs_datastore_status(
+    cluster_id: String,
+    store: String,
+    state: State<'_, AppState>,
+) -> Result<serde_json::Value, String> {
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+    crate::proxmox::pbs::get_pbs_datastore_status(
+        &client_guard,
+        &store,
+        client_guard.ticket.as_deref().unwrap_or(""),
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn list_pbs_namespaces(
+    cluster_id: String,
+    store: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<crate::proxmox::pbs::PbsNamespace>, String> {
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+    crate::proxmox::pbs::list_pbs_namespaces(
+        &client_guard,
+        &store,
+        client_guard.ticket.as_deref().unwrap_or(""),
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn list_pbs_snapshots(
+    cluster_id: String,
+    store: String,
+    ns: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<Vec<crate::proxmox::pbs::PbsSnapshot>, String> {
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+    crate::proxmox::pbs::list_pbs_snapshots(
+        &client_guard,
+        &store,
+        ns.as_deref().unwrap_or(""),
+        client_guard.ticket.as_deref().unwrap_or(""),
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn list_pbs_tasks(
+    cluster_id: String,
+    node: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<crate::proxmox::pbs::PbsTask>, String> {
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+    crate::proxmox::pbs::list_pbs_tasks(
+        &client_guard,
+        &node,
+        client_guard.ticket.as_deref().unwrap_or(""),
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn get_pbs_node_status(
+    cluster_id: String,
+    node: String,
+    state: State<'_, AppState>,
+) -> Result<serde_json::Value, String> {
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+    crate::proxmox::pbs::get_pbs_node_status(
+        &client_guard,
+        &node,
+        client_guard.ticket.as_deref().unwrap_or(""),
+    )
+    .await
+}
+
+// ─── Subscription Update ──────────────────────────────────────────────────
+
+#[tauri::command]
+pub async fn update_subscription(
+    cluster_id: String,
+    node: String,
+    key: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    use crate::proxmox::validate::validate_node;
+    validate_node(&node)?;
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+    let ticket = client_guard.ticket.as_deref().unwrap_or("");
+    let path = format!("nodes/{}/subscription", node);
+    let _: serde_json::Value = client_guard
+        .post_form(&path, &[("key", key.as_str())], Some(ticket))
+        .await
+        .map_err(|e| format!("Failed to update subscription on node {}: {}", node, e))?;
     Ok(())
 }
 

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/index';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/index';
 import { Button } from '@/components/ui/index';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/index';
 import { Input } from '@/components/ui/index';
 import { RefreshCw, Power, RotateCcw } from 'lucide-react';
 import {
@@ -11,6 +12,10 @@ import {
   listAptRepositories,
   getSyslog,
   listClusterTasks,
+  getNodeJournal,
+  getNodeReport,
+  rebootNode,
+  shutdownNode,
 } from '@/lib/proxmoxClient';
 import type {
   NodeStatus,
@@ -20,6 +25,7 @@ import type {
   ClusterTask,
 } from '@/lib/proxmoxClient';
 import type { ClusterInfo } from '@/lib/domain';
+import { toast } from 'sonner';
 
 export function ProxmoxAdminPage() {
   const [clusters, setClusters] = useState<ClusterInfo[]>([]);
@@ -31,8 +37,11 @@ export function ProxmoxAdminPage() {
   const [aptRepos, setAptRepos] = useState<AptRepository[]>([]);
   const [syslog, setSyslog] = useState<SyslogEntry[]>([]);
   const [tasks, setTasks] = useState<ClusterTask[]>([]);
+  const [journal, setJournal] = useState<string[]>([]);
+  const [report, setReport] = useState<string>('');
   const [activeTab, setActiveTab] = useState('status');
   const [tabError, setTabError] = useState<string | null>(null);
+  const [confirmAction, setConfirmAction] = useState<'reboot' | 'shutdown' | null>(null);
 
   useEffect(() => {
     listProxmoxClusters()
@@ -64,6 +73,12 @@ export function ProxmoxAdminPage() {
           case 'tasks':
             setTasks(await listClusterTasks(cId));
             break;
+          case 'journal':
+            setJournal(await getNodeJournal(cId, nId, 200));
+            break;
+          case 'report':
+            setReport(await getNodeReport(cId, nId));
+            break;
         }
       } catch (e) {
         setTabError(String(e));
@@ -78,6 +93,23 @@ export function ProxmoxAdminPage() {
 
   const applyNodeId = () => {
     setNodeId(nodeInputValue.trim() || 'localhost');
+  };
+
+  const handleConfirmAction = async () => {
+    if (!confirmAction) return;
+    try {
+      if (confirmAction === 'reboot') {
+        await rebootNode(clusterId, nodeId);
+        toast.success('Node reboot initiated');
+      } else {
+        await shutdownNode(clusterId, nodeId);
+        toast.success('Node shutdown initiated');
+      }
+    } catch (e) {
+      toast.error(String(e));
+    } finally {
+      setConfirmAction(null);
+    }
   };
 
   const formatBytes = (bytes: number) =>
@@ -152,6 +184,8 @@ export function ProxmoxAdminPage() {
           <TabsTrigger value="repositories">Repositories</TabsTrigger>
           <TabsTrigger value="syslog">System Log</TabsTrigger>
           <TabsTrigger value="tasks">Tasks</TabsTrigger>
+          <TabsTrigger value="journal">Journal</TabsTrigger>
+          <TabsTrigger value="report">Report</TabsTrigger>
         </TabsList>
 
         {/* ── Node Status ─────────────────────────────────────────────────── */}
@@ -159,51 +193,61 @@ export function ProxmoxAdminPage() {
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
               <CardTitle>Node Status</CardTitle>
-              <div className="flex space-x-2">
-                <Button variant="outline" size="sm">
-                  <RotateCcw className="mr-2 h-4 w-4" />
-                  Reboot
-                </Button>
-                <Button variant="destructive" size="sm">
-                  <Power className="mr-2 h-4 w-4" />
-                  Shutdown
-                </Button>
-              </div>
             </CardHeader>
             <CardContent>
               {nodeStatus ? (
-                <div className="grid grid-cols-2 gap-4 text-sm">
-                  <div>
-                    <span className="text-muted-foreground">CPU:</span>{' '}
-                    {(nodeStatus.cpu * 100).toFixed(1)}%
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground">Memory:</span>{' '}
-                    {formatBytes(nodeStatus.memory.used)} / {formatBytes(nodeStatus.memory.total)}
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground">Swap:</span>{' '}
-                    {formatBytes(nodeStatus.swap.used)} / {formatBytes(nodeStatus.swap.total)}
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground">Disk:</span>{' '}
-                    {formatBytes(nodeStatus.disk.used)} / {formatBytes(nodeStatus.disk.total)}
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground">Uptime:</span>{' '}
-                    {formatUptime(nodeStatus.uptime)}
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground">Version:</span>{' '}
-                    {nodeStatus.version}
-                  </div>
-                  {nodeStatus.loadAvg.length > 0 && (
-                    <div className="col-span-2">
-                      <span className="text-muted-foreground">Load Avg:</span>{' '}
-                      {nodeStatus.loadAvg.map((v) => v.toFixed(2)).join(' / ')}
+                <>
+                  <div className="grid grid-cols-2 gap-4 text-sm">
+                    <div>
+                      <span className="text-muted-foreground">CPU:</span>{' '}
+                      {(nodeStatus.cpu * 100).toFixed(1)}%
                     </div>
-                  )}
-                </div>
+                    <div>
+                      <span className="text-muted-foreground">Memory:</span>{' '}
+                      {formatBytes(nodeStatus.memory.used)} / {formatBytes(nodeStatus.memory.total)}
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Swap:</span>{' '}
+                      {formatBytes(nodeStatus.swap.used)} / {formatBytes(nodeStatus.swap.total)}
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Disk:</span>{' '}
+                      {formatBytes(nodeStatus.disk.used)} / {formatBytes(nodeStatus.disk.total)}
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Uptime:</span>{' '}
+                      {formatUptime(nodeStatus.uptime)}
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Version:</span>{' '}
+                      {nodeStatus.version}
+                    </div>
+                    {nodeStatus.loadAvg.length > 0 && (
+                      <div className="col-span-2">
+                        <span className="text-muted-foreground">Load Avg:</span>{' '}
+                        {nodeStatus.loadAvg.map((v) => v.toFixed(2)).join(' / ')}
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex gap-2 mt-4 pt-4 border-t border-destructive/20">
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      onClick={() => setConfirmAction('reboot')}
+                    >
+                      <RotateCcw className="mr-2 h-4 w-4" />
+                      Reboot Node
+                    </Button>
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      onClick={() => setConfirmAction('shutdown')}
+                    >
+                      <Power className="mr-2 h-4 w-4" />
+                      Shutdown Node
+                    </Button>
+                  </div>
+                </>
               ) : (
                 <div className="text-muted-foreground text-sm">Loading node status...</div>
               )}
@@ -349,7 +393,72 @@ export function ProxmoxAdminPage() {
             </CardContent>
           </Card>
         </TabsContent>
+
+        {/* ── Journal ─────────────────────────────────────────────────────── */}
+        <TabsContent value="journal">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <CardTitle>System Journal</CardTitle>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void loadTabData('journal', clusterId, nodeId)}
+              >
+                <RefreshCw className="mr-2 h-4 w-4" />
+                Refresh
+              </Button>
+            </CardHeader>
+            <CardContent>
+              <pre className="text-xs font-mono bg-muted p-3 rounded max-h-96 overflow-y-auto whitespace-pre-wrap">
+                {journal.join('\n') || 'No journal entries'}
+              </pre>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* ── Report ──────────────────────────────────────────────────────── */}
+        <TabsContent value="report">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <CardTitle>Node Report</CardTitle>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void loadTabData('report', clusterId, nodeId)}
+              >
+                <RefreshCw className="mr-2 h-4 w-4" />
+                Refresh
+              </Button>
+            </CardHeader>
+            <CardContent>
+              <pre className="text-xs font-mono bg-muted p-3 rounded max-h-96 overflow-y-auto whitespace-pre-wrap">
+                {report || 'No report available'}
+              </pre>
+            </CardContent>
+          </Card>
+        </TabsContent>
       </Tabs>
+
+      {/* Reboot/Shutdown Confirmation Dialog */}
+      <Dialog open={!!confirmAction} onOpenChange={() => setConfirmAction(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              Confirm {confirmAction === 'reboot' ? 'Reboot' : 'Shutdown'}
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground py-2">
+            Are you sure you want to {confirmAction} node <strong>{nodeId}</strong>? This will
+            interrupt all running workloads on this node.
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmAction(null)}>Cancel</Button>
+            <Button variant="destructive" onClick={() => void handleConfirmAction()}>
+              {confirmAction === 'reboot' ? 'Reboot' : 'Shutdown'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

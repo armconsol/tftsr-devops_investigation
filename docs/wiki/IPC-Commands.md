@@ -835,3 +835,343 @@ listProxmoxAptRepositories(clusterId, nodeId) → Array<APTRepository>
 Lists configured APT repositories via `GET nodes/{node}/apt/repositories`.
 
 **PVE API response structure:** Returns `{"files": [...], "infos": [...], "standard-repos": [...]}`. The implementation reads from the `files` array, where each entry has `URIs`, `Suites`, `Components`, `Types`, and `Enabled` as arrays/bool. The endpoint is `apt/repositories`, not `apt/sources`.
+
+---
+
+## Node Administration Commands
+
+### `get_node_dns`
+```typescript
+getNodeDns(clusterId: string, node: string) → NodeDns
+```
+Retrieves DNS configuration for a node via `GET nodes/{node}/dns`.
+
+### `update_node_dns`
+```typescript
+updateNodeDns(clusterId: string, node: string, search: string, dns1?: string, dns2?: string, dns3?: string) → void
+```
+Sets DNS servers and search domain for a node via `PUT nodes/{node}/dns`.
+
+### `get_node_time`
+```typescript
+getNodeTime(clusterId: string, node: string) → NodeTime
+```
+Retrieves current time and timezone for a node via `GET nodes/{node}/time`.
+
+### `update_node_time`
+```typescript
+updateNodeTime(clusterId: string, node: string, timezone: string) → void
+```
+Sets timezone for a node via `PUT nodes/{node}/time`.
+
+### `reboot_node`
+```typescript
+rebootNode(clusterId: string, node: string) → string
+```
+Schedules a node reboot via `POST nodes/{node}/status/reboot`. Returns UPID (Unique Process ID) for the async task.
+
+### `shutdown_node`
+```typescript
+shutdownNode(clusterId: string, node: string) → string
+```
+Schedules a node shutdown via `POST nodes/{node}/status/shutdown`. Returns UPID.
+
+### `get_node_journal`
+```typescript
+getNodeJournal(clusterId: string, node: string, lastentries?: number) → string[]
+```
+Retrieves systemd journal entries for a node via `GET nodes/{node}/journal`. Default `lastentries` is 200 if not specified.
+
+### `get_node_report`
+```typescript
+getNodeReport(clusterId: string, node: string) → string
+```
+Retrieves a full diagnostic report for a node via `GET nodes/{node}/report`. Returns concatenated system information useful for debugging.
+
+---
+
+## Network Configuration Commands
+
+### `reload_network_config`
+```typescript
+reloadNetworkConfig(clusterId: string, node: string) → string
+```
+Applies pending network configuration changes on a node via `POST nodes/{node}/network`. Returns UPID.
+
+---
+
+## VM Configuration Commands
+
+### `get_vm_config`
+```typescript
+getVmConfig(clusterId: string, node: string, vmId: number) → object
+```
+Retrieves raw QEMU VM configuration via `GET nodes/{node}/qemu/{vmid}/config`. Returns the complete config object.
+
+### `get_vm_pending_config`
+```typescript
+getVmPendingConfig(clusterId: string, node: string, vmId: number) → VmPendingEntry[]
+```
+Retrieves pending (not yet applied) VM configuration changes via `GET nodes/{node}/qemu/{vmid}/pending`. Each entry shows the pending key, current value, and delete flag.
+
+```typescript
+interface VmPendingEntry {
+    key: string;
+    value?: string;
+    delete?: number;
+}
+```
+
+### `remote_migrate_vm`
+```typescript
+remoteMigrateVm(clusterId: string, node: string, vmId: number, targetNode: string, targetStorage: string, online: boolean) → string
+```
+Migrates a QEMU VM to a different cluster node via `POST nodes/{node}/qemu/{vmid}/migrate`. `online: true` performs live migration. Returns UPID.
+
+---
+
+## Container (LXC) Configuration Commands
+
+### `get_container_config`
+```typescript
+getContainerConfig(clusterId: string, node: string, vmId: number) → object
+```
+Retrieves raw LXC container configuration via `GET nodes/{node}/lxc/{vmid}/config`. Returns the complete config object.
+
+### `create_proxmox_container`
+```typescript
+createProxmoxContainer(clusterId: string, node: string, vmid: number, ostemplate: string, hostname?: string, memory?: number, cores?: number, rootfs?: string, net0?: string, password?: string, unprivileged?: boolean, start?: boolean) → string
+```
+Creates a new LXC container via `POST nodes/{node}/lxc`. Input validation applied server-side for `vmid`, `memory`, `cores`, and `hostname`. Returns UPID.
+
+---
+
+## RRD Metrics Commands
+
+### `get_node_rrd_data`
+```typescript
+getNodeRrdData(clusterId: string, node: string, timeframe: "hour" | "day" | "week" | "month" | "year") → object[]
+```
+Retrieves RRD (Round-Robin Database) metrics for a node via `GET nodes/{node}/rrddata`. `timeframe` determines the aggregation granularity.
+
+### `get_vm_rrd_data`
+```typescript
+getVmRrdData(clusterId: string, node: string, vmId: number, timeframe: "hour" | "day" | "week" | "month" | "year") → object[]
+```
+Retrieves RRD metrics for a QEMU VM via `GET nodes/{node}/qemu/{vmid}/rrddata`.
+
+### `get_storage_rrd_data`
+```typescript
+getStorageRrdData(clusterId: string, node: string, storage: string, timeframe: "hour" | "day" | "week" | "month" | "year") → object[]
+```
+Retrieves RRD metrics for a storage pool via `GET nodes/{node}/storage/{storage}/rrddata`.
+
+---
+
+## Ceph Advanced Commands
+
+### `list_ceph_monitors`
+```typescript
+listCephMonitors(clusterId: string) → CephMonitor[]
+```
+Lists Ceph monitor nodes cluster-wide via `GET cluster/ceph/mon`. Returns monitor status and quorum information.
+
+### `list_ceph_managers`
+```typescript
+listCephManagers(clusterId: string, node: string) → CephMgr[]
+```
+Lists Ceph manager daemons on a node via `GET nodes/{node}/ceph/mgr`. Managers handle cluster balancing and module plugins.
+
+### `list_cephfs`
+```typescript
+listCephfs(clusterId: string, node: string) → CephFs[]
+```
+Lists CephFS filesystems on a node via `GET nodes/{node}/cephfs`. Returns mounted filesystem information.
+
+### `get_ceph_flags`
+```typescript
+getCephFlags(clusterId: string, node: string) → object
+```
+Retrieves Ceph OSD cluster flags via `GET nodes/{node}/ceph/flags`. Returns an object with boolean flag states (e.g., `noscrub`, `nodeep-scrub`, `pauserd`, `pausewr`).
+
+---
+
+## Firewall Commands
+
+### `list_cluster_firewall_rules`
+```typescript
+listClusterFirewallRules(clusterId: string) → FirewallRule[]
+```
+Lists cluster-wide firewall rules via `GET cluster/firewall/rules`. Returns rules applicable to all cluster resources.
+
+### `get_cluster_firewall_status`
+```typescript
+getClusterFirewallStatus(clusterId: string) → ClusterFirewallStatus
+```
+Retrieves cluster firewall enable state and default policies via `GET cluster/firewall/options`.
+
+```typescript
+interface ClusterFirewallStatus {
+    enable?: number;           // 0 or 1
+    policy_in?: string;        // Default input policy
+    policy_out?: string;       // Default output policy
+}
+```
+
+### `list_guest_firewall_rules`
+```typescript
+listGuestFirewallRules(clusterId: string, node: string, vmId: number) → FirewallRule[]
+```
+Lists firewall rules for a specific VM/container via `GET nodes/{node}/qemu/{vmid}/firewall/rules` or `/lxc/{vmid}/firewall/rules`.
+
+### `add_guest_firewall_rule`
+```typescript
+addGuestFirewallRule(clusterId: string, node: string, vmId: number, action: string, proto?: string, source?: string, dest?: string, dport?: string, enable?: boolean) → void
+```
+Adds a firewall rule to a VM/container via `POST nodes/{node}/qemu/{vmid}/firewall/rules` or `/lxc/{vmid}/firewall/rules`. `action` is typically `ACCEPT`, `DROP`, or `REJECT`.
+
+### `delete_guest_firewall_rule`
+```typescript
+deleteGuestFirewallRule(clusterId: string, node: string, vmId: number, pos: number) → void
+```
+Deletes a firewall rule by position via `DELETE nodes/{node}/qemu/{vmid}/firewall/rules/{pos}` or `/lxc/{vmid}/firewall/rules/{pos}`.
+
+---
+
+## Two-Factor Authentication (TFA) Commands
+
+### `list_tfa_entries`
+```typescript
+listTfaEntries(clusterId: string) → TfaEntry[]
+```
+Lists all TFA entries visible to the authenticated user via `GET /access/tfa`. Returns TOTP, WebAuthn, recovery codes, and Yubico entries.
+
+```typescript
+interface TfaEntry {
+    id: string;
+    userid: string;
+    type: string;              // totp | webauthn | recovery | yubico
+    description?: string;
+    created: number;           // Unix timestamp
+}
+```
+
+### `add_tfa_entry`
+```typescript
+addTfaEntry(clusterId: string, userid: string, tfaType: string, description?: string, totp?: string, value?: string, key?: string) → object
+```
+Adds a TFA entry for a user via `POST /access/tfa`. `tfaType` must be one of: `totp`, `webauthn`, `recovery`, or `yubico`. Returns the created entry with any generated secrets.
+
+### `delete_tfa_entry`
+```typescript
+deleteTfaEntry(clusterId: string, userid: string, id: string) → void
+```
+Deletes a specific TFA entry via `DELETE /access/tfa/{userid}/{id}`.
+
+---
+
+## User API Token Commands
+
+### `list_user_tokens`
+```typescript
+listUserTokens(clusterId: string, userid: string) → UserToken[]
+```
+Lists API tokens for a user via `GET /access/users/{userid}/tokens`. Each token shows creation date and expiration (if set).
+
+```typescript
+interface UserToken {
+    tokenid: string;
+    issuedate: number;         // Unix timestamp
+    expire?: number;           // Unix timestamp (null if no expiration)
+    privsep?: number;          // 0 or 1 (privilege separation)
+}
+```
+
+### `create_user_token`
+```typescript
+createUserToken(clusterId: string, userid: string, tokenname: string, comment?: string, privsep?: boolean, expire?: number) → UserTokenCreateResult
+```
+Creates an API token for a user via `POST /access/users/{userid}/tokens`. **Important:** The token value is only returned once upon creation and cannot be retrieved later.
+
+```typescript
+interface UserTokenCreateResult {
+    tokenid: string;
+    value: string;             // Token secret (only shown once)
+    issuedate: number;
+    expire?: number;
+    privsep?: number;
+}
+```
+
+### `delete_user_token`
+```typescript
+deleteUserToken(clusterId: string, userid: string, tokenname: string) → void
+```
+Revokes an API token via `DELETE /access/users/{userid}/tokens/{tokenname}`.
+
+---
+
+## Proxmox Backup Server (PBS) Management Commands
+
+### `list_pbs_datastores`
+```typescript
+listPbsDatastores(clusterId: string) → PbsDatastore[]
+```
+Lists datastores on a PBS cluster via `GET nodes/{node}/storage`. Filters for `type == "pbs"`. Returns datastore name, content, and status.
+
+### `get_pbs_datastore_status`
+```typescript
+getPbsDatastoreStatus(clusterId: string, store: string) → object
+```
+Retrieves usage and status for a PBS datastore via `GET nodes/{node}/storage/{store}/status`. Returns capacity, used space, and available space in bytes.
+
+### `list_pbs_namespaces`
+```typescript
+listPbsNamespaces(clusterId: string, store: string) → PbsNamespace[]
+```
+Lists namespaces in a PBS datastore via `GET nodes/{node}/pbs/{store}/namespaces`. Returns empty array if the PBS server version does not support namespaces.
+
+```typescript
+interface PbsNamespace {
+    name: string;
+    backup_count?: number;     // Number of backups in this namespace
+}
+```
+
+### `list_pbs_snapshots`
+```typescript
+listPbsSnapshots(clusterId: string, store: string, ns?: string) → PbsSnapshot[]
+```
+Lists backup snapshots in a PBS datastore via `GET nodes/{node}/pbs/{store}/snapshots`. Optional `ns` parameter filters to a specific namespace.
+
+```typescript
+interface PbsSnapshot {
+    backup_id: string;
+    backup_time: number;       // Unix timestamp
+    backup_type: string;       // vm | ct
+    size: number;              // Bytes
+    files?: string[];          // Individual file names
+}
+```
+
+### `list_pbs_tasks`
+```typescript
+listPbsTasksCmd(clusterId: string, node: string) → PbsTask[]
+```
+Lists task history on a PBS node via `GET nodes/{node}/pbs/tasks`. Returns backup job, prune, and verify task records.
+
+### `get_pbs_node_status`
+```typescript
+getPbsNodeStatus(clusterId: string, node: string) → object
+```
+Retrieves status of a PBS node via `GET nodes/{node}/status`. Returns uptime, load average, CPU, memory, and disk usage.
+
+---
+
+## Subscription Commands
+
+### `update_subscription`
+```typescript
+updateSubscription(clusterId: string, node: string, key: string) → void
+```
+Updates or validates the Proxmox subscription key via `POST nodes/{node}/subscription`. The key is validated and stored on the server. Subscription status can then be queried for entitlement levels and support status.
