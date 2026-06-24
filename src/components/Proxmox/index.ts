@@ -34,6 +34,7 @@ export { VMOverview } from './VMOverview';
 export { ContainerOverview } from './ContainerOverview';
 export { AclList } from './AclList';
 export { VMConsole } from './VMConsole';
+export { NoVncConsole } from './NoVncConsole';
 export { ContainerConsole } from './ContainerConsole';
 export { CreateVmDialog } from './CreateVmDialog';
 export { NodeSelect } from './NodeSelect';

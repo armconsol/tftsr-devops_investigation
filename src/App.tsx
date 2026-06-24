@@ -63,6 +63,7 @@ import { ProxmoxSearchPage } from "@/pages/Proxmox/SearchPage";
 import { ProxmoxAdminPage } from "@/pages/Proxmox/AdminPage";
 import { ProxmoxUpdatesPage } from "@/pages/Proxmox/UpdatesPage";
 import { ProxmoxNodeDetailPage } from "@/pages/Proxmox/NodeDetailPage";
+import { ProxmoxConsolePage } from "@/pages/Proxmox/ConsolePage";
 import { ProxmoxSettings } from "@/pages/Settings/Proxmox";
 import { Updater } from "@/pages/Settings/Updater";
 import { RouteErrorBoundary } from "@/components/RouteErrorBoundary";
@@ -341,6 +342,7 @@ export default function App() {
           <Route path="/proxmox/admin" element={<ProxmoxAdminPage />} />
           <Route path="/proxmox/updates" element={<ProxmoxUpdatesPage />} />
           <Route path="/proxmox/nodes" element={<ProxmoxNodeDetailPage />} />
+          <Route path="/proxmox/console/:clusterId/:node/:vmid/:kind" element={<ProxmoxConsolePage />} />
           <Route path="/settings/updater" element={<Updater />} />
           <Route path="/settings/proxmox" element={<ProxmoxSettings />} />
             <Route path="/settings/integrations" element={<Integrations />} />

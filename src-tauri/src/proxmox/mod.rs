@@ -10,6 +10,7 @@ pub mod ceph_cluster;
 pub mod certificates;
 pub mod client;
 pub mod cluster;
+pub mod console;
 pub mod firewall;
 pub mod ha;
 pub mod lxc;

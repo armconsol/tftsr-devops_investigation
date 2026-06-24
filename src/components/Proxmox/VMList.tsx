@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { clsx } from 'clsx';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/index';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/index';
 import { Button } from '@/components/ui/index';
 import { Checkbox } from '@/components/ui/index';
-import { MoreHorizontal, Play, Square, RotateCcw, Power, PlayCircle, Pause, X, MoveRight, Copy, Settings } from 'lucide-react';
+import { MoreHorizontal, Play, Square, RotateCcw, Power, PlayCircle, Pause, X, MoveRight, Copy, Settings, Monitor } from 'lucide-react';
 import { confirm } from '@tauri-apps/plugin-dialog';
 import { toast } from 'sonner';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/index';
@@ -119,6 +120,7 @@ export function VMList({
   onToggleSelect,
   onViewConfig,
 }: VMListProps) {
+  const navigate = useNavigate();
   const [migrationVM, setMigrationVM] = useState<VMInfo | null>(null);
   const [targetNode, setTargetNode] = useState<string>('');
   const [targetCluster, setTargetCluster] = useState<string>('');
@@ -278,6 +280,11 @@ export function VMList({
     setSnapshotName('');
     setSelectedSnapshot('');
   }, []);
+
+  const handleConsole = useCallback((vm: VMInfo) => {
+    if (!clusterId) { toast.error('No cluster selected'); return; }
+    navigate(`/proxmox/console/${encodeURIComponent(clusterId)}/${encodeURIComponent(vm.node)}/${vm.vmid}/qemu`);
+  }, [clusterId, navigate]);
 
   const handleMigrate = useCallback(async (vm: VMInfo) => {
     setMigrationVM(vm);
@@ -560,6 +567,7 @@ export function VMList({
                           onVMAction={handleVMAction}
                           onSnapshotAction={handleSnapshotAction}
                           onMigrate={handleMigrate}
+                          onConsole={handleConsole}
                           onClone={handleClone}
                           onDelete={handleDelete}
                         />
@@ -631,6 +639,7 @@ interface VMActionMenuProps {
   onVMAction: (vm: VMInfo, action: 'start' | 'stop' | 'reboot' | 'shutdown' | 'resume' | 'suspend') => void;
   onSnapshotAction: (vm: VMInfo, action: 'create' | 'list' | 'rollback' | 'delete') => void;
   onMigrate: (vm: VMInfo) => void;
+  onConsole: (vm: VMInfo) => void;
   onClone: (vm: VMInfo) => void;
   onDelete: (vm: VMInfo) => void;
 }
@@ -640,6 +649,7 @@ function VMActionMenu({
   onVMAction,
   onSnapshotAction,
   onMigrate,
+  onConsole,
   onClone,
   onDelete,
 }: VMActionMenuProps) {
@@ -702,6 +712,14 @@ function VMActionMenu({
           )}
         >
           <div className="space-y-1 p-1">
+            <button
+              className="flex w-full items-center rounded-md px-2 py-1.5 text-sm hover:bg-accent"
+              onClick={handleAction(() => onConsole(vm))}
+            >
+              <Monitor className="mr-2 h-4 w-4" />
+              Console (VNC)
+            </button>
+            <div className="h-px bg-border my-1" />
             {vm.status === 'stopped' && (
               <button
                 className="flex w-full items-center rounded-md px-2 py-1.5 text-sm hover:bg-accent"
