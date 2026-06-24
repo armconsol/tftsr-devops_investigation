@@ -306,7 +306,10 @@ mod tests {
 
         assert_eq!(name, "Even");
         assert_eq!(nodes, "vmhost2,vmhost4");
-        assert!(nodes.contains(','), "nodes must be a comma-separated string");
+        assert!(
+            nodes.contains(','),
+            "nodes must be a comma-separated string"
+        );
     }
 
     #[test]
@@ -321,7 +324,10 @@ mod tests {
 
         let sid = pve_response.get("sid").and_then(|s| s.as_str()).unwrap();
         assert_eq!(sid, "vm:100");
-        assert!(pve_response.get("resource").is_none(), "PVE API uses sid not resource");
+        assert!(
+            pve_response.get("resource").is_none(),
+            "PVE API uses sid not resource"
+        );
     }
 
     #[test]
@@ -336,7 +342,13 @@ mod tests {
         };
         let json = serde_json::to_string(&group).unwrap();
         let v: serde_json::Value = serde_json::from_str(&json).unwrap();
-        assert!(v.get("id").is_some(), "serialized JSON must have 'id' field for frontend");
-        assert!(v.get("group").is_none(), "serialized JSON must not have 'group' (renamed to id)");
+        assert!(
+            v.get("id").is_some(),
+            "serialized JSON must have 'id' field for frontend"
+        );
+        assert!(
+            v.get("group").is_none(),
+            "serialized JSON must not have 'group' (renamed to id)"
+        );
     }
 }

@@ -317,7 +317,8 @@ mod tests {
     #[test]
     fn test_firewall_enable_integer_1_is_enabled() {
         // PVE API uses integer 1/0 for enable, not boolean
-        let pve_rule = serde_json::json!({"pos": 1, "action": "ACCEPT", "proto": "tcp", "enable": 1});
+        let pve_rule =
+            serde_json::json!({"pos": 1, "action": "ACCEPT", "proto": "tcp", "enable": 1});
         let enabled = pve_rule
             .get("enable")
             .and_then(|e| e.as_i64())
@@ -343,7 +344,10 @@ mod tests {
         let pve_rule = serde_json::json!({"pos": 1, "action": "ACCEPT", "proto": "udp"});
         let proto = pve_rule.get("proto").and_then(|p| p.as_str()).unwrap_or("");
         assert_eq!(proto, "udp");
-        assert!(pve_rule.get("protocol").is_none(), "PVE uses 'proto' not 'protocol'");
+        assert!(
+            pve_rule.get("protocol").is_none(),
+            "PVE uses 'proto' not 'protocol'"
+        );
     }
 
     #[test]
@@ -352,6 +356,9 @@ mod tests {
         let pve_rule = serde_json::json!({"pos": 5, "action": "ACCEPT"});
         let pos = pve_rule.get("pos").and_then(|p| p.as_u64()).unwrap();
         assert_eq!(pos, 5);
-        assert!(pve_rule.get("rule_num").is_none(), "PVE uses 'pos' not 'rule_num'");
+        assert!(
+            pve_rule.get("rule_num").is_none(),
+            "PVE uses 'pos' not 'rule_num'"
+        );
     }
 }
