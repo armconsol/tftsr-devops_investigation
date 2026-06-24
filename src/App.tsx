@@ -65,6 +65,7 @@ import { ProxmoxUpdatesPage } from "@/pages/Proxmox/UpdatesPage";
 import { ProxmoxNodeDetailPage } from "@/pages/Proxmox/NodeDetailPage";
 import { ProxmoxSettings } from "@/pages/Settings/Proxmox";
 import { Updater } from "@/pages/Settings/Updater";
+import { RouteErrorBoundary } from "@/components/RouteErrorBoundary";
 
 const navItems = [
   { to: "/", icon: Home, label: "Dashboard" },
@@ -304,6 +305,7 @@ export default function App() {
 
         {/* Main content */}
         <main className="overflow-y-auto bg-background">
+          <RouteErrorBoundary>
           <Routes>
             <Route path="/" element={<Dashboard />} />
             <Route path="/new-issue" element={<NewIssue />} />
@@ -345,6 +347,7 @@ export default function App() {
             <Route path="/settings/mcp" element={<MCPServers />} />
             <Route path="/settings/security" element={<Security />} />
           </Routes>
+          </RouteErrorBoundary>
         </main>
       </div>
       <Toaster richColors position="top-right" />
