@@ -43,7 +43,8 @@ const defaultForm: FormState = {
 export function ProxmoxNetworkPage() {
   const [interfaces, setInterfaces] = useState<NetworkInterface[]>([]);
   const [clusterId, setClusterId] = useState('');
-  const [nodeId] = useState('localhost');
+  const [nodeId, setNodeId] = useState('');
+  const [nodeInput, setNodeInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -72,11 +73,17 @@ export function ProxmoxNetworkPage() {
       .then((cls) => {
         if (cls.length > 0) {
           setClusterId(cls[0].id);
-          void loadInterfaces(cls[0].id, nodeId);
         }
       })
       .catch(console.error);
-  }, [loadInterfaces, nodeId]);
+  }, []);
+
+  const handleNodeApply = () => {
+    const trimmed = nodeInput.trim();
+    if (!trimmed) return;
+    setNodeId(trimmed);
+    void loadInterfaces(clusterId, trimmed);
+  };
 
   const handleAddInterface = () => {
     setIsEditing(false);
@@ -160,11 +167,21 @@ export function ProxmoxNetworkPage() {
           <p className="text-muted-foreground">Network interfaces and bridges</p>
         </div>
         <div className="flex items-center gap-2">
+          <Input
+            className="h-8 w-36 text-sm"
+            placeholder="Node name"
+            value={nodeInput}
+            onChange={(e) => setNodeInput(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') handleNodeApply(); }}
+          />
+          <Button variant="outline" size="sm" onClick={handleNodeApply} disabled={!nodeInput.trim() || !clusterId}>
+            Load
+          </Button>
           <Button
             variant="outline"
             size="sm"
             onClick={() => void handleReload()}
-            disabled={!clusterId}
+            disabled={!clusterId || !nodeId}
           >
             <RotateCcw className="mr-2 h-4 w-4" />
             Apply Network Changes
@@ -173,7 +190,7 @@ export function ProxmoxNetworkPage() {
             variant="outline"
             size="sm"
             onClick={handleAddInterface}
-            disabled={!clusterId}
+            disabled={!clusterId || !nodeId}
           >
             <Plus className="mr-2 h-4 w-4" />
             Add Interface
@@ -182,7 +199,7 @@ export function ProxmoxNetworkPage() {
             variant="outline"
             size="sm"
             onClick={() => void loadInterfaces(clusterId, nodeId)}
-            disabled={loading || !clusterId}
+            disabled={loading || !clusterId || !nodeId}
           >
             <RefreshCw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
             Refresh
@@ -205,7 +222,7 @@ export function ProxmoxNetworkPage() {
             <div className="text-sm text-muted-foreground">Loading...</div>
           ) : interfaces.length === 0 ? (
             <div className="text-sm text-muted-foreground">
-              {clusterId ? 'No network interfaces found.' : 'No cluster configured.'}
+              {!clusterId ? 'No cluster configured.' : !nodeId ? 'Enter a node name above and click Load.' : 'No network interfaces found.'}
             </div>
           ) : (
             <div className="space-y-2">

@@ -203,6 +203,10 @@ export function ProxmoxContainersPage() {
             const ct = selectedContainer;
             if (!ct || !selectedClusterId) return;
             const vmId: number = ct.vmid ?? ct.id;
+            if (!vmId) {
+              toast.error('Container ID not available');
+              return;
+            }
             const nodeId: string = ct.node ?? '';
             try {
               if (action === 'start') await startProxmoxContainer(selectedClusterId, nodeId, vmId);

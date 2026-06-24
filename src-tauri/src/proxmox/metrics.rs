@@ -30,7 +30,7 @@ pub async fn get_node_metrics(
     node: &str,
     ticket: &str,
 ) -> Result<NodeMetrics, String> {
-    validate_node(node)?;
+    crate::proxmox::validate::validate_node(node)?;
     let path = format!("nodes/{}/status", node);
     let response: serde_json::Value = client
         .get(&path, Some(ticket))
@@ -151,26 +151,6 @@ impl std::str::FromStr for RrdTimeframe {
     }
 }
 
-/// Validate a Proxmox node name: alphanumeric, hyphens, underscores, dots; max 64 chars.
-fn validate_node(node: &str) -> Result<(), String> {
-    if node.is_empty() {
-        return Err("node name must not be empty".to_string());
-    }
-    if node.len() > 64 {
-        return Err(format!("node name exceeds 64 characters: {}", node));
-    }
-    if !node
-        .chars()
-        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.')
-    {
-        return Err(format!(
-            "node '{}' contains invalid characters — only alphanumeric, '-', '_', '.' are allowed",
-            node
-        ));
-    }
-    Ok(())
-}
-
 /// Validate a Proxmox storage name: alphanumeric, hyphens, underscores only.
 fn validate_storage(storage: &str) -> Result<(), String> {
     if storage.is_empty() {
@@ -206,7 +186,7 @@ pub async fn get_node_rrd_data(
     timeframe: &str,
     ticket: &str,
 ) -> Result<Vec<serde_json::Value>, String> {
-    validate_node(node)?;
+    crate::proxmox::validate::validate_node(node)?;
     let tf: RrdTimeframe = timeframe.parse()?;
     let path = format!("nodes/{}/rrddata?timeframe={}", node, tf.as_str());
 
@@ -232,7 +212,7 @@ pub async fn get_vm_rrd_data(
     timeframe: &str,
     ticket: &str,
 ) -> Result<Vec<serde_json::Value>, String> {
-    validate_node(node)?;
+    crate::proxmox::validate::validate_node(node)?;
     validate_vmid(vmid)?;
     let tf: RrdTimeframe = timeframe.parse()?;
     let path = format!(
@@ -264,7 +244,7 @@ pub async fn get_storage_rrd_data(
     timeframe: &str,
     ticket: &str,
 ) -> Result<Vec<serde_json::Value>, String> {
-    validate_node(node)?;
+    crate::proxmox::validate::validate_node(node)?;
     validate_storage(storage)?;
     let tf: RrdTimeframe = timeframe.parse()?;
     let path = format!(
@@ -289,6 +269,7 @@ pub async fn get_storage_rrd_data(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::proxmox::validate::validate_node;
 
     #[test]
     fn test_node_metrics_serialization() {
@@ -365,8 +346,8 @@ mod tests {
     #[test]
     fn test_validate_node_valid() {
         assert!(validate_node("pve-node1").is_ok());
-        assert!(validate_node("node.local").is_ok());
-        assert!(validate_node("pve_01").is_ok());
+        assert!(validate_node("node01").is_ok());
+        assert!(validate_node("pve-node-1").is_ok());
         assert!(validate_node("a").is_ok());
     }
 

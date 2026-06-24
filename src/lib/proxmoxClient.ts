@@ -282,24 +282,24 @@ export async function triggerProxmoxBackupJob(
  * List Ceph Pools
  * @param clusterId - Cluster identifier
  */
-export async function listCephPools(clusterId: string): Promise<any[]> {
-  return await invoke<any[]>("list_ceph_pools", { clusterId });
+export async function listCephPools(clusterId: string): Promise<CephPool[]> {
+  return await invoke<CephPool[]>("list_ceph_pools", { clusterId });
 }
 
 /**
  * List Ceph OSDs
  * @param clusterId - Cluster identifier
  */
-export async function listCephOsd(clusterId: string): Promise<any[]> {
-  return await invoke<any[]>("list_ceph_osd", { clusterId });
+export async function listCephOsd(clusterId: string): Promise<CephOsd[]> {
+  return await invoke<CephOsd[]>("list_ceph_osd", { clusterId });
 }
 
 /**
  * Get Ceph Health
  * @param clusterId - Cluster identifier
  */
-export async function getCephHealth(clusterId: string): Promise<any> {
-  return await invoke<any>("get_ceph_health", { clusterId });
+export async function getCephHealth(clusterId: string): Promise<CephHealth> {
+  return await invoke<CephHealth>("get_ceph_health", { clusterId });
 }
 
 // ─── User Management (LDAP/AD/OpenID) ─────────────────────────────────────────
@@ -1540,6 +1540,35 @@ export interface CephFs {
   name: string;
   metadataPool?: string;
   dataPoolIds?: number[];
+}
+
+export interface CephHealth {
+  status: 'HEALTH_OK' | 'HEALTH_WARN' | 'HEALTH_ERR';
+  summary: string;
+  details: string[];
+}
+
+export interface CephPool {
+  id: string;
+  name: string;
+  type: string;
+  size: number;
+  minSize: number;
+  used: number;
+  available: number;
+  total: number;
+  usedPercent: number;
+}
+
+export interface CephOsd {
+  id: number;
+  host: string;
+  status: 'up' | 'down';
+  weight: number;
+  size: number;
+  used: number;
+  avail: number;
+  usedPercent: number;
 }
 
 // ─── Cluster Firewall Status ──────────────────────────────────────────────────

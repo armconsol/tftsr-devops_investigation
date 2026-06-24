@@ -3598,6 +3598,7 @@ pub async fn get_node_dns(
     node: String,
     state: State<'_, AppState>,
 ) -> Result<crate::proxmox::node::NodeDns, String> {
+    validate_pve_identifier(&node, "node")?;
     let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
     crate::proxmox::node::get_node_dns(
@@ -3618,6 +3619,7 @@ pub async fn update_node_dns(
     dns3: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
+    validate_pve_identifier(&node, "node")?;
     let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
     crate::proxmox::node::update_node_dns(
@@ -3638,6 +3640,7 @@ pub async fn get_node_time(
     node: String,
     state: State<'_, AppState>,
 ) -> Result<crate::proxmox::node::NodeTime, String> {
+    validate_pve_identifier(&node, "node")?;
     let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
     crate::proxmox::node::get_node_time(
@@ -3655,6 +3658,7 @@ pub async fn update_node_time(
     timezone: String,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
+    validate_pve_identifier(&node, "node")?;
     let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
     crate::proxmox::node::update_node_time(
@@ -3672,6 +3676,7 @@ pub async fn reboot_node(
     node: String,
     state: State<'_, AppState>,
 ) -> Result<String, String> {
+    validate_pve_identifier(&node, "node")?;
     let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
     crate::proxmox::node::reboot_node(
@@ -3688,6 +3693,7 @@ pub async fn shutdown_node(
     node: String,
     state: State<'_, AppState>,
 ) -> Result<String, String> {
+    validate_pve_identifier(&node, "node")?;
     let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
     crate::proxmox::node::shutdown_node(
@@ -3705,6 +3711,7 @@ pub async fn get_node_journal(
     lastentries: Option<u32>,
     state: State<'_, AppState>,
 ) -> Result<Vec<String>, String> {
+    validate_pve_identifier(&node, "node")?;
     let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
     crate::proxmox::node::get_node_journal(
@@ -3722,6 +3729,7 @@ pub async fn get_node_report(
     node: String,
     state: State<'_, AppState>,
 ) -> Result<String, String> {
+    validate_pve_identifier(&node, "node")?;
     let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
     crate::proxmox::node::get_node_report(
@@ -3740,6 +3748,7 @@ pub async fn reload_network_config(
     node: String,
     state: State<'_, AppState>,
 ) -> Result<String, String> {
+    validate_pve_identifier(&node, "node")?;
     let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
     crate::proxmox::network::reload_network_config(
@@ -4324,8 +4333,7 @@ pub async fn update_subscription(
     key: String,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    use crate::proxmox::validate::validate_node;
-    validate_node(&node)?;
+    validate_pve_identifier(&node, "node")?;
     let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
     let ticket = client_guard.ticket.as_deref().unwrap_or("");
