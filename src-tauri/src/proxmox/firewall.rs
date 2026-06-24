@@ -81,14 +81,16 @@ pub async fn add_rule(
     ticket: &str,
 ) -> Result<(), String> {
     let path = format!("nodes/{}/firewall/rules", node);
-    let config = serde_json::json!({
+    let mut config = serde_json::json!({
         "action": rule.action,
         "proto": rule.protocol,
         "source": rule.source,
         "dest": rule.destination,
-        "dport": rule.port,
         "enable": if rule.enabled { 1 } else { 0 }
     });
+    if let Some(ref port) = rule.port {
+        config["dport"] = serde_json::Value::String(port.clone());
+    }
 
     let _response: serde_json::Value = client
         .post(&path, &config, Some(ticket))
@@ -121,14 +123,16 @@ pub async fn update_rule(
     ticket: &str,
 ) -> Result<(), String> {
     let path = format!("nodes/{}/firewall/rules/{}", node, rule_num);
-    let config = serde_json::json!({
+    let mut config = serde_json::json!({
         "action": rule.action,
         "proto": rule.protocol,
         "source": rule.source,
         "dest": rule.destination,
-        "dport": rule.port,
         "enable": if rule.enabled { 1 } else { 0 }
     });
+    if let Some(ref port) = rule.port {
+        config["dport"] = serde_json::Value::String(port.clone());
+    }
 
     let _response: serde_json::Value = client
         .put(&path, &config, Some(ticket))
