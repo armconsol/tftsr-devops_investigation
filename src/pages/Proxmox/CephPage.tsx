@@ -2,11 +2,12 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/index';
 import { Button } from '@/components/ui/index';
 import { Badge } from '@/components/ui/index';
-import { Input } from '@/components/ui/index';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/index';
 import { Label } from '@/components/ui/index';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/index';
 import { RefreshCw } from 'lucide-react';
-import { PoolList, OSDList, CephHealthWidget } from '@/components/Proxmox';
+import { PoolList, OSDList, CephHealthWidget, NodeSelect } from '@/components/Proxmox';
+import { useProxmoxNodes } from '@/hooks/useProxmoxNodes';
 import {
   listProxmoxClusters,
   listCephPools,
@@ -18,9 +19,11 @@ import {
   getCephFlags,
 } from '@/lib/proxmoxClient';
 import type { CephMonitor, CephMgr, CephFs, CephHealth, CephPool, CephOsd } from '@/lib/proxmoxClient';
+import type { ClusterInfo } from '@/lib/domain';
 import { toast } from 'sonner';
 
 export function ProxmoxCephPage() {
+  const [clusters, setClusters] = useState<ClusterInfo[]>([]);
   const [clusterId, setClusterId] = useState<string>('');
   const [health, setHealth] = useState<CephHealth | null>(null);
   const [pools, setPools] = useState<CephPool[]>([]);
@@ -35,8 +38,8 @@ export function ProxmoxCephPage() {
   const [cephFsList, setCephFsList] = useState<CephFs[]>([]);
   const [cephFlags, setCephFlags] = useState<Record<string, unknown> | null>(null);
   const [tabLoading, setTabLoading] = useState(false);
-  const [tabNode, setTabNode] = useState('localhost');
-  const [tabNodeInput, setTabNodeInput] = useState('localhost');
+  const { nodeNames, selectedNode: tabNode, setSelectedNode, loading: nodesLoading } =
+    useProxmoxNodes(clusterId);
 
   const loadData = useCallback(async (cId: string) => {
     if (!cId) return;
@@ -80,6 +83,7 @@ export function ProxmoxCephPage() {
   useEffect(() => {
     listProxmoxClusters()
       .then((cls) => {
+        setClusters(cls);
         if (cls.length > 0) {
           setClusterId(cls[0].id);
           loadData(cls[0].id);
@@ -93,6 +97,19 @@ export function ProxmoxCephPage() {
         setIsCephEnabled(false);
       });
   }, [loadData]);
+
+  const handleClusterChange = (id: string) => {
+    setClusterId(id);
+    setHealth(null);
+    setPools([]);
+    setOsds([]);
+    setMonitors([]);
+    setManagers([]);
+    setCephFsList([]);
+    setCephFlags(null);
+    setIsCephEnabled(null);
+    loadData(id);
+  };
 
   useEffect(() => {
     if (!clusterId || !isCephEnabled) return;
@@ -144,6 +161,19 @@ export function ProxmoxCephPage() {
     if (clusterId) loadData(clusterId);
   };
 
+  const clusterSelector = clusters.length > 1 && (
+    <Select value={clusterId} onValueChange={handleClusterChange}>
+      <SelectTrigger className="h-8 w-48 text-sm">
+        <SelectValue placeholder="Select datacenter" />
+      </SelectTrigger>
+      <SelectContent>
+        {clusters.map((c) => (
+          <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+
   if (isCephEnabled === false) {
     return (
       <div className="space-y-4">
@@ -152,6 +182,7 @@ export function ProxmoxCephPage() {
             <h1 className="text-2xl font-bold">Ceph Storage</h1>
             <p className="text-muted-foreground">Manage Ceph clusters and storage</p>
           </div>
+          <div className="flex space-x-2">{clusterSelector}</div>
         </div>
         <Card>
           <CardContent className="py-12 text-center text-muted-foreground">
@@ -159,9 +190,10 @@ export function ProxmoxCephPage() {
               <p>{error}</p>
             ) : (
               <>
-                <p className="text-base font-medium">Ceph is not configured on this cluster</p>
+                <p className="text-base font-medium">Ceph is not configured on this datacenter</p>
                 <p className="text-sm mt-1">
                   Ceph storage requires a dedicated Ceph cluster deployment on the Proxmox nodes.
+                  {clusters.length > 1 && ' Select a different datacenter above if Ceph runs elsewhere.'}
                 </p>
               </>
             )}
@@ -178,7 +210,8 @@ export function ProxmoxCephPage() {
           <h1 className="text-2xl font-bold">Ceph Storage</h1>
           <p className="text-muted-foreground">Manage Ceph clusters and storage</p>
         </div>
-        <div className="flex space-x-2">
+        <div className="flex items-center space-x-2">
+          {clusterSelector}
           <Button variant="outline" size="sm" onClick={handleRefresh} disabled={loading}>
             <RefreshCw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
             Refresh
@@ -234,22 +267,13 @@ export function ProxmoxCephPage() {
         <CardContent className="space-y-4">
           <div className="flex items-center gap-2">
             <Label className="text-sm">Node:</Label>
-            <Input
-              className="w-40 h-8 text-sm"
-              value={tabNodeInput}
-              onChange={(e) => setTabNodeInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') setTabNode(tabNodeInput.trim() || 'localhost');
-              }}
-              placeholder="localhost"
+            <NodeSelect
+              nodeNames={nodeNames}
+              value={tabNode}
+              onChange={setSelectedNode}
+              loading={nodesLoading}
+              disabled={!clusterId}
             />
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setTabNode(tabNodeInput.trim() || 'localhost')}
-            >
-              Apply
-            </Button>
           </div>
 
           <Tabs value={activeTab} onValueChange={setActiveTab}>

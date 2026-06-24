@@ -204,8 +204,33 @@ export async function resumeProxmoxVm(
   await invoke("resume_proxmox_vm", { clusterId, nodeId, vmId });
 }
 
+export interface ProxmoxNodeSummary {
+  node: string;
+  status?: string;
+  cpu?: number;
+  maxcpu?: number;
+  mem?: number;
+  maxmem?: number;
+  uptime?: number;
+  [key: string]: unknown;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function listProxmoxNodes(clusterId: string): Promise<any[]> {
   return await invoke<any[]>("list_proxmox_nodes", { clusterId });
+}
+
+/**
+ * Returns the sorted list of node names for a cluster. Centralises the parsing
+ * of the raw PVE `/nodes` payload (where the node name lives in the `node`
+ * field) so node dropdowns across the UI stay consistent.
+ */
+export async function listProxmoxNodeNames(clusterId: string): Promise<string[]> {
+  const nodes = await listProxmoxNodes(clusterId);
+  return nodes
+    .map((n) => (n && typeof n.node === "string" ? (n.node as string) : ""))
+    .filter((name): name is string => name.length > 0)
+    .sort((a, b) => a.localeCompare(b));
 }
 
 export interface CreateVmParams {

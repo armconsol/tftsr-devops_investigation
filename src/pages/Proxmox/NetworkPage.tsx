@@ -8,6 +8,8 @@ import { Checkbox } from '@/components/ui/index';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/index';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/index';
 import { RefreshCw, Network, Plus, Pencil, Trash2, RotateCcw } from 'lucide-react';
+import { NodeSelect } from '@/components/Proxmox';
+import { useProxmoxNodes } from '@/hooks/useProxmoxNodes';
 import {
   listNetworkInterfaces,
   createNetworkInterface,
@@ -18,6 +20,7 @@ import {
   NetworkInterface,
   NetworkInterfaceConfig,
 } from '@/lib/proxmoxClient';
+import type { ClusterInfo } from '@/lib/domain';
 import { toast } from 'sonner';
 
 interface FormState {
@@ -42,9 +45,10 @@ const defaultForm: FormState = {
 
 export function ProxmoxNetworkPage() {
   const [interfaces, setInterfaces] = useState<NetworkInterface[]>([]);
+  const [clusters, setClusters] = useState<ClusterInfo[]>([]);
   const [clusterId, setClusterId] = useState('');
-  const [nodeId, setNodeId] = useState('');
-  const [nodeInput, setNodeInput] = useState('');
+  const { nodeNames, selectedNode: nodeId, setSelectedNode, loading: nodesLoading } =
+    useProxmoxNodes(clusterId);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -55,7 +59,7 @@ export function ProxmoxNetworkPage() {
   const [submitting, setSubmitting] = useState(false);
 
   const loadInterfaces = useCallback(async (cId: string, nId: string) => {
-    if (!cId) return;
+    if (!cId || !nId) return;
     setLoading(true);
     setError(null);
     try {
@@ -71,6 +75,7 @@ export function ProxmoxNetworkPage() {
   useEffect(() => {
     listProxmoxClusters()
       .then((cls) => {
+        setClusters(cls);
         if (cls.length > 0) {
           setClusterId(cls[0].id);
         }
@@ -78,12 +83,14 @@ export function ProxmoxNetworkPage() {
       .catch(console.error);
   }, []);
 
-  const handleNodeApply = () => {
-    const trimmed = nodeInput.trim();
-    if (!trimmed) return;
-    setNodeId(trimmed);
-    void loadInterfaces(clusterId, trimmed);
-  };
+  // Auto-load interfaces whenever the selected datacenter/node changes.
+  useEffect(() => {
+    if (clusterId && nodeId) {
+      void loadInterfaces(clusterId, nodeId);
+    } else {
+      setInterfaces([]);
+    }
+  }, [clusterId, nodeId, loadInterfaces]);
 
   const handleAddInterface = () => {
     setIsEditing(false);
@@ -167,16 +174,25 @@ export function ProxmoxNetworkPage() {
           <p className="text-muted-foreground">Network interfaces and bridges</p>
         </div>
         <div className="flex items-center gap-2">
-          <Input
-            className="h-8 w-36 text-sm"
-            placeholder="Node name"
-            value={nodeInput}
-            onChange={(e) => setNodeInput(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') handleNodeApply(); }}
+          {clusters.length > 1 && (
+            <Select value={clusterId} onValueChange={setClusterId}>
+              <SelectTrigger className="h-8 w-48 text-sm">
+                <SelectValue placeholder="Select datacenter" />
+              </SelectTrigger>
+              <SelectContent>
+                {clusters.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+          <NodeSelect
+            nodeNames={nodeNames}
+            value={nodeId}
+            onChange={setSelectedNode}
+            loading={nodesLoading}
+            disabled={!clusterId}
           />
-          <Button variant="outline" size="sm" onClick={handleNodeApply} disabled={!nodeInput.trim() || !clusterId}>
-            Load
-          </Button>
           <Button
             variant="outline"
             size="sm"
@@ -222,7 +238,7 @@ export function ProxmoxNetworkPage() {
             <div className="text-sm text-muted-foreground">Loading...</div>
           ) : interfaces.length === 0 ? (
             <div className="text-sm text-muted-foreground">
-              {!clusterId ? 'No cluster configured.' : !nodeId ? 'Enter a node name above and click Load.' : 'No network interfaces found.'}
+              {!clusterId ? 'No cluster configured.' : !nodeId ? 'Select a node above.' : 'No network interfaces found.'}
             </div>
           ) : (
             <div className="space-y-2">
