@@ -2,8 +2,10 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/index';
 import { Button } from '@/components/ui/index';
 import { Badge } from '@/components/ui/index';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/index';
 import { RefreshCw } from 'lucide-react';
 import { listClusterTasks, listProxmoxClusters, ClusterTask } from '@/lib/proxmoxClient';
+import type { ClusterInfo } from '@/lib/domain';
 
 function taskBadgeVariant(exitstatus?: string): 'default' | 'destructive' | 'secondary' {
   if (!exitstatus) return 'secondary';
@@ -22,6 +24,7 @@ function formatTimestamp(epoch: number): string {
 
 export function ProxmoxTasksPage() {
   const [tasks, setTasks] = useState<ClusterTask[]>([]);
+  const [clusters, setClusters] = useState<ClusterInfo[]>([]);
   const [clusterId, setClusterId] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -44,13 +47,18 @@ export function ProxmoxTasksPage() {
   useEffect(() => {
     listProxmoxClusters()
       .then((cls) => {
+        setClusters(cls);
         if (cls.length > 0) {
           setClusterId(cls[0].id);
-          void loadTasks(cls[0].id);
         }
       })
       .catch(console.error);
-  }, [loadTasks]);
+  }, []);
+
+  useEffect(() => {
+    if (clusterId) void loadTasks(clusterId);
+    else setTasks([]);
+  }, [clusterId, loadTasks]);
 
   const runningCount = tasks.filter((t) => !t.exitstatus).length;
   const completedCount = tasks.filter((t) => t.exitstatus === 'OK').length;
@@ -65,15 +73,29 @@ export function ProxmoxTasksPage() {
           <h1 className="text-2xl font-bold">Tasks</h1>
           <p className="text-muted-foreground">Cluster task log and operations</p>
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => void loadTasks(clusterId)}
-          disabled={loading || !clusterId}
-        >
-          <RefreshCw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-          Refresh
-        </Button>
+        <div className="flex items-center gap-2">
+          {clusters.length > 1 && (
+            <Select value={clusterId} onValueChange={setClusterId}>
+              <SelectTrigger className="h-8 w-48 text-sm">
+                <SelectValue placeholder="Select datacenter" />
+              </SelectTrigger>
+              <SelectContent>
+                {clusters.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => void loadTasks(clusterId)}
+            disabled={loading || !clusterId}
+          >
+            <RefreshCw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+            Refresh
+          </Button>
+        </div>
       </div>
 
       {error && (

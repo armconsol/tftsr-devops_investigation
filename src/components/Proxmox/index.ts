@@ -36,3 +36,4 @@ export { AclList } from './AclList';
 export { VMConsole } from './VMConsole';
 export { ContainerConsole } from './ContainerConsole';
 export { CreateVmDialog } from './CreateVmDialog';
+export { NodeSelect } from './NodeSelect';
