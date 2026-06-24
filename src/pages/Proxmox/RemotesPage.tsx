@@ -6,7 +6,7 @@ import { AddRemoteForm } from '@/components/Proxmox';
 import { EditRemoteForm } from '@/components/Proxmox';
 import { RemoveRemoteDialog } from '@/components/Proxmox';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/index';
-import { listProxmoxClusters, addProxmoxCluster, removeProxmoxCluster, updateProxmoxCluster, connectProxmoxCluster, disconnectProxmoxCluster } from '@/lib/proxmoxClient';
+import { listProxmoxClusters, addProxmoxCluster, removeProxmoxCluster, updateProxmoxCluster, connectProxmoxCluster, disconnectProxmoxCluster, pingProxmoxCluster } from '@/lib/proxmoxClient';
 import { ClusterType } from '@/lib/domain';
 import { toast } from 'sonner';
 
@@ -28,18 +28,21 @@ export function ProxmoxRemotesPage() {
   const loadRemotes = async () => {
     try {
       const clusters = await listProxmoxClusters();
-      // TODO: Implement actual status checking via backend connection test
-      const remotesList: RemoteInfo[] = clusters.map((c) => ({
+      const pingResults = await Promise.allSettled(
+        clusters.map((c) => pingProxmoxCluster(c.id))
+      );
+      const remotesList: RemoteInfo[] = clusters.map((c, i) => ({
         id: c.id,
         name: c.name,
         url: c.url,
         username: c.username,
         type: c.clusterType === 've' ? 'pve' : 'pbs',
-        status: (c.connected ? 'connected' : 'disconnected') as RemoteInfo['status'],
+        status: (pingResults[i].status === 'fulfilled' ? 'connected' : 'disconnected') as RemoteInfo['status'],
       }));
       setRemotes(remotesList);
     } catch (err) {
       console.error('Failed to load remotes:', err);
+      toast.error('Failed to load remotes: ' + String(err));
     }
   };
 

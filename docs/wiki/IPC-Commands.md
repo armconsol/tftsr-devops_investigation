@@ -795,9 +795,43 @@ deleteProxmoxRealm(clusterId, realm) → void
 ```
 Authentication realm management via `POST/PUT/DELETE /access/domains[/{realm}]`.
 
-### `disable_ha_resource` / `delete_ha_resource`
+### `list_ha_groups` / `create_ha_group` / `update_ha_group` / `delete_ha_group`
 ```typescript
+listHaGroups(clusterId) → Array<HaGroup>
+createHaGroup(clusterId, group, nodes) → void
+updateHaGroup(clusterId, group, nodes) → void
+deleteHaGroup(clusterId, group) → void
+```
+HA group management via `GET/POST/PUT/DELETE cluster/ha/groups[/{group}]`.
+
+**PVE API field notes:**
+- `HaGroup.id` is renamed from the `group` field via `#[serde(rename = "id")]` on the Rust struct — the frontend receives `id`, not `group`.
+- `HaGroup.nodes` is a **comma-separated string** (`"vmhost2,vmhost4"`), not an array. `create`/`update` join the input array with `,` before sending to the API.
+- Removed non-existent fields `max_failures`, `max_relocate`, and `state` (not part of the PVE HA groups API).
+
+### `list_ha_resources` / `disable_ha_resource` / `delete_ha_resource`
+```typescript
+listHaResources(clusterId) → Array<HaResource>
 disableHaResource(clusterId, id) → void
 deleteHaResource(clusterId, id) → void
 ```
-HA resource management. `HaResource.sid` now correctly serialized from Rust (previously used `resource` field name, now renamed via `#[serde(rename = "sid")]`).
+HA resource management via `GET cluster/ha/resources` and `POST cluster/ha/resources/{id}/disable`.
+
+**PVE API field notes:**
+- `HaResource.sid` is the correct PVE field name (previously the code read `resource`, which always returned empty).
+
+### `list_proxmox_apt_updates`
+```typescript
+listProxmoxAptUpdates(clusterId, nodeId) → Array<APTUpdate>
+```
+Lists pending APT package updates via `GET nodes/{node}/apt/update`.
+
+**PVE API field notes:** PVE returns capitalized field names: `Package`, `Version`, `OldVersion` (installed version), `Origin` (release/repo). The `Size` field is also capitalized.
+
+### `list_proxmox_apt_repositories`
+```typescript
+listProxmoxAptRepositories(clusterId, nodeId) → Array<APTRepository>
+```
+Lists configured APT repositories via `GET nodes/{node}/apt/repositories`.
+
+**PVE API response structure:** Returns `{"files": [...], "infos": [...], "standard-repos": [...]}`. The implementation reads from the `files` array, where each entry has `URIs`, `Suites`, `Components`, `Types`, and `Enabled` as arrays/bool. The endpoint is `apt/repositories`, not `apt/sources`.
