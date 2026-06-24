@@ -1635,6 +1635,7 @@ pub async fn add_firewall_rule(
     rule: serde_json::Value,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
+    validate_pve_identifier(&node_id, "node_id")?;
     let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
 
@@ -1715,6 +1716,7 @@ pub async fn update_proxmox_firewall_rule(
     rule: serde_json::Value,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
+    validate_pve_identifier(&node_id, "node_id")?;
     let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
 
@@ -2161,6 +2163,10 @@ pub async fn create_ha_group(
     _max_relocate: u32,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
+    validate_pve_identifier(&group, "group")?;
+    for node in &nodes {
+        validate_pve_identifier(node, "nodes")?;
+    }
     let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
 
@@ -2184,6 +2190,10 @@ pub async fn update_ha_group(
     _max_relocate: u32,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
+    validate_pve_identifier(&group, "group")?;
+    for node in &nodes {
+        validate_pve_identifier(node, "nodes")?;
+    }
     let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
 
