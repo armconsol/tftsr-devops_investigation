@@ -4,7 +4,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Button } from '@/components/ui/index';
 import { Pencil, Trash2 } from 'lucide-react';
 
-interface StorageInfo {
+export interface StorageInfo {
   id: string;
   storage: string;
   name: string;

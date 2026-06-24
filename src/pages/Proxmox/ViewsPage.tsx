@@ -22,7 +22,12 @@ export function ProxmoxViewsPage() {
 
   const loadViews = useCallback((cId: string) => {
     setError(null);
-    setViews(listSavedViews(cId));
+    try {
+      setViews(listSavedViews(cId));
+    } catch (e) {
+      console.error('Error loading views:', e);
+      setError('Failed to load saved views');
+    }
   }, []);
 
   useEffect(() => {
@@ -34,7 +39,10 @@ export function ProxmoxViewsPage() {
           loadViews(cls[0].id);
         }
       })
-      .catch(console.error);
+      .catch((err) => {
+        console.error('Failed to load Proxmox clusters:', err);
+        setError('Failed to load Proxmox clusters');
+      });
   }, [loadViews]);
 
   const handleClusterChange = (cId: string) => {

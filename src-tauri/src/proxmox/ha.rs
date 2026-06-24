@@ -108,12 +108,19 @@ pub fn parse_ha_resources(response: &serde_json::Value) -> Vec<HaResource> {
                 .get("request_state")
                 .and_then(|r| r.as_str())
                 .map(|s| s.to_string());
+            // Proxmox PVE returns these counters in snake_case
+            // (`max_restart`/`max_relocate`), confirmed against the official API
+            // schema. The `HaResource` struct's serde rename to camelCase is the
+            // *frontend* output contract, not the API input shape. A camelCase
+            // fallback is included purely for resilience against future changes.
             let max_restart = resource
                 .get("max_restart")
+                .or_else(|| resource.get("maxRestart"))
                 .and_then(|m| m.as_u64())
                 .map(|v| v as u32);
             let max_relocate = resource
                 .get("max_relocate")
+                .or_else(|| resource.get("maxRelocate"))
                 .and_then(|m| m.as_u64())
                 .map(|v| v as u32);
             let comment = resource
@@ -439,6 +446,16 @@ mod tests {
         let v = serde_json::to_value(&resources[0]).unwrap();
         assert_eq!(v.get("maxRestart").and_then(|x| x.as_u64()), Some(5));
         assert_eq!(v.get("maxRelocate").and_then(|x| x.as_u64()), Some(4));
+    }
+
+    #[test]
+    fn test_parse_ha_resource_camel_case_fallback() {
+        // Defensive: if a future API ever emits camelCase, still parse it.
+        let resources = parse_ha_resources(&serde_json::json!([
+            { "sid": "vm:101", "state": "started", "maxRestart": 7, "maxRelocate": 6 }
+        ]));
+        assert_eq!(resources[0].max_restart, Some(7));
+        assert_eq!(resources[0].max_relocate, Some(6));
     }
 
     #[test]

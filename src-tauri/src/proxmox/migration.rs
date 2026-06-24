@@ -194,11 +194,15 @@ pub enum MigrationOutcome {
 /// (e.g. "migration aborted"). A missing/empty exitstatus on a stopped task is
 /// treated as an unknown error rather than a false success.
 pub fn interpret_task_exitstatus(status: &str, exitstatus: Option<&str>) -> MigrationOutcome {
-    if status != "stopped" {
+    // Proxmox reports task `status` as "running" while active and "stopped" once
+    // finished. Compare case-insensitively and treat anything that is not a
+    // finished ("stopped") task as still running — we must never interpret an
+    // unrecognised status as a failure, or we would surface false errors.
+    if !status.trim().eq_ignore_ascii_case("stopped") {
         return MigrationOutcome::Running;
     }
     match exitstatus.map(|s| s.trim()).filter(|s| !s.is_empty()) {
-        Some("OK") => MigrationOutcome::Success,
+        Some(s) if s.eq_ignore_ascii_case("OK") => MigrationOutcome::Success,
         Some(err) => MigrationOutcome::Error(err.to_string()),
         None => MigrationOutcome::Error("Task stopped without an exit status".to_string()),
     }
@@ -376,6 +380,24 @@ mod tests {
         assert_eq!(
             interpret_task_exitstatus("stopped", Some("  ")),
             MigrationOutcome::Error("Task stopped without an exit status".to_string())
+        );
+    }
+
+    #[test]
+    fn test_interpret_status_is_case_insensitive() {
+        // Status casing varies; "stopped" detection and "OK" must be tolerant.
+        assert_eq!(
+            interpret_task_exitstatus("STOPPED", Some("ok")),
+            MigrationOutcome::Success
+        );
+        assert_eq!(
+            interpret_task_exitstatus("Stopped", Some("OK")),
+            MigrationOutcome::Success
+        );
+        // Unknown / non-stopped statuses must be treated as still running.
+        assert_eq!(
+            interpret_task_exitstatus("queued", None),
+            MigrationOutcome::Running
         );
     }
 

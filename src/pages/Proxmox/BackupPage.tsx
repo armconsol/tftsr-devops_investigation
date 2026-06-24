@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui/index';
 import { RefreshCw, Plus } from 'lucide-react';
 import { BackupJobList } from '@/components/Proxmox';
+import type { BackupJobInfo } from '@/components/Proxmox/BackupJobList';
 import {
   listProxmoxClusters,
   listProxmoxBackupJobs,
@@ -18,8 +19,7 @@ import { Label } from '@/components/ui/index';
 export function ProxmoxBackupPage() {
   const [clusters, setClusters] = useState<ClusterInfo[]>([]);
   const [selectedClusterId, setSelectedClusterId] = useState<string>('');
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [jobs, setJobs] = useState<any[]>([]);
+  const [jobs, setJobs] = useState<BackupJobInfo[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [showNewJobDialog, setShowNewJobDialog] = useState(false);
   
@@ -46,8 +46,7 @@ export function ProxmoxBackupPage() {
     setIsLoading(true);
     try {
       const raw = await listProxmoxBackupJobs(clusterId, '');
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const normalized = (raw as any[]).map((job) => {
+      const normalized: BackupJobInfo[] = (raw as Record<string, unknown>[]).map((job) => {
         const enabledRaw = job.enabled ?? job.enable ?? 1;
         const isEnabled = enabledRaw === 1 || enabledRaw === true || enabledRaw === '1';
         const nextRunRaw = job['next-run'] ?? job.next_run ?? job.nextRun;
@@ -55,21 +54,20 @@ export function ProxmoxBackupPage() {
           ? new Date(Number(nextRunRaw) * 1000).toLocaleString()
           : undefined;
         return {
-          id: job.id || String(job.jobid || ''),
-          name: job.id || job.comment || `job-${job.jobid || '?'}`,
-          node: job.node || 'all',
-          schedule: job.schedule || '-',
-          status: isEnabled ? ('idle' as const) : ('idle' as const),
+          id: String(job.id || job.jobid || ''),
+          name: String(job.id || job.comment || `job-${job.jobid || '?'}`),
+          node: String(job.node || 'all'),
+          schedule: String(job.schedule || '-'),
+          status: 'idle' as const,
           lastRun: undefined,
           nextRun: nextRunStr,
           size: undefined,
           count: undefined,
           enabled: isEnabled,
-          vmid: job.vmid,
-          storage: job.storage,
-          mode: job.mode,
-          compress: job.compress,
-          comment: job.comment,
+          vmid: job.vmid as string | number | undefined,
+          storage: job.storage as string | undefined,
+          mode: job.mode as string | undefined,
+          comment: job.comment as string | undefined,
         };
       });
       setJobs(normalized);

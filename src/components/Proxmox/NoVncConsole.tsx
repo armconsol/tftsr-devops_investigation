@@ -69,9 +69,11 @@ export function NoVncConsole({ clusterId, node, vmId, kind, title }: NoVncConsol
       rfb.addEventListener('connect', () => setStatus('connected'));
       rfb.addEventListener('disconnect', (e: Event) => {
         const detail = (e as CustomEvent<{ clean: boolean }>).detail;
-        setStatus('disconnected');
         if (detail && !detail.clean) {
-          setError('Connection closed unexpectedly.');
+          setStatus('error');
+          setError('Connection closed unexpectedly. The VNC proxy may be unreachable or the session ticket may have expired — try Reconnect.');
+        } else {
+          setStatus('disconnected');
         }
       });
       rfb.addEventListener('securityfailure', (e: Event) => {

@@ -4,7 +4,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Button } from '@/components/ui/index';
 import { MoreHorizontal, Play, Trash2 } from 'lucide-react';
 
-interface BackupJobInfo {
+export interface BackupJobInfo {
   id: string;
   name: string;
   node: string;
