@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/index';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/index';
 import { Button } from '@/components/ui/index';
-import { MoreHorizontal, Plug, PlugZap } from 'lucide-react';
+import { MoreHorizontal, Plug, PlugZap, TerminalSquare } from 'lucide-react';
 
 interface RemoteInfo {
   id: string;
@@ -23,6 +23,7 @@ interface RemotesListProps {
   onDelete?: (remote: RemoteInfo) => void;
   onConnect?: (remote: RemoteInfo) => void;
   onDisconnect?: (remote: RemoteInfo) => void;
+  onShell?: (remote: RemoteInfo) => void;
 }
 
 function ActionsMenu({
@@ -31,12 +32,14 @@ function ActionsMenu({
   onDelete,
   onConnect,
   onDisconnect,
+  onShell,
 }: {
   remote: RemoteInfo;
   onEdit?: (remote: RemoteInfo) => void;
   onDelete?: (remote: RemoteInfo) => void;
   onConnect?: (remote: RemoteInfo) => void;
   onDisconnect?: (remote: RemoteInfo) => void;
+  onShell?: (remote: RemoteInfo) => void;
 }) {
   const [open, setOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -82,6 +85,13 @@ function ActionsMenu({
             >
               Test Connection
             </button>
+            <button
+              className="flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-accent"
+              onClick={() => { setOpen(false); onShell?.(remote); }}
+            >
+              <TerminalSquare className="h-4 w-4" />
+              Console (Shell)
+            </button>
             <div className="my-1 h-px bg-border" />
             <button
               className="flex w-full items-center gap-2 px-3 py-2 text-sm text-destructive hover:bg-destructive/10"
@@ -105,6 +115,7 @@ export function RemotesList({
   onDelete,
   onConnect,
   onDisconnect,
+  onShell,
 }: RemotesListProps) {
   const connectedCount = remotes.filter((r) => r.status === 'connected').length;
   const disconnectedCount = remotes.filter((r) => r.status === 'disconnected').length;
@@ -195,6 +206,7 @@ export function RemotesList({
                         onDelete={onDelete}
                         onConnect={onConnect}
                         onDisconnect={onDisconnect}
+                        onShell={onShell}
                       />
                     </div>
                   </TableCell>

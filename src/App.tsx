@@ -63,8 +63,11 @@ import { ProxmoxSearchPage } from "@/pages/Proxmox/SearchPage";
 import { ProxmoxAdminPage } from "@/pages/Proxmox/AdminPage";
 import { ProxmoxUpdatesPage } from "@/pages/Proxmox/UpdatesPage";
 import { ProxmoxNodeDetailPage } from "@/pages/Proxmox/NodeDetailPage";
+import { ProxmoxConsolePage } from "@/pages/Proxmox/ConsolePage";
+import { ProxmoxShellPage } from "@/pages/Proxmox/ShellPage";
 import { ProxmoxSettings } from "@/pages/Settings/Proxmox";
 import { Updater } from "@/pages/Settings/Updater";
+import { RouteErrorBoundary } from "@/components/RouteErrorBoundary";
 
 const navItems = [
   { to: "/", icon: Home, label: "Dashboard" },
@@ -304,6 +307,7 @@ export default function App() {
 
         {/* Main content */}
         <main className="overflow-y-auto bg-background">
+          <RouteErrorBoundary>
           <Routes>
             <Route path="/" element={<Dashboard />} />
             <Route path="/new-issue" element={<NewIssue />} />
@@ -339,12 +343,15 @@ export default function App() {
           <Route path="/proxmox/admin" element={<ProxmoxAdminPage />} />
           <Route path="/proxmox/updates" element={<ProxmoxUpdatesPage />} />
           <Route path="/proxmox/nodes" element={<ProxmoxNodeDetailPage />} />
+          <Route path="/proxmox/console/:clusterId/:node/:vmid/:kind" element={<ProxmoxConsolePage />} />
+          <Route path="/proxmox/shell/:clusterId/:node" element={<ProxmoxShellPage />} />
           <Route path="/settings/updater" element={<Updater />} />
           <Route path="/settings/proxmox" element={<ProxmoxSettings />} />
             <Route path="/settings/integrations" element={<Integrations />} />
             <Route path="/settings/mcp" element={<MCPServers />} />
             <Route path="/settings/security" element={<Security />} />
           </Routes>
+          </RouteErrorBoundary>
         </main>
       </div>
       <Toaster richColors position="top-right" />

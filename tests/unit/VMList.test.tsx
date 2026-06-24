@@ -1,6 +1,7 @@
 import React from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { VMList } from "@/components/Proxmox/VMList";
 
@@ -68,12 +69,14 @@ function renderVMList(vms = [stoppedVm], clusterId = "cluster-1") {
   return {
     onRefresh,
     ...render(
-      <VMList
-        vms={vms}
-        clusterId={clusterId}
-        clusters={mockClusters as never}
-        onRefresh={onRefresh}
-      />
+      <MemoryRouter>
+        <VMList
+          vms={vms}
+          clusterId={clusterId}
+          clusters={mockClusters as never}
+          onRefresh={onRefresh}
+        />
+      </MemoryRouter>
     ),
   };
 }

@@ -204,8 +204,33 @@ export async function resumeProxmoxVm(
   await invoke("resume_proxmox_vm", { clusterId, nodeId, vmId });
 }
 
+export interface ProxmoxNodeSummary {
+  node: string;
+  status?: string;
+  cpu?: number;
+  maxcpu?: number;
+  mem?: number;
+  maxmem?: number;
+  uptime?: number;
+  [key: string]: unknown;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function listProxmoxNodes(clusterId: string): Promise<any[]> {
   return await invoke<any[]>("list_proxmox_nodes", { clusterId });
+}
+
+/**
+ * Returns the sorted list of node names for a cluster. Centralises the parsing
+ * of the raw PVE `/nodes` payload (where the node name lives in the `node`
+ * field) so node dropdowns across the UI stay consistent.
+ */
+export async function listProxmoxNodeNames(clusterId: string): Promise<string[]> {
+  const nodes = await listProxmoxNodes(clusterId);
+  return nodes
+    .map((n) => (n && typeof n.node === "string" ? (n.node as string) : ""))
+    .filter((name): name is string => name.length > 0)
+    .sort((a, b) => a.localeCompare(b));
 }
 
 export interface CreateVmParams {
@@ -262,6 +287,49 @@ export async function listProxmoxDatastores(
   clusterId: string
 ): Promise<any[]> {
   return await invoke<any[]>("list_proxmox_datastores", { clusterId });
+}
+
+/**
+ * Get the configuration of a single datacenter-level storage.
+ */
+export async function getProxmoxStorageConfig(
+  clusterId: string,
+  storage: string
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+): Promise<Record<string, any>> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return await invoke<Record<string, any>>("get_proxmox_storage_config", {
+    clusterId,
+    storage,
+  });
+}
+
+/**
+ * Update a datacenter-level storage configuration.
+ * Only provided fields are changed.
+ */
+export async function updateProxmoxStorage(
+  clusterId: string,
+  storage: string,
+  config: { content?: string; nodes?: string; disable?: boolean }
+): Promise<void> {
+  return await invoke<void>("update_proxmox_storage", {
+    clusterId,
+    storage,
+    content: config.content,
+    nodes: config.nodes,
+    disable: config.disable,
+  });
+}
+
+/**
+ * Delete a datacenter-level storage configuration.
+ */
+export async function deleteProxmoxStorage(
+  clusterId: string,
+  storage: string
+): Promise<void> {
+  return await invoke<void>("delete_proxmox_storage", { clusterId, storage });
 }
 
 /**
@@ -619,13 +687,56 @@ export async function migrateVm(
   vmId: number,
   targetNode: string,
   targetCluster: string
-): Promise<void> {
-  await invoke("migrate_vm", {
+): Promise<MigrationTaskResult> {
+  return await invoke<MigrationTaskResult>("migrate_vm", {
     clusterId,
     nodeId,
     vmId,
     targetNode,
     targetCluster,
+  });
+}
+
+/** Result of an intra-cluster migration start (carries the task UPID). */
+export interface MigrationTaskResult {
+  task_id: string;
+  source_node: string;
+  [key: string]: unknown;
+}
+
+/** Result of starting a cross-datacenter (remote) migration. */
+export interface RemoteMigrationStart {
+  upid: string;
+  source_node: string;
+  dest_cluster_id: string;
+  dest_userid: string;
+  dest_tokenname: string;
+}
+
+/**
+ * Start a cross-datacenter (remote) VM migration. Returns the task UPID plus
+ * the temporary destination token details so the caller can clean it up once
+ * the migration task completes.
+ */
+export async function startRemoteMigration(
+  clusterId: string,
+  node: string,
+  vmId: number,
+  destClusterId: string,
+  targetNode: string,
+  targetStorage: string,
+  targetBridge: string,
+  online: boolean
+): Promise<RemoteMigrationStart> {
+  return await invoke<RemoteMigrationStart>("start_remote_migration", {
+    clusterId,
+    node,
+    vmId,
+    destClusterId,
+    targetNode,
+    targetStorage,
+    targetBridge,
+    online,
   });
 }
 
@@ -691,8 +802,22 @@ export async function getTaskStatus(
   clusterId: string,
   nodeId: string,
   taskId: string
-): Promise<any> {
-  return await invoke<any>("get_task_status", { clusterId, nodeId, taskId });
+): Promise<TaskStatusInfo> {
+  return await invoke<TaskStatusInfo>("get_task_status", {
+    clusterId,
+    node: nodeId,
+    taskId,
+  });
+}
+
+/** Task status as returned by the backend `get_task_status` command. */
+export interface TaskStatusInfo {
+  task_id: string;
+  node: string;
+  status: string;
+  exit_status?: string | null;
+  progress?: number;
+  [key: string]: unknown;
 }
 
 /**
@@ -745,6 +870,7 @@ export interface HaResource {
   state: string;
   maxRestart?: number;
   maxRelocate?: number;
+  comment?: string;
 }
 
 /**
@@ -757,24 +883,42 @@ export const listHaGroups = async (clusterId: string): Promise<HaGroup[]> =>
 /**
  * Create an HA group
  * @param clusterId - Cluster identifier
- * @param config - HA group configuration
+ * @param config - HA group configuration (group id + node list)
  */
 export const createHaGroup = async (
   clusterId: string,
-  config: Partial<HaGroup>
-): Promise<void> => invoke<void>("create_ha_group", { clusterId, config });
+  config: { id: string; nodes: string[] }
+): Promise<void> =>
+  invoke<void>("create_ha_group", {
+    clusterId,
+    group: config.id,
+    nodes: config.nodes,
+  });
 
 /**
  * Update an HA group
  * @param clusterId - Cluster identifier
  * @param id - HA group identifier
- * @param config - HA group configuration
+ * @param config - HA group fields to update
  */
 export const updateHaGroup = async (
   clusterId: string,
   id: string,
-  config: Partial<HaGroup>
-): Promise<void> => invoke<void>("update_ha_group", { clusterId, id, config });
+  config: {
+    nodes: string[];
+    comment?: string;
+    restricted?: boolean;
+    nofailback?: boolean;
+  }
+): Promise<void> =>
+  invoke<void>("update_ha_group", {
+    clusterId,
+    group: id,
+    nodes: config.nodes,
+    comment: config.comment,
+    restricted: config.restricted,
+    nofailback: config.nofailback,
+  });
 
 /**
  * Delete an HA group
@@ -784,7 +928,7 @@ export const updateHaGroup = async (
 export const deleteHaGroup = async (
   clusterId: string,
   id: string
-): Promise<void> => invoke<void>("delete_ha_group", { clusterId, id });
+): Promise<void> => invoke<void>("delete_ha_group", { clusterId, group: id });
 
 /**
  * List HA resources
@@ -794,6 +938,33 @@ export const listHaResources = async (
   clusterId: string
 ): Promise<HaResource[]> =>
   invoke<HaResource[]>("list_ha_resources", { clusterId });
+
+/**
+ * Update (edit) an HA resource
+ * @param clusterId - Cluster identifier
+ * @param sid - HA resource identifier (e.g. "vm:100")
+ * @param config - fields to update
+ */
+export const updateHaResource = async (
+  clusterId: string,
+  sid: string,
+  config: {
+    group?: string;
+    state?: string;
+    maxRestart?: number;
+    maxRelocate?: number;
+    comment?: string;
+  }
+): Promise<void> =>
+  invoke<void>("update_ha_resource", {
+    clusterId,
+    resource: sid,
+    group: config.group,
+    stateValue: config.state,
+    maxRestart: config.maxRestart,
+    maxRelocate: config.maxRelocate,
+    comment: config.comment,
+  });
 
 /**
  * Enable an HA resource
@@ -1729,6 +1900,51 @@ export const remoteMigrateVm = (
     targetStorage,
     online,
   });
+
+// ─── VM Console (noVNC) ───────────────────────────────────────────────────
+
+/** Session details for connecting an in-app noVNC client to the local proxy. */
+export interface VncConsoleSession {
+  local_url: string;
+  ticket: string;
+  local_port: number;
+}
+
+/** Open an in-app noVNC console for a QEMU VM. */
+export const openVncConsole = (
+  clusterId: string,
+  node: string,
+  vmId: number
+): Promise<VncConsoleSession> =>
+  invoke("open_vnc_console", { clusterId, node, vmId });
+
+/** Open an in-app noVNC console for an LXC container. */
+export const openLxcConsole = (
+  clusterId: string,
+  node: string,
+  vmId: number
+): Promise<VncConsoleSession> =>
+  invoke("open_lxc_console", { clusterId, node, vmId });
+
+/** Tagged host-shell session for the Remotes "Console (Shell)" action. */
+export interface NodeShellSession {
+  /** "novnc" (PVE graphical shell) or "xterm" (PBS terminal). */
+  kind: "novnc" | "xterm";
+  localUrl: string;
+  ticket: string;
+  localPort: number;
+  /** RFB password for noVNC shells (PVE vncshell only). */
+  password: string | null;
+  /** Session user (needed for the xterm termproxy login line). */
+  user: string;
+}
+
+/** Open a host (node) shell for a stored remote (PVE=noVNC, PBS=xterm). */
+export const openNodeShell = (
+  clusterId: string,
+  node: string
+): Promise<NodeShellSession> =>
+  invoke("open_node_shell", { clusterId, node });
 
 // ─── Container (LXC) ──────────────────────────────────────────────────────────
 

@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { clsx } from 'clsx';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/index';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/index';
 import { Button } from '@/components/ui/index';
 import { Checkbox } from '@/components/ui/index';
-import { MoreHorizontal, Play, Square, RotateCcw, Power, PlayCircle, Pause, X, MoveRight, Copy, Settings } from 'lucide-react';
+import { MoreHorizontal, Play, Square, RotateCcw, Power, PlayCircle, Pause, X, MoveRight, Copy, Settings, Monitor } from 'lucide-react';
 import { confirm } from '@tauri-apps/plugin-dialog';
 import { toast } from 'sonner';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/index';
@@ -31,6 +32,9 @@ import {
   rollbackProxmoxSnapshot,
   listProxmoxNodes,
   migrateVm,
+  startRemoteMigration,
+  getTaskStatus,
+  deleteUserToken,
 } from '@/lib/proxmoxClient';
 
 interface VMInfo {
@@ -116,13 +120,18 @@ export function VMList({
   onToggleSelect,
   onViewConfig,
 }: VMListProps) {
+  const navigate = useNavigate();
   const [migrationVM, setMigrationVM] = useState<VMInfo | null>(null);
   const [targetNode, setTargetNode] = useState<string>('');
   const [targetCluster, setTargetCluster] = useState<string>('');
+  const [targetStorage, setTargetStorage] = useState<string>('local-lvm');
+  const [targetBridge, setTargetBridge] = useState<string>('vmbr0');
   const [onlineMigration, setOnlineMigration] = useState(true);
   const [maxDowntime, setMaxDowntime] = useState(30);
   const [clusterNodes, setClusterNodes] = useState<string[]>([]);
   const [nodesLoading, setNodesLoading] = useState(false);
+  const [migrationRunning, setMigrationRunning] = useState(false);
+  const [migrationLog, setMigrationLog] = useState<string[]>([]);
   const [snapshotDialog, setSnapshotDialog] = useState<{
     isOpen: boolean;
     vm: VMInfo | null;
@@ -272,6 +281,11 @@ export function VMList({
     setSelectedSnapshot('');
   }, []);
 
+  const handleConsole = useCallback((vm: VMInfo) => {
+    if (!clusterId) { toast.error('No cluster selected'); return; }
+    navigate(`/proxmox/console/${encodeURIComponent(clusterId)}/${encodeURIComponent(vm.node)}/${vm.vmid}/qemu`);
+  }, [clusterId, navigate]);
+
   const handleMigrate = useCallback(async (vm: VMInfo) => {
     setMigrationVM(vm);
     setTargetCluster(clusterId);
@@ -302,20 +316,95 @@ export function VMList({
 
     const sourceCluster = clusterId;
     const destCluster = targetCluster || clusterId;
+    const isCrossCluster = destCluster !== sourceCluster;
+    const vm = migrationVM;
+
+    setMigrationRunning(true);
+    setMigrationLog([
+      `Starting ${isCrossCluster ? 'cross-datacenter ' : ''}migration of ${vm.name} (VM ${vm.vmid}) → ${targetNode}…`,
+    ]);
+
+    // Poll the source-node task until it stops, surfacing the real Proxmox
+    // exit status instead of an immediate (false) success.
+    const pollTask = async (sourceNode: string, upid: string): Promise<string | null> => {
+      // Returns null on success, or an error string on failure.
+      // eslint-disable-next-line no-constant-condition
+      while (true) {
+        await new Promise((r) => setTimeout(r, 2000));
+        let status;
+        try {
+          status = await getTaskStatus(sourceCluster, sourceNode, upid);
+        } catch (e) {
+          setMigrationLog((prev) => [...prev, `Polling task status failed: ${e}`]);
+          continue;
+        }
+        if (typeof status.progress === 'number' && status.progress > 0) {
+          setMigrationLog((prev) => [...prev, `Progress: ${status.progress}%`]);
+        }
+        if (status.status === 'stopped') {
+          const exit = (status.exit_status ?? '').toString().trim();
+          if (exit === 'OK') return null;
+          return exit || 'Task stopped without an exit status';
+        }
+      }
+    };
 
     try {
-      await migrateVm(sourceCluster, migrationVM.node, migrationVM.vmid, targetNode, destCluster);
+      if (isCrossCluster) {
+        const started = await startRemoteMigration(
+          sourceCluster,
+          vm.node,
+          vm.vmid,
+          destCluster,
+          targetNode,
+          targetStorage || 'local-lvm',
+          targetBridge || 'vmbr0',
+          onlineMigration
+        );
+        setMigrationLog((prev) => [...prev, `Task started: ${started.upid}`]);
+        const err = await pollTask(started.source_node || vm.node, started.upid);
+        // Clean up the temporary destination token regardless of outcome.
+        try {
+          await deleteUserToken(started.dest_cluster_id, started.dest_userid, started.dest_tokenname);
+        } catch (cleanupErr) {
+          console.warn('Failed to delete temporary migration token:', cleanupErr);
+        }
+        if (err) {
+          setMigrationLog((prev) => [...prev, `ERROR: ${err}`]);
+          toast.error(`Migration of ${vm.name} failed: ${err}`);
+          return;
+        }
+      } else {
+        const task = await migrateVm(sourceCluster, vm.node, vm.vmid, targetNode, destCluster);
+        const upid = task.task_id;
+        const sourceNode = task.source_node || vm.node;
+        if (!upid) {
+          throw new Error('Proxmox did not return a migration task id');
+        }
+        setMigrationLog((prev) => [...prev, `Task started: ${upid}`]);
+        const err = await pollTask(sourceNode, upid);
+        if (err) {
+          setMigrationLog((prev) => [...prev, `ERROR: ${err}`]);
+          toast.error(`Migration of ${vm.name} failed: ${err}`);
+          return;
+        }
+      }
 
-      toast.success(`VM ${migrationVM.name} migration started to ${targetNode}${destCluster !== sourceCluster ? ` (cluster: ${destCluster})` : ''}`);
+      setMigrationLog((prev) => [...prev, 'Migration completed successfully.']);
+      toast.success(`VM ${vm.name} migrated to ${targetNode}${isCrossCluster ? ` (cluster: ${destCluster})` : ''}`);
       setMigrationVM(null);
       setTargetNode('');
       setTargetCluster('');
+      setMigrationLog([]);
       onRefresh?.();
     } catch (error) {
       console.error('Failed to migrate VM:', error);
-      toast.error(`Failed to migrate VM ${migrationVM.name}: ${error}`);
+      setMigrationLog((prev) => [...prev, `ERROR: ${error}`]);
+      toast.error(`Failed to migrate VM ${vm.name}: ${error}`);
+    } finally {
+      setMigrationRunning(false);
     }
-  }, [migrationVM, targetNode, targetCluster, clusterId, onRefresh]);
+  }, [migrationVM, targetNode, targetCluster, targetStorage, targetBridge, onlineMigration, clusterId, onRefresh]);
 
   const handleClone = useCallback((vm: VMInfo) => {
     if (!clusterId) { toast.error('No cluster selected'); return; }
@@ -478,6 +567,7 @@ export function VMList({
                           onVMAction={handleVMAction}
                           onSnapshotAction={handleSnapshotAction}
                           onMigrate={handleMigrate}
+                          onConsole={handleConsole}
                           onClone={handleClone}
                           onDelete={handleDelete}
                         />
@@ -494,7 +584,7 @@ export function VMList({
       <MigrationDialog
         vm={migrationVM}
         isOpen={!!migrationVM}
-        onClose={() => { setMigrationVM(null); setTargetNode(''); setTargetCluster(''); setClusterNodes([]); }}
+        onClose={() => { if (!migrationRunning) { setMigrationVM(null); setTargetNode(''); setTargetCluster(''); setClusterNodes([]); setMigrationLog([]); } }}
         onSubmit={submitMigration}
         availableNodeNames={clusterNodes}
         nodesLoading={nodesLoading}
@@ -504,10 +594,16 @@ export function VMList({
         onTargetNodeChange={setTargetNode}
         targetCluster={targetCluster}
         onTargetClusterChange={setTargetCluster}
+        targetStorage={targetStorage}
+        onTargetStorageChange={setTargetStorage}
+        targetBridge={targetBridge}
+        onTargetBridgeChange={setTargetBridge}
         onlineMigration={onlineMigration}
         onOnlineMigrationChange={setOnlineMigration}
         maxDowntime={maxDowntime}
         onMaxDowntimeChange={setMaxDowntime}
+        migrationRunning={migrationRunning}
+        migrationLog={migrationLog}
       />
 
       <SnapshotDialog
@@ -543,6 +639,7 @@ interface VMActionMenuProps {
   onVMAction: (vm: VMInfo, action: 'start' | 'stop' | 'reboot' | 'shutdown' | 'resume' | 'suspend') => void;
   onSnapshotAction: (vm: VMInfo, action: 'create' | 'list' | 'rollback' | 'delete') => void;
   onMigrate: (vm: VMInfo) => void;
+  onConsole: (vm: VMInfo) => void;
   onClone: (vm: VMInfo) => void;
   onDelete: (vm: VMInfo) => void;
 }
@@ -552,6 +649,7 @@ function VMActionMenu({
   onVMAction,
   onSnapshotAction,
   onMigrate,
+  onConsole,
   onClone,
   onDelete,
 }: VMActionMenuProps) {
@@ -614,6 +712,14 @@ function VMActionMenu({
           )}
         >
           <div className="space-y-1 p-1">
+            <button
+              className="flex w-full items-center rounded-md px-2 py-1.5 text-sm hover:bg-accent"
+              onClick={handleAction(() => onConsole(vm))}
+            >
+              <Monitor className="mr-2 h-4 w-4" />
+              Console (VNC)
+            </button>
+            <div className="h-px bg-border my-1" />
             {vm.status === 'stopped' && (
               <button
                 className="flex w-full items-center rounded-md px-2 py-1.5 text-sm hover:bg-accent"
@@ -720,10 +826,16 @@ interface MigrationDialogProps {
   onTargetNodeChange: (node: string) => void;
   targetCluster: string;
   onTargetClusterChange: (clusterId: string) => void;
+  targetStorage: string;
+  onTargetStorageChange: (storage: string) => void;
+  targetBridge: string;
+  onTargetBridgeChange: (bridge: string) => void;
   onlineMigration: boolean;
   onOnlineMigrationChange: (online: boolean) => void;
   maxDowntime: number;
   onMaxDowntimeChange: (downtime: number) => void;
+  migrationRunning: boolean;
+  migrationLog: string[];
 }
 
 function MigrationDialog({
@@ -739,16 +851,23 @@ function MigrationDialog({
   onTargetNodeChange,
   targetCluster,
   onTargetClusterChange,
+  targetStorage,
+  onTargetStorageChange,
+  targetBridge,
+  onTargetBridgeChange,
   onlineMigration,
   onOnlineMigrationChange,
   maxDowntime,
   onMaxDowntimeChange,
+  migrationRunning,
+  migrationLog,
 }: MigrationDialogProps) {
   if (!vm) return null;
 
   const isCrossCluster = targetCluster && targetCluster !== currentClusterId;
 
   const canSubmitMigration = () => {
+    if (migrationRunning) return false;
     if (!targetNode) return false;
     if (isCrossCluster) return true;
     return availableNodeNames.length > 0;
@@ -830,6 +949,34 @@ function MigrationDialog({
             )}
           </div>
 
+          {isCrossCluster && (
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label htmlFor="targetStorage">Target Storage</Label>
+                <Input
+                  id="targetStorage"
+                  value={targetStorage}
+                  onChange={(e) => onTargetStorageChange(e.target.value)}
+                  placeholder="local-lvm"
+                  disabled={migrationRunning}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="targetBridge">Target Bridge</Label>
+                <Input
+                  id="targetBridge"
+                  value={targetBridge}
+                  onChange={(e) => onTargetBridgeChange(e.target.value)}
+                  placeholder="vmbr0"
+                  disabled={migrationRunning}
+                />
+              </div>
+              <p className="col-span-2 text-xs text-muted-foreground">
+                Storage and network bridge to use on the destination datacenter.
+              </p>
+            </div>
+          )}
+
           <div className="space-y-2">
             <div className="flex items-center space-x-2">
               <UICheckbox
@@ -860,16 +1007,32 @@ function MigrationDialog({
               </p>
             </div>
           )}
+
+          {migrationLog.length > 0 && (
+            <div className="space-y-2">
+              <Label>Migration Progress</Label>
+              <div className="max-h-40 overflow-y-auto rounded-md border bg-muted/50 p-2 font-mono text-xs">
+                {migrationLog.map((line, idx) => (
+                  <div
+                    key={idx}
+                    className={clsx(line.startsWith('ERROR') && 'text-destructive')}
+                  >
+                    {line}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>
-            Cancel
+          <Button variant="outline" onClick={onClose} disabled={migrationRunning}>
+            {migrationRunning ? 'Close' : 'Cancel'}
           </Button>
           <Button
             onClick={onSubmit}
             disabled={!canSubmitMigration()}
           >
-            Start Migration
+            {migrationRunning ? 'Migrating…' : 'Start Migration'}
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -256,6 +256,9 @@ pub fn run() {
             commands::proxmox::create_proxmox_vm,
             commands::proxmox::list_proxmox_backup_jobs,
             commands::proxmox::list_proxmox_datastores,
+            commands::proxmox::get_proxmox_storage_config,
+            commands::proxmox::update_proxmox_storage,
+            commands::proxmox::delete_proxmox_storage,
             commands::proxmox::trigger_proxmox_backup_job,
             commands::proxmox::list_ceph_pools,
             commands::proxmox::list_ceph_osd,
@@ -405,6 +408,7 @@ pub fn run() {
             // Proxmox HA resource management
             commands::proxmox::disable_ha_resource,
             commands::proxmox::delete_ha_resource,
+            commands::proxmox::update_ha_resource,
             // Proxmox Firewall Rule Update
             commands::proxmox::update_proxmox_firewall_rule,
             // Proxmox SDN CRUD
@@ -450,6 +454,10 @@ pub fn run() {
             commands::proxmox::get_vm_config,
             commands::proxmox::get_vm_pending_config,
             commands::proxmox::remote_migrate_vm,
+            commands::proxmox::start_remote_migration,
+            commands::proxmox::open_vnc_console,
+            commands::proxmox::open_lxc_console,
+            commands::proxmox::open_node_shell,
             commands::proxmox::get_container_config,
             commands::proxmox::create_proxmox_container,
             // Proxmox RRD Metrics
