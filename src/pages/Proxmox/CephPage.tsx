@@ -1,29 +1,48 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/index';
 import { Button } from '@/components/ui/index';
+import { Badge } from '@/components/ui/index';
+import { Input } from '@/components/ui/index';
+import { Label } from '@/components/ui/index';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/index';
 import { RefreshCw } from 'lucide-react';
-import { PoolList, OSDList, CephHealthWidget, MonitorList } from '@/components/Proxmox';
-import { listProxmoxClusters, listCephPools, listCephOsd, getCephHealth } from '@/lib/proxmoxClient';
+import { PoolList, OSDList, CephHealthWidget } from '@/components/Proxmox';
+import {
+  listProxmoxClusters,
+  listCephPools,
+  listCephOsd,
+  getCephHealth,
+  listCephMonitors,
+  listCephManagers,
+  listCephfs,
+  getCephFlags,
+} from '@/lib/proxmoxClient';
+import type { CephMonitor, CephMgr, CephFs, CephHealth, CephPool, CephOsd } from '@/lib/proxmoxClient';
 import { toast } from 'sonner';
 
 export function ProxmoxCephPage() {
   const [clusterId, setClusterId] = useState<string>('');
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [health, setHealth] = useState<any>(null);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [pools, setPools] = useState<any[]>([]);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [osds, setOsds] = useState<any[]>([]);
+  const [health, setHealth] = useState<CephHealth | null>(null);
+  const [pools, setPools] = useState<CephPool[]>([]);
+  const [osds, setOsds] = useState<CephOsd[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isCephEnabled, setIsCephEnabled] = useState<boolean | null>(null);
+
+  const [activeTab, setActiveTab] = useState('monitors');
+  const [monitors, setMonitors] = useState<CephMonitor[]>([]);
+  const [managers, setManagers] = useState<CephMgr[]>([]);
+  const [cephFsList, setCephFsList] = useState<CephFs[]>([]);
+  const [cephFlags, setCephFlags] = useState<Record<string, unknown> | null>(null);
+  const [tabLoading, setTabLoading] = useState(false);
+  const [tabNode, setTabNode] = useState('localhost');
+  const [tabNodeInput, setTabNodeInput] = useState('localhost');
 
   const loadData = useCallback(async (cId: string) => {
     if (!cId) return;
     setLoading(true);
     setError(null);
 
-    // Check Ceph availability by fetching health first
     let cephAvailable = false;
     try {
       const h = await getCephHealth(cId);
@@ -74,6 +93,52 @@ export function ProxmoxCephPage() {
         setIsCephEnabled(false);
       });
   }, [loadData]);
+
+  useEffect(() => {
+    if (!clusterId || !isCephEnabled) return;
+    listCephMonitors(clusterId)
+      .then(setMonitors)
+      .catch(() => toast.error('Failed to load Ceph monitors'));
+  }, [clusterId, isCephEnabled]);
+
+  const loadManagers = useCallback(async () => {
+    if (!clusterId) return;
+    setTabLoading(true);
+    try {
+      const data = await listCephManagers(clusterId, tabNode);
+      setManagers(data);
+    } catch {
+      toast.error('Failed to load Ceph managers');
+    } finally {
+      setTabLoading(false);
+    }
+  }, [clusterId, tabNode]);
+
+  const loadCephFs = useCallback(async () => {
+    if (!clusterId) return;
+    setTabLoading(true);
+    try {
+      const data = await listCephfs(clusterId, tabNode);
+      setCephFsList(data);
+    } catch {
+      toast.error('Failed to load CephFS');
+    } finally {
+      setTabLoading(false);
+    }
+  }, [clusterId, tabNode]);
+
+  const loadFlags = useCallback(async () => {
+    if (!clusterId) return;
+    setTabLoading(true);
+    try {
+      const data = await getCephFlags(clusterId, tabNode);
+      setCephFlags(data);
+    } catch {
+      toast.error('Failed to load Ceph flags');
+    } finally {
+      setTabLoading(false);
+    }
+  }, [clusterId, tabNode]);
 
   const handleRefresh = () => {
     if (clusterId) loadData(clusterId);
@@ -164,13 +229,162 @@ export function ProxmoxCephPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Monitors</CardTitle>
+          <CardTitle>Ceph Details</CardTitle>
         </CardHeader>
-        <CardContent>
-          <MonitorList
-            monitors={[]}
-            onRefresh={handleRefresh}
-          />
+        <CardContent className="space-y-4">
+          <div className="flex items-center gap-2">
+            <Label className="text-sm">Node:</Label>
+            <Input
+              className="w-40 h-8 text-sm"
+              value={tabNodeInput}
+              onChange={(e) => setTabNodeInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') setTabNode(tabNodeInput.trim() || 'localhost');
+              }}
+              placeholder="localhost"
+            />
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setTabNode(tabNodeInput.trim() || 'localhost')}
+            >
+              Apply
+            </Button>
+          </div>
+
+          <Tabs value={activeTab} onValueChange={setActiveTab}>
+            <TabsList>
+              <TabsTrigger value="monitors">Monitors</TabsTrigger>
+              <TabsTrigger value="managers">Managers</TabsTrigger>
+              <TabsTrigger value="cephfs">CephFS</TabsTrigger>
+              <TabsTrigger value="flags">Flags</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="monitors">
+              {monitors.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">No data found.</div>
+              ) : (
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b">
+                      <th className="py-2 px-3 text-left font-medium text-muted-foreground">Name</th>
+                      <th className="py-2 px-3 text-left font-medium text-muted-foreground">Address</th>
+                      <th className="py-2 px-3 text-left font-medium text-muted-foreground">Version</th>
+                      <th className="py-2 px-3 text-left font-medium text-muted-foreground">Quorum</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {monitors.map((mon) => (
+                      <tr key={mon.name} className="border-b last:border-0 hover:bg-muted/50">
+                        <td className="py-2 px-3">{mon.name}</td>
+                        <td className="py-2 px-3">{mon.address}</td>
+                        <td className="py-2 px-3">{mon.version ?? '—'}</td>
+                        <td className="py-2 px-3">
+                          {mon.quorum === true ? (
+                            <Badge className="bg-green-100 text-green-800 text-xs px-2 py-0.5 rounded">
+                              In Quorum
+                            </Badge>
+                          ) : (
+                            <Badge className="bg-red-100 text-red-800 text-xs px-2 py-0.5 rounded">
+                              Not in Quorum
+                            </Badge>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </TabsContent>
+
+            <TabsContent value="managers">
+              <div className="flex justify-end mb-3">
+                <Button variant="outline" size="sm" onClick={loadManagers} disabled={tabLoading}>
+                  <RefreshCw className={`mr-2 h-4 w-4 ${tabLoading ? 'animate-spin' : ''}`} />
+                  Load
+                </Button>
+              </div>
+              {managers.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">No data found.</div>
+              ) : (
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b">
+                      <th className="py-2 px-3 text-left font-medium text-muted-foreground">Name</th>
+                      <th className="py-2 px-3 text-left font-medium text-muted-foreground">Address</th>
+                      <th className="py-2 px-3 text-left font-medium text-muted-foreground">State</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {managers.map((mgr) => (
+                      <tr key={mgr.name} className="border-b last:border-0 hover:bg-muted/50">
+                        <td className="py-2 px-3">{mgr.name}</td>
+                        <td className="py-2 px-3">{mgr.addr ?? '—'}</td>
+                        <td className="py-2 px-3">
+                          {mgr.state === 'active' ? (
+                            <Badge className="bg-green-100 text-green-800 text-xs px-2 py-0.5 rounded">
+                              active
+                            </Badge>
+                          ) : (
+                            <Badge className="bg-gray-100 text-gray-700 text-xs px-2 py-0.5 rounded">
+                              {mgr.state ?? 'standby'}
+                            </Badge>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </TabsContent>
+
+            <TabsContent value="cephfs">
+              <div className="flex justify-end mb-3">
+                <Button variant="outline" size="sm" onClick={loadCephFs} disabled={tabLoading}>
+                  <RefreshCw className={`mr-2 h-4 w-4 ${tabLoading ? 'animate-spin' : ''}`} />
+                  Load
+                </Button>
+              </div>
+              {cephFsList.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">No data found.</div>
+              ) : (
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b">
+                      <th className="py-2 px-3 text-left font-medium text-muted-foreground">Name</th>
+                      <th className="py-2 px-3 text-left font-medium text-muted-foreground">Metadata Pool</th>
+                      <th className="py-2 px-3 text-left font-medium text-muted-foreground">Data Pool IDs</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {cephFsList.map((fs) => (
+                      <tr key={fs.name} className="border-b last:border-0 hover:bg-muted/50">
+                        <td className="py-2 px-3">{fs.name}</td>
+                        <td className="py-2 px-3">{fs.metadataPool ?? '—'}</td>
+                        <td className="py-2 px-3">{(fs.dataPoolIds ?? []).join(', ') || '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </TabsContent>
+
+            <TabsContent value="flags">
+              <div className="flex justify-end mb-3">
+                <Button variant="outline" size="sm" onClick={loadFlags} disabled={tabLoading}>
+                  <RefreshCw className={`mr-2 h-4 w-4 ${tabLoading ? 'animate-spin' : ''}`} />
+                  Load
+                </Button>
+              </div>
+              {cephFlags === null ? (
+                <div className="text-center py-8 text-muted-foreground">No data found.</div>
+              ) : (
+                <pre className="text-xs bg-muted p-3 rounded overflow-auto">
+                  {JSON.stringify(cephFlags, null, 2)}
+                </pre>
+              )}
+            </TabsContent>
+          </Tabs>
         </CardContent>
       </Card>
     </div>

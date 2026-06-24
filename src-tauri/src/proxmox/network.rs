@@ -198,6 +198,24 @@ pub async fn update_network_interface(
     Ok(())
 }
 
+/// Apply pending network configuration changes on a node.
+///
+/// This is equivalent to running `ifreload -a` on the node. Returns a task UPID string
+/// that can be polled via the tasks API for completion status.
+pub async fn reload_network_config(
+    client: &ProxmoxClient,
+    node: &str,
+    ticket: &str,
+) -> Result<String, String> {
+    crate::proxmox::validate::validate_node(node)?;
+
+    let path = format!("nodes/{}/network", node);
+    client
+        .put(&path, &serde_json::json!({}), Some(ticket))
+        .await
+        .map_err(|e| format!("Failed to reload network config on node {}: {}", node, e))
+}
+
 /// Delete a network interface
 pub async fn delete_network_interface(
     client: &ProxmoxClient,
@@ -218,6 +236,7 @@ pub async fn delete_network_interface(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::proxmox::validate::validate_node;
 
     #[test]
     fn test_network_interface_serialization() {
@@ -254,5 +273,33 @@ mod tests {
         assert!(json.contains("eth0"));
         assert!(json.contains("\"active\":1"));
         assert!(json.contains("\"autostart\":0"));
+    }
+
+    #[test]
+    fn test_reload_network_config_node_validation_empty() {
+        assert!(validate_node("").is_err());
+    }
+
+    #[test]
+    fn test_reload_network_config_node_validation_path_traversal() {
+        assert!(validate_node("../evil").is_err());
+        assert!(validate_node("node/evil").is_err());
+    }
+
+    #[test]
+    fn test_reload_network_config_node_validation_too_long() {
+        let node = "a".repeat(65);
+        assert!(validate_node(&node).is_err());
+    }
+
+    #[test]
+    fn test_reload_network_config_node_validation_valid_names() {
+        for name in &["pve-node1", "pve-node-1", "node01", "my-cluster-node"] {
+            assert!(
+                validate_node(name).is_ok(),
+                "expected '{}' to pass validation",
+                name
+            );
+        }
     }
 }

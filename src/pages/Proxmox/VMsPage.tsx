@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui/index';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/index';
 import { RefreshCw, Plus } from 'lucide-react';
 import { VMList, CreateVmDialog } from '@/components/Proxmox';
-import { listProxmoxClusters, listProxmoxVms } from '@/lib/proxmoxClient';
+import { listProxmoxClusters, listProxmoxVms, getVmConfig } from '@/lib/proxmoxClient';
 import type { ClusterInfo } from '@/lib/domain';
 import { toast } from 'sonner';
 
@@ -14,6 +15,10 @@ export function ProxmoxVMsPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [selectedVMs, setSelectedVMs] = useState<Set<string>>(new Set());
   const [showCreateDialog, setShowCreateDialog] = useState(false);
+
+  const [configVm, setConfigVm] = useState<{ node: string; vmid: number } | null>(null);
+  const [vmConfig, setVmConfig] = useState<Record<string, unknown> | null>(null);
+  const [configLoading, setConfigLoading] = useState(false);
 
   useEffect(() => {
     listProxmoxClusters()
@@ -44,6 +49,20 @@ export function ProxmoxVMsPage() {
   useEffect(() => {
     if (selectedClusterId) loadVms(selectedClusterId);
   }, [selectedClusterId, loadVms]);
+
+  const handleViewConfig = async (node: string, vmid: number) => {
+    setConfigVm({ node, vmid });
+    setConfigLoading(true);
+    setVmConfig(null);
+    try {
+      const config = await getVmConfig(selectedClusterId, node, vmid);
+      setVmConfig(config as Record<string, unknown>);
+    } catch (e) {
+      toast.error(String(e));
+    } finally {
+      setConfigLoading(false);
+    }
+  };
 
   if (clusters.length === 0 && !isLoading) {
     return (
@@ -104,6 +123,7 @@ export function ProxmoxVMsPage() {
             return next;
           });
         }}
+        onViewConfig={(node, vmid) => void handleViewConfig(node, vmid)}
       />
 
       <CreateVmDialog
@@ -112,6 +132,21 @@ export function ProxmoxVMsPage() {
         onClose={() => setShowCreateDialog(false)}
         onCreated={() => loadVms(selectedClusterId)}
       />
+
+      <Dialog open={!!configVm} onOpenChange={() => { setConfigVm(null); setVmConfig(null); }}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>VM Config: {configVm?.vmid}</DialogTitle>
+          </DialogHeader>
+          {configLoading ? (
+            <div className="text-sm text-muted-foreground">Loading...</div>
+          ) : (
+            <pre className="text-xs font-mono bg-muted p-3 rounded max-h-96 overflow-auto">
+              {JSON.stringify(vmConfig, null, 2)}
+            </pre>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
