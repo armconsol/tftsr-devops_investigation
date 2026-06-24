@@ -350,8 +350,8 @@ pub async fn delete_realm(
 pub struct UserToken {
     pub tokenid: String,
     pub comment: Option<String>,
-    /// Privilege separation flag — the API returns an integer (0 or 1).
-    pub privsep: Option<serde_json::Value>,
+    /// Privilege separation flag — 0 = disabled, 1 = enabled.
+    pub privsep: Option<u8>,
     pub expire: Option<i64>,
 }
 
@@ -361,6 +361,7 @@ pub struct UserToken {
 /// on the initial create response — it is never retrievable afterwards.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UserTokenCreateResult {
+    #[serde(rename = "full-tokenid")]
     pub full_tokenid: Option<String>,
     pub info: Option<serde_json::Value>,
     /// The token secret (only returned on create).
@@ -576,12 +577,10 @@ mod tests {
             "value": "supersecretvalue",
             "info": {"privsep": 0, "expire": 0}
         }"#;
-        // Note: serde uses the Rust field names which map via rename_all or explicit rename.
-        // UserTokenCreateResult has no rename_all, so field names must match exactly.
-        // Proxmox returns "full-tokenid" with a hyphen — test with explicit mapping.
-        let raw: serde_json::Value = serde_json::from_str(json).expect("raw parse");
-        let value = raw.get("value").and_then(|v| v.as_str());
-        assert_eq!(value, Some("supersecretvalue"));
+        let result: UserTokenCreateResult = serde_json::from_str(json).expect("should deserialise");
+        assert_eq!(result.full_tokenid.as_deref(), Some("root@pam!mytoken"));
+        assert_eq!(result.value.as_deref(), Some("supersecretvalue"));
+        assert!(result.info.is_some());
     }
 
     // --- validate_userid ---

@@ -207,21 +207,7 @@ pub async fn reload_network_config(
     node: &str,
     ticket: &str,
 ) -> Result<String, String> {
-    if node.is_empty() {
-        return Err("node name must not be empty".to_string());
-    }
-    if node.len() > 64 {
-        return Err(format!("node name exceeds 64 characters: {}", node));
-    }
-    if !node
-        .chars()
-        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.')
-    {
-        return Err(format!(
-            "node '{}' contains invalid characters — only alphanumeric, '-', '_', '.' are allowed",
-            node
-        ));
-    }
+    crate::proxmox::validate::validate_node(node)?;
 
     let path = format!("nodes/{}/network", node);
     client
@@ -250,6 +236,7 @@ pub async fn delete_network_interface(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::proxmox::validate::validate_node;
 
     #[test]
     fn test_network_interface_serialization() {
@@ -290,40 +277,29 @@ mod tests {
 
     #[test]
     fn test_reload_network_config_node_validation_empty() {
-        // Validation is synchronous — we can test it inline by replicating the guard.
-        let node = "";
-        let result: Result<(), String> = if node.is_empty() {
-            Err("node name must not be empty".to_string())
-        } else {
-            Ok(())
-        };
-        assert!(result.is_err());
+        assert!(validate_node("").is_err());
     }
 
     #[test]
     fn test_reload_network_config_node_validation_path_traversal() {
-        let node = "../evil";
-        let valid = node
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.');
-        assert!(!valid, "path traversal node should fail character check");
+        assert!(validate_node("../evil").is_err());
+        assert!(validate_node("node/evil").is_err());
     }
 
     #[test]
     fn test_reload_network_config_node_validation_too_long() {
         let node = "a".repeat(65);
-        assert!(node.len() > 64);
+        assert!(validate_node(&node).is_err());
     }
 
     #[test]
     fn test_reload_network_config_node_validation_valid_names() {
-        for name in &["pve-node1", "node.local", "pve_01", "my-cluster-node"] {
-            let valid = !name.is_empty()
-                && name.len() <= 64
-                && name
-                    .chars()
-                    .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.');
-            assert!(valid, "expected '{}' to pass validation", name);
+        for name in &["pve-node1", "pve-node-1", "node01", "my-cluster-node"] {
+            assert!(
+                validate_node(name).is_ok(),
+                "expected '{}' to pass validation",
+                name
+            );
         }
     }
 }

@@ -17,17 +17,14 @@ import {
   listCephfs,
   getCephFlags,
 } from '@/lib/proxmoxClient';
-import type { CephMonitor, CephMgr, CephFs } from '@/lib/proxmoxClient';
+import type { CephMonitor, CephMgr, CephFs, CephHealth, CephPool, CephOsd } from '@/lib/proxmoxClient';
 import { toast } from 'sonner';
 
 export function ProxmoxCephPage() {
   const [clusterId, setClusterId] = useState<string>('');
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [health, setHealth] = useState<any>(null);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [pools, setPools] = useState<any[]>([]);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [osds, setOsds] = useState<any[]>([]);
+  const [health, setHealth] = useState<CephHealth | null>(null);
+  const [pools, setPools] = useState<CephPool[]>([]);
+  const [osds, setOsds] = useState<CephOsd[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isCephEnabled, setIsCephEnabled] = useState<boolean | null>(null);
