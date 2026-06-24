@@ -13,8 +13,9 @@ export function ProxmoxConsolePage() {
   const params = useParams<{ clusterId: string; node: string; vmid: string; kind: string }>();
   const clusterId = params.clusterId ?? '';
   const node = params.node ?? '';
-  const vmId = Number(params.vmid ?? 0);
+  const vmId = Number(params.vmid);
   const kind: ConsoleKind = params.kind === 'lxc' ? 'lxc' : 'qemu';
+  const vmIdValid = Number.isInteger(vmId) && vmId > 0;
 
   return (
     <div className="flex h-[calc(100vh-2rem)] flex-col gap-3 p-4">
@@ -25,7 +26,13 @@ export function ProxmoxConsolePage() {
         </Button>
       </div>
       <div className="min-h-0 flex-1">
-        <NoVncConsole clusterId={clusterId} node={node} vmId={vmId} kind={kind} />
+        {vmIdValid ? (
+          <NoVncConsole clusterId={clusterId} node={node} vmId={vmId} kind={kind} />
+        ) : (
+          <div className="rounded-md border border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive">
+            Invalid VM id &quot;{params.vmid}&quot; — cannot open the console.
+          </div>
+        )}
       </div>
     </div>
   );

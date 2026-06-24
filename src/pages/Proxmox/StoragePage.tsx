@@ -5,6 +5,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Input } from '@/components/ui/index';
 import { Label } from '@/components/ui/index';
 import { StorageList } from '@/components/Proxmox';
+import type { StorageInfo } from '@/components/Proxmox/StorageList';
 import {
   listProxmoxClusters,
   listProxmoxDatastores,
@@ -14,8 +15,7 @@ import {
 import type { ClusterInfo } from '@/lib/domain';
 import { toast } from 'sonner';
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type StorageRow = any;
+type StorageRow = StorageInfo;
 
 export function ProxmoxStoragePage() {
   const [clusters, setClusters] = useState<ClusterInfo[]>([]);

@@ -316,6 +316,20 @@ async fn get_proxmox_client_for_cluster(
     Ok(client_arc)
 }
 
+/// Look up a cluster's stored TLS `ssl_fingerprint` (if any). Returns `None`
+/// when unset/empty so callers can fall back to self-signed acceptance.
+fn stored_ssl_fingerprint(cluster_id: &str, state: &State<'_, AppState>) -> Option<String> {
+    let db = state.db.lock().ok()?;
+    db.query_row(
+        "SELECT ssl_fingerprint FROM proxmox_clusters WHERE id = ?1",
+        [cluster_id],
+        |row| row.get::<_, Option<String>>(0),
+    )
+    .ok()
+    .flatten()
+    .filter(|s| !s.trim().is_empty())
+}
+
 /// Ping a Proxmox cluster — authenticates and calls the version endpoint to verify
 /// that the API is reachable and credentials are valid.
 #[tauri::command]
@@ -832,8 +846,13 @@ fn normalize_backup_jobs(response: &serde_json::Value) -> Vec<serde_json::Value>
         })
         .collect();
 
-    // Apply limit if needed (Proxmox may return many jobs)
+    // Apply limit if needed (Proxmox may return many jobs). Log when truncating
+    // so an incomplete list is observable rather than silently dropped.
     if jobs.len() > 100 {
+        tracing::warn!(
+            "Backup job list truncated from {} to 100 entries",
+            jobs.len()
+        );
         jobs.truncate(100);
     }
 
@@ -4090,17 +4109,29 @@ pub async fn start_remote_migration(
         Err(e) => {
             // Best-effort cleanup of the temp token before surfacing the error.
             let dest_guard = dest_client.lock().await;
-            let _ = crate::proxmox::auth_realm::delete_user_token(
+            if let Err(cleanup_err) = crate::proxmox::auth_realm::delete_user_token(
                 &dest_guard,
                 dest_guard.ticket.as_deref().unwrap_or(""),
                 &dest_userid,
                 &tokenname,
             )
-            .await;
+            .await
+            {
+                tracing::warn!(
+                    "Failed to clean up temporary migration token '{}': {}",
+                    tokenname,
+                    cleanup_err
+                );
+            }
             return Err(e);
         }
     };
 
+    // NOTE: On a successful start the token is intentionally NOT deleted here.
+    // The destination pulls the VM asynchronously using this token while the
+    // source task runs, so it must outlive this call. The caller removes it via
+    // `delete_user_token` once `get_task_status` reports the task has finished
+    // (see the migration poller in the frontend / RemoteMigrationStart result).
     Ok(RemoteMigrationStart {
         upid,
         source_node: node,
@@ -4149,11 +4180,13 @@ pub async fn open_vnc_console(
         &proxy.port,
         &proxy.ticket,
     );
+    let fingerprint = stored_ssl_fingerprint(&cluster_id, &state);
     crate::proxmox::console::start_vnc_proxy(
         upstream,
         "PVEAuthCookie".to_string(),
         auth_ticket,
         proxy.ticket,
+        fingerprint,
     )
     .await
 }
@@ -4191,11 +4224,13 @@ pub async fn open_lxc_console(
         &proxy.port,
         &proxy.ticket,
     );
+    let fingerprint = stored_ssl_fingerprint(&cluster_id, &state);
     crate::proxmox::console::start_vnc_proxy(
         upstream,
         "PVEAuthCookie".to_string(),
         auth_ticket,
         proxy.ticket,
+        fingerprint,
     )
     .await
 }
@@ -4296,6 +4331,7 @@ pub async fn open_node_shell(
         cookie_name.to_string(),
         auth_ticket,
         proxy.ticket.clone(),
+        stored_ssl_fingerprint(&cluster_id, &state),
     )
     .await?;
 

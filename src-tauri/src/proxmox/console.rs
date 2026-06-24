@@ -146,6 +146,37 @@ pub fn build_auth_cookie(cookie_name: &str, auth_ticket: &str) -> String {
     format!("{}={}", cookie_name, auth_ticket)
 }
 
+/// Normalise a TLS fingerprint to a bare lower-case hex string (strips colons,
+/// whitespace, and case) so two representations can be compared safely.
+fn normalize_fp(fp: &str) -> String {
+    fp.chars()
+        .filter(|c| c.is_ascii_hexdigit())
+        .flat_map(|c| c.to_lowercase())
+        .collect()
+}
+
+/// Verify a peer certificate (DER bytes) against an expected SHA-256
+/// fingerprint. The expected fingerprint may be in Proxmox's canonical
+/// colon-separated upper-case form or any equivalent hex representation.
+///
+/// Returns `Ok(())` on match, or an error describing the mismatch.
+pub fn verify_cert_fingerprint(expected: &str, der: &[u8]) -> Result<(), String> {
+    use sha2::{Digest, Sha256};
+    let actual = hex::encode(Sha256::digest(der));
+    let expected_norm = normalize_fp(expected);
+    if expected_norm.is_empty() {
+        return Err("Expected fingerprint is empty".to_string());
+    }
+    if actual == expected_norm {
+        Ok(())
+    } else {
+        Err(format!(
+            "TLS fingerprint mismatch: expected {}, got {}",
+            expected_norm, actual
+        ))
+    }
+}
+
 /// Details handed back to the frontend so noVNC can connect to the local proxy.
 #[derive(Debug, Clone, Serialize)]
 pub struct VncConsoleSession {
@@ -168,6 +199,7 @@ pub async fn start_vnc_proxy(
     cookie_name: String,
     auth_ticket: String,
     vnc_ticket: String,
+    expected_fingerprint: Option<String>,
 ) -> Result<VncConsoleSession, String> {
     let listener = TcpListener::bind("127.0.0.1:0")
         .await
@@ -180,11 +212,24 @@ pub async fn start_vnc_proxy(
     let cookie = build_auth_cookie(&cookie_name, &auth_ticket);
 
     tokio::spawn(async move {
-        // Accept exactly one inbound noVNC connection, then bridge it.
-        if let Ok((stream, _addr)) = listener.accept().await {
-            if let Err(e) = bridge_connection(stream, &upstream_url, &cookie).await {
-                tracing::warn!("VNC proxy bridge ended: {}", e);
+        // Accept exactly one inbound noVNC connection, then bridge it. A bounded
+        // timeout ensures the listener socket and this task are released if the
+        // client never connects (e.g. the user closed the console tab).
+        match tokio::time::timeout(std::time::Duration::from_secs(30), listener.accept()).await {
+            Ok(Ok((stream, _addr))) => {
+                if let Err(e) = bridge_connection(
+                    stream,
+                    &upstream_url,
+                    &cookie,
+                    expected_fingerprint.as_deref(),
+                )
+                .await
+                {
+                    tracing::warn!("VNC proxy bridge ended: {}", e);
+                }
             }
+            Ok(Err(e)) => tracing::warn!("VNC proxy failed to accept connection: {}", e),
+            Err(_) => tracing::warn!("VNC proxy timed out waiting for a client; releasing socket"),
         }
     });
 
@@ -201,6 +246,7 @@ async fn bridge_connection(
     inbound: tokio::net::TcpStream,
     upstream_url: &str,
     cookie: &str,
+    expected_fingerprint: Option<&str>,
 ) -> Result<(), String> {
     // Accept the inbound websocket from noVNC.
     let inbound_ws = tokio_tungstenite::accept_async(inbound)
@@ -218,7 +264,10 @@ async fn bridge_connection(
             .map_err(|_| "Failed to build cookie header".to_string())?,
     );
 
-    // Connect upstream, accepting the node's self-signed TLS certificate.
+    // Connect upstream. Proxmox nodes use self-signed certificates by default,
+    // so the TLS connector tolerates them; when the cluster has a stored
+    // `ssl_fingerprint` we additionally pin the peer certificate's SHA-256
+    // against it to detect MITM / wrong-host connections.
     let tls = native_tls::TlsConnector::builder()
         .danger_accept_invalid_certs(true)
         .danger_accept_invalid_hostnames(true)
@@ -230,6 +279,23 @@ async fn bridge_connection(
         tokio_tungstenite::connect_async_tls_with_config(request, None, false, Some(connector))
             .await
             .map_err(|e| format!("Failed to connect to PVE vncwebsocket: {}", e))?;
+
+    // Pin the peer certificate fingerprint when one is configured.
+    if let Some(expected) = expected_fingerprint.filter(|f| !f.trim().is_empty()) {
+        let der = match upstream_ws.get_ref() {
+            tokio_tungstenite::MaybeTlsStream::NativeTls(s) => s
+                .get_ref()
+                .peer_certificate()
+                .map_err(|e| format!("Failed to read peer certificate: {}", e))?
+                .map(|c| c.to_der().map_err(|e| e.to_string()))
+                .transpose()?,
+            _ => None,
+        };
+        let der = der.ok_or_else(|| {
+            "No peer certificate available to verify the configured fingerprint".to_string()
+        })?;
+        verify_cert_fingerprint(expected, &der)?;
+    }
 
     let (mut in_tx, mut in_rx) = inbound_ws.split();
     let (mut up_tx, mut up_rx) = upstream_ws.split();
@@ -447,5 +513,34 @@ mod tests {
             build_auth_cookie("PBSAuthCookie", "XYZ"),
             "PBSAuthCookie=XYZ"
         );
+    }
+
+    #[test]
+    fn test_verify_cert_fingerprint_match() {
+        use sha2::{Digest, Sha256};
+        let der = b"fake-certificate-bytes";
+        let digest = hex::encode(Sha256::digest(der));
+        // Canonical Proxmox form: upper-case, colon-separated pairs.
+        let canonical = digest
+            .as_bytes()
+            .chunks(2)
+            .map(|c| String::from_utf8_lossy(c).to_uppercase())
+            .collect::<Vec<_>>()
+            .join(":");
+        assert!(verify_cert_fingerprint(&canonical, der).is_ok());
+        // A plain lower-case hex string must also match.
+        assert!(verify_cert_fingerprint(&digest, der).is_ok());
+    }
+
+    #[test]
+    fn test_verify_cert_fingerprint_mismatch() {
+        let der = b"the-real-cert";
+        let wrong = "AA:BB:CC:DD";
+        assert!(verify_cert_fingerprint(wrong, der).is_err());
+    }
+
+    #[test]
+    fn test_verify_cert_fingerprint_empty_expected() {
+        assert!(verify_cert_fingerprint("   ", b"anything").is_err());
     }
 }
