@@ -75,7 +75,7 @@ export function ProxmoxBackupPage() {
       setJobs(normalized);
     } catch (err) {
       console.error('Failed to load backup jobs:', err);
-      toast.error('Failed to load backup jobs');
+      toast.error(`Failed to load backup jobs: ${err}`);
     } finally {
       setIsLoading(false);
     }
