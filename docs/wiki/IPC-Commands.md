@@ -1175,3 +1175,36 @@ Retrieves status of a PBS node via `GET nodes/{node}/status`. Returns uptime, lo
 updateSubscription(clusterId: string, node: string, key: string) → void
 ```
 Updates or validates the Proxmox subscription key via `POST nodes/{node}/subscription`. The key is validated and stored on the server. Subscription status can then be queried for entitlement levels and support status.
+
+---
+
+## VM Console & Migration Commands
+
+### `open_vnc_console` / `open_lxc_console`
+```typescript
+openVncConsole(clusterId: string, node: string, vmId: number) → VncConsoleSession
+openLxcConsole(clusterId: string, node: string, vmId: number) → VncConsoleSession
+// VncConsoleSession: { local_url: string; ticket: string; local_port: number }
+```
+Opens an in-app noVNC graphical console. The backend requests a `vncproxy`
+ticket (`POST nodes/{node}/qemu|lxc/{vmid}/vncproxy?websocket=1`) and starts a
+local WebSocket proxy on `127.0.0.1` that bridges the in-app noVNC client to the
+PVE `vncwebsocket` endpoint, injecting the `PVEAuthCookie` and accepting the
+node's self-signed TLS certificate. The frontend connects noVNC to `local_url`
+using `ticket` as the RFB password (route `/proxmox/console/:clusterId/:node/:vmid/:kind`).
+
+### `start_remote_migration`
+```typescript
+startRemoteMigration(clusterId, node, vmId, destClusterId, targetNode,
+  targetStorage, targetBridge, online) → RemoteMigrationStart
+// RemoteMigrationStart: { upid, source_node, dest_cluster_id, dest_userid, dest_tokenname }
+```
+Performs a true cross-datacenter (remote) migration via
+`POST nodes/{node}/qemu/{vmid}/remote-migrate`. The backend auto-creates a
+temporary API token on the destination remote, resolves the destination TLS
+fingerprint (stored `ssl_fingerprint` override or auto-fetched from
+`/nodes/{node}/certificates/info`), builds the `target-endpoint` property
+string, and issues the migration. The caller polls `get_task_status` on the
+source node and deletes the temporary token (`delete_user_token`) once the task
+finishes. `migrate_vm` (intra-cluster) returns the task so the UI can poll and
+surface the real Proxmox exit status instead of a false success.
