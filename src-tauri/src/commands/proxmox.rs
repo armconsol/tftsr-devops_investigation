@@ -1595,6 +1595,7 @@ pub async fn list_firewall_rules(
     node_id: String,
     state: State<'_, AppState>,
 ) -> Result<Vec<serde_json::Value>, String> {
+    validate_pve_identifier(&node_id, "node_id")?;
     let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
 
@@ -2154,6 +2155,8 @@ pub async fn list_ha_groups(
 }
 
 /// Create HA group
+/// `_max_failures` and `_max_relocate` are accepted for frontend API compatibility
+/// but not forwarded — the PVE HA groups API does not expose these fields.
 #[tauri::command]
 pub async fn create_ha_group(
     cluster_id: String,
@@ -2181,6 +2184,8 @@ pub async fn create_ha_group(
 }
 
 /// Update HA group
+/// `_max_failures` and `_max_relocate` are accepted for frontend API compatibility
+/// but not forwarded — the PVE HA groups API does not expose these fields.
 #[tauri::command]
 pub async fn update_ha_group(
     cluster_id: String,

@@ -42,6 +42,7 @@ export function ProxmoxRemotesPage() {
       setRemotes(remotesList);
     } catch (err) {
       console.error('Failed to load remotes:', err);
+      toast.error('Failed to load remotes: ' + String(err));
     }
   };
 
