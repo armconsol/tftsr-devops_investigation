@@ -3956,6 +3956,160 @@ pub async fn remote_migrate_vm(
     .await
 }
 
+/// Result of starting a cross-datacenter (remote) migration.
+///
+/// Carries the task UPID for polling and the temporary destination API token
+/// details so the frontend can delete the token after the task completes.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct RemoteMigrationStart {
+    pub upid: String,
+    pub source_node: String,
+    pub dest_cluster_id: String,
+    pub dest_userid: String,
+    pub dest_tokenname: String,
+}
+
+/// Start a cross-datacenter (remote) VM migration.
+///
+/// Creates a temporary API token on the destination remote (from its stored
+/// credentials), resolves the destination TLS fingerprint (stored override or
+/// auto-fetched), issues a PVE `remote-migrate` on the source node, and returns
+/// the task UPID plus the temporary token details for later cleanup.
+#[allow(clippy::too_many_arguments)]
+#[tauri::command]
+pub async fn start_remote_migration(
+    cluster_id: String,
+    node: String,
+    vm_id: u32,
+    dest_cluster_id: String,
+    target_node: String,
+    target_storage: String,
+    target_bridge: String,
+    online: bool,
+    state: State<'_, AppState>,
+) -> Result<RemoteMigrationStart, String> {
+    // Resolve an optional stored fingerprint for the destination remote.
+    let stored_fingerprint: Option<String> = {
+        let db = state
+            .db
+            .lock()
+            .map_err(|e| format!("Failed to lock database: {}", e))?;
+        db.query_row(
+            "SELECT ssl_fingerprint FROM proxmox_clusters WHERE id = ?1",
+            rusqlite::params![dest_cluster_id],
+            |row| row.get::<_, Option<String>>(0),
+        )
+        .ok()
+        .flatten()
+        .filter(|s| !s.trim().is_empty())
+    };
+
+    // Destination client: host/port/user + fingerprint + temp token.
+    let dest_client = get_proxmox_client_for_cluster(&dest_cluster_id, &state).await?;
+    let (dest_host, dest_port, dest_userid, fingerprint, full_tokenid, token_secret, tokenname) = {
+        let dest_guard = dest_client.lock().await;
+        let dest_ticket = dest_guard.ticket.as_deref().unwrap_or("").to_string();
+        let dest_host = dest_guard.base_url().to_string();
+        let dest_port = dest_guard.port();
+        let dest_userid = dest_guard.username().to_string();
+
+        // Resolve fingerprint: stored override, else auto-fetch from target node.
+        let fingerprint = match stored_fingerprint {
+            Some(fp) => fp,
+            None => {
+                crate::proxmox::migration::get_node_fingerprint(
+                    &dest_guard,
+                    &target_node,
+                    &dest_ticket,
+                )
+                .await?
+            }
+        };
+
+        // Create a short-lived, non-privilege-separated token on the destination.
+        let tokenname = format!(
+            "tftsr-migrate-{}-{}",
+            vm_id,
+            chrono::Utc::now().timestamp_millis()
+        );
+        let token = crate::proxmox::auth_realm::create_user_token(
+            &dest_guard,
+            &dest_ticket,
+            &dest_userid,
+            &tokenname,
+            Some("Temporary token for TRCAA cross-DC migration"),
+            false,
+            None,
+        )
+        .await?;
+        let full_tokenid = token.full_tokenid.ok_or_else(|| {
+            "Destination did not return a full token id for the migration token".to_string()
+        })?;
+        let token_secret = token.value.ok_or_else(|| {
+            "Destination did not return a secret for the migration token".to_string()
+        })?;
+
+        (
+            dest_host,
+            dest_port,
+            dest_userid,
+            fingerprint,
+            full_tokenid,
+            token_secret,
+            tokenname,
+        )
+    };
+
+    let target_endpoint = crate::proxmox::migration::build_remote_target_endpoint(
+        &full_tokenid,
+        &token_secret,
+        &dest_host,
+        dest_port,
+        Some(&fingerprint),
+    );
+
+    // Issue the remote-migrate on the source node. If it fails, clean up token.
+    let source_client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let migrate_result = {
+        let src_guard = source_client.lock().await;
+        crate::proxmox::migration::remote_migrate_vm(
+            &src_guard,
+            &node,
+            vm_id,
+            &target_endpoint,
+            &target_bridge,
+            &target_storage,
+            online,
+            src_guard.ticket.as_deref().unwrap_or(""),
+        )
+        .await
+    };
+
+    let upid = match migrate_result {
+        Ok(upid) => upid,
+        Err(e) => {
+            // Best-effort cleanup of the temp token before surfacing the error.
+            let dest_guard = dest_client.lock().await;
+            let _ = crate::proxmox::auth_realm::delete_user_token(
+                &dest_guard,
+                dest_guard.ticket.as_deref().unwrap_or(""),
+                &dest_userid,
+                &tokenname,
+            )
+            .await;
+            return Err(e);
+        }
+    };
+
+    Ok(RemoteMigrationStart {
+        upid,
+        source_node: node,
+        dest_cluster_id,
+        dest_userid,
+        dest_tokenname: tokenname,
+    })
+}
+
 // ─── Container (LXC) Management ───────────────────────────────────────────
 
 #[tauri::command]

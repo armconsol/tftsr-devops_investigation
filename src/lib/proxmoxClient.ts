@@ -687,13 +687,56 @@ export async function migrateVm(
   vmId: number,
   targetNode: string,
   targetCluster: string
-): Promise<void> {
-  await invoke("migrate_vm", {
+): Promise<MigrationTaskResult> {
+  return await invoke<MigrationTaskResult>("migrate_vm", {
     clusterId,
     nodeId,
     vmId,
     targetNode,
     targetCluster,
+  });
+}
+
+/** Result of an intra-cluster migration start (carries the task UPID). */
+export interface MigrationTaskResult {
+  task_id: string;
+  source_node: string;
+  [key: string]: unknown;
+}
+
+/** Result of starting a cross-datacenter (remote) migration. */
+export interface RemoteMigrationStart {
+  upid: string;
+  source_node: string;
+  dest_cluster_id: string;
+  dest_userid: string;
+  dest_tokenname: string;
+}
+
+/**
+ * Start a cross-datacenter (remote) VM migration. Returns the task UPID plus
+ * the temporary destination token details so the caller can clean it up once
+ * the migration task completes.
+ */
+export async function startRemoteMigration(
+  clusterId: string,
+  node: string,
+  vmId: number,
+  destClusterId: string,
+  targetNode: string,
+  targetStorage: string,
+  targetBridge: string,
+  online: boolean
+): Promise<RemoteMigrationStart> {
+  return await invoke<RemoteMigrationStart>("start_remote_migration", {
+    clusterId,
+    node,
+    vmId,
+    destClusterId,
+    targetNode,
+    targetStorage,
+    targetBridge,
+    online,
   });
 }
 
@@ -759,8 +802,22 @@ export async function getTaskStatus(
   clusterId: string,
   nodeId: string,
   taskId: string
-): Promise<any> {
-  return await invoke<any>("get_task_status", { clusterId, nodeId, taskId });
+): Promise<TaskStatusInfo> {
+  return await invoke<TaskStatusInfo>("get_task_status", {
+    clusterId,
+    node: nodeId,
+    taskId,
+  });
+}
+
+/** Task status as returned by the backend `get_task_status` command. */
+export interface TaskStatusInfo {
+  task_id: string;
+  node: string;
+  status: string;
+  exit_status?: string | null;
+  progress?: number;
+  [key: string]: unknown;
 }
 
 /**
