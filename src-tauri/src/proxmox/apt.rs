@@ -242,9 +242,18 @@ mod tests {
             "Size": 1024,
             "Origin": "Debian"
         });
-        let package = pve_response.get("Package").and_then(|p| p.as_str()).unwrap();
-        let version = pve_response.get("Version").and_then(|v| v.as_str()).unwrap();
-        let old_version = pve_response.get("OldVersion").and_then(|v| v.as_str()).unwrap();
+        let package = pve_response
+            .get("Package")
+            .and_then(|p| p.as_str())
+            .unwrap();
+        let version = pve_response
+            .get("Version")
+            .and_then(|v| v.as_str())
+            .unwrap();
+        let old_version = pve_response
+            .get("OldVersion")
+            .and_then(|v| v.as_str())
+            .unwrap();
         let origin = pve_response.get("Origin").and_then(|r| r.as_str()).unwrap();
         assert_eq!(package, "curl");
         assert_eq!(version, "7.88.1-10+deb12u8");
@@ -252,7 +261,10 @@ mod tests {
         assert_eq!(origin, "Debian");
 
         // Confirm lowercase fields don't exist in PVE response
-        assert!(pve_response.get("package").is_none(), "PVE uses 'Package' not 'package'");
+        assert!(
+            pve_response.get("package").is_none(),
+            "PVE uses 'Package' not 'package'"
+        );
     }
 
     #[test]
@@ -272,11 +284,20 @@ mod tests {
             "infos": [],
             "standard-repos": []
         });
-        let files = pve_response.get("files").and_then(|f| f.as_array()).unwrap();
-        assert_eq!(files.len(), 1, "must read from 'files' key not top-level array");
+        let files = pve_response
+            .get("files")
+            .and_then(|f| f.as_array())
+            .unwrap();
+        assert_eq!(
+            files.len(),
+            1,
+            "must read from 'files' key not top-level array"
+        );
 
         let first = &files[0];
-        let url = first.get("URIs").and_then(|u| u.as_array())
+        let url = first
+            .get("URIs")
+            .and_then(|u| u.as_array())
             .and_then(|u| u.first())
             .and_then(|u| u.as_str())
             .unwrap();
