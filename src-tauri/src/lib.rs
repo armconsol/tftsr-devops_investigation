@@ -457,6 +457,7 @@ pub fn run() {
             commands::proxmox::start_remote_migration,
             commands::proxmox::open_vnc_console,
             commands::proxmox::open_lxc_console,
+            commands::proxmox::open_node_shell,
             commands::proxmox::get_container_config,
             commands::proxmox::create_proxmox_container,
             // Proxmox RRD Metrics

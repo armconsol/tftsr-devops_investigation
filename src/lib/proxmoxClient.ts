@@ -1926,6 +1926,26 @@ export const openLxcConsole = (
 ): Promise<VncConsoleSession> =>
   invoke("open_lxc_console", { clusterId, node, vmId });
 
+/** Tagged host-shell session for the Remotes "Console (Shell)" action. */
+export interface NodeShellSession {
+  /** "novnc" (PVE graphical shell) or "xterm" (PBS terminal). */
+  kind: "novnc" | "xterm";
+  localUrl: string;
+  ticket: string;
+  localPort: number;
+  /** RFB password for noVNC shells (PVE vncshell only). */
+  password: string | null;
+  /** Session user (needed for the xterm termproxy login line). */
+  user: string;
+}
+
+/** Open a host (node) shell for a stored remote (PVE=noVNC, PBS=xterm). */
+export const openNodeShell = (
+  clusterId: string,
+  node: string
+): Promise<NodeShellSession> =>
+  invoke("open_node_shell", { clusterId, node });
+
 // ─── Container (LXC) ──────────────────────────────────────────────────────────
 
 export const getContainerConfig = (

@@ -28,6 +28,11 @@ pub struct VncProxyInfo {
     /// The task UPID (if returned).
     #[serde(default)]
     pub upid: String,
+    /// Separate RFB/VNC password (PVE `vncshell` websocket mode returns this in
+    /// addition to `ticket`; for qemu/lxc `vncproxy` it is absent and the
+    /// `ticket` doubles as the password).
+    #[serde(default)]
+    pub password: Option<String>,
 }
 
 /// Parse the `vncproxy` response (the inner `data` object) into `VncProxyInfo`.
@@ -59,11 +64,18 @@ pub fn parse_vncproxy_response(data: &serde_json::Value) -> Result<VncProxyInfo,
         .unwrap_or("")
         .to_string();
 
+    let password = data
+        .get("password")
+        .and_then(|p| p.as_str())
+        .filter(|p| !p.is_empty())
+        .map(|p| p.to_string());
+
     Ok(VncProxyInfo {
         ticket,
         port,
         user,
         upid,
+        password,
     })
 }
 
@@ -110,9 +122,28 @@ pub fn build_lxc_vncwebsocket_url(
     )
 }
 
-/// Build the `Cookie` header value carrying the PVE auth ticket.
-pub fn build_auth_cookie(auth_ticket: &str) -> String {
-    format!("PVEAuthCookie={}", auth_ticket)
+/// Build the PVE/PBS node-shell `vncwebsocket` URL the proxy dials upstream.
+pub fn build_node_vncwebsocket_url(
+    host: &str,
+    port: u16,
+    node: &str,
+    vnc_port: &str,
+    vnc_ticket: &str,
+) -> String {
+    format!(
+        "wss://{}:{}/api2/json/nodes/{}/vncwebsocket?port={}&vncticket={}",
+        host,
+        port,
+        node,
+        urlencoding::encode(vnc_port),
+        urlencoding::encode(vnc_ticket),
+    )
+}
+
+/// Build the `Cookie` header value carrying the Proxmox auth ticket. The cookie
+/// name differs by product: `PVEAuthCookie` for PVE, `PBSAuthCookie` for PBS.
+pub fn build_auth_cookie(cookie_name: &str, auth_ticket: &str) -> String {
+    format!("{}={}", cookie_name, auth_ticket)
 }
 
 /// Details handed back to the frontend so noVNC can connect to the local proxy.
@@ -134,6 +165,7 @@ pub struct VncConsoleSession {
 /// node's self-signed TLS certificate.
 pub async fn start_vnc_proxy(
     upstream_url: String,
+    cookie_name: String,
     auth_ticket: String,
     vnc_ticket: String,
 ) -> Result<VncConsoleSession, String> {
@@ -145,7 +177,7 @@ pub async fn start_vnc_proxy(
         .map_err(|e| format!("Failed to read local proxy address: {}", e))?
         .port();
 
-    let cookie = build_auth_cookie(&auth_ticket);
+    let cookie = build_auth_cookie(&cookie_name, &auth_ticket);
 
     tokio::spawn(async move {
         // Accept exactly one inbound noVNC connection, then bridge it.
@@ -274,6 +306,38 @@ pub async fn vncproxy_lxc(
     parse_vncproxy_response(&response)
 }
 
+/// Request a graphical VNC shell for a PVE node (host shell).
+/// POST /nodes/{node}/vncshell
+pub async fn vncshell_node(
+    client: &crate::proxmox::client::ProxmoxClient,
+    node: &str,
+    ticket: &str,
+) -> Result<VncProxyInfo, String> {
+    let path = format!("nodes/{}/vncshell", node);
+    let params: &[(&str, &str)] = &[("websocket", "1")];
+    let response: serde_json::Value = client
+        .post_form(&path, params, Some(ticket))
+        .await
+        .map_err(|e| format!("Failed to open node shell for {}: {}", node, e))?;
+    parse_vncproxy_response(&response)
+}
+
+/// Request an xterm.js terminal proxy for a node (used for PBS host shell).
+/// POST /nodes/{node}/termproxy
+pub async fn termproxy_node(
+    client: &crate::proxmox::client::ProxmoxClient,
+    node: &str,
+    ticket: &str,
+) -> Result<VncProxyInfo, String> {
+    let path = format!("nodes/{}/termproxy", node);
+    let params: &[(&str, &str)] = &[];
+    let response: serde_json::Value = client
+        .post_form(&path, params, Some(ticket))
+        .await
+        .map_err(|e| format!("Failed to open terminal proxy for {}: {}", node, e))?;
+    parse_vncproxy_response(&response)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -292,6 +356,37 @@ mod tests {
         assert_eq!(info.port, "5900");
         assert_eq!(info.user, "root@pam");
         assert_eq!(info.upid, "UPID:pve:...");
+        assert_eq!(info.password, None);
+    }
+
+    #[test]
+    fn test_parse_vncshell_with_password() {
+        // PVE vncshell (websocket=1) returns a separate `password` for RFB.
+        let data = json!({
+            "ticket": "PVEVNC:SHELL",
+            "port": "5900",
+            "user": "root@pam",
+            "cert": "-----BEGIN CERTIFICATE-----",
+            "password": "s3cr3t-rfb"
+        });
+        let info = parse_vncproxy_response(&data).unwrap();
+        assert_eq!(info.ticket, "PVEVNC:SHELL");
+        assert_eq!(info.password.as_deref(), Some("s3cr3t-rfb"));
+    }
+
+    #[test]
+    fn test_parse_termproxy_response() {
+        // PBS termproxy returns ticket/port/user/upid, no password.
+        let data = json!({
+            "ticket": "PBS:TERM",
+            "port": 5900,
+            "user": "root@pam",
+            "upid": "UPID:pbs:..."
+        });
+        let info = parse_vncproxy_response(&data).unwrap();
+        assert_eq!(info.ticket, "PBS:TERM");
+        assert_eq!(info.port, "5900");
+        assert_eq!(info.password, None);
     }
 
     #[test]
@@ -333,7 +428,24 @@ mod tests {
     }
 
     #[test]
+    fn test_build_node_vncwebsocket_url() {
+        let url =
+            build_node_vncwebsocket_url("172.0.0.21", 8006, "vmhost4", "5900", "PVEVNC:AB/CD");
+        assert_eq!(
+            url,
+            "wss://172.0.0.21:8006/api2/json/nodes/vmhost4/vncwebsocket?port=5900&vncticket=PVEVNC%3AAB%2FCD"
+        );
+    }
+
+    #[test]
     fn test_build_auth_cookie() {
-        assert_eq!(build_auth_cookie("XYZ"), "PVEAuthCookie=XYZ");
+        assert_eq!(
+            build_auth_cookie("PVEAuthCookie", "XYZ"),
+            "PVEAuthCookie=XYZ"
+        );
+        assert_eq!(
+            build_auth_cookie("PBSAuthCookie", "XYZ"),
+            "PBSAuthCookie=XYZ"
+        );
     }
 }
