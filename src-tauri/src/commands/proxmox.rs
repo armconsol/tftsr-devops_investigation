@@ -2157,8 +2157,8 @@ pub async fn create_ha_group(
     cluster_id: String,
     group: String,
     nodes: Vec<String>,
-    max_failures: u32,
-    max_relocate: u32,
+    _max_failures: u32,
+    _max_relocate: u32,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
     let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
@@ -2168,8 +2168,6 @@ pub async fn create_ha_group(
         &client_guard,
         &group,
         &nodes,
-        max_failures,
-        max_relocate,
         client_guard.ticket.as_deref().unwrap_or(""),
     )
     .await
@@ -2182,8 +2180,8 @@ pub async fn update_ha_group(
     cluster_id: String,
     group: String,
     nodes: Vec<String>,
-    max_failures: u32,
-    max_relocate: u32,
+    _max_failures: u32,
+    _max_relocate: u32,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
     let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
@@ -2193,8 +2191,6 @@ pub async fn update_ha_group(
         &client_guard,
         &group,
         &nodes,
-        max_failures,
-        max_relocate,
         client_guard.ticket.as_deref().unwrap_or(""),
     )
     .await
