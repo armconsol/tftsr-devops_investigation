@@ -455,6 +455,8 @@ pub fn run() {
             commands::proxmox::get_vm_pending_config,
             commands::proxmox::remote_migrate_vm,
             commands::proxmox::start_remote_migration,
+            commands::proxmox::open_vnc_console,
+            commands::proxmox::open_lxc_console,
             commands::proxmox::get_container_config,
             commands::proxmox::create_proxmox_container,
             // Proxmox RRD Metrics

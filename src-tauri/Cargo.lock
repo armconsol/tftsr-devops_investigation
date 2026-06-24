@@ -6260,7 +6260,9 @@ checksum = "c83b561d025642014097b66e6c1bb422783339e0909e4429cde4749d1990bc38"
 dependencies = [
  "futures-util",
  "log",
+ "native-tls",
  "tokio",
+ "tokio-native-tls",
  "tungstenite",
 ]
 
@@ -6547,6 +6549,7 @@ dependencies = [
  "lazy_static",
  "lopdf",
  "mockito",
+ "native-tls",
  "portable-pty",
  "printpdf",
  "quick-xml 0.36.2",
@@ -6571,6 +6574,7 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "tokio-test",
+ "tokio-tungstenite",
  "tracing",
  "tracing-subscriber",
  "url",
@@ -6604,6 +6608,7 @@ dependencies = [
  "http 1.4.1",
  "httparse",
  "log",
+ "native-tls",
  "rand 0.8.6",
  "sha1",
  "thiserror 1.0.69",

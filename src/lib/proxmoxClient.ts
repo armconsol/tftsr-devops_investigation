@@ -1901,6 +1901,31 @@ export const remoteMigrateVm = (
     online,
   });
 
+// ─── VM Console (noVNC) ───────────────────────────────────────────────────
+
+/** Session details for connecting an in-app noVNC client to the local proxy. */
+export interface VncConsoleSession {
+  local_url: string;
+  ticket: string;
+  local_port: number;
+}
+
+/** Open an in-app noVNC console for a QEMU VM. */
+export const openVncConsole = (
+  clusterId: string,
+  node: string,
+  vmId: number
+): Promise<VncConsoleSession> =>
+  invoke("open_vnc_console", { clusterId, node, vmId });
+
+/** Open an in-app noVNC console for an LXC container. */
+export const openLxcConsole = (
+  clusterId: string,
+  node: string,
+  vmId: number
+): Promise<VncConsoleSession> =>
+  invoke("open_lxc_console", { clusterId, node, vmId });
+
 // ─── Container (LXC) ──────────────────────────────────────────────────────────
 
 export const getContainerConfig = (

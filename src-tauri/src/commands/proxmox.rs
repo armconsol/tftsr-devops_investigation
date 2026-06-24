@@ -4110,6 +4110,84 @@ pub async fn start_remote_migration(
     })
 }
 
+// ─── VM Console (noVNC) ───────────────────────────────────────────────────
+
+/// Open an in-app noVNC console for a QEMU VM.
+///
+/// Requests a `vncproxy` ticket from PVE, starts a local WebSocket proxy that
+/// injects the auth cookie and accepts the node's self-signed TLS cert, and
+/// returns the local websocket URL + VNC ticket for the noVNC client.
+#[tauri::command]
+pub async fn open_vnc_console(
+    cluster_id: String,
+    node: String,
+    vm_id: u32,
+    state: State<'_, AppState>,
+) -> Result<crate::proxmox::console::VncConsoleSession, String> {
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let (proxy, host, port, auth_ticket) = {
+        let guard = client.lock().await;
+        let auth_ticket = guard
+            .ticket
+            .clone()
+            .ok_or_else(|| "No active session ticket for this remote".to_string())?;
+        let proxy =
+            crate::proxmox::console::vncproxy_vm(&guard, &node, vm_id, &auth_ticket).await?;
+        (
+            proxy,
+            guard.base_url().to_string(),
+            guard.port(),
+            auth_ticket,
+        )
+    };
+
+    let upstream = crate::proxmox::console::build_vncwebsocket_url(
+        &host,
+        port,
+        &node,
+        vm_id,
+        &proxy.port,
+        &proxy.ticket,
+    );
+    crate::proxmox::console::start_vnc_proxy(upstream, auth_ticket, proxy.ticket).await
+}
+
+/// Open an in-app noVNC console for an LXC container.
+#[tauri::command]
+pub async fn open_lxc_console(
+    cluster_id: String,
+    node: String,
+    vm_id: u32,
+    state: State<'_, AppState>,
+) -> Result<crate::proxmox::console::VncConsoleSession, String> {
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let (proxy, host, port, auth_ticket) = {
+        let guard = client.lock().await;
+        let auth_ticket = guard
+            .ticket
+            .clone()
+            .ok_or_else(|| "No active session ticket for this remote".to_string())?;
+        let proxy =
+            crate::proxmox::console::vncproxy_lxc(&guard, &node, vm_id, &auth_ticket).await?;
+        (
+            proxy,
+            guard.base_url().to_string(),
+            guard.port(),
+            auth_ticket,
+        )
+    };
+
+    let upstream = crate::proxmox::console::build_lxc_vncwebsocket_url(
+        &host,
+        port,
+        &node,
+        vm_id,
+        &proxy.port,
+        &proxy.ticket,
+    );
+    crate::proxmox::console::start_vnc_proxy(upstream, auth_ticket, proxy.ticket).await
+}
+
 // ─── Container (LXC) Management ───────────────────────────────────────────
 
 #[tauri::command]

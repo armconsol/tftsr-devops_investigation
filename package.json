@@ -17,6 +17,7 @@
   "dependencies": {
     "@eslint-react/eslint-plugin": "^5.8.16",
     "@monaco-editor/react": "^4.7.0",
+    "@novnc/novnc": "^1.7.0",
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-dialog": "^2.7.1",
     "@tauri-apps/plugin-fs": "^2",
