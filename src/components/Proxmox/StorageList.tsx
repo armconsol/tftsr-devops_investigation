@@ -2,7 +2,7 @@ import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/index';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/index';
 import { Button } from '@/components/ui/index';
-import { MoreHorizontal } from 'lucide-react';
+import { Pencil, Trash2 } from 'lucide-react';
 
 interface StorageInfo {
   id: string;
@@ -93,20 +93,14 @@ export function StorageList({
                           onClick={() => onEdit?.(storage)}
                           title="Edit"
                         >
-                          <span className="h-4 w-4 text-xs">✏️</span>
+                          <Pencil className="h-4 w-4" />
                         </button>
                         <button
                           className="rounded-md p-1 hover:bg-red-100 hover:text-red-600"
                           onClick={() => onDelete?.(storage)}
                           title="Delete"
                         >
-                          <span className="h-4 w-4 text-xs">🗑️</span>
-                        </button>
-                        <button
-                          className="rounded-md p-1 hover:bg-accent"
-                          title="More"
-                        >
-                          <MoreHorizontal className="h-4 w-4" />
+                          <Trash2 className="h-4 w-4" />
                         </button>
                       </div>
                     </TableCell>
