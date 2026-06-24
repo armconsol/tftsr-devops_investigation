@@ -436,6 +436,54 @@ pub fn run() {
             commands::proxmox::create_proxmox_realm,
             commands::proxmox::update_proxmox_realm,
             commands::proxmox::delete_proxmox_realm,
+            // Proxmox Node Administration
+            commands::proxmox::get_node_dns,
+            commands::proxmox::update_node_dns,
+            commands::proxmox::get_node_time,
+            commands::proxmox::update_node_time,
+            commands::proxmox::reboot_node,
+            commands::proxmox::shutdown_node,
+            commands::proxmox::get_node_journal,
+            commands::proxmox::get_node_report,
+            commands::proxmox::reload_network_config,
+            // Proxmox VM/Container Config
+            commands::proxmox::get_vm_config,
+            commands::proxmox::get_vm_pending_config,
+            commands::proxmox::remote_migrate_vm,
+            commands::proxmox::get_container_config,
+            commands::proxmox::create_proxmox_container,
+            // Proxmox RRD Metrics
+            commands::proxmox::get_node_rrd_data,
+            commands::proxmox::get_vm_rrd_data,
+            commands::proxmox::get_storage_rrd_data,
+            // Proxmox Ceph Advanced
+            commands::proxmox::list_ceph_monitors,
+            commands::proxmox::list_ceph_managers,
+            commands::proxmox::list_cephfs,
+            commands::proxmox::get_ceph_flags,
+            // Proxmox Firewall (cluster + guest level)
+            commands::proxmox::list_cluster_firewall_rules,
+            commands::proxmox::get_cluster_firewall_status,
+            commands::proxmox::list_guest_firewall_rules,
+            commands::proxmox::add_guest_firewall_rule,
+            commands::proxmox::delete_guest_firewall_rule,
+            // Proxmox TFA Management
+            commands::proxmox::list_tfa_entries,
+            commands::proxmox::add_tfa_entry,
+            commands::proxmox::delete_tfa_entry,
+            // Proxmox User API Tokens
+            commands::proxmox::list_user_tokens,
+            commands::proxmox::create_user_token,
+            commands::proxmox::delete_user_token,
+            // Proxmox PBS Management
+            commands::proxmox::list_pbs_datastores,
+            commands::proxmox::get_pbs_datastore_status,
+            commands::proxmox::list_pbs_namespaces,
+            commands::proxmox::list_pbs_snapshots,
+            commands::proxmox::list_pbs_tasks,
+            commands::proxmox::get_pbs_node_status,
+            // Proxmox Subscription Update
+            commands::proxmox::update_subscription,
         ])
         .run(tauri::generate_context!())
         .expect("Error running Troubleshooting and RCA Assistant application");

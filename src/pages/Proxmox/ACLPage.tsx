@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { RefreshCw } from 'lucide-react';
+import { RefreshCw, Trash2 } from 'lucide-react';
 import { Button, Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/index';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/index';
 import { Input } from '@/components/ui/index';
 import { Label } from '@/components/ui/index';
+import { Badge } from '@/components/ui/index';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/index';
 import { AclList, UserList, RealmList } from '@/components/Proxmox';
 import {
   listProxmoxClusters,
@@ -18,9 +20,20 @@ import {
   createProxmoxRealm,
   updateProxmoxRealm,
   deleteProxmoxRealm,
+  listTfaEntries,
+  addTfaEntry,
+  deleteTfaEntry,
+  listUserTokens,
+  createUserToken,
+  deleteUserToken,
+} from '@/lib/proxmoxClient';
+import type {
   AclEntry,
   ProxmoxUser,
   AuthRealm,
+  TfaEntry,
+  UserToken,
+  UserTokenCreateResult,
 } from '@/lib/proxmoxClient';
 import { ClusterInfo } from '@/lib/domain';
 import { toast } from 'sonner';
@@ -55,6 +68,24 @@ export function ProxmoxACLPage() {
   const [realmDialogMode, setRealmDialogMode] = useState<'create' | 'edit'>('create');
   const [editingRealm, setEditingRealm] = useState<AuthRealm | null>(null);
   const [realmForm, setRealmForm] = useState({ realm: '', realmType: 'pam', comment: '' });
+
+  // ─── TFA state ────────────────────────────────────────────────────────────────
+  const [tfaEntries, setTfaEntries] = useState<TfaEntry[]>([]);
+  const [isLoadingTfa, setIsLoadingTfa] = useState(false);
+  const [tfaDialogOpen, setTfaDialogOpen] = useState(false);
+  const [tfaUserId, setTfaUserId] = useState('');
+  const [tfaDescription, setTfaDescription] = useState('');
+
+  // ─── API Token state ──────────────────────────────────────────────────────────
+  const [tokenUserId, setTokenUserId] = useState('');
+  const [tokens, setTokens] = useState<UserToken[]>([]);
+  const [isLoadingTokens, setIsLoadingTokens] = useState(false);
+  const [tokenDialogOpen, setTokenDialogOpen] = useState(false);
+  const [tokenName, setTokenName] = useState('');
+  const [tokenComment, setTokenComment] = useState('');
+  const [tokenPrivsep, setTokenPrivsep] = useState(true);
+  const [createdToken, setCreatedToken] = useState<UserTokenCreateResult | null>(null);
+  const [tokenResultDialogOpen, setTokenResultDialogOpen] = useState(false);
 
   useEffect(() => {
     listProxmoxClusters()
@@ -107,6 +138,32 @@ export function ProxmoxACLPage() {
     }
   }, []);
 
+  const loadTfaEntries = useCallback(async (clusterId: string) => {
+    if (!clusterId) return;
+    setIsLoadingTfa(true);
+    try {
+      setTfaEntries(await listTfaEntries(clusterId));
+    } catch (err) {
+      console.error('Failed to load TFA entries:', err);
+      toast.error('Failed to load TFA entries');
+    } finally {
+      setIsLoadingTfa(false);
+    }
+  }, []);
+
+  const loadUserTokens = useCallback(async (clusterId: string, userid: string) => {
+    if (!clusterId || !userid.trim()) return;
+    setIsLoadingTokens(true);
+    try {
+      setTokens(await listUserTokens(clusterId, userid.trim()));
+    } catch (err) {
+      console.error('Failed to load tokens:', err);
+      toast.error('Failed to load tokens');
+    } finally {
+      setIsLoadingTokens(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (selectedClusterId) {
       loadAcls(selectedClusterId);
@@ -115,10 +172,18 @@ export function ProxmoxACLPage() {
     }
   }, [selectedClusterId, loadAcls, loadUsers, loadRealms]);
 
+  // Load TFA when tab is entered
+  useEffect(() => {
+    if (activeTab === 'tfa' && selectedClusterId) {
+      void loadTfaEntries(selectedClusterId);
+    }
+  }, [activeTab, selectedClusterId, loadTfaEntries]);
+
   const handleRefreshAll = () => {
     loadAcls(selectedClusterId);
     loadUsers(selectedClusterId);
     loadRealms(selectedClusterId);
+    if (activeTab === 'tfa') void loadTfaEntries(selectedClusterId);
   };
 
   // ─── ACL handlers ────────────────────────────────────────────────────────────
@@ -258,6 +323,83 @@ export function ProxmoxACLPage() {
     }
   };
 
+  // ─── TFA handlers ─────────────────────────────────────────────────────────────
+
+  const handleOpenTfaDialog = () => {
+    setTfaUserId('');
+    setTfaDescription('');
+    setTfaDialogOpen(true);
+  };
+
+  const handleSubmitTfa = async () => {
+    if (!tfaUserId.trim()) { toast.error('User ID is required'); return; }
+    try {
+      await addTfaEntry(selectedClusterId, tfaUserId.trim(), 'totp', tfaDescription.trim() || undefined);
+      toast.success('TOTP entry added');
+      setTfaDialogOpen(false);
+      await loadTfaEntries(selectedClusterId);
+    } catch (err) {
+      toast.error(`Failed to add TFA entry: ${err}`);
+    }
+  };
+
+  const handleDeleteTfa = async (entry: TfaEntry) => {
+    if (!window.confirm(`Delete TFA entry "${entry.id}" for ${entry.userid}?`)) return;
+    try {
+      await deleteTfaEntry(selectedClusterId, entry.userid, entry.id);
+      toast.success('TFA entry deleted');
+      await loadTfaEntries(selectedClusterId);
+    } catch (err) {
+      toast.error(`Failed to delete TFA entry: ${err}`);
+    }
+  };
+
+  // ─── API Token handlers ───────────────────────────────────────────────────────
+
+  const handleLoadTokens = () => {
+    void loadUserTokens(selectedClusterId, tokenUserId);
+  };
+
+  const handleOpenTokenDialog = () => {
+    setTokenName('');
+    setTokenComment('');
+    setTokenPrivsep(true);
+    setTokenDialogOpen(true);
+  };
+
+  const handleSubmitToken = async () => {
+    if (!tokenUserId.trim()) { toast.error('Load tokens for a user first'); return; }
+    if (!tokenName.trim()) { toast.error('Token name is required'); return; }
+    try {
+      const result = await createUserToken(
+        selectedClusterId,
+        tokenUserId.trim(),
+        tokenName.trim(),
+        tokenComment.trim() || undefined,
+        tokenPrivsep,
+      );
+      setTokenDialogOpen(false);
+      setCreatedToken(result);
+      setTokenResultDialogOpen(true);
+      await loadUserTokens(selectedClusterId, tokenUserId);
+    } catch (err) {
+      toast.error(`Failed to create token: ${err}`);
+    }
+  };
+
+  const handleDeleteToken = async (token: UserToken) => {
+    if (!window.confirm(`Delete token "${token.tokenid}"?`)) return;
+    const parts = token.tokenid.split('!');
+    const tname = parts[parts.length - 1];
+    try {
+      await deleteUserToken(selectedClusterId, tokenUserId.trim(), tname);
+      toast.success(`Token "${token.tokenid}" deleted`);
+      await loadUserTokens(selectedClusterId, tokenUserId);
+    } catch (err) {
+      toast.error(`Failed to delete token: ${err}`);
+    }
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -289,6 +431,8 @@ export function ProxmoxACLPage() {
           <TabsTrigger value="acl">ACLs</TabsTrigger>
           <TabsTrigger value="users">Users</TabsTrigger>
           <TabsTrigger value="realms">Auth Realms</TabsTrigger>
+          <TabsTrigger value="tfa">TFA</TabsTrigger>
+          <TabsTrigger value="tokens">API Tokens</TabsTrigger>
         </TabsList>
 
         <TabsContent value="acl">
@@ -325,6 +469,139 @@ export function ProxmoxACLPage() {
             onDelete={handleDeleteRealm}
           />
         </TabsContent>
+
+        {/* ── TFA ────────────────────────────────────────────────────────────── */}
+        <TabsContent value="tfa">
+          <div className="space-y-3">
+            <div className="flex justify-between items-center">
+              <Button variant="outline" size="sm" onClick={() => void loadTfaEntries(selectedClusterId)} disabled={isLoadingTfa}>
+                <RefreshCw className={`mr-2 h-4 w-4 ${isLoadingTfa ? 'animate-spin' : ''}`} />
+                Refresh
+              </Button>
+              <Button size="sm" onClick={handleOpenTfaDialog} disabled={!selectedClusterId}>
+                Add TOTP
+              </Button>
+            </div>
+            {isLoadingTfa ? (
+              <div className="text-sm text-muted-foreground">Loading...</div>
+            ) : tfaEntries.length === 0 ? (
+              <div className="text-sm text-muted-foreground py-8 text-center">No TFA entries configured</div>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>ID</TableHead>
+                    <TableHead>User ID</TableHead>
+                    <TableHead>Type</TableHead>
+                    <TableHead>Description</TableHead>
+                    <TableHead>Enabled</TableHead>
+                    <TableHead>Created</TableHead>
+                    <TableHead className="w-12" />
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {tfaEntries.map((entry) => (
+                    <TableRow key={entry.id}>
+                      <TableCell className="font-mono text-xs">{entry.id}</TableCell>
+                      <TableCell>{entry.userid}</TableCell>
+                      <TableCell>
+                        <Badge variant="outline">{entry.tfaType}</Badge>
+                      </TableCell>
+                      <TableCell>{entry.description ?? '—'}</TableCell>
+                      <TableCell>
+                        <Badge variant={entry.enable ? 'default' : 'secondary'}>
+                          {entry.enable ? 'Yes' : 'No'}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-xs text-muted-foreground">
+                        {entry.created ? new Date(entry.created * 1000).toLocaleDateString() : '—'}
+                      </TableCell>
+                      <TableCell>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-destructive hover:text-destructive"
+                          onClick={() => void handleDeleteTfa(entry)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+          </div>
+        </TabsContent>
+
+        {/* ── API Tokens ─────────────────────────────────────────────────────── */}
+        <TabsContent value="tokens">
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <Input
+                className="w-64 h-8 text-sm"
+                placeholder="user@realm"
+                value={tokenUserId}
+                onChange={(e) => setTokenUserId(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') handleLoadTokens(); }}
+              />
+              <Button variant="outline" size="sm" onClick={handleLoadTokens} disabled={!tokenUserId.trim()}>
+                Load Tokens
+              </Button>
+              {tokenUserId.trim() && (
+                <Button size="sm" onClick={handleOpenTokenDialog} disabled={!selectedClusterId}>
+                  Create Token
+                </Button>
+              )}
+            </div>
+
+            {isLoadingTokens ? (
+              <div className="text-sm text-muted-foreground">Loading...</div>
+            ) : tokens.length === 0 ? (
+              <div className="text-sm text-muted-foreground py-8 text-center">
+                {tokenUserId.trim() ? 'No tokens found for this user' : 'Enter a user ID to view their tokens'}
+              </div>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Token ID</TableHead>
+                    <TableHead>Comment</TableHead>
+                    <TableHead>Priv Sep</TableHead>
+                    <TableHead>Expires</TableHead>
+                    <TableHead className="w-12" />
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {tokens.map((token) => (
+                    <TableRow key={token.tokenid}>
+                      <TableCell className="font-mono text-xs">{token.tokenid}</TableCell>
+                      <TableCell>{token.comment ?? '—'}</TableCell>
+                      <TableCell>
+                        <Badge variant={token.privsep === 1 ? 'default' : 'secondary'}>
+                          {token.privsep === 1 ? 'Yes' : 'No'}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-xs text-muted-foreground">
+                        {token.expire ? new Date(token.expire * 1000).toLocaleDateString() : 'Never'}
+                      </TableCell>
+                      <TableCell>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-destructive hover:text-destructive"
+                          onClick={() => void handleDeleteToken(token)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+          </div>
+        </TabsContent>
       </Tabs>
 
       {/* ACL Create Dialog */}
@@ -347,7 +624,7 @@ export function ProxmoxACLPage() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setAclDialogOpen(false)}>Cancel</Button>
-            <Button onClick={handleSubmitAcl}>Add</Button>
+            <Button onClick={() => void handleSubmitAcl()}>Add</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -386,7 +663,7 @@ export function ProxmoxACLPage() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setUserDialogOpen(false)}>Cancel</Button>
-            <Button onClick={handleSubmitUser}>{userDialogMode === 'create' ? 'Create' : 'Save'}</Button>
+            <Button onClick={() => void handleSubmitUser()}>{userDialogMode === 'create' ? 'Create' : 'Save'}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -427,7 +704,94 @@ export function ProxmoxACLPage() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setRealmDialogOpen(false)}>Cancel</Button>
-            <Button onClick={handleSubmitRealm}>{realmDialogMode === 'create' ? 'Create' : 'Save'}</Button>
+            <Button onClick={() => void handleSubmitRealm()}>{realmDialogMode === 'create' ? 'Create' : 'Save'}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* TFA Add Dialog */}
+      <Dialog open={tfaDialogOpen} onOpenChange={setTfaDialogOpen}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Add TOTP Entry</DialogTitle></DialogHeader>
+          <div className="space-y-3 py-2">
+            <div className="space-y-1">
+              <Label>User ID</Label>
+              <Input
+                value={tfaUserId}
+                onChange={(e) => setTfaUserId(e.target.value)}
+                placeholder="e.g. user@pam"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label>Description (optional)</Label>
+              <Input
+                value={tfaDescription}
+                onChange={(e) => setTfaDescription(e.target.value)}
+                placeholder="e.g. Mobile authenticator"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setTfaDialogOpen(false)}>Cancel</Button>
+            <Button onClick={() => void handleSubmitTfa()}>Add</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* API Token Create Dialog */}
+      <Dialog open={tokenDialogOpen} onOpenChange={setTokenDialogOpen}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Create API Token</DialogTitle></DialogHeader>
+          <div className="space-y-3 py-2">
+            <div className="space-y-1">
+              <Label>Token Name</Label>
+              <Input
+                value={tokenName}
+                onChange={(e) => setTokenName(e.target.value)}
+                placeholder="e.g. mytoken"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label>Comment (optional)</Label>
+              <Input
+                value={tokenComment}
+                onChange={(e) => setTokenComment(e.target.value)}
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="token-privsep"
+                checked={tokenPrivsep}
+                onChange={(e) => setTokenPrivsep(e.target.checked)}
+              />
+              <Label htmlFor="token-privsep">Privilege Separation</Label>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setTokenDialogOpen(false)}>Cancel</Button>
+            <Button onClick={() => void handleSubmitToken()}>Create</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Token Created — show value once */}
+      <Dialog open={tokenResultDialogOpen} onOpenChange={setTokenResultDialogOpen}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Token Created</DialogTitle></DialogHeader>
+          <div className="py-2 space-y-2">
+            <p className="text-sm text-muted-foreground">
+              Copy this token value now. It cannot be retrieved again.
+            </p>
+            <pre className="text-xs font-mono bg-muted p-3 rounded break-all whitespace-pre-wrap">
+              {createdToken?.value ?? '(no value returned)'}
+            </pre>
+            {createdToken?.fullTokenid && (
+              <p className="text-xs text-muted-foreground">Token ID: {createdToken.fullTokenid}</p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button onClick={() => setTokenResultDialogOpen(false)}>Done</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -51,6 +51,7 @@ import { ProxmoxFirewallPage } from "@/pages/Proxmox/FirewallPage";
 import { ProxmoxACLPage } from "@/pages/Proxmox/ACLPage";
 import { ProxmoxBackupPage } from "@/pages/Proxmox/BackupPage";
 import { ProxmoxCephPage } from "@/pages/Proxmox/CephPage";
+import { ProxmoxPBSPage } from "@/pages/Proxmox/PBSPage";
 import { ProxmoxSDNPage } from "@/pages/Proxmox/SDNPage";
 import { ProxmoxHAPage } from "@/pages/Proxmox/HAPage";
 import { ProxmoxTasksPage } from "@/pages/Proxmox/TasksPage";
@@ -60,6 +61,8 @@ import { ProxmoxSubscriptionPage } from "@/pages/Proxmox/SubscriptionPage";
 import { ProxmoxNotesPage } from "@/pages/Proxmox/NotesPage";
 import { ProxmoxSearchPage } from "@/pages/Proxmox/SearchPage";
 import { ProxmoxAdminPage } from "@/pages/Proxmox/AdminPage";
+import { ProxmoxUpdatesPage } from "@/pages/Proxmox/UpdatesPage";
+import { ProxmoxNodeDetailPage } from "@/pages/Proxmox/NodeDetailPage";
 import { ProxmoxSettings } from "@/pages/Settings/Proxmox";
 import { Updater } from "@/pages/Settings/Updater";
 
@@ -83,12 +86,15 @@ const navItems = [
       { to: "/proxmox/sdn", label: "SDN" },
       { to: "/proxmox/ha", label: "HA Groups" },
       { to: "/proxmox/backup", label: "Backup" },
+      { to: "/proxmox/pbs", label: "PBS" },
       { to: "/proxmox/tasks", label: "Tasks" },
       { to: "/proxmox/notes", label: "Notes" },
       { to: "/proxmox/views", label: "Views" },
       { to: "/proxmox/certificates", label: "Certificates" },
       { to: "/proxmox/subscriptions", label: "Subscriptions" },
       { to: "/proxmox/admin", label: "Administration" },
+      { to: "/proxmox/updates", label: "Updates" },
+      { to: "/proxmox/nodes", label: "Node Detail" },
     ],
   },
   { to: "/history", icon: Clock, label: "History" },
@@ -321,6 +327,7 @@ export default function App() {
           <Route path="/proxmox/acl" element={<ProxmoxACLPage />} />
           <Route path="/proxmox/backup" element={<ProxmoxBackupPage />} />
           <Route path="/proxmox/ceph" element={<ProxmoxCephPage />} />
+          <Route path="/proxmox/pbs" element={<ProxmoxPBSPage />} />
           <Route path="/proxmox/sdn" element={<ProxmoxSDNPage />} />
           <Route path="/proxmox/ha" element={<ProxmoxHAPage />} />
           <Route path="/proxmox/tasks" element={<ProxmoxTasksPage />} />
@@ -330,6 +337,8 @@ export default function App() {
           <Route path="/proxmox/notes" element={<ProxmoxNotesPage />} />
           <Route path="/proxmox/search" element={<ProxmoxSearchPage />} />
           <Route path="/proxmox/admin" element={<ProxmoxAdminPage />} />
+          <Route path="/proxmox/updates" element={<ProxmoxUpdatesPage />} />
+          <Route path="/proxmox/nodes" element={<ProxmoxNodeDetailPage />} />
           <Route path="/settings/updater" element={<Updater />} />
           <Route path="/settings/proxmox" element={<ProxmoxSettings />} />
             <Route path="/settings/integrations" element={<Integrations />} />
