@@ -132,19 +132,59 @@ pub async fn delete_backup_job(
     Ok(())
 }
 
-/// Trigger backup job manually
-pub async fn trigger_backup_job(
-    client: &crate::proxmox::client::ProxmoxClient,
-    node: &str,
-    job_id: u32,
-    ticket: &str,
-) -> Result<(), String> {
-    let path = format!("nodes/{}/backup/jobs/{}/run", node, job_id);
-    let _response: serde_json::Value = client
-        .post_form(&path, &[], Some(ticket))
-        .await
-        .map_err(|e| format!("Failed to trigger backup job {}: {}", job_id, e))?;
-    Ok(())
+/// Build `vzdump` form parameters from a `cluster/backup` job config object.
+///
+/// PVE has no "run job by id" REST endpoint; the web UI's "Run now" reads the
+/// job's vzdump options and POSTs them to `nodes/{node}/vzdump`. We mirror that:
+/// translate the stored job config into vzdump params. When the job targets all
+/// guests (`vmid` empty or `"all"`) we send `all=1`; otherwise the explicit
+/// `vmid` list. Common optional fields are forwarded when present.
+pub fn build_vzdump_params(job: &serde_json::Value) -> Vec<(String, String)> {
+    let mut params: Vec<(String, String)> = Vec::new();
+
+    if let Some(storage) = job.get("storage").and_then(|v| v.as_str()) {
+        if !storage.is_empty() {
+            params.push(("storage".to_string(), storage.to_string()));
+        }
+    }
+    if let Some(mode) = job.get("mode").and_then(|v| v.as_str()) {
+        if !mode.is_empty() {
+            params.push(("mode".to_string(), mode.to_string()));
+        }
+    }
+
+    let vmid = job
+        .get("vmid")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .trim();
+    if vmid.is_empty() || vmid == "all" {
+        params.push(("all".to_string(), "1".to_string()));
+    } else {
+        params.push(("vmid".to_string(), vmid.to_string()));
+    }
+
+    // Forward common optional fields when the job defines them.
+    for key in ["compress", "exclude", "mailnotification", "notes-template"] {
+        if let Some(val) = job.get(key).and_then(|v| v.as_str()) {
+            if !val.is_empty() {
+                params.push((key.to_string(), val.to_string()));
+            }
+        }
+    }
+
+    params
+}
+
+/// Pick the node to run a manual backup on: the job's configured node (first
+/// entry if comma-separated) if set, otherwise the first available cluster node.
+pub fn select_backup_node(job: &serde_json::Value, cluster_nodes: &[String]) -> Option<String> {
+    if let Some(node) = job.get("node").and_then(|v| v.as_str()) {
+        if let Some(first) = node.split(',').map(str::trim).find(|n| !n.is_empty()) {
+            return Some(first.to_string());
+        }
+    }
+    cluster_nodes.first().cloned()
 }
 
 /// List datastores
@@ -307,5 +347,80 @@ mod tests {
 
         assert_eq!(ds.datastore, deserialized.datastore);
         assert_eq!(ds.status, "available");
+    }
+
+    #[test]
+    fn test_build_vzdump_params_all_guests() {
+        let job = serde_json::json!({
+            "id": "backup-local",
+            "storage": "local",
+            "mode": "snapshot",
+            "vmid": "all"
+        });
+        let params = build_vzdump_params(&job);
+        assert!(params.contains(&("storage".to_string(), "local".to_string())));
+        assert!(params.contains(&("mode".to_string(), "snapshot".to_string())));
+        assert!(params.contains(&("all".to_string(), "1".to_string())));
+        // Must not also send an explicit vmid when backing up all guests.
+        assert!(!params.iter().any(|(k, _)| k == "vmid"));
+    }
+
+    #[test]
+    fn test_build_vzdump_params_explicit_vmids() {
+        let job = serde_json::json!({
+            "storage": "pbs",
+            "mode": "stop",
+            "vmid": "100,101"
+        });
+        let params = build_vzdump_params(&job);
+        assert!(params.contains(&("vmid".to_string(), "100,101".to_string())));
+        assert!(!params.iter().any(|(k, _)| k == "all"));
+    }
+
+    #[test]
+    fn test_build_vzdump_params_missing_vmid_defaults_to_all() {
+        let job = serde_json::json!({ "storage": "local" });
+        let params = build_vzdump_params(&job);
+        assert!(params.contains(&("all".to_string(), "1".to_string())));
+    }
+
+    #[test]
+    fn test_build_vzdump_params_forwards_optional_fields() {
+        let job = serde_json::json!({
+            "storage": "local",
+            "vmid": "100",
+            "compress": "zstd",
+            "exclude": "200"
+        });
+        let params = build_vzdump_params(&job);
+        assert!(params.contains(&("compress".to_string(), "zstd".to_string())));
+        assert!(params.contains(&("exclude".to_string(), "200".to_string())));
+    }
+
+    #[test]
+    fn test_select_backup_node_prefers_job_node() {
+        let job = serde_json::json!({ "node": "pve2" });
+        let nodes = vec!["pve1".to_string(), "pve2".to_string()];
+        assert_eq!(select_backup_node(&job, &nodes), Some("pve2".to_string()));
+    }
+
+    #[test]
+    fn test_select_backup_node_takes_first_of_list() {
+        let job = serde_json::json!({ "node": "pve2,pve3" });
+        let nodes = vec!["pve1".to_string()];
+        assert_eq!(select_backup_node(&job, &nodes), Some("pve2".to_string()));
+    }
+
+    #[test]
+    fn test_select_backup_node_falls_back_to_cluster_node() {
+        let job = serde_json::json!({ "storage": "local" });
+        let nodes = vec!["pve1".to_string(), "pve2".to_string()];
+        assert_eq!(select_backup_node(&job, &nodes), Some("pve1".to_string()));
+    }
+
+    #[test]
+    fn test_select_backup_node_none_when_no_nodes() {
+        let job = serde_json::json!({ "storage": "local" });
+        assert_eq!(select_backup_node(&job, &[]), None);
     }
 }

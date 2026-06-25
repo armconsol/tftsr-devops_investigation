@@ -409,6 +409,30 @@ mod tests {
     use super::*;
     use serde_json::json;
 
+    /// The in-app noVNC/xterm consoles connect to the local proxy over
+    /// `ws://127.0.0.1:<ephemeral-port>`. WebKitGTK throws
+    /// `SecurityError: The operation is insecure` when a WebSocket violates the
+    /// app CSP `connect-src`, so the bundled config must explicitly allow
+    /// loopback `ws://`. This guard fails if that allowance is ever dropped.
+    #[test]
+    fn test_csp_allows_loopback_websocket() {
+        let conf = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tauri.conf.json"));
+        let parsed: serde_json::Value =
+            serde_json::from_str(conf).expect("tauri.conf.json must be valid JSON");
+        let csp = parsed
+            .pointer("/app/security/csp")
+            .and_then(|v| v.as_str())
+            .expect("tauri.conf.json must define app.security.csp");
+        assert!(
+            csp.contains("ws://127.0.0.1:*"),
+            "CSP connect-src must allow ws://127.0.0.1:* for the local console proxy; got: {csp}"
+        );
+        assert!(
+            csp.contains("ws://localhost:*"),
+            "CSP connect-src must allow ws://localhost:* for the local console proxy; got: {csp}"
+        );
+    }
+
     #[test]
     fn test_parse_vncproxy_string_port() {
         let data = json!({

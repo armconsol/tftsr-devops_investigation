@@ -9,6 +9,7 @@ import {
   createProxmoxBackupJob,
   updateProxmoxBackupJob,
   deleteProxmoxBackupJob,
+  triggerProxmoxBackupJob,
 } from '@/lib/proxmoxClient';
 import type { ClusterInfo } from '@/lib/domain';
 import { toast } from 'sonner';
@@ -22,8 +23,9 @@ export function ProxmoxBackupPage() {
   const [jobs, setJobs] = useState<BackupJobInfo[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [showNewJobDialog, setShowNewJobDialog] = useState(false);
-  
-  // New job form state
+  const [editingJobId, setEditingJobId] = useState<string | null>(null);
+
+  // Job form state (shared by create + edit dialogs)
   const [jobStorage, setJobStorage] = useState('');
   const [jobSchedule, setJobSchedule] = useState('0 2 * * *');
   const [jobVms, setJobVms] = useState('all');
@@ -84,6 +86,7 @@ export function ProxmoxBackupPage() {
   }, [selectedClusterId, loadJobs]);
 
   const handleNewJob = () => {
+    setEditingJobId(null);
     setJobStorage('');
     setJobSchedule('0 2 * * *');
     setJobVms('all');
@@ -91,22 +94,52 @@ export function ProxmoxBackupPage() {
     setShowNewJobDialog(true);
   };
 
+  const handleEditJob = (job: BackupJobInfo) => {
+    setEditingJobId(job.id);
+    setJobStorage(job.storage ?? '');
+    setJobSchedule(job.schedule && job.schedule !== '-' ? job.schedule : '0 2 * * *');
+    setJobVms(job.vmid != null ? String(job.vmid) : 'all');
+    setJobMode(job.mode ?? 'snapshot');
+    setShowNewJobDialog(true);
+  };
+
+  const handleTriggerJob = async (job: BackupJobInfo) => {
+    try {
+      await triggerProxmoxBackupJob(selectedClusterId, job.id);
+      toast.success('Backup job started');
+      await loadJobs(selectedClusterId);
+    } catch (err) {
+      toast.error(`Failed to run backup job: ${err}`);
+    }
+  };
+
   const handleSubmitNewJob = async () => {
     if (!jobStorage.trim()) { toast.error('Storage is required'); return; }
     try {
-      await createProxmoxBackupJob({
-        clusterId: selectedClusterId,
-        storage: jobStorage.trim(),
-        vmid: jobVms.trim() || 'all',
-        mode: jobMode,
-        schedule: jobSchedule.trim() || '0 2 * * *',
-        enabled: true,
-      });
-      toast.success('Backup job created');
+      if (editingJobId) {
+        await updateProxmoxBackupJob(selectedClusterId, editingJobId, {
+          storage: jobStorage.trim(),
+          vmid: jobVms.trim() || 'all',
+          mode: jobMode,
+          schedule: jobSchedule.trim() || '0 2 * * *',
+        });
+        toast.success('Backup job updated');
+      } else {
+        await createProxmoxBackupJob({
+          clusterId: selectedClusterId,
+          storage: jobStorage.trim(),
+          vmid: jobVms.trim() || 'all',
+          mode: jobMode,
+          schedule: jobSchedule.trim() || '0 2 * * *',
+          enabled: true,
+        });
+        toast.success('Backup job created');
+      }
       setShowNewJobDialog(false);
+      setEditingJobId(null);
       await loadJobs(selectedClusterId);
     } catch (err) {
-      toast.error(`Failed to create backup job: ${err}`);
+      toast.error(`Failed to ${editingJobId ? 'update' : 'create'} backup job: ${err}`);
     }
   };
 
@@ -191,15 +224,20 @@ export function ProxmoxBackupPage() {
       <BackupJobList
         jobs={jobs}
         onRefresh={() => loadJobs(selectedClusterId)}
+        onTrigger={handleTriggerJob}
+        onEdit={handleEditJob}
         onDelete={handleDeleteJob}
         onEnable={handleEnableJob}
         onDisable={handleDisableJob}
       />
 
-      <Dialog open={showNewJobDialog} onOpenChange={setShowNewJobDialog}>
+      <Dialog open={showNewJobDialog} onOpenChange={(open) => {
+        setShowNewJobDialog(open);
+        if (!open) setEditingJobId(null);
+      }}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Create New Backup Job</DialogTitle>
+            <DialogTitle>{editingJobId ? 'Edit Backup Job' : 'Create New Backup Job'}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
@@ -249,7 +287,7 @@ export function ProxmoxBackupPage() {
               Cancel
             </Button>
             <Button onClick={handleSubmitNewJob}>
-              Create Job
+              {editingJobId ? 'Save Changes' : 'Create Job'}
             </Button>
           </DialogFooter>
         </DialogContent>
