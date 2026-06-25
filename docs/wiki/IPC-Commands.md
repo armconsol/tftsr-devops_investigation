@@ -972,9 +972,9 @@ Retrieves RRD metrics for a storage pool via `GET nodes/{node}/storage/{storage}
 
 ### `list_ceph_monitors`
 ```typescript
-listCephMonitors(clusterId: string) → CephMonitor[]
+listCephMonitors(clusterId: string, node: string) → CephMonitor[]
 ```
-Lists Ceph monitor nodes cluster-wide via `GET cluster/ceph/mon`. Returns monitor status and quorum information.
+Lists Ceph monitor nodes via `GET nodes/{node}/ceph/mon`. Returns monitor status and quorum information.
 
 ### `list_ceph_managers`
 ```typescript

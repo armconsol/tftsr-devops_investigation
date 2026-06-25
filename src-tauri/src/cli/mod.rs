@@ -62,15 +62,30 @@ async fn main() {
         }
         "list-pools" => {
             let cluster = cli.args.first().cloned().unwrap_or_default();
-            list_pools(&client, &cluster, &ticket).await
+            let node = cli
+                .args
+                .get(1)
+                .cloned()
+                .unwrap_or_else(|| "pve".to_string());
+            list_pools(&client, &cluster, &node, &ticket).await
         }
         "list-osds" => {
             let cluster = cli.args.first().cloned().unwrap_or_default();
-            list_osds(&client, &cluster, &ticket).await
+            let node = cli
+                .args
+                .get(1)
+                .cloned()
+                .unwrap_or_else(|| "pve".to_string());
+            list_osds(&client, &cluster, &node, &ticket).await
         }
         "ceph-health" => {
             let cluster = cli.args.first().cloned().unwrap_or_default();
-            get_ceph_health(&client, &cluster, &ticket).await
+            let node = cli
+                .args
+                .get(1)
+                .cloned()
+                .unwrap_or_else(|| "pve".to_string());
+            get_ceph_health(&client, &cluster, &node, &ticket).await
         }
         "list-realms" => {
             let cluster = cli.args.first().cloned().unwrap_or_default();
@@ -85,10 +100,6 @@ async fn main() {
             let cluster = cli.args.first().cloned().unwrap_or_default();
             let remote = cli.args.get(1).cloned().unwrap_or_default();
             get_shell_ticket(&client, &cluster, &remote, &ticket).await
-        }
-        "list-views" => {
-            let cluster = cli.args.first().cloned().unwrap_or_default();
-            list_views(&client, &cluster, &ticket).await
         }
         "list-certificates" => {
             let cluster = cli.args.first().cloned().unwrap_or_default();
@@ -164,7 +175,6 @@ fn print_help() {
     println!("  list-realms [cluster-id]         List authentication realms");
     println!("  list-updates [cluster-id] [node] List APT updates");
     println!("  shell-ticket [cluster-id] [remote] Get shell ticket for remote access");
-    println!("  list-views [cluster-id]          List dashboard views");
     println!("  list-certificates [cluster-id]   List certificates");
     println!("  list-firewall-rules [cluster-id] [node] List firewall rules");
     println!("  list-sdn-controllers [cluster-id]       List SDN controllers");
@@ -194,9 +204,10 @@ async fn list_vms(
 async fn list_pools(
     _client: &crate::proxmox::client::ProxmoxClient,
     _cluster_id: &str,
+    node: &str,
     ticket: &str,
 ) -> Result<String, String> {
-    let pools = crate::proxmox::ceph::list_pools(_client, ticket)
+    let pools = crate::proxmox::ceph::list_pools(_client, node, ticket)
         .await
         .map_err(|e| format!("Failed to list pools: {}", e))?;
 
@@ -206,9 +217,10 @@ async fn list_pools(
 async fn list_osds(
     _client: &crate::proxmox::client::ProxmoxClient,
     _cluster_id: &str,
+    node: &str,
     ticket: &str,
 ) -> Result<String, String> {
-    let osds = crate::proxmox::ceph::list_osds(_client, ticket)
+    let osds = crate::proxmox::ceph::list_osds(_client, node, ticket)
         .await
         .map_err(|e| format!("Failed to list OSDs: {}", e))?;
 
@@ -218,9 +230,10 @@ async fn list_osds(
 async fn get_ceph_health(
     _client: &crate::proxmox::client::ProxmoxClient,
     _cluster_id: &str,
+    node: &str,
     ticket: &str,
 ) -> Result<String, String> {
-    let health = crate::proxmox::ceph::get_ceph_health(_client, ticket)
+    let health = crate::proxmox::ceph::get_ceph_health(_client, node, ticket)
         .await
         .map_err(|e| format!("Failed to get Ceph health: {}", e))?;
 
@@ -263,18 +276,6 @@ async fn get_shell_ticket(
         .map_err(|e| format!("Failed to get shell ticket: {}", e))?;
 
     serde_json::to_string_pretty(&shell_ticket).map_err(|e| format!("Failed to serialize: {}", e))
-}
-
-async fn list_views(
-    _client: &crate::proxmox::client::ProxmoxClient,
-    _cluster_id: &str,
-    ticket: &str,
-) -> Result<String, String> {
-    let views = crate::proxmox::views::list_views(_client, ticket)
-        .await
-        .map_err(|e| format!("Failed to list views: {}", e))?;
-
-    serde_json::to_string_pretty(&views).map_err(|e| format!("Failed to serialize: {}", e))
 }
 
 async fn list_certificates(

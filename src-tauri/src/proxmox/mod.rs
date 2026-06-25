@@ -27,7 +27,6 @@ pub mod tfa;
 pub mod updates;
 pub mod updates_ext;
 pub mod validate;
-pub mod views;
 pub mod vm;
 
 pub use client::ProxmoxClient;

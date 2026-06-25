@@ -328,7 +328,6 @@ export function VMList({
     // exit status instead of an immediate (false) success.
     const pollTask = async (sourceNode: string, upid: string): Promise<string | null> => {
       // Returns null on success, or an error string on failure.
-      // eslint-disable-next-line no-constant-condition
       while (true) {
         await new Promise((r) => setTimeout(r, 2000));
         let status;

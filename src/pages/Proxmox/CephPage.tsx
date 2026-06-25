@@ -41,14 +41,14 @@ export function ProxmoxCephPage() {
   const { nodeNames, selectedNode: tabNode, setSelectedNode, loading: nodesLoading } =
     useProxmoxNodes(clusterId);
 
-  const loadData = useCallback(async (cId: string) => {
-    if (!cId) return;
+  const loadData = useCallback(async (cId: string, node: string) => {
+    if (!cId || !node) return;
     setLoading(true);
     setError(null);
 
     let cephAvailable = false;
     try {
-      const h = await getCephHealth(cId);
+      const h = await getCephHealth(cId, node);
       setHealth(h);
       cephAvailable = true;
     } catch {
@@ -60,8 +60,8 @@ export function ProxmoxCephPage() {
     if (cephAvailable) {
       setIsCephEnabled(true);
       const [poolsResult, osdsResult] = await Promise.allSettled([
-        listCephPools(cId),
-        listCephOsd(cId),
+        listCephPools(cId, node),
+        listCephOsd(cId, node),
       ]);
 
       if (poolsResult.status === 'fulfilled') {
@@ -86,7 +86,6 @@ export function ProxmoxCephPage() {
         setClusters(cls);
         if (cls.length > 0) {
           setClusterId(cls[0].id);
-          loadData(cls[0].id);
         } else {
           setIsCephEnabled(false);
         }
@@ -96,7 +95,12 @@ export function ProxmoxCephPage() {
         setError('Failed to load clusters');
         setIsCephEnabled(false);
       });
-  }, [loadData]);
+  }, []);
+
+  useEffect(() => {
+    if (!clusterId || !tabNode) return;
+    loadData(clusterId, tabNode);
+  }, [clusterId, tabNode, loadData]);
 
   const handleClusterChange = (id: string) => {
     setClusterId(id);
@@ -108,15 +112,14 @@ export function ProxmoxCephPage() {
     setCephFsList([]);
     setCephFlags(null);
     setIsCephEnabled(null);
-    loadData(id);
   };
 
   useEffect(() => {
-    if (!clusterId || !isCephEnabled) return;
-    listCephMonitors(clusterId)
+    if (!clusterId || !tabNode || !isCephEnabled) return;
+    listCephMonitors(clusterId, tabNode)
       .then(setMonitors)
       .catch(() => toast.error('Failed to load Ceph monitors'));
-  }, [clusterId, isCephEnabled]);
+  }, [clusterId, tabNode, isCephEnabled]);
 
   const loadManagers = useCallback(async () => {
     if (!clusterId) return;
@@ -158,7 +161,7 @@ export function ProxmoxCephPage() {
   }, [clusterId, tabNode]);
 
   const handleRefresh = () => {
-    if (clusterId) loadData(clusterId);
+    if (clusterId && tabNode) loadData(clusterId, tabNode);
   };
 
   const clusterSelector = clusters.length > 1 && (

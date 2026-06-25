@@ -47,11 +47,12 @@ pub struct CephHealth {
 /// List Ceph pools
 pub async fn list_pools(
     client: &crate::proxmox::client::ProxmoxClient,
+    node: &str,
     ticket: &str,
 ) -> Result<Vec<CephPool>, String> {
-    let path = "cluster/ceph/pool";
+    let path = format!("nodes/{}/ceph/pool", node);
     let response: serde_json::Value = client
-        .get(path, Some(ticket))
+        .get(&path, Some(ticket))
         .await
         .map_err(|e| format!("Failed to list Ceph pools: {}", e))?;
 
@@ -147,11 +148,12 @@ pub async fn set_pool_quota(
 /// List Ceph OSDs
 pub async fn list_osds(
     client: &crate::proxmox::client::ProxmoxClient,
+    node: &str,
     ticket: &str,
 ) -> Result<Vec<CephOsd>, String> {
-    let path = "cluster/ceph/osd";
+    let path = format!("nodes/{}/ceph/osd", node);
     let response: serde_json::Value = client
-        .get(path, Some(ticket))
+        .get(&path, Some(ticket))
         .await
         .map_err(|e| format!("Failed to list Ceph OSDs: {}", e))?;
 
@@ -533,11 +535,12 @@ pub async fn get_ceph_flags(
 /// List Ceph monitors
 pub async fn list_monitors(
     client: &crate::proxmox::client::ProxmoxClient,
+    node: &str,
     ticket: &str,
 ) -> Result<Vec<CephMonitor>, String> {
-    let path = "cluster/ceph/mon";
+    let path = format!("nodes/{}/ceph/mon", node);
     let response: serde_json::Value = client
-        .get(path, Some(ticket))
+        .get(&path, Some(ticket))
         .await
         .map_err(|e| format!("Failed to list Ceph monitors: {}", e))?;
 
@@ -597,24 +600,27 @@ pub async fn quorum_health(
 /// Get Ceph health
 pub async fn get_ceph_health(
     client: &crate::proxmox::client::ProxmoxClient,
+    node: &str,
     ticket: &str,
 ) -> Result<CephHealth, String> {
-    let path = "cluster/ceph/health";
+    let path = format!("nodes/{}/ceph/status", node);
     let response: serde_json::Value = client
-        .get(path, Some(ticket))
+        .get(&path, Some(ticket))
         .await
         .map_err(|e| format!("Failed to get Ceph health: {}", e))?;
 
-    // response IS the health data (handle_response already unwrapped the envelope)
-    let health = &response;
+    let data = response.get("data").ok_or("Invalid response format")?;
+    let health = data.get("health").unwrap_or(data);
 
     let details: Vec<String> = health
-        .get("details")
-        .and_then(|d| d.as_array())
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|d| {
-                    d.get("message")
+        .get("checks")
+        .and_then(|c| c.as_object())
+        .map(|checks| {
+            checks
+                .values()
+                .filter_map(|v| {
+                    v.get("summary")
+                        .and_then(|s| s.get("message"))
                         .and_then(|m| m.as_str())
                         .map(|s| s.to_string())
                 })
@@ -832,5 +838,38 @@ mod tests {
         assert!(validate_node("").is_err());
         assert!(validate_node(&"a".repeat(65)).is_err());
         assert!(validate_node(&"a".repeat(64)).is_ok());
+    }
+
+    #[test]
+    fn test_ceph_health_uses_node_path() {
+        let node = "pve1";
+        let path = format!("nodes/{}/ceph/status", node);
+        assert!(path.contains("nodes/"));
+        assert!(path.contains("/ceph/status"));
+        assert!(!path.contains("cluster/"));
+    }
+
+    #[test]
+    fn test_list_pools_uses_node_path() {
+        let node = "pve1";
+        let path = format!("nodes/{}/ceph/pool", node);
+        assert!(path.starts_with("nodes/"));
+        assert!(!path.starts_with("cluster/"));
+    }
+
+    #[test]
+    fn test_list_osds_uses_node_path() {
+        let node = "pve1";
+        let path = format!("nodes/{}/ceph/osd", node);
+        assert!(path.starts_with("nodes/"));
+        assert!(!path.starts_with("cluster/"));
+    }
+
+    #[test]
+    fn test_list_monitors_uses_node_path() {
+        let node = "pve1";
+        let path = format!("nodes/{}/ceph/mon", node);
+        assert!(path.starts_with("nodes/"));
+        assert!(!path.starts_with("cluster/"));
     }
 }
