@@ -73,5 +73,13 @@
     "vite": "^8",
     "vitest": "^4",
     "webdriverio": "^9"
+  },
+  "overrides": {
+    "js-yaml": "^4.2.0",
+    "undici": "^7.28.0",
+    "esbuild": "^0.28.1",
+    "serialize-javascript": "^7.0.6",
+    "dompurify": "^3.4.11",
+    "@babel/core": "^8.0.1"
   }
 }
