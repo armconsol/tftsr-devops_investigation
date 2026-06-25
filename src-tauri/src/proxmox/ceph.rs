@@ -96,18 +96,20 @@ pub async fn list_pools(
 /// Create Ceph pool
 pub async fn create_pool(
     client: &crate::proxmox::client::ProxmoxClient,
+    node: &str,
     pool: &str,
     pg_num: u32,
     ticket: &str,
 ) -> Result<(), String> {
-    let path = "cluster/ceph/pool";
+    validate_node(node)?;
+    let path = format!("nodes/{}/ceph/pool", node);
     let config = serde_json::json!({
         "pool": pool,
         "pg_num": pg_num
     });
 
     let _response: serde_json::Value = client
-        .post(path, &config, Some(ticket))
+        .post(&path, &config, Some(ticket))
         .await
         .map_err(|e| format!("Failed to create Ceph pool {}: {}", pool, e))?;
     Ok(())
@@ -116,10 +118,12 @@ pub async fn create_pool(
 /// Delete Ceph pool
 pub async fn delete_pool(
     client: &crate::proxmox::client::ProxmoxClient,
+    node: &str,
     pool: &str,
     ticket: &str,
 ) -> Result<(), String> {
-    let path = format!("cluster/ceph/pool/{}", pool);
+    validate_node(node)?;
+    let path = format!("nodes/{}/ceph/pool/{}", node, pool);
     let _response: serde_json::Value = client
         .delete(&path, Some(ticket))
         .await
@@ -130,11 +134,13 @@ pub async fn delete_pool(
 /// Set Ceph pool quota
 pub async fn set_pool_quota(
     client: &crate::proxmox::client::ProxmoxClient,
+    node: &str,
     pool: &str,
     max_bytes: u64,
     ticket: &str,
 ) -> Result<(), String> {
-    let path = format!("cluster/ceph/pool/{}", pool);
+    validate_node(node)?;
+    let path = format!("nodes/{}/ceph/pool/{}", node, pool);
     let config = serde_json::json!({
         "max_bytes": max_bytes
     });
@@ -190,11 +196,13 @@ pub async fn list_osds(
 /// Set OSD weight
 pub async fn set_osd_weight(
     client: &crate::proxmox::client::ProxmoxClient,
+    node: &str,
     osd_id: u32,
     weight: f64,
     ticket: &str,
 ) -> Result<(), String> {
-    let path = format!("cluster/ceph/osd/{}", osd_id);
+    validate_node(node)?;
+    let path = format!("nodes/{}/ceph/osd/{}", node, osd_id);
     let config = serde_json::json!({
         "weight": weight
     });
@@ -209,10 +217,12 @@ pub async fn set_osd_weight(
 /// Mark OSD out
 pub async fn osd_out(
     client: &crate::proxmox::client::ProxmoxClient,
+    node: &str,
     osd_id: u32,
     ticket: &str,
 ) -> Result<(), String> {
-    let path = format!("cluster/ceph/osd/{}/out", osd_id);
+    validate_node(node)?;
+    let path = format!("nodes/{}/ceph/osd/{}/out", node, osd_id);
     let _response: serde_json::Value = client
         .post_form(&path, &[], Some(ticket))
         .await
@@ -223,10 +233,12 @@ pub async fn osd_out(
 /// Mark OSD in
 pub async fn osd_in(
     client: &crate::proxmox::client::ProxmoxClient,
+    node: &str,
     osd_id: u32,
     ticket: &str,
 ) -> Result<(), String> {
-    let path = format!("cluster/ceph/osd/{}/in", osd_id);
+    validate_node(node)?;
+    let path = format!("nodes/{}/ceph/osd/{}/in", node, osd_id);
     let _response: serde_json::Value = client
         .post_form(&path, &[], Some(ticket))
         .await
@@ -237,11 +249,13 @@ pub async fn osd_in(
 /// List Ceph MDS
 pub async fn list_mds(
     client: &crate::proxmox::client::ProxmoxClient,
+    node: &str,
     ticket: &str,
 ) -> Result<Vec<serde_json::Value>, String> {
-    let path = "cluster/ceph/mds";
+    validate_node(node)?;
+    let path = format!("nodes/{}/ceph/mds", node);
     let response: serde_json::Value = client
-        .get(path, Some(ticket))
+        .get(&path, Some(ticket))
         .await
         .map_err(|e| format!("Failed to list Ceph MDS: {}", e))?;
 
@@ -255,10 +269,12 @@ pub async fn list_mds(
 /// Get MDS status
 pub async fn get_mds_status(
     client: &crate::proxmox::client::ProxmoxClient,
+    node: &str,
     mds: &str,
     ticket: &str,
 ) -> Result<serde_json::Value, String> {
-    let path = format!("cluster/ceph/mds/{}", mds);
+    validate_node(node)?;
+    let path = format!("nodes/{}/ceph/mds/{}", node, mds);
     client
         .get(&path, Some(ticket))
         .await
@@ -268,10 +284,12 @@ pub async fn get_mds_status(
 /// Trigger MDS failover
 pub async fn mds_failover(
     client: &crate::proxmox::client::ProxmoxClient,
+    node: &str,
     mds: &str,
     ticket: &str,
 ) -> Result<(), String> {
-    let path = format!("cluster/ceph/mds/{}/failover", mds);
+    validate_node(node)?;
+    let path = format!("nodes/{}/ceph/mds/{}/failover", node, mds);
     let _response: serde_json::Value = client
         .post_form(&path, &[], Some(ticket))
         .await
@@ -282,10 +300,12 @@ pub async fn mds_failover(
 /// List RBD images
 pub async fn list_rbd(
     client: &crate::proxmox::client::ProxmoxClient,
+    node: &str,
     pool: &str,
     ticket: &str,
 ) -> Result<Vec<serde_json::Value>, String> {
-    let path = format!("cluster/ceph/pool/{}/rbd", pool);
+    validate_node(node)?;
+    let path = format!("nodes/{}/ceph/pool/{}/rbd", node, pool);
     let response: serde_json::Value = client
         .get(&path, Some(ticket))
         .await
@@ -301,12 +321,14 @@ pub async fn list_rbd(
 /// Create RBD image
 pub async fn create_rbd(
     client: &crate::proxmox::client::ProxmoxClient,
+    node: &str,
     pool: &str,
     image: &str,
     size: u64,
     ticket: &str,
 ) -> Result<(), String> {
-    let path = format!("cluster/ceph/pool/{}/rbd", pool);
+    validate_node(node)?;
+    let path = format!("nodes/{}/ceph/pool/{}/rbd", node, pool);
     let config = serde_json::json!({
         "image": image,
         "size": size
@@ -322,11 +344,13 @@ pub async fn create_rbd(
 /// Delete RBD image
 pub async fn delete_rbd(
     client: &crate::proxmox::client::ProxmoxClient,
+    node: &str,
     pool: &str,
     image: &str,
     ticket: &str,
 ) -> Result<(), String> {
-    let path = format!("cluster/ceph/pool/{}/rbd/{}", pool, image);
+    validate_node(node)?;
+    let path = format!("nodes/{}/ceph/pool/{}/rbd/{}", node, pool, image);
     let _response: serde_json::Value = client
         .delete(&path, Some(ticket))
         .await
@@ -337,13 +361,15 @@ pub async fn delete_rbd(
 /// Clone RBD image
 pub async fn clone_rbd(
     client: &crate::proxmox::client::ProxmoxClient,
+    node: &str,
     source_pool: &str,
     source_image: &str,
     dest_pool: &str,
     dest_image: &str,
     ticket: &str,
 ) -> Result<(), String> {
-    let path = format!("cluster/ceph/pool/{}/clone", source_pool);
+    validate_node(node)?;
+    let path = format!("nodes/{}/ceph/pool/{}/clone", node, source_pool);
     let config = serde_json::json!({
         "source": source_image,
         "dest": format!("{}/{}", dest_pool, dest_image)
@@ -365,12 +391,14 @@ pub async fn clone_rbd(
 /// Resize RBD image
 pub async fn resize_rbd(
     client: &crate::proxmox::client::ProxmoxClient,
+    node: &str,
     pool: &str,
     image: &str,
     size: u64,
     ticket: &str,
 ) -> Result<(), String> {
-    let path = format!("cluster/ceph/pool/{}/rbd/{}/resize", pool, image);
+    validate_node(node)?;
+    let path = format!("nodes/{}/ceph/pool/{}/rbd/{}/resize", node, pool, image);
     let config = serde_json::json!({
         "size": size
     });
@@ -385,12 +413,14 @@ pub async fn resize_rbd(
 /// Create RBD snapshot
 pub async fn create_snapshot(
     client: &crate::proxmox::client::ProxmoxClient,
+    node: &str,
     pool: &str,
     image: &str,
     snapshot: &str,
     ticket: &str,
 ) -> Result<(), String> {
-    let path = format!("cluster/ceph/pool/{}/rbd/{}/snapshot", pool, image);
+    validate_node(node)?;
+    let path = format!("nodes/{}/ceph/pool/{}/rbd/{}/snapshot", node, pool, image);
     let config = serde_json::json!({
         "snapshot": snapshot
     });
@@ -578,10 +608,12 @@ pub async fn list_monitors(
 /// Get monitor status
 pub async fn get_monitor_status(
     client: &crate::proxmox::client::ProxmoxClient,
+    node: &str,
     monitor: &str,
     ticket: &str,
 ) -> Result<serde_json::Value, String> {
-    let path = format!("cluster/ceph/mon/{}", monitor);
+    validate_node(node)?;
+    let path = format!("nodes/{}/ceph/mon/{}", node, monitor);
     client
         .get(&path, Some(ticket))
         .await
@@ -591,11 +623,13 @@ pub async fn get_monitor_status(
 /// Get Ceph quorum health
 pub async fn quorum_health(
     client: &crate::proxmox::client::ProxmoxClient,
+    node: &str,
     ticket: &str,
 ) -> Result<serde_json::Value, String> {
-    let path = "cluster/ceph/health";
+    validate_node(node)?;
+    let path = format!("nodes/{}/ceph/status", node);
     client
-        .get(path, Some(ticket))
+        .get(&path, Some(ticket))
         .await
         .map_err(|e| format!("Failed to get Ceph health: {}", e))
 }
@@ -875,5 +909,19 @@ mod tests {
         let path = format!("nodes/{}/ceph/mon", node);
         assert!(path.starts_with("nodes/"));
         assert!(!path.starts_with("cluster/"));
+    }
+
+    #[test]
+    fn test_write_operations_use_node_paths() {
+        let node = "pve1";
+        let create_pool_path = format!("nodes/{}/ceph/pool", node);
+        let set_osd_weight_path = format!("nodes/{}/ceph/osd/{}", node, 1);
+        let rbd_resize_path = format!("nodes/{}/ceph/pool/{}/rbd/{}/resize", node, "rbd", "vm-100");
+        assert!(create_pool_path.starts_with("nodes/"));
+        assert!(set_osd_weight_path.starts_with("nodes/"));
+        assert!(rbd_resize_path.starts_with("nodes/"));
+        assert!(!create_pool_path.contains("cluster/"));
+        assert!(!set_osd_weight_path.contains("cluster/"));
+        assert!(!rbd_resize_path.contains("cluster/"));
     }
 }
