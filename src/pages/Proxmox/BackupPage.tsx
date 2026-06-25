@@ -45,7 +45,7 @@ export function ProxmoxBackupPage() {
     if (!clusterId) return;
     setIsLoading(true);
     try {
-      const raw = await listProxmoxBackupJobs(clusterId, '');
+      const raw = await listProxmoxBackupJobs(clusterId);
       const normalized: BackupJobInfo[] = (raw as Record<string, unknown>[]).map((job) => {
         const enabledRaw = job.enabled ?? job.enable ?? 1;
         const isEnabled = enabledRaw === 1 || enabledRaw === true || enabledRaw === '1';

@@ -215,7 +215,6 @@ export interface ProxmoxNodeSummary {
   [key: string]: unknown;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function listProxmoxNodes(clusterId: string): Promise<any[]> {
   return await invoke<any[]>("list_proxmox_nodes", { clusterId });
 }
@@ -273,10 +272,9 @@ export async function createProxmoxVm(
  * @param nodeId - Node identifier
  */
 export async function listProxmoxBackupJobs(
-  clusterId: string,
-  nodeId: string
+  clusterId: string
 ): Promise<any[]> {
-  return await invoke<any[]>("list_proxmox_backup_jobs", { clusterId, nodeId });
+  return await invoke<any[]>("list_proxmox_backup_jobs", { clusterId });
 }
 
 /**
@@ -295,9 +293,7 @@ export async function listProxmoxDatastores(
 export async function getProxmoxStorageConfig(
   clusterId: string,
   storage: string
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ): Promise<Record<string, any>> {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return await invoke<Record<string, any>>("get_proxmox_storage_config", {
     clusterId,
     storage,
@@ -350,24 +346,26 @@ export async function triggerProxmoxBackupJob(
  * List Ceph Pools
  * @param clusterId - Cluster identifier
  */
-export async function listCephPools(clusterId: string): Promise<CephPool[]> {
-  return await invoke<CephPool[]>("list_ceph_pools", { clusterId });
+export async function listCephPools(clusterId: string, node: string): Promise<CephPool[]> {
+  return await invoke<CephPool[]>("list_ceph_pools", { clusterId, node });
 }
 
 /**
  * List Ceph OSDs
  * @param clusterId - Cluster identifier
+ * @param node - Node name
  */
-export async function listCephOsd(clusterId: string): Promise<CephOsd[]> {
-  return await invoke<CephOsd[]>("list_ceph_osd", { clusterId });
+export async function listCephOsd(clusterId: string, node: string): Promise<CephOsd[]> {
+  return await invoke<CephOsd[]>("list_ceph_osd", { clusterId, node });
 }
 
 /**
  * Get Ceph Health
  * @param clusterId - Cluster identifier
+ * @param node - Node name
  */
-export async function getCephHealth(clusterId: string): Promise<CephHealth> {
-  return await invoke<CephHealth>("get_ceph_health", { clusterId });
+export async function getCephHealth(clusterId: string, node: string): Promise<CephHealth> {
+  return await invoke<CephHealth>("get_ceph_health", { clusterId, node });
 }
 
 // ─── User Management (LDAP/AD/OpenID) ─────────────────────────────────────────
@@ -457,7 +455,7 @@ export async function listAptUpdates(
   clusterId: string,
   nodeId: string
 ): Promise<any[]> {
-  return await invoke<any[]>("list_apt_updates", { clusterId, nodeId });
+  return await invoke<any[]>("list_apt_updates", { clusterId, node: nodeId });
 }
 
 /**
@@ -469,7 +467,7 @@ export async function updateAptRepos(
   clusterId: string,
   nodeId: string
 ): Promise<void> {
-  await invoke("update_apt_repos", { clusterId, nodeId });
+  await invoke("update_apt_repos", { clusterId, node: nodeId });
 }
 
 /**
@@ -481,7 +479,7 @@ export async function listAptRepositories(
   clusterId: string,
   nodeId: string
 ): Promise<any[]> {
-  return await invoke<any[]>("list_apt_repositories", { clusterId, nodeId });
+  return await invoke<any[]>("list_apt_repositories", { clusterId, node: nodeId });
 }
 
 // ─── Remote Shell ─────────────────────────────────────────────────────────────
@@ -496,51 +494,6 @@ export async function getShellTicket(
   nodeId: string
 ): Promise<any> {
   return await invoke<any>("get_shell_ticket", { clusterId, nodeId });
-}
-
-// ─── Dashboard Views ──────────────────────────────────────────────────────────
-
-/**
- * List dashboard views
- * @param clusterId - Cluster identifier
- */
-export async function listViews(clusterId: string): Promise<any[]> {
-  return await invoke<any[]>("list_views", { clusterId });
-}
-
-/**
- * Add a dashboard view
- * @param clusterId - Cluster identifier
- * @param view - View configuration
- */
-export async function addView(clusterId: string, view: any): Promise<void> {
-  await invoke("add_view", { clusterId, view });
-}
-
-/**
- * Update a dashboard view
- * @param clusterId - Cluster identifier
- * @param viewId - View identifier
- * @param view - View configuration
- */
-export async function updateView(
-  clusterId: string,
-  viewId: string,
-  view: any
-): Promise<void> {
-  await invoke("update_view", { clusterId, viewId, view });
-}
-
-/**
- * Delete a dashboard view
- * @param clusterId - Cluster identifier
- * @param viewId - View identifier
- */
-export async function deleteView(
-  clusterId: string,
-  viewId: string
-): Promise<void> {
-  await invoke("delete_view", { clusterId, viewId });
 }
 
 // ─── Certificate Management ───────────────────────────────────────────────────
@@ -1289,48 +1242,6 @@ export const rollbackProxmoxSnapshot = async (
 ): Promise<void> =>
   invoke<void>("rollback_proxmox_snapshot", { clusterId, nodeId, vmid, snapshotName });
 
-// ─── Cluster Views (typed) ────────────────────────────────────────────────────
-
-export interface ClusterView {
-  view_id: string;
-  name: string;
-  description?: string;
-  layout?: string;
-  enabled?: boolean;
-}
-
-/**
- * List cluster views
- * @param clusterId - Cluster identifier
- */
-export const listClusterViews = async (
-  clusterId: string
-): Promise<ClusterView[]> =>
-  invoke<ClusterView[]>("list_cluster_views", { clusterId });
-
-/**
- * Create a cluster view
- * @param clusterId - Cluster identifier
- * @param viewId - View identifier
- * @param name - View display name
- */
-export const createClusterView = async (
-  clusterId: string,
-  viewId: string,
-  name: string
-): Promise<void> =>
-  invoke<void>("create_cluster_view", { clusterId, viewId, name });
-
-/**
- * Delete a cluster view
- * @param clusterId - Cluster identifier
- * @param viewId - View identifier
- */
-export const deleteClusterView = async (
-  clusterId: string,
-  viewId: string
-): Promise<void> => invoke<void>("delete_cluster_view", { clusterId, viewId });
-
 // ─── Subscription ─────────────────────────────────────────────────────────────
 
 export interface SubscriptionStatus {
@@ -2004,8 +1915,8 @@ export const getStorageRrdData = (
 
 // ─── Ceph Advanced ────────────────────────────────────────────────────────────
 
-export const listCephMonitors = (clusterId: string): Promise<CephMonitor[]> =>
-  invoke("list_ceph_monitors", { clusterId });
+export const listCephMonitors = (clusterId: string, node: string): Promise<CephMonitor[]> =>
+  invoke("list_ceph_monitors", { clusterId, node });
 
 export const listCephManagers = (
   clusterId: string,

@@ -863,7 +863,6 @@ fn normalize_backup_jobs(response: &serde_json::Value) -> Vec<serde_json::Value>
 #[tauri::command]
 pub async fn list_proxmox_backup_jobs(
     cluster_id: String,
-    _node: String, // Node parameter kept for compatibility but not used
     state: State<'_, AppState>,
 ) -> Result<Vec<serde_json::Value>, String> {
     let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
@@ -1102,6 +1101,7 @@ pub async fn trigger_proxmox_backup_job(
 #[tauri::command]
 pub async fn list_ceph_pools(
     cluster_id: String,
+    node: String,
     state: State<'_, AppState>,
 ) -> Result<Vec<serde_json::Value>, String> {
     let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
@@ -1109,6 +1109,7 @@ pub async fn list_ceph_pools(
 
     let pools = crate::proxmox::ceph::list_pools(
         &client_guard,
+        &node,
         client_guard.ticket.as_deref().unwrap_or(""),
     )
     .await
@@ -1128,6 +1129,7 @@ pub async fn list_ceph_pools(
 #[tauri::command]
 pub async fn list_ceph_osd(
     cluster_id: String,
+    node: String,
     state: State<'_, AppState>,
 ) -> Result<Vec<serde_json::Value>, String> {
     let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
@@ -1135,6 +1137,7 @@ pub async fn list_ceph_osd(
 
     let osds = crate::proxmox::ceph::list_osds(
         &client_guard,
+        &node,
         client_guard.ticket.as_deref().unwrap_or(""),
     )
     .await
@@ -1154,6 +1157,7 @@ pub async fn list_ceph_osd(
 #[tauri::command]
 pub async fn get_ceph_health(
     cluster_id: String,
+    node: String,
     state: State<'_, AppState>,
 ) -> Result<serde_json::Value, String> {
     let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
@@ -1161,6 +1165,7 @@ pub async fn get_ceph_health(
 
     let health = crate::proxmox::ceph::get_ceph_health(
         &client_guard,
+        &node,
         client_guard.ticket.as_deref().unwrap_or(""),
     )
     .await
@@ -1480,145 +1485,6 @@ pub async fn get_shell_ticket(
     .map_err(|e| format!("Failed to get shell ticket: {}", e))?;
 
     serde_json::to_value(ticket).map_err(|e| format!("Failed to serialize ticket: {}", e))
-}
-
-/// List dashboard views
-#[tauri::command]
-pub async fn list_views(
-    cluster_id: String,
-    state: State<'_, AppState>,
-) -> Result<Vec<serde_json::Value>, String> {
-    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
-    let client_guard = client.lock().await;
-
-    let views = crate::proxmox::views::list_views(
-        &client_guard,
-        client_guard.ticket.as_deref().unwrap_or(""),
-    )
-    .await;
-
-    // Handle 501 Not Implemented gracefully - return empty array
-    if let Err(e) = &views {
-        if e.contains("501") || e.contains("Not Implemented") || e.contains("not implemented") {
-            tracing::warn!("Views API not implemented by Proxmox server, returning empty list");
-            return Ok(vec![]);
-        }
-    }
-
-    let views = views.map_err(|e| format!("Failed to list views: {}", e))?;
-
-    let json_views: Vec<serde_json::Value> = views
-        .into_iter()
-        .map(|v| serde_json::to_value(v).map_err(|e| format!("Failed to serialize view: {}", e)))
-        .collect::<Result<Vec<_>, _>>()?;
-
-    Ok(json_views)
-}
-
-/// Add dashboard view
-#[tauri::command]
-#[allow(clippy::too_many_arguments)]
-pub async fn add_view(
-    cluster_id: String,
-    view_id: String,
-    name: String,
-    description: String,
-    layout: String,
-    widgets: Vec<serde_json::Value>,
-    enabled: bool,
-    state: State<'_, AppState>,
-) -> Result<(), String> {
-    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
-    let client_guard = client.lock().await;
-
-    let widgets: Vec<crate::proxmox::views::Widget> = widgets
-        .into_iter()
-        .map(|w| {
-            serde_json::from_value(w).map_err(|e| format!("Failed to deserialize widget: {}", e))
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-
-    let view = crate::proxmox::views::DashboardView {
-        view_id,
-        name,
-        description,
-        layout,
-        widgets,
-        enabled,
-        created_at: chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string(),
-        updated_at: chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string(),
-    };
-
-    crate::proxmox::views::add_view(
-        &client_guard,
-        &view,
-        client_guard.ticket.as_deref().unwrap_or(""),
-    )
-    .await
-    .map_err(|e| format!("Failed to add view: {}", e))
-}
-
-/// Update dashboard view
-#[tauri::command]
-#[allow(clippy::too_many_arguments)]
-pub async fn update_view(
-    cluster_id: String,
-    view_id: String,
-    name: String,
-    description: String,
-    layout: String,
-    widgets: Vec<serde_json::Value>,
-    enabled: bool,
-    state: State<'_, AppState>,
-) -> Result<(), String> {
-    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
-    let client_guard = client.lock().await;
-
-    let widgets: Vec<crate::proxmox::views::Widget> = widgets
-        .into_iter()
-        .map(|w| {
-            serde_json::from_value(w).map_err(|e| format!("Failed to deserialize widget: {}", e))
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-
-    let view = crate::proxmox::views::DashboardView {
-        view_id: view_id.clone(),
-        name,
-        description,
-        layout,
-        widgets,
-        enabled,
-        created_at: chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string(),
-        updated_at: chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string(),
-    };
-
-    crate::proxmox::views::update_view(
-        &client_guard,
-        &view_id,
-        &view,
-        client_guard.ticket.as_deref().unwrap_or(""),
-    )
-    .await
-    .map_err(|e| format!("Failed to update view: {}", e))
-}
-
-/// Delete dashboard view
-#[tauri::command]
-pub async fn delete_view(
-    cluster_id: String,
-    view_id: String,
-    state: State<'_, AppState>,
-) -> Result<(), String> {
-    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
-    let client_guard = client.lock().await;
-
-    crate::proxmox::views::delete_view(
-        &client_guard,
-        &view_id,
-        client_guard.ticket.as_deref().unwrap_or(""),
-    )
-    .await
-    .map_err(|e| format!("Failed to delete view: {}", e))
 }
 
 /// List certificates
@@ -2957,80 +2823,6 @@ pub async fn upload_iso_image(
         client_guard.ticket.as_deref().unwrap_or(""),
     )
     .await
-}
-
-// ─── Phase 13 - Cluster Views (typed aliases) ─────────────────────────────────
-
-/// List cluster views (typed)
-#[tauri::command]
-pub async fn list_cluster_views(
-    cluster_id: String,
-    state: State<'_, AppState>,
-) -> Result<Vec<serde_json::Value>, String> {
-    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
-    let client_guard = client.lock().await;
-
-    let views = crate::proxmox::views::list_views(
-        &client_guard,
-        client_guard.ticket.as_deref().unwrap_or(""),
-    )
-    .await
-    .map_err(|e| format!("Failed to list cluster views: {}", e))?;
-
-    views
-        .into_iter()
-        .map(|v| serde_json::to_value(v).map_err(|e| e.to_string()))
-        .collect::<Result<Vec<_>, _>>()
-}
-
-/// Create cluster view
-#[tauri::command]
-pub async fn create_cluster_view(
-    cluster_id: String,
-    view_id: String,
-    name: String,
-    state: State<'_, AppState>,
-) -> Result<(), String> {
-    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
-    let client_guard = client.lock().await;
-
-    let view = crate::proxmox::views::DashboardView {
-        view_id,
-        name,
-        description: String::new(),
-        layout: "grid".to_string(),
-        widgets: vec![],
-        enabled: true,
-        created_at: chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string(),
-        updated_at: chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string(),
-    };
-
-    crate::proxmox::views::add_view(
-        &client_guard,
-        &view,
-        client_guard.ticket.as_deref().unwrap_or(""),
-    )
-    .await
-    .map_err(|e| format!("Failed to create cluster view: {}", e))
-}
-
-/// Delete cluster view
-#[tauri::command]
-pub async fn delete_cluster_view(
-    cluster_id: String,
-    view_id: String,
-    state: State<'_, AppState>,
-) -> Result<(), String> {
-    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
-    let client_guard = client.lock().await;
-
-    crate::proxmox::views::delete_view(
-        &client_guard,
-        &view_id,
-        client_guard.ticket.as_deref().unwrap_or(""),
-    )
-    .await
-    .map_err(|e| format!("Failed to delete cluster view: {}", e))
 }
 
 // ─── Phase 14 - Subscription ──────────────────────────────────────────────────
@@ -4468,12 +4260,17 @@ pub async fn get_storage_rrd_data(
 #[tauri::command]
 pub async fn list_ceph_monitors(
     cluster_id: String,
+    node: String,
     state: State<'_, AppState>,
 ) -> Result<Vec<crate::proxmox::ceph::CephMonitor>, String> {
     let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
-    crate::proxmox::ceph::list_monitors(&client_guard, client_guard.ticket.as_deref().unwrap_or(""))
-        .await
+    crate::proxmox::ceph::list_monitors(
+        &client_guard,
+        &node,
+        client_guard.ticket.as_deref().unwrap_or(""),
+    )
+    .await
 }
 
 #[tauri::command]

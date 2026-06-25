@@ -3,7 +3,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/index'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/index';
 import { Button } from '@/components/ui/index';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/index';
-import { Input } from '@/components/ui/index';
 import { RefreshCw, Power, RotateCcw } from 'lucide-react';
 import {
   listProxmoxClusters,
@@ -26,12 +25,11 @@ import type {
 } from '@/lib/proxmoxClient';
 import type { ClusterInfo } from '@/lib/domain';
 import { toast } from 'sonner';
+import { useProxmoxNodes } from '@/hooks/useProxmoxNodes';
 
 export function ProxmoxAdminPage() {
   const [clusters, setClusters] = useState<ClusterInfo[]>([]);
   const [clusterId, setClusterId] = useState('');
-  const [nodeId, setNodeId] = useState('localhost');
-  const [nodeInputValue, setNodeInputValue] = useState('localhost');
   const [nodeStatus, setNodeStatus] = useState<NodeStatus | null>(null);
   const [aptUpdates, setAptUpdates] = useState<AptPackage[]>([]);
   const [aptRepos, setAptRepos] = useState<AptRepository[]>([]);
@@ -42,6 +40,8 @@ export function ProxmoxAdminPage() {
   const [activeTab, setActiveTab] = useState('status');
   const [tabError, setTabError] = useState<string | null>(null);
   const [confirmAction, setConfirmAction] = useState<'reboot' | 'shutdown' | null>(null);
+
+  const { nodeNames, selectedNode, setSelectedNode } = useProxmoxNodes(clusterId);
 
   useEffect(() => {
     listProxmoxClusters()
@@ -54,7 +54,7 @@ export function ProxmoxAdminPage() {
 
   const loadTabData = useCallback(
     async (tab: string, cId: string, nId: string) => {
-      if (!cId) return;
+      if (!cId || !nId) return;
       setTabError(null);
       try {
         switch (tab) {
@@ -88,21 +88,17 @@ export function ProxmoxAdminPage() {
   );
 
   useEffect(() => {
-    void loadTabData(activeTab, clusterId, nodeId);
-  }, [activeTab, clusterId, nodeId, loadTabData]);
-
-  const applyNodeId = () => {
-    setNodeId(nodeInputValue.trim() || 'localhost');
-  };
+    if (selectedNode) void loadTabData(activeTab, clusterId, selectedNode);
+  }, [activeTab, clusterId, selectedNode, loadTabData]);
 
   const handleConfirmAction = async () => {
     if (!confirmAction) return;
     try {
       if (confirmAction === 'reboot') {
-        await rebootNode(clusterId, nodeId);
+        await rebootNode(clusterId, selectedNode);
         toast.success('Node reboot initiated');
       } else {
-        await shutdownNode(clusterId, nodeId);
+        await shutdownNode(clusterId, selectedNode);
         toast.success('Node shutdown initiated');
       }
     } catch (e) {
@@ -136,7 +132,6 @@ export function ProxmoxAdminPage() {
         </div>
       </div>
 
-      {/* Cluster / Node selector bar */}
       <div className="flex items-center gap-3 flex-wrap">
         <div className="flex items-center gap-2">
           <span className="text-sm text-muted-foreground">Cluster:</span>
@@ -155,23 +150,21 @@ export function ProxmoxAdminPage() {
         </div>
         <div className="flex items-center gap-2">
           <span className="text-sm text-muted-foreground">Node:</span>
-          <Input
-            className="w-36 h-8 text-sm"
-            value={nodeInputValue}
-            onChange={(e) => setNodeInputValue(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') applyNodeId();
-            }}
-            placeholder="localhost"
-          />
-          <Button variant="outline" size="sm" onClick={applyNodeId}>
-            Apply
-          </Button>
+          <select
+            className="text-sm border rounded px-2 py-1 bg-background"
+            value={selectedNode}
+            onChange={(e) => setSelectedNode(e.target.value)}
+          >
+            {nodeNames.length === 0 && <option value="">No nodes</option>}
+            {nodeNames.map((n) => (
+              <option key={n} value={n}>{n}</option>
+            ))}
+          </select>
         </div>
         <Button
           variant="outline"
           size="sm"
-          onClick={() => void loadTabData(activeTab, clusterId, nodeId)}
+          onClick={() => void loadTabData(activeTab, clusterId, selectedNode)}
         >
           <RefreshCw className="mr-2 h-4 w-4" />
           Refresh
@@ -191,7 +184,6 @@ export function ProxmoxAdminPage() {
           <TabsTrigger value="report">Report</TabsTrigger>
         </TabsList>
 
-        {/* ── Node Status ─────────────────────────────────────────────────── */}
         <TabsContent value="status">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
@@ -258,7 +250,6 @@ export function ProxmoxAdminPage() {
           </Card>
         </TabsContent>
 
-        {/* ── APT Updates ─────────────────────────────────────────────────── */}
         <TabsContent value="updates">
           <Card>
             <CardHeader>
@@ -292,7 +283,6 @@ export function ProxmoxAdminPage() {
           </Card>
         </TabsContent>
 
-        {/* ── APT Repositories ────────────────────────────────────────────── */}
         <TabsContent value="repositories">
           <Card>
             <CardHeader>
@@ -331,7 +321,6 @@ export function ProxmoxAdminPage() {
           </Card>
         </TabsContent>
 
-        {/* ── Syslog ──────────────────────────────────────────────────────── */}
         <TabsContent value="syslog">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
@@ -339,7 +328,7 @@ export function ProxmoxAdminPage() {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => void loadTabData('syslog', clusterId, nodeId)}
+                onClick={() => void loadTabData('syslog', clusterId, selectedNode)}
               >
                 <RefreshCw className="mr-2 h-4 w-4" />
                 Refresh
@@ -361,7 +350,6 @@ export function ProxmoxAdminPage() {
           </Card>
         </TabsContent>
 
-        {/* ── Tasks ───────────────────────────────────────────────────────── */}
         <TabsContent value="tasks">
           <Card>
             <CardHeader>
@@ -397,7 +385,6 @@ export function ProxmoxAdminPage() {
           </Card>
         </TabsContent>
 
-        {/* ── Journal ─────────────────────────────────────────────────────── */}
         <TabsContent value="journal">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
@@ -405,7 +392,7 @@ export function ProxmoxAdminPage() {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => void loadTabData('journal', clusterId, nodeId)}
+                onClick={() => void loadTabData('journal', clusterId, selectedNode)}
               >
                 <RefreshCw className="mr-2 h-4 w-4" />
                 Refresh
@@ -419,7 +406,6 @@ export function ProxmoxAdminPage() {
           </Card>
         </TabsContent>
 
-        {/* ── Report ──────────────────────────────────────────────────────── */}
         <TabsContent value="report">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
@@ -427,7 +413,7 @@ export function ProxmoxAdminPage() {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => void loadTabData('report', clusterId, nodeId)}
+                onClick={() => void loadTabData('report', clusterId, selectedNode)}
               >
                 <RefreshCw className="mr-2 h-4 w-4" />
                 Refresh
@@ -442,7 +428,6 @@ export function ProxmoxAdminPage() {
         </TabsContent>
       </Tabs>
 
-      {/* Reboot/Shutdown Confirmation Dialog */}
       <Dialog open={!!confirmAction} onOpenChange={() => setConfirmAction(null)}>
         <DialogContent>
           <DialogHeader>
@@ -451,7 +436,7 @@ export function ProxmoxAdminPage() {
             </DialogTitle>
           </DialogHeader>
           <p className="text-sm text-muted-foreground py-2">
-            Are you sure you want to {confirmAction} node <strong>{nodeId}</strong>? This will
+            Are you sure you want to {confirmAction} node <strong>{selectedNode}</strong>? This will
             interrupt all running workloads on this node.
           </p>
           <DialogFooter>
