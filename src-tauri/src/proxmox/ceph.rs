@@ -634,21 +634,15 @@ pub async fn quorum_health(
         .map_err(|e| format!("Failed to get Ceph health: {}", e))
 }
 
-/// Get Ceph health
-pub async fn get_ceph_health(
-    client: &crate::proxmox::client::ProxmoxClient,
-    node: &str,
-    ticket: &str,
-) -> Result<CephHealth, String> {
-    validate_node(node)?;
-    let path = format!("nodes/{}/ceph/status", node);
-    let response: serde_json::Value = client
-        .get(&path, Some(ticket))
-        .await
-        .map_err(|e| format!("Failed to get Ceph health: {}", e))?;
-
-    let data = response.get("data").ok_or("Invalid response format")?;
-    let health = data.get("health").unwrap_or(data);
+/// Parse an (already `data`-unwrapped) `nodes/{node}/ceph/status` response into
+/// a `CephHealth`.
+///
+/// `ProxmoxClient::get` already strips the Proxmox `{ "data": ... }` envelope,
+/// so `status` here is the raw ceph status object. The health block may be
+/// nested under `health` (typical) or, defensively, be the object itself.
+/// Per-check messages are collected from `health.checks.*.summary.message`.
+pub fn parse_ceph_health(status: &serde_json::Value) -> CephHealth {
+    let health = status.get("health").unwrap_or(status);
 
     let details: Vec<String> = health
         .get("checks")
@@ -666,24 +660,119 @@ pub async fn get_ceph_health(
         })
         .unwrap_or_default();
 
-    Ok(CephHealth {
-        status: health
-            .get("status")
-            .and_then(|s| s.as_str())
-            .unwrap_or("unknown")
-            .to_string(),
-        summary: health
-            .get("summary")
-            .and_then(|s| s.as_str())
-            .unwrap_or("")
-            .to_string(),
+    let status_str = health
+        .get("status")
+        .and_then(|s| s.as_str())
+        .unwrap_or("unknown")
+        .to_string();
+
+    // PVE/Ceph may expose `summary` as a plain string, or (older clusters) as an
+    // array of `{ summary, severity }` objects. Fall back to the first detail
+    // line, then to the status string, so the UI always has something to show.
+    let summary = match health.get("summary") {
+        Some(serde_json::Value::String(s)) if !s.is_empty() => s.clone(),
+        Some(serde_json::Value::Array(arr)) => arr
+            .iter()
+            .filter_map(|e| e.get("summary").and_then(|s| s.as_str()))
+            .collect::<Vec<_>>()
+            .join("; "),
+        _ => String::new(),
+    };
+    let summary = if summary.is_empty() {
+        details
+            .first()
+            .cloned()
+            .unwrap_or_else(|| status_str.clone())
+    } else {
+        summary
+    };
+
+    CephHealth {
+        status: status_str,
+        summary,
         details,
-    })
+    }
+}
+
+/// Get Ceph health
+pub async fn get_ceph_health(
+    client: &crate::proxmox::client::ProxmoxClient,
+    node: &str,
+    ticket: &str,
+) -> Result<CephHealth, String> {
+    validate_node(node)?;
+    let path = format!("nodes/{}/ceph/status", node);
+    let response: serde_json::Value = client
+        .get(&path, Some(ticket))
+        .await
+        .map_err(|e| format!("Failed to get Ceph health: {}", e))?;
+
+    Ok(parse_ceph_health(&response))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Regression: `ProxmoxClient::get` already unwraps the `{ "data": ... }`
+    /// envelope, so the parser receives the raw ceph status object. The previous
+    /// implementation did a *second* `.get("data")` here, which always failed
+    /// and made the Ceph page flash data then go blank. This asserts the parser
+    /// reads health directly from the unwrapped status object.
+    #[test]
+    fn test_parse_ceph_health_unwrapped_status() {
+        let status = serde_json::json!({
+            "health": {
+                "status": "HEALTH_OK",
+                "checks": {}
+            },
+            "monmap": { "mons": [] }
+        });
+        let health = parse_ceph_health(&status);
+        assert_eq!(health.status, "HEALTH_OK");
+        assert!(health.details.is_empty());
+    }
+
+    #[test]
+    fn test_parse_ceph_health_collects_check_messages() {
+        let status = serde_json::json!({
+            "health": {
+                "status": "HEALTH_WARN",
+                "checks": {
+                    "OSD_DOWN": {
+                        "summary": { "message": "1 osds down" },
+                        "severity": "HEALTH_WARN"
+                    }
+                }
+            }
+        });
+        let health = parse_ceph_health(&status);
+        assert_eq!(health.status, "HEALTH_WARN");
+        assert_eq!(health.details, vec!["1 osds down".to_string()]);
+        // Falls back to the first detail line when no string summary is present.
+        assert_eq!(health.summary, "1 osds down");
+    }
+
+    #[test]
+    fn test_parse_ceph_health_summary_array() {
+        // Older clusters expose `summary` as an array of objects.
+        let status = serde_json::json!({
+            "health": {
+                "status": "HEALTH_WARN",
+                "summary": [ { "severity": "HEALTH_WARN", "summary": "noout flag(s) set" } ]
+            }
+        });
+        let health = parse_ceph_health(&status);
+        assert_eq!(health.summary, "noout flag(s) set");
+    }
+
+    #[test]
+    fn test_parse_ceph_health_defaults_when_empty() {
+        let health = parse_ceph_health(&serde_json::json!({}));
+        assert_eq!(health.status, "unknown");
+        assert_eq!(health.summary, "unknown");
+        assert!(health.details.is_empty());
+    }
 
     #[test]
     fn test_ceph_pool_serialization() {
