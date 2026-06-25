@@ -329,17 +329,16 @@ export async function deleteProxmoxStorage(
 }
 
 /**
- * Trigger Proxmox Backup Job
+ * Trigger Proxmox Backup Job ("Run now").
+ * Runs the job's vzdump configuration on its node (or the first cluster node).
  * @param clusterId - Cluster identifier
- * @param nodeId - Node identifier
- * @param jobId - Backup job identifier
+ * @param jobId - Backup job identifier (string id from cluster/backup)
  */
 export async function triggerProxmoxBackupJob(
   clusterId: string,
-  nodeId: string,
-  jobId: number
+  jobId: string
 ): Promise<void> {
-  await invoke("trigger_proxmox_backup_job", { clusterId, nodeId, jobId });
+  await invoke("trigger_proxmox_backup_job", { clusterId, jobId });
 }
 
 /**
