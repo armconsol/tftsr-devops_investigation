@@ -55,7 +55,6 @@ import { ProxmoxPBSPage } from "@/pages/Proxmox/PBSPage";
 import { ProxmoxSDNPage } from "@/pages/Proxmox/SDNPage";
 import { ProxmoxHAPage } from "@/pages/Proxmox/HAPage";
 import { ProxmoxTasksPage } from "@/pages/Proxmox/TasksPage";
-import { ProxmoxViewsPage } from "@/pages/Proxmox/ViewsPage";
 import { ProxmoxCertificatesPage } from "@/pages/Proxmox/CertificatesPage";
 import { ProxmoxSubscriptionPage } from "@/pages/Proxmox/SubscriptionPage";
 import { ProxmoxNotesPage } from "@/pages/Proxmox/NotesPage";
@@ -92,7 +91,6 @@ const navItems = [
       { to: "/proxmox/pbs", label: "PBS" },
       { to: "/proxmox/tasks", label: "Tasks" },
       { to: "/proxmox/notes", label: "Notes" },
-      { to: "/proxmox/views", label: "Views" },
       { to: "/proxmox/certificates", label: "Certificates" },
       { to: "/proxmox/subscriptions", label: "Subscriptions" },
       { to: "/proxmox/admin", label: "Administration" },
@@ -335,7 +333,6 @@ export default function App() {
           <Route path="/proxmox/sdn" element={<ProxmoxSDNPage />} />
           <Route path="/proxmox/ha" element={<ProxmoxHAPage />} />
           <Route path="/proxmox/tasks" element={<ProxmoxTasksPage />} />
-          <Route path="/proxmox/views" element={<ProxmoxViewsPage />} />
           <Route path="/proxmox/certificates" element={<ProxmoxCertificatesPage />} />
           <Route path="/proxmox/subscriptions" element={<ProxmoxSubscriptionPage />} />
           <Route path="/proxmox/notes" element={<ProxmoxNotesPage />} />

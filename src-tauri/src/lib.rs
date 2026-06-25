@@ -163,10 +163,6 @@ pub fn run() {
             commands::proxmox::update_apt_repos,
             commands::proxmox::list_apt_repositories,
             commands::proxmox::get_shell_ticket,
-            commands::proxmox::list_views,
-            commands::proxmox::add_view,
-            commands::proxmox::update_view,
-            commands::proxmox::delete_view,
             commands::proxmox::list_certificates,
             commands::proxmox::upload_certificate,
             commands::proxmox::get_certificate,
@@ -224,10 +220,6 @@ pub fn run() {
             commands::proxmox::rollback_proxmox_snapshot,
             commands::proxmox::list_iso_images,
             commands::proxmox::upload_iso_image,
-            // Proxmox - Cluster Views typed (Phase 13)
-            commands::proxmox::list_cluster_views,
-            commands::proxmox::create_cluster_view,
-            commands::proxmox::delete_cluster_view,
             // Proxmox - Subscription (Phase 14)
             commands::proxmox::get_subscription_status,
             // Proxmox - Cluster Tasks (Phase 15)
