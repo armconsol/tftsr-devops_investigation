@@ -50,6 +50,7 @@ pub async fn list_pools(
     node: &str,
     ticket: &str,
 ) -> Result<Vec<CephPool>, String> {
+    validate_node(node)?;
     let path = format!("nodes/{}/ceph/pool", node);
     let response: serde_json::Value = client
         .get(&path, Some(ticket))
@@ -151,6 +152,7 @@ pub async fn list_osds(
     node: &str,
     ticket: &str,
 ) -> Result<Vec<CephOsd>, String> {
+    validate_node(node)?;
     let path = format!("nodes/{}/ceph/osd", node);
     let response: serde_json::Value = client
         .get(&path, Some(ticket))
@@ -538,6 +540,7 @@ pub async fn list_monitors(
     node: &str,
     ticket: &str,
 ) -> Result<Vec<CephMonitor>, String> {
+    validate_node(node)?;
     let path = format!("nodes/{}/ceph/mon", node);
     let response: serde_json::Value = client
         .get(&path, Some(ticket))
@@ -603,6 +606,7 @@ pub async fn get_ceph_health(
     node: &str,
     ticket: &str,
 ) -> Result<CephHealth, String> {
+    validate_node(node)?;
     let path = format!("nodes/{}/ceph/status", node);
     let response: serde_json::Value = client
         .get(&path, Some(ticket))
