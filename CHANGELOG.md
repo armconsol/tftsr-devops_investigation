@@ -4,7 +4,7 @@ All notable changes to TRCAA are documented here.
 Commit types shown: feat, fix, perf, docs, refactor.
 CI, chore, and build changes are excluded.
 
-## [Unreleased]
+## [1.3.0] — 2026-06-25
 
 ### Bug Fixes
 - Register missing updater commands
@@ -70,6 +70,10 @@ CI, chore, and build changes are excluded.
 - **proxmox**: Address automated PR review findings
 - **proxmox**: Resolve 6 parity issues — ceph node paths, APT/backup key mismatch, admin node default, remove Views
 - **security**: Add validate_node to 4 ceph functions missing path-traversal guard
+- **proxmox**: Allow loopback ws:// in CSP so consoles render
+- **proxmox**: Stop Ceph page going blank on Ceph-enabled hosts
+- **proxmox**: Fall back to HA rules when groups are migrated (PVE 9)
+- **proxmox**: Make Backup Trigger and Edit actions work
 
 ### Documentation
 - Document pkg-config environment variable strategy
@@ -84,6 +88,7 @@ CI, chore, and build changes are excluded.
 - **proxmox**: Document 27 new Proxmox IPC commands in wiki
 - Add ticket summary for proxmox full-parity work
 - Add IPC command docs and ticket summary for Proxmox parity fixes
+- **proxmox**: Add ticket for console/ceph/ha/backup fixes
 
 ### Features
 - **proxmox**: Implement full feature parity with snapshot and network CRUD
