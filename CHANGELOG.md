@@ -8,8 +8,98 @@ CI, chore, and build changes are excluded.
 
 ### Bug Fixes
 - Register missing updater commands
+- **proxmox**: Parse port from URL when adding remote
+- **build**: Resolve Windows MinGW memset_explicit linking error
+- **build**: Resolve libsodium linking failures across all CI targets
+- **ci**: Resolve libsodium pkg-config detection across all platforms
+- **ci**: Resolve libsodium pkg-config detection across all platforms
+- **ci**: Use vendored libsodium build instead of pkg-config
+- **ci**: Enable libsodium pkg-config feature across all platforms
+- **ci**: Add libsodium-dev to test workflow dependencies
+- **ci**: Use SODIUM_LIB_DIR to bypass pkg-config detection
+- Remove use-pkg-config feature conflicting with SODIUM_LIB_DIR
 - **ci**: Add libsodium to all build environments
+- **ci**: Correct SODIUM_LIB_DIR config in release-beta.yml
 - **ci**: Unset SODIUM_USE_PKG_CONFIG and use SODIUM_LIB_DIR in auto-tag.yml
+- **ci**: Unset SODIUM_USE_PKG_CONFIG before cargo builds on all platforms
+- **ci**: Use env -u instead of unset to drop SODIUM_USE_PKG_CONFIG
+- **build**: Remove SODIUM_USE_PKG_CONFIG from .cargo/config.toml [env] block
+- **ci**: Install libsodium-dev in build jobs instead of using SODIUM_LIB_DIR hacks
+- **ci**: Install libsodium-dev in release-beta build jobs
+- **build**: Add memset_shim for Windows MinGW and rpm for Linux ARM64
+- **build**: Add memset_explicit C shim for Windows MinGW libsodium linking
+- **windows**: Add memset_explicit symbol export for mingw cross-compilation
+- **windows**: Ensure memset_explicit symbol is properly exported for MinGW
+- **windows**: Link memset_shim object directly and suppress dead_code warning
+- **windows**: Compile memset_shim to real .o via get_compiler() to fix MinGW link
+- **proxmox**: Fix add-remote IPC failure and URL construction
+- **proxmox**: Use camelCase clusterType for Tauri v2 IPC
+- **proxmox**: Restore broken client retrieval across all commands
+- Address PR review findings — race condition, real ping, atomic edit, listener cleanup
+- **proxmox**: Restore reliable connect/reconnect after app restart
+- **proxmox**: Remove double-unwrap of Proxmox data envelope across all modules
+- Resolve Proxmox authentication response parsing error
+- **proxmox**: Resolve 11 dashboard UI and API issues
+- **proxmox**: Address 11 dashboard issues and add missing VM action commands
+- **proxmox**: Resolve remaining PR review findings
+- **proxmox**: Comprehensive VM management and UI improvements
+- Resolve build errors and add logs to gitignore
+- **proxmox**: Resolve 7 dashboard and AI chat issues
+- **firewall**: Correct PVE API field names for rule listing and creation
+- **proxmox**: Address PR review findings
+- **proxmox**: Address second PR review pass — menu positioning + code clarity
+- **fmt**: Apply cargo fmt to resolve CI formatting check failure
+- **proxmox**: Fix VM actions, remove Disk column, add Create VM
+- **proxmox**: Address PR review suggestions
+- **fmt**: Apply cargo fmt to proxmox command ISO validation
+- **proxmox**: Align ISO frontend validation with backend
+- **proxmox**: Replace window.prompt with CloneDialog in VMList
+- **fmt**: Reformat storage.rs map_err closure to satisfy rustfmt line-length rule
+- **proxmox**: Replace empty JSON body with post_form, fix firewall field names, add 23 new commands
+- **proxmox**: Add input validation to all new Tauri commands
+- **proxmox**: Correct API field names and double-unwrap bug across 6 modules
+- **proxmox**: Add path-traversal validation to firewall and HA group commands
+- **proxmox**: Address automated PR review findings
+- **review**: Address automated PR review findings
+- **proxmox**: Prevent app crash/nav loss via route error boundary
+- **proxmox**: Datacenter/node selectors with auto-load for node-scoped pages
+- **proxmox**: Tolerant HA/backup loading and working HA edit dialogs
+- **proxmox**: Wire up storage edit/delete actions
+- **proxmox**: Replace dead cluster-views API with local saved views
+- **proxmox**: Real cross-DC migration with task polling
+- **proxmox**: Address automated PR review findings
+- **proxmox**: Resolve 6 parity issues — ceph node paths, APT/backup key mismatch, admin node default, remove Views
+- **security**: Add validate_node to 4 ceph functions missing path-traversal guard
+
+### Documentation
+- Document pkg-config environment variable strategy
+- Clarify PR scope and add PR-specific documentation
+- Restructure to clearly separate PR #102 changes from history
+- Remove all PR #101 references to eliminate reviewer confusion
+- Clarify two-phase fix approach in summary
+- Update fix summary with commit history
+- Update ticket to include VM listing and module-wide double-unwrap fixes
+- Remove hardcoded 172.0.0.18 references
+- Add ticket summary for proxmox and AI chat fixes
+- **proxmox**: Document 27 new Proxmox IPC commands in wiki
+- Add ticket summary for proxmox full-parity work
+- Add IPC command docs and ticket summary for Proxmox parity fixes
+
+### Features
+- **proxmox**: Implement full feature parity with snapshot and network CRUD
+- Integrate SnapshotDialog and remove duplicate NetworkInterfaceConfig
+- **proxmox**: ISO upload, full CRUD validation, and security hardening
+- **proxmox**: Full frontend-backend parity — wire all stubs, add typed wrappers, new commands
+- **proxmox**: 100% feature parity with proxmox-datacenter-manager
+- **proxmox**: In-app noVNC graphical console for VMs and containers
+- **proxmox**: Add host shell console to Remotes (PVE vncshell + PBS termproxy)
+- **proxmox**: Enforce node-scoped ceph endpoints
+
+### Refactoring
+- **proxmox**: Extract URL parsing helper and document edit limitation
+- **ci**: Move SODIUM_LIB_DIR to job-level env
+- **pr-review**: Switch from deprecated qwen3-coder-next to qwen3.5-122b-think
+- **proxmox**: Extract test helper and use PROXMOX_HOST env var
 
 ## [1.2.3] — 2026-06-13
 
