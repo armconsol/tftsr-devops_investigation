@@ -1080,21 +1080,49 @@ pub async fn delete_proxmox_storage(
 #[tauri::command]
 pub async fn trigger_proxmox_backup_job(
     cluster_id: String,
-    node_id: String,
-    job_id: u32,
+    job_id: String,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
+    validate_pve_identifier(&job_id, "job_id")?;
     let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
+    let ticket = client_guard.ticket.as_deref().unwrap_or("");
 
-    crate::proxmox::backup::trigger_backup_job(
-        &client_guard,
-        &node_id,
-        job_id,
-        client_guard.ticket.as_deref().unwrap_or(""),
-    )
-    .await
-    .map_err(|e| format!("Failed to trigger backup job {}: {}", job_id, e))
+    // Read the job configuration (storage, vmid, mode, node, …).
+    let job: serde_json::Value = client_guard
+        .get(&format!("cluster/backup/{}", job_id), Some(ticket))
+        .await
+        .map_err(|e| format!("Failed to read backup job {}: {}", job_id, e))?;
+
+    // Resolve the node to run vzdump on (job node, else first cluster node).
+    let nodes_resp: serde_json::Value = client_guard
+        .get("nodes", Some(ticket))
+        .await
+        .map_err(|e| format!("Failed to list nodes: {}", e))?;
+    let cluster_nodes: Vec<String> = nodes_resp
+        .as_array()
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|n| n.get("node").and_then(|v| v.as_str()).map(String::from))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let node = crate::proxmox::backup::select_backup_node(&job, &cluster_nodes)
+        .ok_or_else(|| "No node available to run the backup job".to_string())?;
+    validate_pve_identifier(&node, "node")?;
+
+    let params = crate::proxmox::backup::build_vzdump_params(&job);
+    let params_ref: Vec<(&str, &str)> = params
+        .iter()
+        .map(|(k, v)| (k.as_str(), v.as_str()))
+        .collect();
+
+    let _: serde_json::Value = client_guard
+        .post_form(&format!("nodes/{}/vzdump", node), &params_ref, Some(ticket))
+        .await
+        .map_err(|e| format!("Failed to trigger backup job {}: {}", job_id, e))?;
+    Ok(())
 }
 
 /// List Ceph Pools
