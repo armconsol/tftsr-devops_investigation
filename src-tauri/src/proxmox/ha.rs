@@ -142,18 +142,90 @@ pub fn parse_ha_resources(response: &serde_json::Value) -> Vec<HaResource> {
         .collect()
 }
 
+/// Parse a PVE 9 `cluster/ha/rules` response, mapping `node-affinity` rules to
+/// the legacy `HaGroup` shape so the existing UI keeps working.
+///
+/// PVE 9 removed `cluster/ha/groups` ("ha groups have been migrated to rules")
+/// and replaced them with HA rules. A `node-affinity` rule is the direct
+/// successor of an HA group: it carries the member `nodes` (optionally
+/// `node:priority`) and a `strict` flag equivalent to the old `restricted`.
+/// Non node-affinity rules (e.g. `resource-affinity`) are ignored here.
+pub fn parse_ha_rules_as_groups(response: &serde_json::Value) -> Vec<HaGroup> {
+    let rules = match response.as_array() {
+        Some(arr) => arr,
+        None => return Vec::new(),
+    };
+    rules
+        .iter()
+        .filter(|rule| {
+            rule.get("type")
+                .and_then(|t| t.as_str())
+                .map(|t| t == "node-affinity")
+                .unwrap_or(false)
+        })
+        .filter_map(|rule| {
+            let name = rule
+                .get("rule")
+                .or_else(|| rule.get("id"))
+                .and_then(|r| r.as_str())?
+                .to_string();
+            let nodes = rule
+                .get("nodes")
+                .and_then(|n| n.as_str())
+                .unwrap_or("")
+                .to_string();
+            let comment = rule
+                .get("comment")
+                .and_then(|c| c.as_str())
+                .map(|s| s.to_string());
+            // `strict` is the PVE 9 successor of `restricted`. Accept either a
+            // bool or the API's customary 0/1 integer.
+            let restricted = rule
+                .get("strict")
+                .and_then(|r| r.as_i64().map(|v| v != 0).or_else(|| r.as_bool()));
+
+            Some(HaGroup {
+                group: name,
+                nodes,
+                comment,
+                restricted,
+                no_failback: None,
+            })
+        })
+        .collect()
+}
+
+/// Returns true if a `cluster/ha/groups` error indicates the endpoint was
+/// removed in favour of HA rules (PVE 9), so the caller should fall back to
+/// `cluster/ha/rules` instead of surfacing a hard error.
+fn ha_groups_migrated_to_rules(err: &str) -> bool {
+    let e = err.to_ascii_lowercase();
+    e.contains("migrated to rules") || (e.contains("cannot index groups") && e.contains("rules"))
+}
+
 /// List HA groups
 pub async fn list_ha_groups(
     client: &crate::proxmox::client::ProxmoxClient,
     ticket: &str,
 ) -> Result<Vec<HaGroup>, String> {
     let path = "cluster/ha/groups";
-    let response: serde_json::Value = client
-        .get(path, Some(ticket))
-        .await
-        .map_err(|e| format!("Failed to list HA groups: {}", e))?;
-
-    Ok(parse_ha_groups(&response))
+    match client.get::<serde_json::Value>(path, Some(ticket)).await {
+        Ok(response) => Ok(parse_ha_groups(&response)),
+        Err(e) => {
+            let msg = e.to_string();
+            // PVE 9 removed cluster/ha/groups in favour of cluster/ha/rules.
+            if ha_groups_migrated_to_rules(&msg) {
+                let rules: serde_json::Value =
+                    client
+                        .get("cluster/ha/rules", Some(ticket))
+                        .await
+                        .map_err(|e| format!("Failed to list HA rules: {}", e))?;
+                Ok(parse_ha_rules_as_groups(&rules))
+            } else {
+                Err(format!("Failed to list HA groups: {}", msg))
+            }
+        }
+    }
 }
 
 /// Create HA group
@@ -518,5 +590,65 @@ mod tests {
             v.get("group").is_none(),
             "serialized JSON must not have 'group' (renamed to id)"
         );
+    }
+
+    #[test]
+    fn test_ha_groups_migrated_detection() {
+        // The exact 500 body PVE 9 returns when groups were migrated to rules.
+        assert!(ha_groups_migrated_to_rules(
+            "API request failed with status 500 Internal Server Error: {\"message\":\"cannot index groups: ha groups have been migrated to rules\\n\",\"data\":null}"
+        ));
+        assert!(ha_groups_migrated_to_rules(
+            "ha groups have been migrated to rules"
+        ));
+        // Unrelated errors must NOT trigger the rules fallback.
+        assert!(!ha_groups_migrated_to_rules("connection refused"));
+        assert!(!ha_groups_migrated_to_rules(
+            "API request failed with status 401 Unauthorized"
+        ));
+    }
+
+    #[test]
+    fn test_parse_ha_rules_as_groups_maps_node_affinity() {
+        // PVE 9 cluster/ha/rules payload.
+        let rules = serde_json::json!([
+            {
+                "rule": "Even",
+                "type": "node-affinity",
+                "nodes": "vmhost2,vmhost4",
+                "strict": 1,
+                "comment": "even hosts"
+            },
+            {
+                "rule": "keep-apart",
+                "type": "resource-affinity",
+                "affinity": "negative",
+                "resources": "vm:100,vm:101"
+            }
+        ]);
+        let groups = parse_ha_rules_as_groups(&rules);
+        // Only the node-affinity rule maps to an HA group.
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0].group, "Even");
+        assert_eq!(groups[0].nodes, "vmhost2,vmhost4");
+        assert_eq!(groups[0].restricted, Some(true));
+        assert_eq!(groups[0].comment.as_deref(), Some("even hosts"));
+    }
+
+    #[test]
+    fn test_parse_ha_rules_as_groups_tolerates_non_array() {
+        assert!(parse_ha_rules_as_groups(&serde_json::Value::Null).is_empty());
+        assert!(parse_ha_rules_as_groups(&serde_json::json!({})).is_empty());
+    }
+
+    #[test]
+    fn test_parse_ha_rules_serializes_with_id_for_frontend() {
+        let rules = serde_json::json!([
+            { "rule": "Odd", "type": "node-affinity", "nodes": "vmhost1,vmhost3", "strict": 0 }
+        ]);
+        let groups = parse_ha_rules_as_groups(&rules);
+        let v = serde_json::to_value(&groups[0]).unwrap();
+        assert_eq!(v.get("id").and_then(|x| x.as_str()), Some("Odd"));
+        assert_eq!(v.get("restricted").and_then(|x| x.as_bool()), Some(false));
     }
 }
