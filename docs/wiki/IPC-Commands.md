@@ -970,6 +970,26 @@ Retrieves RRD metrics for a storage pool via `GET nodes/{node}/storage/{storage}
 
 ## Ceph Advanced Commands
 
+**Endpoint policy (v1.0.56+):** Ceph endpoints are node-scoped for parity and consistency. Commands use `nodes/{node}/ceph/*`.
+
+### `list_ceph_pools`
+```typescript
+listCephPools(clusterId: string, node: string) → CephPool[]
+```
+Lists Ceph pools via `GET nodes/{node}/ceph/pool`.
+
+### `list_ceph_osd`
+```typescript
+listCephOsd(clusterId: string, node: string) → CephOsd[]
+```
+Lists OSDs via `GET nodes/{node}/ceph/osd`.
+
+### `get_ceph_health`
+```typescript
+getCephHealth(clusterId: string, node: string) → CephHealth
+```
+Retrieves cluster health via `GET nodes/{node}/ceph/status`.
+
 ### `list_ceph_monitors`
 ```typescript
 listCephMonitors(clusterId: string, node: string) → CephMonitor[]
@@ -986,7 +1006,7 @@ Lists Ceph manager daemons on a node via `GET nodes/{node}/ceph/mgr`. Managers h
 ```typescript
 listCephfs(clusterId: string, node: string) → CephFs[]
 ```
-Lists CephFS filesystems on a node via `GET nodes/{node}/cephfs`. Returns mounted filesystem information.
+Lists CephFS filesystems on a node via `GET nodes/{node}/ceph/fs`. Returns mounted filesystem information.
 
 ### `get_ceph_flags`
 ```typescript
