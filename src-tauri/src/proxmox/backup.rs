@@ -29,12 +29,11 @@ pub struct DatastoreInfo {
 /// List backup jobs
 pub async fn list_backup_jobs(
     client: &crate::proxmox::client::ProxmoxClient,
-    node: &str,
     ticket: &str,
 ) -> Result<Vec<BackupJob>, String> {
-    let path = format!("nodes/{}/backup/jobs", node);
+    let path = "cluster/backup";
     let response: serde_json::Value = client
-        .get(&path, Some(ticket))
+        .get(path, Some(ticket))
         .await
         .map_err(|e| format!("Failed to list backup jobs: {}", e))?;
 

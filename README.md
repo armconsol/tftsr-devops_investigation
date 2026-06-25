@@ -25,6 +25,15 @@ Built with **Tauri 2** (Rust + WebView), **React 18**, **TypeScript**, and **SQL
 
 ---
 
+## Proxmox Management Highlights
+
+- **Cluster + Node Operations** — VM, container, storage, network, firewall, HA, backup, and task flows from the Proxmox UI pages.
+- **Ceph Operations** — Ceph pool/OSD/monitor/manager/filesystem/flags/health commands use **node-scoped** API paths (`nodes/{node}/ceph/*`) for endpoint parity.
+- **Node-Aware UX** — Proxmox pages use real cluster node lists (via `list_proxmox_nodes`) for migration and Ceph actions instead of hardcoded fallback nodes.
+- **Parity Fixes Included** — APT and backup flows use aligned parameter names and endpoint payload shapes with backend validation.
+
+---
+
 ## Supported Domains
 
 | Domain | Coverage |
