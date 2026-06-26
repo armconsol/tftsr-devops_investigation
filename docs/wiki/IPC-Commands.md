@@ -982,7 +982,9 @@ Lists Ceph pools via `GET nodes/{node}/ceph/pool`.
 ```typescript
 listCephOsd(clusterId: string, node: string) → CephOsd[]
 ```
-Lists OSDs via `GET nodes/{node}/ceph/osd`.
+Lists OSDs via `GET nodes/{node}/ceph/osd`. PVE returns the **CRUSH tree** as a nested
+object (`{ root: { children: [...] } }`); the backend walks the tree and flattens every
+`type == "osd"` leaf into `CephOsd { id, host, status, weight, size, used, avail, usedPercent }`.
 
 ### `get_ceph_health`
 ```typescript
@@ -994,7 +996,8 @@ Retrieves cluster health via `GET nodes/{node}/ceph/status`.
 ```typescript
 listCephMonitors(clusterId: string, node: string) → CephMonitor[]
 ```
-Lists Ceph monitor nodes via `GET nodes/{node}/ceph/mon`. Returns monitor status and quorum information.
+Lists Ceph monitor nodes via `GET nodes/{node}/ceph/mon`. PVE exposes `quorum` as a 1/0
+number (coerced to bool) and the version under `ceph_version_short`.
 
 ### `list_ceph_managers`
 ```typescript
@@ -1006,13 +1009,16 @@ Lists Ceph manager daemons on a node via `GET nodes/{node}/ceph/mgr`. Managers h
 ```typescript
 listCephfs(clusterId: string, node: string) → CephFs[]
 ```
-Lists CephFS filesystems on a node via `GET nodes/{node}/ceph/fs`. Returns mounted filesystem information.
+Lists CephFS filesystems on a node via `GET nodes/{node}/ceph/fs`. Returns
+`CephFs { name, metadataPool, dataPool }` (the first data pool is surfaced as `dataPool`).
 
 ### `get_ceph_flags`
 ```typescript
-getCephFlags(clusterId: string, node: string) → object
+getCephFlags(clusterId: string, node: string) → CephFlag[]
 ```
-Retrieves Ceph OSD cluster flags via `GET nodes/{node}/ceph/flags`. Returns an object with boolean flag states (e.g., `noscrub`, `nodeep-scrub`, `pauserd`, `pausewr`).
+Retrieves Ceph cluster flags via `GET cluster/ceph/flags`. Flags are a **cluster-level**
+resource — the per-node `nodes/{node}/ceph/flags` path returns HTTP 501. Returns an array of
+`CephFlag { name, value, description }` (e.g. `noscrub`, `nodeep-scrub`, `noout`).
 
 ---
 
