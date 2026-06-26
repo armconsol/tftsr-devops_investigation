@@ -102,6 +102,13 @@ export function ProxmoxCephPage() {
     loadData(clusterId, tabNode);
   }, [clusterId, tabNode, loadData]);
 
+  // Reset the shared per-tab loading flag when the active tab changes so an
+  // in-flight load on a previous tab can't leave another tab's refresh control
+  // stuck in the spinning/disabled state.
+  useEffect(() => {
+    setTabLoading(false);
+  }, [activeTab]);
+
   const handleClusterChange = (id: string) => {
     setClusterId(id);
     setHealth(null);
