@@ -4,6 +4,26 @@ All notable changes to TRCAA are documented here.
 Commit types shown: feat, fix, perf, docs, refactor.
 CI, chore, and build changes are excluded.
 
+## [Unreleased]
+
+### Bug Fixes
+- **proxmox**: Use remote_migrate REST path and validate cross-DC inputs
+- **ci**: Address PR #143 review findings
+- **kube**: Encode PTY stdin as UTF-8 bytes for send_pty_stdin
+- **proxmox**: Correct Ceph API parsing for OSDs, monitors, FS and flags
+- **k8s**: Open pod & workload logs in the bottom dock with live streaming
+- **ci**: Revert model name to qwen3.5-122b-think
+- **ci**: Add missing sys import to PR review verification script
+
+### Documentation
+- **proxmox**: Document 501 migration gotcha and console clipboard
+
+### Features
+- **proxmox**: Add console copy/paste via clipboard-manager
+
+### Refactoring
+- **review**: Address PR #142 review suggestions
+
 ## [1.3.0] — 2026-06-25
 
 ### Bug Fixes
