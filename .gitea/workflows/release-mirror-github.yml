@@ -32,7 +32,7 @@ jobs:
 
       - name: Mirror release(s) to GitHub
         env:
-          GITEA_API: http://172.0.0.29:3000/api/v1/repos/${{ github.repository }}
+          GITEA_API: ${{ secrets.GITEA_API_URL }}/api/v1/repos/${{ github.repository }}
           GITEA_TOKEN: ${{ secrets.RELEASE_TOKEN }}
           GH_REPO: armconsol/tftsr-devops_investigation
           GH_TOKEN: ${{ secrets.GH_RELEASE_TOKEN }}
@@ -130,10 +130,10 @@ jobs:
                 continue
               fi
 
-              echo "  ↓ ${A_NAME}"
+              echo "  ↓ ${A_NAME} → ${GH_NAME}"
               gitea_curl -L -o "${WORK}/asset.bin" "${A_URL}"
 
-              echo "  ↑ ${GH_NAME}"
+              echo "  ↑ uploading ${GH_NAME}"
               curl -sS -X POST \
                 -H "Authorization: Bearer ${GH_TOKEN}" \
                 -H "Content-Type: application/octet-stream" \
