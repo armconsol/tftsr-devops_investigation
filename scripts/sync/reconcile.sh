@@ -38,9 +38,25 @@ EXCLUDE_PATH=".github"
 
 log() { printf '%s\n' "$*" >&2; }
 
-# Redact the userinfo password in any URL git might print (e.g. an authenticated
-# remote URL surfaced in a fetch/push error) so a token never lands in logs.
-redact() { sed -E 's#(://[^:/@]+:)[^@/]+@#\1***@#g'; }
+# Extract the userinfo password (the token) from an authenticated git URL, e.g.
+# "https://oauth2:TOKEN@host/x.git" -> "TOKEN". Empty if the URL has no userinfo.
+_extract_secret() {
+  printf '%s' "$1" \
+    | sed -n 's#^[A-Za-z][A-Za-z0-9+.-]*://[^:/@]*:\([^@/]*\)@.*#\1#p'
+}
+_GITEA_SECRET="$(_extract_secret "${GITEA_REPO_URL}")"
+_GH_SECRET="$(_extract_secret "${GITHUB_REPO_URL}")"
+
+# Redact credentials from command output so a token never lands in logs. This
+# masks BOTH the userinfo of any authenticated URL git might print (e.g. a remote
+# URL surfaced in a fetch/push error) AND the literal token values themselves, in
+# case a token appears outside a URL context.
+redact() {
+  _r='s#(://[^:/@]+:)[^@/]+@#\1***@#g'
+  if [ -n "${_GITEA_SECRET}" ]; then _r="${_r}; s#${_GITEA_SECRET}#***#g"; fi
+  if [ -n "${_GH_SECRET}" ]; then _r="${_r}; s#${_GH_SECRET}#***#g"; fi
+  sed -E "${_r}"
+}
 
 # Run a *network* git command (fetch/push) with credential-safe output while
 # preserving its exit status, so set -e still fails the run on a real error.
