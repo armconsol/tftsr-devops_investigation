@@ -122,13 +122,14 @@ export function LogsTab({ data }: LogsTabProps) {
     };
   }, [stopStream]);
 
-  // Keep the selected container valid as the pod/containers change.
+  // Keep the selected container valid as the pod/containers change. Including
+  // selectedContainer is safe: when it is already valid the guard short-circuits
+  // without a setState, so this cannot loop.
   useEffect(() => {
     if (!containers.includes(selectedContainer)) {
       setSelectedContainer(containers[0] ?? "");
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [podName, containersKey]);
+  }, [podName, containersKey, selectedContainer, containers]);
 
   useEffect(() => {
     if (follow && streaming && bottomRef.current) {
@@ -138,6 +139,11 @@ export function LogsTab({ data }: LogsTabProps) {
 
   const startStream = async () => {
     if (streaming || !podName || !selectedContainer) return;
+    // Defensive: ensure any prior listener/stream is torn down before we open a
+    // new one so listeners can never accumulate.
+    if (streamIdRef.current || unlistenRef.current) {
+      await stopStream();
+    }
     setError(null);
     setLines([]);
 

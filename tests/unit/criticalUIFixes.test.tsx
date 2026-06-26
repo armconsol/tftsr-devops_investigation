@@ -6,14 +6,15 @@
  * 4. YAML editor loading race condition
  */
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { render, screen, fireEvent, waitFor, renderHook } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
 import { BrowserRouter } from "react-router-dom";
 
 import { PodList } from "@/components/Kubernetes/PodList";
 import { useBottomPanelStore, BottomPanelTabType } from "@/stores/bottomPanelStore";
 import { ResourceActionMenu } from "@/components/Kubernetes/ResourceActionMenu";
+import { useSmartPosition } from "@/hooks/useSmartPosition";
 import { YamlEditor } from "@/components/Kubernetes/YamlEditor";
 import { EditResourceModal } from "@/components/Kubernetes/EditResourceModal";
 import type { PodInfo } from "@/lib/tauriCommands";
@@ -101,6 +102,8 @@ describe("PodList – bottom dock logs integration", () => {
 // ─── 2. Smart Positioning for ResourceActionMenu ─────────────────────────────
 
 describe("ResourceActionMenu – smart positioning", () => {
+  const originalGetBoundingClientRect = Element.prototype.getBoundingClientRect;
+
   beforeEach(() => {
     // Mock getBoundingClientRect
     Element.prototype.getBoundingClientRect = vi.fn(() => ({
@@ -114,6 +117,11 @@ describe("ResourceActionMenu – smart positioning", () => {
       y: 0,
       toJSON: () => {},
     }));
+  });
+
+  afterEach(() => {
+    // Restore so the global prototype patch can't leak into other suites.
+    Element.prototype.getBoundingClientRect = originalGetBoundingClientRect;
   });
 
   it("flips menu upward when near bottom of viewport", async () => {
@@ -288,29 +296,46 @@ describe("YamlEditor – loading race condition fix", () => {
 // ─── useSmartPosition Hook ────────────────────────────────────────────────────
 
 describe("useSmartPosition hook", () => {
-  it("returns correct positioning classes based on viewport space", async () => {
-    // This will be implemented in the hook file
-    // The hook should return { position: "top-full" | "bottom-full" }
-    // based on available space below the element
+  const originalGetBoundingClientRect = Element.prototype.getBoundingClientRect;
 
-    const mockRef = {
-      current: {
-        getBoundingClientRect: () => ({
-          top: window.innerHeight - 50,
-          bottom: window.innerHeight + 150,
+  afterEach(() => {
+    Element.prototype.getBoundingClientRect = originalGetBoundingClientRect;
+  });
+
+  function makeRef(bottom: number): React.RefObject<HTMLDivElement> {
+    const el = document.createElement("div");
+    el.getBoundingClientRect = vi.fn(
+      () =>
+        ({
+          top: bottom - 200,
+          bottom,
           left: 0,
           right: 200,
           width: 200,
           height: 200,
           x: 0,
-          y: window.innerHeight - 50,
+          y: bottom - 200,
           toJSON: () => {},
-        }),
-      },
-    } as React.RefObject<HTMLDivElement>;
+        }) as DOMRect
+    );
+    return { current: el };
+  }
 
-    // Hook should detect that menu extends below viewport
-    // and return positioning that flips it upward
-    expect(mockRef.current).toBeDefined();
+  it("flips upward when the element extends past the viewport bottom", () => {
+    const ref = makeRef(window.innerHeight + 150);
+    const { result } = renderHook(() => useSmartPosition(true, ref));
+    expect(result.current).toBe(true);
+  });
+
+  it("stays downward when there is ample space below", () => {
+    const ref = makeRef(100);
+    const { result } = renderHook(() => useSmartPosition(true, ref));
+    expect(result.current).toBe(false);
+  });
+
+  it("does not flip while the menu is closed", () => {
+    const ref = makeRef(window.innerHeight + 150);
+    const { result } = renderHook(() => useSmartPosition(false, ref));
+    expect(result.current).toBe(false);
   });
 });
