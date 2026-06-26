@@ -388,7 +388,7 @@ impl OpenAiProvider {
             body["tools"] = serde_json::Value::from(formatted_tools);
             body["tool_choice"] = serde_json::Value::from("auto");
 
-            tracing::info!("GenAI: Sending {} tools in request", tool_count);
+            tracing::info!("GenAI: Sending {tool_count} tools in request");
         }
 
         // Use custom auth header and prefix (no default prefix for custom REST)
@@ -460,7 +460,7 @@ impl OpenAiProvider {
                                     });
 
                                 if let Some(args) = arguments {
-                                    tracing::info!("GenAI: Parsed tool call: {} ({})", name, id);
+                                    tracing::info!("GenAI: Parsed tool call: {name} ({id})");
                                     return Some(crate::ai::ToolCall {
                                         id: id.to_string(),
                                         name: name.to_string(),
@@ -489,9 +489,7 @@ impl OpenAiProvider {
                                         .map(|s| s.to_string())
                                         .unwrap_or_else(|| format!("tool_call_{index}"));
                                     tracing::info!(
-                                        "GenAI: Parsed tool call (simple format): {} ({})",
-                                        name,
-                                        id
+                                        "GenAI: Parsed tool call (simple format): {name} ({id})"
                                     );
                                     return Some(crate::ai::ToolCall {
                                         id,
@@ -501,7 +499,7 @@ impl OpenAiProvider {
                                 }
                             }
 
-                            tracing::warn!("GenAI: Failed to parse tool call: {:?}", call);
+                            tracing::warn!("GenAI: Failed to parse tool call: {call:?}");
                             None
                         })
                         .collect();

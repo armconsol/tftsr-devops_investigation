@@ -18,11 +18,11 @@ pub async fn get_shell_ticket(
     remote: &str,
     ticket: &str,
 ) -> Result<ShellTicket, String> {
-    let path = format!("remotes/{}/shell-ticket", remote);
+    let path = format!("remotes/{remote}/shell-ticket");
     let response: serde_json::Value = client
         .get(&path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to get shell ticket for remote {}: {}", remote, e))?;
+        .map_err(|e| format!("Failed to get shell ticket for remote {remote}: {e}"))?;
 
     {
         let data = &response;
@@ -66,7 +66,7 @@ pub async fn validate_shell_ticket(
     let response: serde_json::Value = client
         .get(path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to validate shell ticket: {}", e))?;
+        .map_err(|e| format!("Failed to validate shell ticket: {e}"))?;
 
     Ok(!response.is_null())
 }
@@ -74,8 +74,5 @@ pub async fn validate_shell_ticket(
 /// Get shell WebSocket URL
 pub fn get_shell_ws_url(base_url: &str, remote: &str, ticket: &str) -> String {
     let base = base_url.trim_end_matches('/');
-    format!(
-        "wss://{}/api2/json/remotes/{}/shell?ticket={}",
-        base, remote, ticket
-    )
+    format!("wss://{base}/api2/json/remotes/{remote}/shell?ticket={ticket}")
 }

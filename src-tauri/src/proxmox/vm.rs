@@ -43,11 +43,11 @@ pub async fn start_vm(
     vmid: u32,
     ticket: &str,
 ) -> Result<(), String> {
-    let path = format!("nodes/{}/qemu/{}/status/start", node, vmid);
+    let path = format!("nodes/{node}/qemu/{vmid}/status/start");
     let _response: serde_json::Value = client
         .post_form(&path, &[], Some(ticket))
         .await
-        .map_err(|e| format!("Failed to start VM {}: {}", vmid, e))?;
+        .map_err(|e| format!("Failed to start VM {vmid}: {e}"))?;
     Ok(())
 }
 
@@ -58,11 +58,11 @@ pub async fn stop_vm(
     vmid: u32,
     ticket: &str,
 ) -> Result<(), String> {
-    let path = format!("nodes/{}/qemu/{}/status/stop", node, vmid);
+    let path = format!("nodes/{node}/qemu/{vmid}/status/stop");
     let _response: serde_json::Value = client
         .post_form(&path, &[], Some(ticket))
         .await
-        .map_err(|e| format!("Failed to stop VM {}: {}", vmid, e))?;
+        .map_err(|e| format!("Failed to stop VM {vmid}: {e}"))?;
     Ok(())
 }
 
@@ -73,11 +73,11 @@ pub async fn reboot_vm(
     vmid: u32,
     ticket: &str,
 ) -> Result<(), String> {
-    let path = format!("nodes/{}/qemu/{}/status/reboot", node, vmid);
+    let path = format!("nodes/{node}/qemu/{vmid}/status/reboot");
     let _response: serde_json::Value = client
         .post_form(&path, &[], Some(ticket))
         .await
-        .map_err(|e| format!("Failed to reboot VM {}: {}", vmid, e))?;
+        .map_err(|e| format!("Failed to reboot VM {vmid}: {e}"))?;
     Ok(())
 }
 
@@ -88,11 +88,11 @@ pub async fn shutdown_vm(
     vmid: u32,
     ticket: &str,
 ) -> Result<(), String> {
-    let path = format!("nodes/{}/qemu/{}/status/shutdown", node, vmid);
+    let path = format!("nodes/{node}/qemu/{vmid}/status/shutdown");
     let _response: serde_json::Value = client
         .post_form(&path, &[], Some(ticket))
         .await
-        .map_err(|e| format!("Failed to shutdown VM {}: {}", vmid, e))?;
+        .map_err(|e| format!("Failed to shutdown VM {vmid}: {e}"))?;
     Ok(())
 }
 
@@ -103,11 +103,11 @@ pub async fn resume_vm(
     vmid: u32,
     ticket: &str,
 ) -> Result<(), String> {
-    let path = format!("nodes/{}/qemu/{}/status/resume", node, vmid);
+    let path = format!("nodes/{node}/qemu/{vmid}/status/resume");
     let _response: serde_json::Value = client
         .post_form(&path, &[], Some(ticket))
         .await
-        .map_err(|e| format!("Failed to resume VM {}: {}", vmid, e))?;
+        .map_err(|e| format!("Failed to resume VM {vmid}: {e}"))?;
     Ok(())
 }
 
@@ -118,11 +118,11 @@ pub async fn suspend_vm(
     vmid: u32,
     ticket: &str,
 ) -> Result<(), String> {
-    let path = format!("nodes/{}/qemu/{}/status/suspend", node, vmid);
+    let path = format!("nodes/{node}/qemu/{vmid}/status/suspend");
     let _response: serde_json::Value = client
         .post_form(&path, &[], Some(ticket))
         .await
-        .map_err(|e| format!("Failed to suspend VM {}: {}", vmid, e))?;
+        .map_err(|e| format!("Failed to suspend VM {vmid}: {e}"))?;
     Ok(())
 }
 
@@ -135,7 +135,7 @@ pub async fn list_vms(
     let response: serde_json::Value = client
         .get("cluster/resources?type=vm", Some(ticket))
         .await
-        .map_err(|e| format!("Failed to list VMs: {}", e))?;
+        .map_err(|e| format!("Failed to list VMs: {e}"))?;
 
     let resources = response
         .as_array()
@@ -198,11 +198,11 @@ pub async fn get_vm(
     vmid: u32,
     ticket: &str,
 ) -> Result<VmInfo, String> {
-    let path = format!("nodes/{}/qemu/{}/config", node, vmid);
+    let path = format!("nodes/{node}/qemu/{vmid}/config");
     let response: serde_json::Value = client
         .get(&path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to get VM {}: {}", vmid, e))?;
+        .map_err(|e| format!("Failed to get VM {vmid}: {e}"))?;
 
     let vm = &response;
 
@@ -244,11 +244,11 @@ pub async fn get_vm_status(
     vmid: u32,
     ticket: &str,
 ) -> Result<serde_json::Value, String> {
-    let path = format!("nodes/{}/qemu/{}/status/current", node, vmid);
+    let path = format!("nodes/{node}/qemu/{vmid}/status/current");
     client
         .get(&path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to get VM status {}: {}", vmid, e))
+        .map_err(|e| format!("Failed to get VM status {vmid}: {e}"))
 }
 
 /// Get VM current configuration
@@ -258,11 +258,11 @@ pub async fn get_vm_config(
     vmid: u32,
     ticket: &str,
 ) -> Result<serde_json::Value, String> {
-    let path = format!("nodes/{}/qemu/{}/config", node, vmid);
+    let path = format!("nodes/{node}/qemu/{vmid}/config");
     client
         .get(&path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to get VM config {}: {}", vmid, e))
+        .map_err(|e| format!("Failed to get VM config {vmid}: {e}"))
 }
 
 /// Create a new VM
@@ -273,7 +273,7 @@ pub async fn create_vm(
     config: &serde_json::Value,
     ticket: &str,
 ) -> Result<(), String> {
-    let path = format!("nodes/{}/qemu", node);
+    let path = format!("nodes/{node}/qemu");
 
     // Convert JSON config to form-encoded params
     let mut params: Vec<(&str, &str)> = Vec::new();
@@ -302,7 +302,7 @@ pub async fn create_vm(
     let _response: serde_json::Value = client
         .post_form(&path, &params, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to create VM {}: {}", vmid, e))?;
+        .map_err(|e| format!("Failed to create VM {vmid}: {e}"))?;
     Ok(())
 }
 
@@ -313,11 +313,11 @@ pub async fn delete_vm(
     vmid: u32,
     ticket: &str,
 ) -> Result<(), String> {
-    let path = format!("nodes/{}/qemu/{}", node, vmid);
+    let path = format!("nodes/{node}/qemu/{vmid}");
     let _response: serde_json::Value = client
         .delete(&path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to delete VM {}: {}", vmid, e))?;
+        .map_err(|e| format!("Failed to delete VM {vmid}: {e}"))?;
     Ok(())
 }
 
@@ -330,14 +330,14 @@ pub async fn clone_vm(
     name: &str,
     ticket: &str,
 ) -> Result<(), String> {
-    let path = format!("nodes/{}/qemu/{}/clone", node, vmid);
+    let path = format!("nodes/{node}/qemu/{vmid}/clone");
     let newid_str = new_vmid.to_string();
     let params = vec![("newid", newid_str.as_str()), ("name", name), ("full", "1")];
 
     let _response: serde_json::Value = client
         .post_form(&path, &params, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to clone VM {} to {}: {}", vmid, new_vmid, e))?;
+        .map_err(|e| format!("Failed to clone VM {vmid} to {new_vmid}: {e}"))?;
     Ok(())
 }
 
@@ -349,13 +349,13 @@ pub async fn migrate_vm(
     target_node: &str,
     ticket: &str,
 ) -> Result<(), String> {
-    let path = format!("nodes/{}/qemu/{}/migrate", source_node, vmid);
+    let path = format!("nodes/{source_node}/qemu/{vmid}/migrate");
     let params = vec![("target", target_node), ("online", "1")];
 
     let _response: serde_json::Value = client
         .post_form(&path, &params, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to migrate VM {} to {}: {}", vmid, target_node, e))?;
+        .map_err(|e| format!("Failed to migrate VM {vmid} to {target_node}: {e}"))?;
     Ok(())
 }
 
@@ -367,18 +367,13 @@ pub async fn create_snapshot(
     snapshot_name: &str,
     ticket: &str,
 ) -> Result<(), String> {
-    let path = format!("nodes/{}/qemu/{}/snapshot", node, vmid);
+    let path = format!("nodes/{node}/qemu/{vmid}/snapshot");
     let params = vec![("snapname", snapshot_name)];
 
     let _response: serde_json::Value = client
         .post_form(&path, &params, Some(ticket))
         .await
-        .map_err(|e| {
-            format!(
-                "Failed to create snapshot {} for VM {}: {}",
-                snapshot_name, vmid, e
-            )
-        })?;
+        .map_err(|e| format!("Failed to create snapshot {snapshot_name} for VM {vmid}: {e}"))?;
     Ok(())
 }
 
@@ -390,13 +385,11 @@ pub async fn delete_snapshot(
     snapshot_name: &str,
     ticket: &str,
 ) -> Result<(), String> {
-    let path = format!("nodes/{}/qemu/{}/snapshot/{}", node, vmid, snapshot_name);
-    let _response: serde_json::Value = client.delete(&path, Some(ticket)).await.map_err(|e| {
-        format!(
-            "Failed to delete snapshot {} for VM {}: {}",
-            snapshot_name, vmid, e
-        )
-    })?;
+    let path = format!("nodes/{node}/qemu/{vmid}/snapshot/{snapshot_name}");
+    let _response: serde_json::Value = client
+        .delete(&path, Some(ticket))
+        .await
+        .map_err(|e| format!("Failed to delete snapshot {snapshot_name} for VM {vmid}: {e}"))?;
     Ok(())
 }
 
@@ -408,20 +401,11 @@ pub async fn rollback_snapshot(
     snapshot_name: &str,
     ticket: &str,
 ) -> Result<(), String> {
-    let path = format!(
-        "nodes/{}/qemu/{}/snapshot/{}/rollback",
-        node, vmid, snapshot_name
-    );
-    let _response: serde_json::Value =
-        client
-            .post_form(&path, &[], Some(ticket))
-            .await
-            .map_err(|e| {
-                format!(
-                    "Failed to rollback VM {} to snapshot {}: {}",
-                    vmid, snapshot_name, e
-                )
-            })?;
+    let path = format!("nodes/{node}/qemu/{vmid}/snapshot/{snapshot_name}/rollback");
+    let _response: serde_json::Value = client
+        .post_form(&path, &[], Some(ticket))
+        .await
+        .map_err(|e| format!("Failed to rollback VM {vmid} to snapshot {snapshot_name}: {e}"))?;
     Ok(())
 }
 
@@ -432,11 +416,11 @@ pub async fn list_snapshots(
     vmid: u32,
     ticket: &str,
 ) -> Result<Vec<serde_json::Value>, String> {
-    let path = format!("nodes/{}/qemu/{}/snapshot", node, vmid);
+    let path = format!("nodes/{node}/qemu/{vmid}/snapshot");
     let response: serde_json::Value = client
         .get(&path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to list snapshots for VM {}: {}", vmid, e))?;
+        .map_err(|e| format!("Failed to list snapshots for VM {vmid}: {e}"))?;
 
     response
         .as_array()
@@ -465,11 +449,11 @@ pub async fn get_vm_config_raw(
 ) -> Result<serde_json::Value, String> {
     validate_node(node)?;
     validate_vmid(vmid)?;
-    let path = format!("nodes/{}/qemu/{}/config", node, vmid);
+    let path = format!("nodes/{node}/qemu/{vmid}/config");
     client
         .get(&path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to get VM config for vmid {}: {}", vmid, e))
+        .map_err(|e| format!("Failed to get VM config for vmid {vmid}: {e}"))
 }
 
 /// Get pending config changes for a VM
@@ -482,14 +466,14 @@ pub async fn get_vm_pending_config(
 ) -> Result<Vec<VmPendingEntry>, String> {
     validate_node(node)?;
     validate_vmid(vmid)?;
-    let path = format!("nodes/{}/qemu/{}/pending", node, vmid);
+    let path = format!("nodes/{node}/qemu/{vmid}/pending");
     let response: serde_json::Value = client
         .get(&path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to get VM pending config for vmid {}: {}", vmid, e))?;
+        .map_err(|e| format!("Failed to get VM pending config for vmid {vmid}: {e}"))?;
 
     let entries: Vec<VmPendingEntry> = serde_json::from_value(response)
-        .map_err(|e| format!("Failed to deserialize pending config entries: {}", e))?;
+        .map_err(|e| format!("Failed to deserialize pending config entries: {e}"))?;
     Ok(entries)
 }
 
@@ -519,7 +503,7 @@ pub async fn remote_migrate_vm(
     let response: serde_json::Value = client
         .post_form(&path, params, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to remote-migrate VM {}: {}", vmid, e))?;
+        .map_err(|e| format!("Failed to remote-migrate VM {vmid}: {e}"))?;
 
     let upid = response
         .as_str()

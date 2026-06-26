@@ -101,18 +101,14 @@ impl std::fmt::Debug for OpenidRealmConfig {
 fn validate_realm_id(realm_id: &str) -> Result<(), String> {
     if realm_id.is_empty() || realm_id.len() > 64 {
         return Err(format!(
-            "Invalid realm id '{}': must be 1–64 characters",
-            realm_id
+            "Invalid realm id '{realm_id}': must be 1–64 characters"
         ));
     }
     if !realm_id
         .chars()
         .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.')
     {
-        return Err(format!(
-            "Invalid realm id '{}': only alphanumeric characters, '-', '_', and '.' are allowed",
-            realm_id
-        ));
+        return Err(format!("Invalid realm id '{realm_id}': only alphanumeric characters, '-', '_', and '.' are allowed"));
     }
     Ok(())
 }
@@ -126,7 +122,7 @@ pub async fn list_auth_realms(
     let response: serde_json::Value = client
         .get(path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to list authentication realms: {}", e))?;
+        .map_err(|e| format!("Failed to list authentication realms: {e}"))?;
 
     if let Some(realms) = response.as_array() {
         let realm_list: Vec<AuthRealm> = realms
@@ -167,7 +163,7 @@ pub async fn add_ldap_realm(
     ticket: &str,
 ) -> Result<(), String> {
     validate_realm_id(realm_id)?;
-    let path = format!("access/domains/{}", realm_id);
+    let path = format!("access/domains/{realm_id}");
     let config_json = serde_json::json!({
         "type": "ldap",
         "server": config.server,
@@ -184,7 +180,7 @@ pub async fn add_ldap_realm(
     let _response: serde_json::Value = client
         .post(&path, &config_json, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to add LDAP realm {}: {}", realm_id, e))?;
+        .map_err(|e| format!("Failed to add LDAP realm {realm_id}: {e}"))?;
     Ok(())
 }
 
@@ -196,7 +192,7 @@ pub async fn add_ad_realm(
     ticket: &str,
 ) -> Result<(), String> {
     validate_realm_id(realm_id)?;
-    let path = format!("access/domains/{}", realm_id);
+    let path = format!("access/domains/{realm_id}");
     let config_json = serde_json::json!({
         "type": "ad",
         "server": config.server,
@@ -213,7 +209,7 @@ pub async fn add_ad_realm(
     let _response: serde_json::Value = client
         .post(&path, &config_json, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to add AD realm {}: {}", realm_id, e))?;
+        .map_err(|e| format!("Failed to add AD realm {realm_id}: {e}"))?;
     Ok(())
 }
 
@@ -225,7 +221,7 @@ pub async fn add_openid_realm(
     ticket: &str,
 ) -> Result<(), String> {
     validate_realm_id(realm_id)?;
-    let path = format!("access/domains/{}", realm_id);
+    let path = format!("access/domains/{realm_id}");
     let config_json = serde_json::json!({
         "type": "openid",
         "issuer": config.issuer,
@@ -239,7 +235,7 @@ pub async fn add_openid_realm(
     let _response: serde_json::Value = client
         .post(&path, &config_json, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to add OpenID realm {}: {}", realm_id, e))?;
+        .map_err(|e| format!("Failed to add OpenID realm {realm_id}: {e}"))?;
     Ok(())
 }
 
@@ -251,7 +247,7 @@ pub async fn update_ldap_realm(
     ticket: &str,
 ) -> Result<(), String> {
     validate_realm_id(realm_id)?;
-    let path = format!("access/domains/{}", realm_id);
+    let path = format!("access/domains/{realm_id}");
     let config_json = serde_json::json!({
         "server": config.server,
         "port": config.port,
@@ -267,7 +263,7 @@ pub async fn update_ldap_realm(
     let _response: serde_json::Value = client
         .put(&path, &config_json, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to update LDAP realm {}: {}", realm_id, e))?;
+        .map_err(|e| format!("Failed to update LDAP realm {realm_id}: {e}"))?;
     Ok(())
 }
 
@@ -279,7 +275,7 @@ pub async fn update_ad_realm(
     ticket: &str,
 ) -> Result<(), String> {
     validate_realm_id(realm_id)?;
-    let path = format!("access/domains/{}", realm_id);
+    let path = format!("access/domains/{realm_id}");
     let config_json = serde_json::json!({
         "server": config.server,
         "port": config.port,
@@ -295,7 +291,7 @@ pub async fn update_ad_realm(
     let _response: serde_json::Value = client
         .put(&path, &config_json, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to update AD realm {}: {}", realm_id, e))?;
+        .map_err(|e| format!("Failed to update AD realm {realm_id}: {e}"))?;
     Ok(())
 }
 
@@ -307,7 +303,7 @@ pub async fn update_openid_realm(
     ticket: &str,
 ) -> Result<(), String> {
     validate_realm_id(realm_id)?;
-    let path = format!("access/domains/{}", realm_id);
+    let path = format!("access/domains/{realm_id}");
     let config_json = serde_json::json!({
         "issuer": config.issuer,
         "clientid": config.client_id,
@@ -320,7 +316,7 @@ pub async fn update_openid_realm(
     let _response: serde_json::Value = client
         .put(&path, &config_json, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to update OpenID realm {}: {}", realm_id, e))?;
+        .map_err(|e| format!("Failed to update OpenID realm {realm_id}: {e}"))?;
     Ok(())
 }
 
@@ -331,11 +327,11 @@ pub async fn delete_realm(
     ticket: &str,
 ) -> Result<(), String> {
     validate_realm_id(realm_id)?;
-    let path = format!("access/domains/{}", realm_id);
+    let path = format!("access/domains/{realm_id}");
     let _response: serde_json::Value = client
         .delete(&path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to delete realm {}: {}", realm_id, e))?;
+        .map_err(|e| format!("Failed to delete realm {realm_id}: {e}"))?;
     Ok(())
 }
 
@@ -374,8 +370,7 @@ fn validate_userid(userid: &str) -> Result<(), String> {
     let parts: Vec<&str> = userid.splitn(2, '@').collect();
     if parts.len() != 2 {
         return Err(format!(
-            "Invalid userid '{}': must contain exactly one '@'",
-            userid
+            "Invalid userid '{userid}': must contain exactly one '@'"
         ));
     }
     let local = parts[0];
@@ -383,8 +378,7 @@ fn validate_userid(userid: &str) -> Result<(), String> {
 
     if local.is_empty() || realm.is_empty() {
         return Err(format!(
-            "Invalid userid '{}': local and realm parts must not be empty",
-            userid
+            "Invalid userid '{userid}': local and realm parts must not be empty"
         ));
     }
     if !local
@@ -392,14 +386,12 @@ fn validate_userid(userid: &str) -> Result<(), String> {
         .all(|c| c.is_alphanumeric() || c == '-' || c == '.')
     {
         return Err(format!(
-            "Invalid userid '{}': local part contains disallowed characters",
-            userid
+            "Invalid userid '{userid}': local part contains disallowed characters"
         ));
     }
     if !realm.chars().all(|c| c.is_alphanumeric() || c == '-') {
         return Err(format!(
-            "Invalid userid '{}': realm part contains disallowed characters",
-            userid
+            "Invalid userid '{userid}': realm part contains disallowed characters"
         ));
     }
     Ok(())
@@ -409,14 +401,12 @@ fn validate_userid(userid: &str) -> Result<(), String> {
 fn validate_tokenname(name: &str) -> Result<(), String> {
     if name.is_empty() || name.len() > 64 {
         return Err(format!(
-            "Invalid token name '{}': must be 1–64 characters",
-            name
+            "Invalid token name '{name}': must be 1–64 characters"
         ));
     }
     if !name.chars().all(|c| c.is_alphanumeric() || c == '-') {
         return Err(format!(
-            "Invalid token name '{}': only alphanumeric characters and hyphens allowed",
-            name
+            "Invalid token name '{name}': only alphanumeric characters and hyphens allowed"
         ));
     }
     Ok(())
@@ -437,7 +427,7 @@ pub async fn list_user_tokens(
     let response: serde_json::Value = client
         .get(&path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to list tokens for user '{}': {}", userid, e))?;
+        .map_err(|e| format!("Failed to list tokens for user '{userid}': {e}"))?;
 
     match response.as_array() {
         Some(arr) => {
@@ -490,12 +480,7 @@ pub async fn create_user_token(
     client
         .post_form(&path, &params, Some(ticket))
         .await
-        .map_err(|e| {
-            format!(
-                "Failed to create token '{}' for user '{}': {}",
-                tokenname, userid, e
-            )
-        })
+        .map_err(|e| format!("Failed to create token '{tokenname}' for user '{userid}': {e}"))
 }
 
 /// Delete an API token for a user.
@@ -516,12 +501,10 @@ pub async fn delete_user_token(
         urlencoding::encode(tokenname)
     );
 
-    let _response: serde_json::Value = client.delete(&path, Some(ticket)).await.map_err(|e| {
-        format!(
-            "Failed to delete token '{}' for user '{}': {}",
-            tokenname, userid, e
-        )
-    })?;
+    let _response: serde_json::Value = client
+        .delete(&path, Some(ticket))
+        .await
+        .map_err(|e| format!("Failed to delete token '{tokenname}' for user '{userid}': {e}"))?;
 
     Ok(())
 }
@@ -535,11 +518,11 @@ pub async fn get_realm_config(
     ticket: &str,
 ) -> Result<serde_json::Value, String> {
     validate_realm_id(realm_id)?;
-    let path = format!("access/domains/{}", realm_id);
+    let path = format!("access/domains/{realm_id}");
     client
         .get(&path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to get realm config {}: {}", realm_id, e))
+        .map_err(|e| format!("Failed to get realm config {realm_id}: {e}"))
 }
 
 #[cfg(test)]
@@ -667,7 +650,7 @@ mod tests {
             start_tls: true,
             certificate: "".to_string(),
         };
-        let dbg = format!("{:?}", ldap);
+        let dbg = format!("{ldap:?}");
         assert!(dbg.contains("[REDACTED]"));
         assert!(!dbg.contains("supersecret"));
 
@@ -679,7 +662,7 @@ mod tests {
             scopes: vec!["openid".to_string()],
             mapping: "".to_string(),
         };
-        let dbg = format!("{:?}", openid);
+        let dbg = format!("{openid:?}");
         assert!(dbg.contains("[REDACTED]"));
         assert!(!dbg.contains("topsecret"));
     }

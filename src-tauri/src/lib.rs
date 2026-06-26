@@ -35,7 +35,7 @@ pub fn run() {
 
     // Initialize database
     let conn = db::connection::init_db(&data_dir).expect("Failed to initialize database");
-    tracing::info!("Database initialized at {:?}", data_dir);
+    tracing::info!("Database initialized at {data_dir:?}");
 
     let app_state = AppState {
         db: Arc::new(Mutex::new(conn)),

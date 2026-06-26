@@ -113,10 +113,9 @@ pub async fn search_work_items(
         .join(",");
 
     let detail_url = format!(
-        "{}/{}/_apis/wit/workitems?ids={}&api-version=7.0",
+        "{}/{}/_apis/wit/workitems?ids={ids}&api-version=7.0",
         config.organization_url.trim_end_matches('/'),
-        config.project,
-        ids
+        config.project
     );
 
     let detail_resp = client
@@ -169,10 +168,9 @@ pub async fn create_work_item(
 ) -> Result<TicketResult, String> {
     let client = reqwest::Client::new();
     let url = format!(
-        "{}/{}/_apis/wit/workitems/${}?api-version=7.0",
+        "{}/{}/_apis/wit/workitems/${work_item_type}?api-version=7.0",
         config.organization_url.trim_end_matches('/'),
-        config.project,
-        work_item_type
+        config.project
     );
 
     let mut operations = vec![
@@ -221,9 +219,8 @@ pub async fn create_work_item(
 
     let work_item_id = result["id"].as_i64().unwrap_or(0);
     let work_item_url = format!(
-        "{}/_workitems/edit/{}",
-        config.organization_url.trim_end_matches('/'),
-        work_item_id
+        "{}/_workitems/edit/{work_item_id}",
+        config.organization_url.trim_end_matches('/')
     );
 
     Ok(TicketResult {
@@ -240,10 +237,9 @@ pub async fn get_work_item(
 ) -> Result<WorkItem, String> {
     let client = reqwest::Client::new();
     let url = format!(
-        "{}/{}/_apis/wit/workitems/{}?api-version=7.0",
+        "{}/{}/_apis/wit/workitems/{work_item_id}?api-version=7.0",
         config.organization_url.trim_end_matches('/'),
-        config.project,
-        work_item_id
+        config.project
     );
 
     let resp = client
@@ -297,10 +293,9 @@ pub async fn update_work_item(
 ) -> Result<TicketResult, String> {
     let client = reqwest::Client::new();
     let url = format!(
-        "{}/{}/_apis/wit/workitems/{}?api-version=7.0",
+        "{}/{}/_apis/wit/workitems/{work_item_id}?api-version=7.0",
         config.organization_url.trim_end_matches('/'),
-        config.project,
-        work_item_id
+        config.project
     );
 
     let resp = client
@@ -327,9 +322,8 @@ pub async fn update_work_item(
 
     let updated_work_item_id = result["id"].as_i64().unwrap_or(work_item_id);
     let work_item_url = format!(
-        "{}/_workitems/edit/{}",
-        config.organization_url.trim_end_matches('/'),
-        updated_work_item_id
+        "{}/_workitems/edit/{updated_work_item_id}",
+        config.organization_url.trim_end_matches('/')
     );
 
     Ok(TicketResult {

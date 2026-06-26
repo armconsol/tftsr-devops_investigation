@@ -32,10 +32,7 @@ pub async fn start_callback_server(
 
     let addr: std::net::SocketAddr = ([127, 0, 0, 1], port).into();
 
-    tracing::info!(
-        "Starting OAuth callback server on http://127.0.0.1:{}",
-        port
-    );
+    tracing::info!("Starting OAuth callback server on http://127.0.0.1:{port}");
 
     // Spawn server with graceful shutdown
     tokio::spawn(async move {

@@ -48,14 +48,7 @@ pub fn build_auth_url(
     scope: &str,
     pkce: &PkceChallenge,
 ) -> String {
-    format!(
-        "{}?response_type=code&client_id={}&redirect_uri={}&scope={}&code_challenge={}&code_challenge_method=S256",
-        auth_endpoint,
-        urlencoding_encode(client_id),
-        urlencoding_encode(redirect_uri),
-        urlencoding_encode(scope),
-        pkce.code_challenge,
-    )
+    format!("{auth_endpoint}?response_type=code&client_id={}&redirect_uri={}&scope={}&code_challenge={}&code_challenge_method=S256", urlencoding_encode(client_id), urlencoding_encode(redirect_uri), urlencoding_encode(scope), pkce.code_challenge)
 }
 
 /// Exchange an authorization code for tokens using PKCE.
@@ -235,7 +228,7 @@ fn get_encryption_key_material() -> Result<String, String> {
                 .map_err(|e| format!("Failed to write encryption key: {e}"))?;
         }
 
-        tracing::info!("Generated new encryption key at {:?}", key_path);
+        tracing::info!("Generated new encryption key at {key_path:?}");
         return Ok(key);
     }
 

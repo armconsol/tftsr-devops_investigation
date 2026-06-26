@@ -45,8 +45,8 @@ pub async fn execute_with_approval(
                 "Command denied (Tier 3)"
             );
             return Err(format!(
-                "Command denied: {} (Tier 3: {})",
-                command, classification.reasoning
+                "Command denied: {command} (Tier 3: {})",
+                classification.reasoning
             ));
         }
         CommandTier::Tier2 => {

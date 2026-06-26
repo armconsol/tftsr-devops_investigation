@@ -153,9 +153,8 @@ pub async fn create_incident(
     let incident_number = result["result"]["number"].as_str().unwrap_or("");
     let sys_id = result["result"]["sys_id"].as_str().unwrap_or("");
     let incident_url = format!(
-        "{}/nav_to.do?uri=incident.do?sys_id={}",
-        config.instance_url.trim_end_matches('/'),
-        sys_id
+        "{}/nav_to.do?uri=incident.do?sys_id={sys_id}",
+        config.instance_url.trim_end_matches('/')
     );
 
     Ok(TicketResult {
@@ -186,9 +185,8 @@ pub async fn get_incident(
         // It's a sys_id, use direct path
         (
             format!(
-                "{}/api/now/table/incident/{}",
-                config.instance_url.trim_end_matches('/'),
-                incident_id
+                "{}/api/now/table/incident/{incident_id}",
+                config.instance_url.trim_end_matches('/')
             ),
             false,
         )
@@ -262,9 +260,8 @@ pub async fn update_incident(
 ) -> Result<TicketResult, String> {
     let client = reqwest::Client::new();
     let url = format!(
-        "{}/api/now/table/incident/{}",
-        config.instance_url.trim_end_matches('/'),
-        sys_id
+        "{}/api/now/table/incident/{sys_id}",
+        config.instance_url.trim_end_matches('/')
     );
 
     let resp = client
@@ -292,9 +289,8 @@ pub async fn update_incident(
     let incident_number = result["result"]["number"].as_str().unwrap_or("");
     let updated_sys_id = result["result"]["sys_id"].as_str().unwrap_or(sys_id);
     let incident_url = format!(
-        "{}/nav_to.do?uri=incident.do?sys_id={}",
-        config.instance_url.trim_end_matches('/'),
-        updated_sys_id
+        "{}/nav_to.do?uri=incident.do?sys_id={updated_sys_id}",
+        config.instance_url.trim_end_matches('/')
     );
 
     Ok(TicketResult {
