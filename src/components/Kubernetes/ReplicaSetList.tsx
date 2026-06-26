@@ -11,7 +11,7 @@ import { ResourceActionMenu } from "./ResourceActionMenu";
 import { ConfirmDeleteDialog } from "./ConfirmDeleteDialog";
 import { ScaleModal } from "./ScaleModal";
 import { EditResourceModal } from "./EditResourceModal";
-import { WorkloadLogsModal } from "./WorkloadLogsModal";
+import { openWorkloadLogsTab } from "@/lib/logsDock";
 import { useColumnConfig } from "@/hooks/useColumnConfig";
 import { DEFAULT_COLUMNS } from "@/config/defaultColumns";
 import { ColumnConfigModal } from "@/components/tables/ColumnConfigModal";
@@ -27,7 +27,6 @@ interface ReplicaSetListProps {
 
 type ActiveModal =
   | { type: "scale"; rs: ReplicaSetInfo }
-  | { type: "logs"; rs: ReplicaSetInfo }
   | { type: "edit"; rs: ReplicaSetInfo; yaml: string }
   | { type: "delete"; rs: ReplicaSetInfo }
   | null;
@@ -144,7 +143,13 @@ export function ReplicaSetList({
                         {
                           label: "Logs",
                           icon: FileText,
-                          onClick: () => setActiveModal({ type: "logs", rs }),
+                          onClick: () =>
+                            openWorkloadLogsTab({
+                              clusterId: cid,
+                              namespace: rs.namespace,
+                              workloadName: rs.name,
+                              workloadType: "replicaset",
+                            }),
                         },
                         {
                           label: "Edit",
@@ -167,18 +172,6 @@ export function ReplicaSetList({
           </TableBody>
         </Table>
       </div>
-
-      {activeModal?.type === "logs" && (
-        <WorkloadLogsModal
-          open
-          onOpenChange={(o) => { if (!o) setActiveModal(null); }}
-          clusterId={cid}
-          namespace={activeModal.rs.namespace}
-          workloadType="replicaset"
-          workloadName={activeModal.rs.name}
-          labels={activeModal.rs.labels}
-        />
-      )}
 
       {activeModal?.type === "scale" && (
         <ScaleModal

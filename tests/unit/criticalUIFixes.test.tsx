@@ -12,6 +12,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { BrowserRouter } from "react-router-dom";
 
 import { PodList } from "@/components/Kubernetes/PodList";
+import { useBottomPanelStore, BottomPanelTabType } from "@/stores/bottomPanelStore";
 import { ResourceActionMenu } from "@/components/Kubernetes/ResourceActionMenu";
 import { YamlEditor } from "@/components/Kubernetes/YamlEditor";
 import { EditResourceModal } from "@/components/Kubernetes/EditResourceModal";
@@ -24,9 +25,9 @@ type MockedInvoke = typeof invoke & {
 
 const mockInvoke = invoke as MockedInvoke;
 
-// ─── 1. LogStreamPanel Integration in PodList ────────────────────────────────
+// ─── 1. Pod logs open in the bottom dock from PodList ────────────────────────
 
-describe("PodList – LogStreamPanel integration", () => {
+describe("PodList – bottom dock logs integration", () => {
   const pod: PodInfo = {
     name: "test-pod",
     namespace: "default",
@@ -36,10 +37,12 @@ describe("PodList – LogStreamPanel integration", () => {
     containers: ["main", "sidecar"],
   };
 
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    useBottomPanelStore.setState({ tabs: [], activeTabId: null });
+  });
 
-  it("opens LogStreamPanel when Logs action is clicked", async () => {
-    // Mock streamPodLogsCmd to return a stream ID
+  it("opens a POD_LOGS dock tab when Logs action is clicked", async () => {
     mockInvoke.mockImplementation(async (cmd: string) => {
       if (cmd === "stream_pod_logs") {
         return "test-stream-123";
@@ -49,24 +52,24 @@ describe("PodList – LogStreamPanel integration", () => {
 
     render(<PodList pods={[pod]} clusterId="c1" namespace="default" />);
 
-    // Open action menu
     const buttons = screen.getAllByRole("button");
     const actionButton = buttons.find(btn => btn.getAttribute("aria-label") === "Actions");
     if (!actionButton) throw new Error("Action button not found");
     fireEvent.click(actionButton);
 
-    // Click Logs action
     const logsAction = await screen.findByText("Logs");
     fireEvent.click(logsAction);
 
-    // LogStreamPanel should be rendered (look for dialog title)
     await waitFor(() => {
-      expect(screen.getByText(/Log Stream/i)).toBeInTheDocument();
+      const tab = useBottomPanelStore
+        .getState()
+        .tabs.find((t) => t.type === BottomPanelTabType.POD_LOGS);
+      expect(tab).toBeDefined();
+      expect(useBottomPanelStore.getState().isOpen).toBe(true);
     });
   });
 
-  it("LogStreamPanel receives correct props from PodList", async () => {
-    // Mock streamPodLogsCmd
+  it("dock tab receives correct pod context from PodList", async () => {
     mockInvoke.mockImplementation(async (cmd: string) => {
       if (cmd === "stream_pod_logs") {
         return "test-stream-123";
@@ -76,7 +79,6 @@ describe("PodList – LogStreamPanel integration", () => {
 
     render(<PodList pods={[pod]} clusterId="c1" namespace="default" />);
 
-    // Open action menu and click Logs
     const buttons = screen.getAllByRole("button");
     const actionButton = buttons.find(btn => btn.getAttribute("aria-label") === "Actions");
     if (!actionButton) throw new Error("Action button not found");
@@ -85,14 +87,14 @@ describe("PodList – LogStreamPanel integration", () => {
     const logsAction = await screen.findByText("Logs");
     fireEvent.click(logsAction);
 
-    // Verify dialog title contains pod name
     await waitFor(() => {
-      expect(screen.getByText(/Log Stream — test-pod/i)).toBeInTheDocument();
+      const tab = useBottomPanelStore
+        .getState()
+        .tabs.find((t) => t.type === BottomPanelTabType.POD_LOGS);
+      expect(tab?.title).toMatch(/test-pod/);
+      expect(tab?.data?.podName).toBe("test-pod");
+      expect(tab?.data?.containers).toEqual(["main", "sidecar"]);
     });
-
-    // Verify container dropdown shows containers
-    const select = screen.getByRole("combobox");
-    expect(select).toBeInTheDocument();
   });
 });
 

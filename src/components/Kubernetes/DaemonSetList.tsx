@@ -10,7 +10,7 @@ import {
 import { ResourceActionMenu } from "./ResourceActionMenu";
 import { ConfirmDeleteDialog } from "./ConfirmDeleteDialog";
 import { EditResourceModal } from "./EditResourceModal";
-import { WorkloadLogsModal } from "./WorkloadLogsModal";
+import { openWorkloadLogsTab } from "@/lib/logsDock";
 import { useColumnConfig } from "@/hooks/useColumnConfig";
 import { DEFAULT_COLUMNS } from "@/config/defaultColumns";
 import { ColumnConfigModal } from "@/components/tables/ColumnConfigModal";
@@ -24,7 +24,6 @@ interface DaemonSetListProps {
 
 type ActiveModal =
   | { type: "restart"; ds: DaemonSetInfo }
-  | { type: "logs"; ds: DaemonSetInfo }
   | { type: "edit"; ds: DaemonSetInfo; yaml: string }
   | { type: "delete"; ds: DaemonSetInfo }
   | null;
@@ -145,7 +144,13 @@ export function DaemonSetList({ daemonsets, clusterId, namespace: _namespace, on
                         {
                           label: "Logs",
                           icon: FileText,
-                          onClick: () => setActiveModal({ type: "logs", ds }),
+                          onClick: () =>
+                            openWorkloadLogsTab({
+                              clusterId,
+                              namespace: ds.namespace,
+                              workloadName: ds.name,
+                              workloadType: "daemonset",
+                            }),
                         },
                         {
                           label: "Edit",
@@ -168,18 +173,6 @@ export function DaemonSetList({ daemonsets, clusterId, namespace: _namespace, on
           </TableBody>
         </Table>
       </div>
-
-      {activeModal?.type === "logs" && (
-        <WorkloadLogsModal
-          open
-          onOpenChange={(o) => { if (!o) setActiveModal(null); }}
-          clusterId={clusterId}
-          namespace={activeModal.ds.namespace}
-          workloadType="daemonset"
-          workloadName={activeModal.ds.name}
-          labels={activeModal.ds.labels}
-        />
-      )}
 
       {activeModal?.type === "restart" && (
         <ConfirmDeleteDialog
