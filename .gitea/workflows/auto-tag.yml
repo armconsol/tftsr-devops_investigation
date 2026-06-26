@@ -312,6 +312,42 @@ jobs:
             echo "No wiki changes to commit"
           fi
 
+      - name: Mirror wiki to GitHub
+        env:
+          GH_RELEASE_TOKEN: ${{ secrets.GH_RELEASE_TOKEN }}
+        run: |
+          set -eu
+          GH_WIKI_URL="https://${GH_RELEASE_TOKEN}@github.com/armconsol/tftsr-devops_investigation.wiki.git"
+
+          cd /tmp
+          rm -rf ghwiki
+          # The GitHub wiki git repo only exists after the first page has been
+          # created via the web UI. If it isn't initialised yet, warn and skip
+          # rather than failing the release pipeline.
+          if ! git clone "$GH_WIKI_URL" ghwiki 2>/dev/null; then
+            echo "⚠ GitHub wiki not initialised — create the first page once at"
+            echo "  https://github.com/armconsol/tftsr-devops_investigation/wiki then re-run."
+            exit 0
+          fi
+
+          cd /tmp/ghwiki
+          if [ -d "$GITHUB_WORKSPACE/docs/wiki" ]; then
+            cp -v "$GITHUB_WORKSPACE"/docs/wiki/*.md . 2>/dev/null || echo "No wiki files to copy"
+          fi
+
+          git add -A
+          if ! git diff --staged --quiet; then
+            git commit -m "docs: sync from docs/wiki/ at commit ${GITHUB_SHA:0:8}"
+            if git push origin HEAD; then
+              echo "✓ GitHub wiki successfully synced"
+            else
+              echo "⚠ GitHub wiki push failed - check token permissions"
+              exit 1
+            fi
+          else
+            echo "No GitHub wiki changes to commit"
+          fi
+
   build-linux-amd64:
     needs: autotag
     runs-on: linux-amd64

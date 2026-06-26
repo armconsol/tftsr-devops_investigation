@@ -8,28 +8,19 @@ on:
 jobs:
   review:
     runs-on: ubuntu-latest
+    # Only run for same-repo pull requests. Fork PRs do not receive the LLM
+    # secret and only get a read-only GITHUB_TOKEN, so there is nothing to do
+    # (and exposing the key to untrusted forks would be unsafe).
+    if: github.event.pull_request.head.repo.full_name == github.repository
     permissions:
+      contents: read
       pull-requests: write
-    container:
-      image: ubuntu:22.04
-      options: --dns 8.8.8.8 --dns 1.1.1.1
     steps:
-      - name: Install dependencies
-        shell: bash
-        run: |
-          set -euo pipefail
-          apt-get update -qq && apt-get install -y -qq git curl jq python3
-
       - name: Checkout code
-        shell: bash
-        env:
-          REPOSITORY: ${{ github.repository }}
-        run: |
-          set -euo pipefail
-          git init
-          git remote add origin "https://gogs.tftsr.com/${REPOSITORY}.git"
-          git fetch --depth=1 origin ${{ github.head_ref }}
-          git checkout FETCH_HEAD
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
 
       - name: Build review batches
         id: context
@@ -156,7 +147,7 @@ jobs:
         if: steps.context.outputs.diff_size != '0'
         shell: bash
         env:
-          TF_TOKEN: ${{ secrets.TFT_GITEA_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           REPOSITORY: ${{ github.repository }}
         run: |
@@ -165,13 +156,15 @@ jobs:
 
           # Fetch automated review posts (what this action posts each round)
           REVIEWS=$(curl -sf --max-time 30 --connect-timeout 10 \
-            "https://gogs.tftsr.com/api/v1/repos/${REPOSITORY}/pulls/${PR_NUMBER}/reviews" \
-            -H "Authorization: Bearer $TF_TOKEN" || echo '[]')
+            "https://api.github.com/repos/${REPOSITORY}/pulls/${PR_NUMBER}/reviews" \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" || echo '[]')
 
           # Fetch regular PR/issue comments (human responses, rebuttals, etc.)
           COMMENTS=$(curl -sf --max-time 30 --connect-timeout 10 \
-            "https://gogs.tftsr.com/api/v1/repos/${REPOSITORY}/issues/${PR_NUMBER}/comments" \
-            -H "Authorization: Bearer $TF_TOKEN" || echo '[]')
+            "https://api.github.com/repos/${REPOSITORY}/issues/${PR_NUMBER}/comments" \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" || echo '[]')
 
           {
             printf '%s\n\n' '## PREVIOUS REVIEW ROUNDS'
@@ -195,8 +188,8 @@ jobs:
         if: steps.context.outputs.diff_size != '0'
         shell: bash
         env:
-          LITELLM_URL: http://172.0.0.29:11434/v1
-          LITELLM_API_KEY: ${{ secrets.OLLAMA_API_KEY }}
+          LITELLM_URL: https://llm.tftsr.com/v1
+          LITELLM_API_KEY: ${{ secrets.LITELLM_API_KEY }}
           PR_TITLE: ${{ github.event.pull_request.title }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           PR_BODY: ${{ github.event.pull_request.body }}
@@ -468,13 +461,13 @@ jobs:
         if: always() && steps.context.outputs.diff_size != '0'
         shell: bash
         env:
-          TF_TOKEN: ${{ secrets.TFT_GITEA_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           REPOSITORY: ${{ github.repository }}
         run: |
           set -euo pipefail
-          if [ -z "${TF_TOKEN:-}" ]; then
-            echo "ERROR: TFT_GITEA_TOKEN secret is not set"
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "ERROR: GITHUB_TOKEN is not available"
             exit 1
           fi
           if [ -f "/tmp/pr_review.txt" ] && [ -s "/tmp/pr_review.txt" ]; then
@@ -491,8 +484,9 @@ jobs:
           fi
           HTTP_CODE=$(curl -s --max-time 30 --connect-timeout 10 \
             -o /tmp/review_post_response.json -w "%{http_code}" \
-            -X POST "https://gogs.tftsr.com/api/v1/repos/${REPOSITORY}/pulls/${PR_NUMBER}/reviews" \
-            -H "Authorization: Bearer $TF_TOKEN" \
+            -X POST "https://api.github.com/repos/${REPOSITORY}/pulls/${PR_NUMBER}/reviews" \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
             -H "Content-Type: application/json" \
             -d "$BODY")
           echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Post review HTTP status: $HTTP_CODE"
