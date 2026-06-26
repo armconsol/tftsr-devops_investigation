@@ -1,0 +1,12 @@
+[target.x86_64-pc-windows-gnu]
+# Prevent MinGW ld from auto-exporting all ~106k public symbols into the DLL
+# export table, which would exceed the 65535 ordinal limit and cause a link
+# error. The desktop binary links against rlib (static), so cdylib exports
+# are unused at runtime.
+rustflags = ["-C", "link-arg=-Wl,--exclude-all-symbols"]
+
+[env]
+# Use system OpenSSL instead of vendoring from source (which requires Perl modules
+# unavailable on some environments and breaks clippy/check).
+OPENSSL_NO_VENDOR = "1"
+SODIUM_STATIC = "1"

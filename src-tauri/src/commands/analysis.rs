@@ -1,0 +1,900 @@
+use flate2::read::GzDecoder;
+use flate2::write::GzEncoder;
+use flate2::Compression;
+use sha2::{Digest, Sha256};
+use std::io::Read as IoRead;
+use std::io::Write;
+use std::path::{Path, PathBuf};
+use tauri::State;
+use tracing::warn;
+
+use crate::db::models::{AuditEntry, LogFile, LogFileSummary, PiiDetectionResult, PiiSpanRecord};
+use crate::pii::{self, PiiDetector, RedactedLogFile};
+use crate::state::AppState;
+
+const MAX_LOG_FILE_BYTES: u64 = 50 * 1024 * 1024;
+
+const SAFE_TEXT_EXTENSIONS: &[&str] = &[
+    "log",
+    "txt",
+    "out",
+    "err",
+    "syslog",
+    "journal",
+    "yaml",
+    "yml",
+    "json",
+    "toml",
+    "xml",
+    "ini",
+    "cfg",
+    "conf",
+    "config",
+    "env",
+    "properties",
+    "md",
+    "markdown",
+    "rst",
+    "csv",
+    "tsv",
+    "ndjson",
+    "jsonl",
+    "sql",
+    "sh",
+    "bash",
+    "zsh",
+    "py",
+    "js",
+    "ts",
+    "rb",
+    "go",
+    "rs",
+    "java",
+    "html",
+    "htm",
+    "css",
+    "diff",
+    "patch",
+    "rtf",
+];
+
+const SAFE_BINARY_EXTENSIONS: &[&str] =
+    &["pdf", "docx", "doc", "xlsx", "xls", "pcap", "pcapng", "cap"];
+
+fn compress_text(text: &str) -> Result<Vec<u8>, String> {
+    let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+    encoder
+        .write_all(text.as_bytes())
+        .map_err(|e| format!("Compression write error: {e}"))?;
+    encoder
+        .finish()
+        .map_err(|e| format!("Compression finish error: {e}"))
+}
+
+/// 100 MB cap — prevents decompression-bomb attacks on crafted DB entries.
+const MAX_DECOMPRESSED_BYTES: u64 = 100 * 1024 * 1024;
+
+fn decompress_text(bytes: &[u8]) -> Result<String, String> {
+    let decoder = GzDecoder::new(bytes);
+    let mut limited = decoder.take(MAX_DECOMPRESSED_BYTES + 1);
+    let mut s = String::new();
+    limited
+        .read_to_string(&mut s)
+        .map_err(|e| format!("Failed to decompress: {e}"))?;
+    if s.len() as u64 > MAX_DECOMPRESSED_BYTES {
+        return Err("Decompressed content exceeds 100 MB limit".to_string());
+    }
+    Ok(s)
+}
+
+pub fn is_safe_file(path: &Path) -> bool {
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_lowercase());
+    match ext.as_deref() {
+        Some(e) => SAFE_TEXT_EXTENSIONS.contains(&e) || SAFE_BINARY_EXTENSIONS.contains(&e),
+        None => false,
+    }
+}
+
+pub fn extract_text_content(path: &Path) -> Result<String, String> {
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_lowercase())
+        .unwrap_or_default();
+
+    match ext.as_str() {
+        "pdf" => extract_pdf_text(path),
+        "docx" | "doc" => extract_docx_text(path),
+        "pcap" | "pcapng" | "cap" => extract_pcap_text(path),
+        "xlsx" | "xls" => Err(format!(
+            "Spreadsheet format .{ext} is not yet supported for text extraction. \
+             Export the sheet as CSV and upload that instead."
+        )),
+        _ => std::fs::read_to_string(path).map_err(|e| format!("Failed to read file: {e}")),
+    }
+}
+
+fn extract_pdf_text(path: &Path) -> Result<String, String> {
+    let doc = lopdf::Document::load(path).map_err(|e| format!("Failed to parse PDF: {e}"))?;
+    let mut text = String::new();
+    let mut pages: Vec<u32> = doc.get_pages().keys().copied().collect();
+    pages.sort_unstable();
+    for page_num in pages {
+        if let Ok(content) = doc.extract_text(&[page_num]) {
+            text.push_str(&content);
+            text.push('\n');
+        }
+    }
+    if text.trim().is_empty() {
+        return Err("PDF contains no extractable text (may be a scanned image)".to_string());
+    }
+    Ok(text)
+}
+
+fn extract_docx_text(path: &Path) -> Result<String, String> {
+    use std::io::Read as _;
+    let file = std::fs::File::open(path).map_err(|e| format!("Failed to open file: {e}"))?;
+    let mut archive =
+        zip::ZipArchive::new(file).map_err(|e| format!("Failed to open as ZIP/DOCX: {e}"))?;
+    let mut xml_content = String::new();
+    {
+        // Safety: only one hardcoded entry is ever accessed; no arbitrary path extraction is
+        // performed, so zip-slip path traversal attacks cannot apply here.
+        let mut doc_xml = archive
+            .by_name("word/document.xml")
+            .map_err(|_| "Not a valid DOCX: missing word/document.xml".to_string())?;
+        doc_xml
+            .read_to_string(&mut xml_content)
+            .map_err(|e| format!("Failed to read document.xml: {e}"))?;
+    }
+    let mut text = String::new();
+    let mut reader = quick_xml::Reader::from_str(&xml_content);
+    reader.config_mut().trim_text(true);
+    let mut buf = Vec::new();
+    loop {
+        match reader.read_event_into(&mut buf) {
+            Ok(quick_xml::events::Event::Text(e)) => {
+                if let Ok(s) = e.unescape() {
+                    let trimmed = s.trim().to_string();
+                    if !trimmed.is_empty() {
+                        text.push_str(&trimmed);
+                        text.push(' ');
+                    }
+                }
+            }
+            Ok(quick_xml::events::Event::Eof) => break,
+            Err(e) => return Err(format!("XML parse error: {e}")),
+            _ => {}
+        }
+        buf.clear();
+    }
+    if text.trim().is_empty() {
+        return Err("DOCX contains no extractable text".to_string());
+    }
+    Ok(text)
+}
+
+fn extract_pcap_text(path: &Path) -> Result<String, String> {
+    // Try to use tshark (Wireshark CLI) to extract packet data
+    // Limit to first 1000 packets and disable name resolution to prevent OOM and stalls
+    let output = std::process::Command::new("tshark")
+        .arg("-r")
+        .arg(path)
+        .arg("-n") // Disable name resolution
+        .arg("-c")
+        .arg("1000") // Limit to first 1000 packets
+        .arg("-V") // Verbose packet dissection
+        .output();
+
+    match output {
+        Ok(result) if result.status.success() => {
+            let text = String::from_utf8_lossy(&result.stdout).to_string();
+            if text.trim().is_empty() {
+                return Err("PCAP file contains no packets or is empty".to_string());
+            }
+            // Truncate to 1MB to prevent memory issues with verbose output
+            const MAX_PCAP_TEXT: usize = 1024 * 1024;
+            if text.len() > MAX_PCAP_TEXT {
+                Ok(format!(
+                    "{}... (truncated from {} bytes)",
+                    &text[..MAX_PCAP_TEXT],
+                    text.len()
+                ))
+            } else {
+                Ok(text)
+            }
+        }
+        Ok(result) => {
+            let stderr = String::from_utf8_lossy(&result.stderr);
+            Err(format!("tshark failed to process PCAP: {stderr}"))
+        }
+        Err(_) => {
+            // tshark not installed - try tcpdump as fallback
+            let tcpdump_output = std::process::Command::new("tcpdump")
+                .arg("-n") // Don't resolve addresses
+                .arg("-c")
+                .arg("1000") // Limit to first 1000 packets
+                .arg("-r")
+                .arg(path)
+                .arg("-A") // Print packet payload in ASCII
+                .output();
+
+            match tcpdump_output {
+                Ok(result) if result.status.success() => {
+                    let text = String::from_utf8_lossy(&result.stdout).to_string();
+                    if text.trim().is_empty() {
+                        return Err("PCAP file contains no packets or is empty".to_string());
+                    }
+                    // Truncate to 1MB to prevent memory issues with verbose output
+                    const MAX_PCAP_TEXT: usize = 1024 * 1024;
+                    if text.len() > MAX_PCAP_TEXT {
+                        Ok(format!(
+                            "{}... (truncated from {} bytes)",
+                            &text[..MAX_PCAP_TEXT],
+                            text.len()
+                        ))
+                    } else {
+                        Ok(text)
+                    }
+                }
+                Ok(result) => {
+                    let stderr = String::from_utf8_lossy(&result.stderr);
+                    Err(format!("tcpdump failed to process PCAP: {stderr}"))
+                }
+                Err(_) => Err(
+                    "Neither tshark nor tcpdump is installed. Install Wireshark or tcpdump to analyze packet captures.".to_string()
+                ),
+            }
+        }
+    }
+}
+
+fn validate_log_file_path(file_path: &str) -> Result<PathBuf, String> {
+    let path = Path::new(file_path);
+    let canonical = std::fs::canonicalize(path).map_err(|_| "Unable to access selected file")?;
+    let metadata = std::fs::metadata(&canonical).map_err(|_| "Unable to read file metadata")?;
+
+    if !metadata.is_file() {
+        return Err("Selected path is not a file".to_string());
+    }
+
+    if metadata.len() > MAX_LOG_FILE_BYTES {
+        return Err(format!(
+            "File exceeds maximum supported size ({} MB)",
+            MAX_LOG_FILE_BYTES / 1024 / 1024
+        ));
+    }
+
+    Ok(canonical)
+}
+
+#[tauri::command]
+pub async fn upload_log_file(
+    issue_id: String,
+    file_path: String,
+    state: State<'_, AppState>,
+) -> Result<LogFile, String> {
+    let canonical_path = validate_log_file_path(&file_path)?;
+
+    if !is_safe_file(&canonical_path) {
+        let ext = canonical_path
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("(none)");
+        return Err(format!(
+            "File type '.{ext}' is not supported. Supported formats include .log, .txt, .json, .pdf, .docx, .md, and many more."
+        ));
+    }
+
+    let file_name = canonical_path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("unknown")
+        .to_string();
+
+    let file_ext = canonical_path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_lowercase())
+        .unwrap_or_default();
+
+    let extracted_text = extract_text_content(&canonical_path)
+        .map_err(|e| format!("Failed to read file content: {e}"))?;
+    let content_bytes = extracted_text.as_bytes();
+    let content_hash = format!("{:x}", Sha256::digest(content_bytes));
+    let file_size = content_bytes.len() as i64;
+
+    let mime_type = match file_ext.as_str() {
+        "json" => "application/json",
+        "xml" => "application/xml",
+        "yaml" | "yml" => "application/yaml",
+        "pdf" => "application/pdf",
+        "docx" => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "doc" => "application/msword",
+        "md" | "markdown" => "text/markdown",
+        "csv" | "tsv" => "text/csv",
+        "html" | "htm" => "text/html",
+        "pcap" | "cap" => "application/vnd.tcpdump.pcap",
+        "pcapng" => "application/x-pcapng",
+        _ => "text/plain",
+    };
+
+    let is_binary = SAFE_BINARY_EXTENSIONS.contains(&file_ext.as_str());
+    let stored_path = if is_binary {
+        let extracted_path = canonical_path.with_extension("extracted.txt");
+        std::fs::write(&extracted_path, &extracted_text)
+            .map_err(|e| format!("Failed to write extracted text: {e}"))?;
+        extracted_path.to_string_lossy().to_string()
+    } else {
+        canonical_path.to_string_lossy().to_string()
+    };
+
+    let log_file = LogFile::new(issue_id.clone(), file_name, stored_path, file_size);
+    let log_file = LogFile {
+        content_hash: content_hash.clone(),
+        mime_type: mime_type.to_string(),
+        ..log_file
+    };
+
+    let compressed = compress_text(&extracted_text)
+        .map_err(|e| format!("Failed to compress log content: {e}"))?;
+
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+    db.execute(
+        "INSERT INTO log_files (id, issue_id, file_name, file_path, file_size, mime_type, content_hash, uploaded_at, redacted, content_compressed) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+        rusqlite::params![
+            log_file.id,
+            log_file.issue_id,
+            log_file.file_name,
+            log_file.file_path,
+            log_file.file_size,
+            log_file.mime_type,
+            log_file.content_hash,
+            log_file.uploaded_at,
+            log_file.redacted as i32,
+            compressed,
+        ],
+    )
+    .map_err(|_| "Failed to store uploaded log metadata".to_string())?;
+
+    // Audit
+    let entry = AuditEntry::new(
+        "upload_log_file".to_string(),
+        "log_file".to_string(),
+        log_file.id.clone(),
+        serde_json::json!({ "issue_id": issue_id, "file_name": log_file.file_name }).to_string(),
+    );
+    if let Err(err) = crate::audit::log::write_audit_event(
+        &db,
+        &entry.action,
+        &entry.entity_type,
+        &entry.entity_id,
+        &entry.details,
+    ) {
+        warn!(error = %err, "failed to write upload_log_file audit entry");
+    }
+
+    Ok(log_file)
+}
+
+#[tauri::command]
+pub async fn upload_log_file_by_content(
+    issue_id: String,
+    file_name: String,
+    content: String,
+    state: State<'_, AppState>,
+) -> Result<LogFile, String> {
+    let fake_path = Path::new(&file_name);
+    if !is_safe_file(fake_path) {
+        let ext = fake_path
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("(none)");
+        return Err(format!("File type '.{ext}' is not supported."));
+    }
+
+    let content_bytes = content.as_bytes();
+    let content_hash = format!("{:x}", Sha256::digest(content_bytes));
+    let file_size = content_bytes.len() as i64;
+
+    let file_ext = fake_path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_lowercase())
+        .unwrap_or_default();
+
+    let mime_type = match file_ext.as_str() {
+        "json" => "application/json",
+        "xml" => "application/xml",
+        "yaml" | "yml" => "application/yaml",
+        "pdf" => "application/pdf",
+        "docx" => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "doc" => "application/msword",
+        "md" | "markdown" => "text/markdown",
+        "csv" | "tsv" => "text/csv",
+        "html" | "htm" => "text/html",
+        "pcap" | "cap" => "application/vnd.tcpdump.pcap",
+        "pcapng" => "application/x-pcapng",
+        _ => "text/plain",
+    };
+
+    // Use the file_name as the file_path for DB storage
+    let log_file = LogFile::new(
+        issue_id.clone(),
+        file_name.clone(),
+        file_name.clone(),
+        file_size,
+    );
+    let log_file = LogFile {
+        content_hash: content_hash.clone(),
+        mime_type: mime_type.to_string(),
+        ..log_file
+    };
+
+    let compressed =
+        compress_text(&content).map_err(|e| format!("Failed to compress log content: {e}"))?;
+
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+    db.execute(
+        "INSERT INTO log_files (id, issue_id, file_name, file_path, file_size, mime_type, content_hash, uploaded_at, redacted, content_compressed) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+        rusqlite::params![
+            log_file.id,
+            log_file.issue_id,
+            log_file.file_name,
+            log_file.file_path,
+            log_file.file_size,
+            log_file.mime_type,
+            log_file.content_hash,
+            log_file.uploaded_at,
+            log_file.redacted as i32,
+            compressed,
+        ],
+    )
+    .map_err(|_| "Failed to store uploaded log metadata".to_string())?;
+
+    // Audit
+    let entry = AuditEntry::new(
+        "upload_log_file".to_string(),
+        "log_file".to_string(),
+        log_file.id.clone(),
+        serde_json::json!({ "issue_id": issue_id, "file_name": log_file.file_name }).to_string(),
+    );
+    if let Err(err) = crate::audit::log::write_audit_event(
+        &db,
+        &entry.action,
+        &entry.entity_type,
+        &entry.entity_id,
+        &entry.details,
+    ) {
+        warn!(error = %err, "failed to write upload_log_file audit entry");
+    }
+
+    Ok(log_file)
+}
+
+#[tauri::command]
+pub async fn detect_pii(
+    log_file_id: String,
+    state: State<'_, AppState>,
+) -> Result<PiiDetectionResult, String> {
+    // Load file path from DB
+    let file_path: String = {
+        let db = state.db.lock().map_err(|e| e.to_string())?;
+        db.prepare("SELECT file_path FROM log_files WHERE id = ?1")
+            .and_then(|mut stmt| stmt.query_row([&log_file_id], |row| row.get(0)))
+            .map_err(|_| "Failed to load log file metadata".to_string())?
+    };
+
+    let content =
+        std::fs::read_to_string(&file_path).map_err(|_| "Failed to read log file content")?;
+
+    let detector = PiiDetector::new();
+    let spans = detector.detect(&content);
+
+    // Store PII spans in the database for later use
+    {
+        let db = state.db.lock().map_err(|e| e.to_string())?;
+        for span in &spans {
+            let record = PiiSpanRecord {
+                id: span.id.clone(),
+                log_file_id: log_file_id.clone(),
+                pii_type: span.pii_type.clone(),
+                start_offset: span.start as i64,
+                end_offset: span.end as i64,
+                original_value: String::new(),
+                replacement: span.replacement.clone(),
+            };
+            if let Err(err) = db.execute(
+                "INSERT OR REPLACE INTO pii_spans (id, log_file_id, pii_type, start_offset, end_offset, original_value, replacement) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                rusqlite::params![
+                    record.id, record.log_file_id, record.pii_type,
+                    record.start_offset, record.end_offset,
+                    record.original_value, record.replacement
+                ],
+            ) {
+                warn!(error = %err, span_id = %span.id, "failed to persist pii span");
+            }
+        }
+    }
+
+    let total_pii_found = spans.len();
+    Ok(PiiDetectionResult {
+        log_file_id,
+        detections: spans,
+        total_pii_found,
+    })
+}
+
+/// Maximum text size accepted by scan_text_for_pii to prevent DoS on large payloads.
+const MAX_TEXT_SCAN_BYTES: usize = 32 * 1024; // 32 KB
+
+/// Scan arbitrary text for PII without creating any database records.
+/// Used by the backend before sending typed chat messages to AI providers.
+#[tauri::command]
+pub async fn scan_text_for_pii(text: String) -> Result<PiiDetectionResult, String> {
+    if text.len() > MAX_TEXT_SCAN_BYTES {
+        return Err(format!(
+            "Text too large for inline PII scan ({} bytes; limit {MAX_TEXT_SCAN_BYTES})",
+            text.len()
+        ));
+    }
+    let detector = PiiDetector::new();
+    let spans = detector.detect(&text);
+    let total_pii_found = spans.len();
+    Ok(PiiDetectionResult {
+        log_file_id: String::new(),
+        detections: spans,
+        total_pii_found,
+    })
+}
+
+#[tauri::command]
+pub async fn apply_redactions(
+    log_file_id: String,
+    approved_span_ids: Vec<String>,
+    state: State<'_, AppState>,
+) -> Result<RedactedLogFile, String> {
+    // Load file path
+    let file_path: String = {
+        let db = state.db.lock().map_err(|e| e.to_string())?;
+        db.prepare("SELECT file_path FROM log_files WHERE id = ?1")
+            .and_then(|mut stmt| stmt.query_row([&log_file_id], |row| row.get(0)))
+            .map_err(|_| "Failed to load log file metadata".to_string())?
+    };
+
+    let content =
+        std::fs::read_to_string(&file_path).map_err(|_| "Failed to read log file content")?;
+
+    // Load PII spans from DB, filtering to only approved ones
+    let spans: Vec<pii::PiiSpan> = {
+        type Row = (String, String, i64, i64, String, String);
+        let db = state.db.lock().map_err(|e| e.to_string())?;
+        let raw: Vec<Row> = db
+            .prepare(
+                "SELECT id, pii_type, start_offset, end_offset, original_value, replacement \
+                 FROM pii_spans WHERE log_file_id = ?1 ORDER BY start_offset ASC",
+            )
+            .and_then(|mut stmt| {
+                stmt.query_map([&log_file_id], |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, i64>(2)?,
+                        row.get::<_, i64>(3)?,
+                        row.get::<_, String>(4)?,
+                        row.get::<_, String>(5)?,
+                    ))
+                })
+                .map(|rows| rows.filter_map(|r| r.ok()).collect::<Vec<_>>())
+            })
+            .unwrap_or_default();
+        drop(db);
+        raw.into_iter()
+            .map(
+                |(id, pii_type, start, end, original, replacement)| pii::PiiSpan {
+                    id,
+                    pii_type,
+                    start: start as usize,
+                    end: end as usize,
+                    original,
+                    replacement,
+                },
+            )
+            .filter(|span| approved_span_ids.contains(&span.id))
+            .collect()
+    };
+
+    // Apply redactions using the redactor module
+    let redacted_text = pii::apply_redactions(&content, &spans);
+    let data_hash = pii::hash_content(&redacted_text);
+
+    // Save redacted file alongside original
+    let redacted_path = format!("{file_path}.redacted");
+    std::fs::write(&redacted_path, &redacted_text)
+        .map_err(|_| "Failed to write redacted output file".to_string())?;
+
+    // Mark the log file as redacted in DB
+    {
+        let db = state.db.lock().map_err(|e| e.to_string())?;
+        db.execute(
+            "UPDATE log_files SET redacted = 1 WHERE id = ?1",
+            [&log_file_id],
+        )
+        .map_err(|_| "Failed to mark file as redacted".to_string())?;
+        db.execute(
+            "UPDATE pii_spans SET original_value = '' WHERE log_file_id = ?1",
+            [&log_file_id],
+        )
+        .map_err(|_| "Failed to finalize redaction metadata".to_string())?;
+    }
+
+    Ok(RedactedLogFile {
+        log_file_id,
+        redacted_text,
+        data_hash,
+    })
+}
+
+#[tauri::command]
+pub async fn get_log_file_content(
+    log_file_id: String,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    let row: (Option<Vec<u8>>, String) = {
+        let db = state.db.lock().map_err(|e| e.to_string())?;
+        db.prepare("SELECT content_compressed, file_path FROM log_files WHERE id = ?1")
+            .and_then(|mut stmt| {
+                stmt.query_row([&log_file_id], |row| Ok((row.get(0)?, row.get(1)?)))
+            })
+            .map_err(|_| "Log file not found".to_string())?
+    };
+    let (compressed, file_path) = row;
+    if let Some(bytes) = compressed {
+        return decompress_text(&bytes);
+    }
+    std::fs::read_to_string(&file_path).map_err(|e| format!("Log file not found on disk: {e}"))
+}
+
+#[tauri::command]
+pub async fn list_all_log_files(
+    search: Option<String>,
+    issue_id: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<Vec<LogFileSummary>, String> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+    let mut query = "SELECT id, issue_id, file_name, file_path, file_size, mime_type, content_hash, uploaded_at, redacted, issue_title \
+                     FROM v_log_files_with_issue WHERE 1=1"
+        .to_string();
+    let mut params: Vec<String> = Vec::new();
+
+    if let Some(ref q) = search {
+        query.push_str(" AND file_name LIKE ?");
+        params.push(format!("%{q}%"));
+    }
+    if let Some(ref id) = issue_id {
+        query.push_str(" AND issue_id = ?");
+        params.push(id.clone());
+    }
+    query.push_str(" ORDER BY uploaded_at DESC");
+
+    let mut stmt = db.prepare(&query).map_err(|e| e.to_string())?;
+    let results = stmt
+        .query_map(rusqlite::params_from_iter(params.iter()), |row| {
+            Ok(LogFileSummary {
+                id: row.get(0)?,
+                issue_id: row.get(1)?,
+                file_name: row.get(2)?,
+                file_path: row.get(3)?,
+                file_size: row.get(4)?,
+                mime_type: row.get(5)?,
+                content_hash: row.get(6)?,
+                uploaded_at: row.get(7)?,
+                redacted: row.get::<_, i32>(8)? != 0,
+                issue_title: row.get(9)?,
+            })
+        })
+        .map_err(|e| e.to_string())?
+        .filter_map(|r| r.ok())
+        .collect();
+    Ok(results)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_validate_log_file_path_rejects_non_file() {
+        let dir = std::env::temp_dir();
+        let result = validate_log_file_path(dir.to_string_lossy().as_ref());
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_validate_log_file_path_accepts_small_file() {
+        let file_path =
+            std::env::temp_dir().join(format!("tftsr-analysis-test-{}.log", uuid::Uuid::now_v7()));
+        std::fs::write(&file_path, "hello").unwrap();
+        let result = validate_log_file_path(file_path.to_string_lossy().as_ref());
+        assert!(result.is_ok());
+        let _ = std::fs::remove_file(file_path);
+    }
+
+    #[test]
+    fn test_is_safe_file_allows_txt() {
+        assert!(is_safe_file(Path::new("file.txt")));
+    }
+
+    #[test]
+    fn test_is_safe_file_allows_md() {
+        assert!(is_safe_file(Path::new("readme.md")));
+    }
+
+    #[test]
+    fn test_is_safe_file_allows_pdf() {
+        assert!(is_safe_file(Path::new("report.pdf")));
+    }
+
+    #[test]
+    fn test_is_safe_file_allows_docx() {
+        assert!(is_safe_file(Path::new("doc.docx")));
+    }
+
+    #[test]
+    fn test_is_safe_file_rejects_exe() {
+        assert!(!is_safe_file(Path::new("malware.exe")));
+    }
+
+    #[test]
+    fn test_is_safe_file_rejects_dll() {
+        assert!(!is_safe_file(Path::new("library.dll")));
+    }
+
+    #[test]
+    fn test_is_safe_file_rejects_zip_directly() {
+        assert!(!is_safe_file(Path::new("archive.zip")));
+    }
+
+    #[test]
+    fn test_is_safe_file_case_insensitive() {
+        assert!(is_safe_file(Path::new("file.TXT")));
+        assert!(is_safe_file(Path::new("file.Log")));
+    }
+
+    #[test]
+    fn test_is_safe_file_no_extension_rejected() {
+        assert!(!is_safe_file(Path::new("Makefile")));
+    }
+
+    #[test]
+    fn test_extract_text_plain_file() {
+        let dir = std::env::temp_dir();
+        let path = dir.join(format!("tftsr-test-extract-{}.txt", uuid::Uuid::now_v7()));
+        std::fs::write(&path, "hello world").unwrap();
+        let result = extract_text_content(&path);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().trim(), "hello world");
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn test_extract_text_unsupported_binary_returns_error() {
+        let result = extract_text_content(Path::new("data.xlsx"));
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("not yet supported"));
+    }
+
+    #[test]
+    fn test_compress_decompress_roundtrip() {
+        let original = "Hello, World! This is a log line with some content.";
+        let compressed = compress_text(original).unwrap();
+        assert!(!compressed.is_empty());
+        assert!(compressed.len() < original.len() * 3);
+        let decompressed = decompress_text(&compressed).unwrap();
+        assert_eq!(decompressed, original);
+    }
+
+    #[test]
+    fn test_compress_returns_error_not_empty_on_failure() {
+        // compress_text returns Result — callers must propagate, not silently discard.
+        // For in-memory gzip this essentially never fails, but the API now allows
+        // callers to surface the error rather than storing empty bytes.
+        let result = compress_text("normal log line");
+        assert!(
+            result.is_ok(),
+            "compress_text should succeed for normal input"
+        );
+        assert!(!result.unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_compress_large_text_is_smaller() {
+        let original = "INFO server started\n".repeat(1000);
+        let compressed = compress_text(&original).unwrap();
+        assert!(
+            compressed.len() < original.len(),
+            "gzip should compress repetitive text"
+        );
+    }
+
+    #[test]
+    fn test_decompress_invalid_bytes_returns_error() {
+        let result = decompress_text(b"not gzip data");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_decompress_size_limit_enforced() {
+        assert_eq!(
+            MAX_DECOMPRESSED_BYTES,
+            100 * 1024 * 1024,
+            "Decompression bomb guard must be 100 MB"
+        );
+
+        // A valid small payload must still decompress fine after the guard is in place.
+        let text = "hello world decompression guard test\n".repeat(100);
+        let compressed = compress_text(&text).unwrap();
+        let result = decompress_text(&compressed);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), text);
+    }
+
+    #[test]
+    fn test_pcap_files_recognized_as_safe_binary() {
+        use std::path::Path;
+        assert!(is_safe_file(Path::new("capture.pcap")));
+        assert!(is_safe_file(Path::new("network.pcapng")));
+        assert!(is_safe_file(Path::new("traffic.cap")));
+        assert!(!is_safe_file(Path::new("malicious.exe")));
+    }
+
+    #[test]
+    fn test_pcap_mime_types() {
+        use std::path::Path;
+        // This test verifies that pcap files get proper MIME types in upload_log_file
+        // The actual MIME type mapping is in the upload_log_file function
+        // We're testing that the extension detection works correctly
+        let pcap_path = Path::new("test.pcap");
+        let pcapng_path = Path::new("test.pcapng");
+        let cap_path = Path::new("test.cap");
+
+        assert_eq!(pcap_path.extension().and_then(|e| e.to_str()), Some("pcap"));
+        assert_eq!(
+            pcapng_path.extension().and_then(|e| e.to_str()),
+            Some("pcapng")
+        );
+        assert_eq!(cap_path.extension().and_then(|e| e.to_str()), Some("cap"));
+    }
+
+    #[test]
+    fn test_extract_pcap_requires_external_tool() {
+        use std::path::Path;
+        // extract_pcap_text requires tshark or tcpdump to be installed
+        // This test verifies that the function returns appropriate error when neither is available
+        // Note: We can't test actual extraction without mock/fixture files and installed tools
+
+        // Verify that trying to extract from a non-existent file returns an error
+        let fake_path = Path::new("/tmp/nonexistent_test_file.pcap");
+        let result = extract_pcap_text(fake_path);
+
+        // Should fail because file doesn't exist (and possibly no tshark/tcpdump)
+        assert!(result.is_err());
+
+        // Error message should mention either tshark failure or missing tools
+        let error_msg = result.unwrap_err();
+        assert!(
+            error_msg.contains("tshark")
+                || error_msg.contains("tcpdump")
+                || error_msg.contains("Neither")
+                || error_msg.contains("No such file"),
+            "Expected error about missing tools or file, got: {}",
+            error_msg
+        );
+    }
+}

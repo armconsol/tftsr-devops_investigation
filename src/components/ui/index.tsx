@@ -1,0 +1,812 @@
+import React, { HTMLAttributes } from "react";
+import { cva, type VariantProps } from "class-variance-authority";
+import { clsx, type ClassValue } from "clsx";
+
+function cn(...inputs: ClassValue[]) {
+  return clsx(inputs);
+}
+
+// ─── Separator (ForwardRef) ───────────────────────────────────────────────────
+
+export const Separator = React.forwardRef<
+  HTMLDivElement,
+  HTMLAttributes<HTMLDivElement> & { orientation?: "horizontal" | "vertical" }
+>(({ className, orientation = "horizontal", ...props }, ref) => (
+  <div
+    ref={ref}
+    role="separator"
+    aria-orientation={orientation}
+    className={cn(
+      "shrink-0 bg-border",
+      orientation === "horizontal" ? "h-[1px] w-full" : "h-full w-[1px]",
+      className
+    )}
+    {...props}
+  />
+));
+Separator.displayName = "Separator";
+
+// ─── Button ──────────────────────────────────────────────────────────────────
+
+const buttonVariants = cva(
+  "inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50",
+  {
+    variants: {
+      variant: {
+        default: "bg-primary text-primary-foreground hover:bg-primary/90",
+        destructive: "bg-destructive text-destructive-foreground hover:bg-destructive/90",
+        outline: "border border-input bg-background text-foreground hover:bg-accent hover:text-accent-foreground",
+        secondary: "bg-secondary text-secondary-foreground hover:bg-secondary/80",
+        ghost: "hover:bg-accent hover:text-accent-foreground",
+        link: "text-primary underline-offset-4 hover:underline",
+      },
+      size: {
+        default: "h-10 px-4 py-2",
+        sm: "h-9 rounded-md px-3",
+        lg: "h-11 rounded-md px-8",
+      },
+    },
+    defaultVariants: {
+      variant: "default",
+      size: "default",
+    },
+  }
+);
+
+export interface ButtonProps
+  extends React.ButtonHTMLAttributes<HTMLButtonElement>,
+    VariantProps<typeof buttonVariants> {}
+
+export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
+  ({ className, variant, size, ...props }, ref) => (
+    <button
+      className={cn(buttonVariants({ variant, size, className }))}
+      ref={ref}
+      {...props}
+    />
+  )
+);
+Button.displayName = "Button";
+
+// ─── Card ────────────────────────────────────────────────────────────────────
+
+export const Card = React.forwardRef<
+  HTMLDivElement,
+  React.HTMLAttributes<HTMLDivElement>
+>(({ className, ...props }, ref) => (
+  <div
+    ref={ref}
+    className={cn("rounded-lg border bg-card text-card-foreground shadow-sm", className)}
+    {...props}
+  />
+));
+Card.displayName = "Card";
+
+export const CardHeader = React.forwardRef<
+  HTMLDivElement,
+  React.HTMLAttributes<HTMLDivElement>
+>(({ className, ...props }, ref) => (
+  <div ref={ref} className={cn("flex flex-col space-y-1.5 p-6", className)} {...props} />
+));
+CardHeader.displayName = "CardHeader";
+
+export const CardTitle = React.forwardRef<
+  HTMLParagraphElement,
+  React.HTMLAttributes<HTMLHeadingElement>
+>(({ className, ...props }, ref) => (
+  <h3
+    ref={ref}
+    className={cn("text-2xl font-semibold leading-none tracking-tight", className)}
+    {...props}
+  />
+));
+CardTitle.displayName = "CardTitle";
+
+export const CardDescription = React.forwardRef<
+  HTMLParagraphElement,
+  React.HTMLAttributes<HTMLParagraphElement>
+>(({ className, ...props }, ref) => (
+  <p ref={ref} className={cn("text-sm text-muted-foreground", className)} {...props} />
+));
+CardDescription.displayName = "CardDescription";
+
+export const CardContent = React.forwardRef<
+  HTMLDivElement,
+  React.HTMLAttributes<HTMLDivElement>
+>(({ className, ...props }, ref) => (
+  <div ref={ref} className={cn("p-6 pt-0", className)} {...props} />
+));
+CardContent.displayName = "CardContent";
+
+export const CardFooter = React.forwardRef<
+  HTMLDivElement,
+  React.HTMLAttributes<HTMLDivElement>
+>(({ className, ...props }, ref) => (
+  <div ref={ref} className={cn("flex items-center p-6 pt-0", className)} {...props} />
+));
+CardFooter.displayName = "CardFooter";
+
+// ─── Input ───────────────────────────────────────────────────────────────────
+
+export type InputProps = React.InputHTMLAttributes<HTMLInputElement>
+
+export const Input = React.forwardRef<HTMLInputElement, InputProps>(
+  ({ className, type, ...props }, ref) => (
+    <input
+      type={type}
+      className={cn(
+        "flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50",
+        className
+      )}
+      ref={ref}
+      {...props}
+    />
+  )
+);
+Input.displayName = "Input";
+
+// ─── Label ───────────────────────────────────────────────────────────────────
+
+export type LabelProps = React.LabelHTMLAttributes<HTMLLabelElement>
+
+export const Label = React.forwardRef<HTMLLabelElement, LabelProps>(
+  ({ className, ...props }, ref) => (
+    <label
+      ref={ref}
+      className={cn(
+        "text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70",
+        className
+      )}
+      {...props}
+    />
+  )
+);
+Label.displayName = "Label";
+
+// ─── Textarea ────────────────────────────────────────────────────────────────
+
+export type TextareaProps = React.TextareaHTMLAttributes<HTMLTextAreaElement>
+
+export const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
+  ({ className, ...props }, ref) => (
+    <textarea
+      className={cn(
+        "flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50",
+        className
+      )}
+      ref={ref}
+      {...props}
+    />
+  )
+);
+Textarea.displayName = "Textarea";
+
+// ─── Select ──────────────────────────────────────────────────────────────────
+
+interface SelectContextValue {
+  value: string;
+  onChange: (value: string) => void;
+  open: boolean;
+  setOpen: (open: boolean) => void;
+  labelMap: Map<string, React.ReactNode>;
+}
+
+const SelectContext = React.createContext<SelectContextValue | null>(null);
+
+/** Walk a React node tree collecting SelectItem value→children mappings. */
+function collectLabels(
+  nodes: React.ReactNode,
+  map: Map<string, React.ReactNode>
+): void {
+  React.Children.forEach(nodes, (child) => {
+    if (!React.isValidElement(child)) return;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const props = child.props as any;
+    if (child.type === SelectItem && typeof props.value === "string") {
+      map.set(props.value, props.children);
+    }
+    if (props.children) {
+      collectLabels(props.children as React.ReactNode, map);
+    }
+  });
+}
+
+interface SelectProps {
+  value?: string;
+  onValueChange?: (value: string) => void;
+  children: React.ReactNode;
+}
+
+export function Select({ value = "", onValueChange, children }: SelectProps) {
+  const [open, setOpen] = React.useState(false);
+  const onChange = React.useCallback(
+    (v: string) => {
+      onValueChange?.(v);
+      setOpen(false);
+    },
+    [onValueChange]
+  );
+  const labelMap = React.useMemo(() => {
+    const map = new Map<string, React.ReactNode>();
+    collectLabels(children, map);
+    return map;
+  }, [children]);
+  return (
+    <SelectContext.Provider value={{ value, onChange, open, setOpen, labelMap }}>
+      <div className="relative">{children}</div>
+    </SelectContext.Provider>
+  );
+}
+
+export function SelectTrigger({
+  className,
+  children,
+}: {
+  className?: string;
+  children: React.ReactNode;
+}) {
+  const ctx = React.useContext(SelectContext)!;
+  return (
+    <button
+      type="button"
+      className={cn(
+        "flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50",
+        className
+      )}
+      onClick={() => ctx.setOpen(!ctx.open)}
+      onBlur={() => setTimeout(() => ctx.setOpen(false), 150)}
+    >
+      {children}
+      <svg className="h-4 w-4 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+      </svg>
+    </button>
+  );
+}
+
+export function SelectValue({ placeholder }: { placeholder?: string }) {
+  const ctx = React.useContext(SelectContext)!;
+  const label = ctx.value ? ctx.labelMap.get(ctx.value) : undefined;
+  return (
+    <span className={ctx.value ? "text-foreground" : "text-muted-foreground"}>
+      {label ?? (ctx.value ? ctx.value : placeholder)}
+    </span>
+  );
+}
+
+export function SelectContent({
+  children,
+  className,
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
+  const ctx = React.useContext(SelectContext)!;
+  const contentRef = React.useRef<HTMLDivElement>(null);
+  const [flipUpward, setFlipUpward] = React.useState(false);
+
+  React.useEffect(() => {
+    if (!ctx.open || !contentRef.current) return;
+
+    const rect = contentRef.current.getBoundingClientRect();
+    const viewportHeight = window.innerHeight;
+    const spaceBelow = viewportHeight - rect.bottom;
+
+    // If dropdown extends below viewport (less than 20px space), flip upward
+    if (spaceBelow < 20) {
+      setFlipUpward(true);
+    } else {
+      setFlipUpward(false);
+    }
+  }, [ctx.open]);
+
+  if (!ctx.open) return null;
+  return (
+    <div
+      ref={contentRef}
+      className={cn(
+        "absolute z-50 max-h-60 w-full overflow-auto rounded-md border bg-card text-foreground p-1 shadow-md",
+        flipUpward ? "bottom-full mb-1" : "top-full mt-1",
+        className
+      )}
+    >
+      {children}
+    </div>
+  );
+}
+
+export function SelectItem({
+  value,
+  children,
+}: {
+  value: string;
+  children: React.ReactNode;
+}) {
+  const ctx = React.useContext(SelectContext)!;
+  return (
+    <div
+      className={cn(
+        "relative flex cursor-pointer select-none items-center rounded-sm px-2 py-1.5 text-sm text-foreground outline-none hover:bg-accent hover:text-accent-foreground",
+        ctx.value === value && "bg-accent text-accent-foreground"
+      )}
+      onMouseDown={(e) => {
+        e.preventDefault();
+        ctx.onChange(value);
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+// ─── Badge ───────────────────────────────────────────────────────────────────
+
+const badgeVariants = cva(
+  "inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2",
+  {
+    variants: {
+      variant: {
+        default: "border-transparent bg-primary text-primary-foreground",
+        secondary: "border-transparent bg-secondary text-secondary-foreground",
+        destructive: "border-transparent bg-destructive text-destructive-foreground",
+        outline: "text-foreground",
+        success: "border-transparent bg-green-600 text-white",
+      },
+    },
+    defaultVariants: {
+      variant: "default",
+    },
+  }
+);
+
+export interface BadgeProps
+  extends React.HTMLAttributes<HTMLDivElement>,
+    VariantProps<typeof badgeVariants> {}
+
+export function Badge({ className, variant, ...props }: BadgeProps) {
+  return <div className={cn(badgeVariants({ variant }), className)} {...props} />;
+}
+
+// ─── Progress ────────────────────────────────────────────────────────────────
+
+interface ProgressProps extends React.HTMLAttributes<HTMLDivElement> {
+  value?: number;
+  max?: number;
+}
+
+export function Progress({ value = 0, max = 100, className, ...props }: ProgressProps) {
+  const percentage = Math.min(100, Math.max(0, (value / max) * 100));
+  return (
+    <div
+      className={cn("relative h-4 w-full overflow-hidden rounded-full bg-secondary", className)}
+      {...props}
+    >
+      <div
+        className="h-full bg-primary transition-all duration-300"
+        style={{ width: `${percentage}%` }}
+      />
+    </div>
+  );
+}
+
+
+
+// ─── RadioGroup ──────────────────────────────────────────────────────────────
+
+interface RadioGroupContextValue {
+  value: string;
+  onValueChange: (value: string) => void;
+}
+
+const RadioGroupContext = React.createContext<RadioGroupContextValue | null>(null);
+
+interface RadioGroupProps {
+  value: string;
+  onValueChange: (value: string) => void;
+  className?: string;
+  children: React.ReactNode;
+}
+
+export function RadioGroup({ value, onValueChange, className, children }: RadioGroupProps) {
+  return (
+    <RadioGroupContext.Provider value={{ value, onValueChange }}>
+      <div className={cn("space-y-2", className)}>{children}</div>
+    </RadioGroupContext.Provider>
+  );
+}
+
+interface RadioGroupItemProps extends React.InputHTMLAttributes<HTMLInputElement> {
+  value: string;
+}
+
+export const RadioGroupItem = React.forwardRef<HTMLInputElement, RadioGroupItemProps>(
+  ({ value, className, ...props }, ref) => {
+    const ctx = React.useContext(RadioGroupContext);
+    if (!ctx) throw new Error("RadioGroupItem must be used within RadioGroup");
+
+    return (
+      <input
+        ref={ref}
+        type="radio"
+        className={cn(
+          "aspect-square h-4 w-4 rounded-full border border-primary text-primary ring-offset-background focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50",
+          className
+        )}
+        checked={ctx.value === value}
+        onChange={() => ctx.onValueChange(value)}
+        {...props}
+      />
+    );
+  }
+);
+RadioGroupItem.displayName = "RadioGroupItem";
+
+// ─── Table ────────────────────────────────────────────────────────────────────
+
+export const Table = React.forwardRef<
+  HTMLTableElement,
+  React.HTMLAttributes<HTMLTableElement>
+>(({ className, ...props }, ref) => (
+  <div className="relative w-full overflow-auto">
+    <table
+      ref={ref}
+      className={cn("w-full caption-bottom text-sm", className)}
+      {...props}
+    />
+  </div>
+));
+Table.displayName = "Table";
+
+export const TableHeader = React.forwardRef<
+  HTMLTableSectionElement,
+  React.HTMLAttributes<HTMLTableSectionElement>
+>(({ className, ...props }, ref) => (
+  <thead ref={ref} className={cn("[&_tr]:border-b", className)} {...props} />
+));
+TableHeader.displayName = "TableHeader";
+
+export const TableBody = React.forwardRef<
+  HTMLTableSectionElement,
+  React.HTMLAttributes<HTMLTableSectionElement>
+>(({ className, ...props }, ref) => (
+  <tbody
+    ref={ref}
+    className={cn("[&_tr:last-child]:border-0", className)}
+    {...props}
+  />
+));
+TableBody.displayName = "TableBody";
+
+export const TableFooter = React.forwardRef<
+  HTMLTableSectionElement,
+  React.HTMLAttributes<HTMLTableSectionElement>
+>(({ className, ...props }, ref) => (
+  <tfoot
+    ref={ref}
+    className={cn("border-t bg-muted/50 font-medium [&>tr]:last:border-b-0", className)}
+    {...props}
+  />
+));
+TableFooter.displayName = "TableFooter";
+
+export const TableRow = React.forwardRef<
+  HTMLTableRowElement,
+  React.HTMLAttributes<HTMLTableRowElement> & { hover?: boolean }
+>(({ className, hover: _hover, ...props }, ref) => (
+  <tr
+    ref={ref}
+    className={cn(
+      "border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted",
+      className
+    )}
+    {...props}
+  />
+));
+TableRow.displayName = "TableRow";
+
+export const TableHead = React.forwardRef<
+  HTMLTableCellElement,
+  React.ThHTMLAttributes<HTMLTableCellElement>
+>(({ className, ...props }, ref) => (
+  <th
+    ref={ref}
+    className={cn(
+      "h-12 px-4 text-left align-middle font-medium text-muted-foreground [&:has([role=checkbox])]:pr-0",
+      className
+    )}
+    {...props}
+  />
+));
+TableHead.displayName = "TableHead";
+
+export const TableCell = React.forwardRef<
+  HTMLTableCellElement,
+  React.TdHTMLAttributes<HTMLTableCellElement>
+>(({ className, ...props }, ref) => (
+  <td
+    ref={ref}
+    className={cn("p-4 align-middle [&:has([role=checkbox])]:pr-0", className)}
+    {...props}
+  />
+));
+TableCell.displayName = "TableCell";
+
+export const TableCaption = React.forwardRef<
+  HTMLTableCaptionElement,
+  React.HTMLAttributes<HTMLTableCaptionElement>
+>(({ className, ...props }, ref) => (
+  <caption
+    ref={ref}
+    className={cn("mt-4 text-sm text-muted-foreground", className)}
+    {...props}
+  />
+));
+TableCaption.displayName = "TableCaption";
+
+// ─── Tabs ─────────────────────────────────────────────────────────────────────
+
+const TabsContext = React.createContext<{
+  value: string;
+  onValueChange: (value: string) => void;
+} | null>(null);
+
+export function Tabs({ value, onValueChange, children }: { value: string; onValueChange: (value: string) => void; children: React.ReactNode }) {
+  return (
+    <TabsContext.Provider value={{ value, onValueChange }}>
+      <div className="w-full">{children}</div>
+    </TabsContext.Provider>
+  );
+}
+
+export function TabsList({ className, children }: { className?: string; children: React.ReactNode }) {
+  return (
+    <div
+      className={cn(
+        "inline-flex h-10 items-center justify-center rounded-md bg-muted p-1 text-muted-foreground",
+        className
+      )}
+    >
+      {children}
+    </div>
+  );
+}
+
+export function TabsTrigger({ className, children, value }: { className?: string; children: React.ReactNode; value: string }) {
+  const ctx = React.useContext(TabsContext);
+  if (!ctx) throw new Error("TabsTrigger must be used within Tabs");
+
+  return (
+    <button
+      className={cn(
+        "inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1.5 text-sm font-medium ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50",
+        ctx.value === value
+          ? "bg-background text-foreground shadow-sm"
+          : "hover:bg-background hover:text-foreground",
+        className
+      )}
+      onClick={() => ctx.onValueChange(value)}
+    >
+      {children}
+    </button>
+  );
+}
+
+export function TabsContent({ className, children, value }: { className?: string; children: React.ReactNode; value: string }) {
+  const ctx = React.useContext(TabsContext);
+  if (!ctx) throw new Error("TabsContent must be used within Tabs");
+
+  return (
+    <div
+      className={cn(
+        "mt-2 ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+        ctx.value === value ? "block" : "hidden",
+        className
+      )}
+    >
+      {children}
+    </div>
+  );
+}
+
+// ─── Dialog ───────────────────────────────────────────────────────────────────
+
+const DialogContext = React.createContext<{
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+} | null>(null);
+
+export function Dialog({ open, onOpenChange, children }: { open: boolean; onOpenChange: (open: boolean) => void; children: React.ReactNode }) {
+  return (
+    <DialogContext.Provider value={{ open, onOpenChange }}>
+      {children}
+    </DialogContext.Provider>
+  );
+}
+
+export function DialogTrigger({ children }: { children: React.ReactNode }) {
+  return <>{children}</>;
+}
+
+export function DialogContent({ className, children }: { className?: string; children: React.ReactNode }) {
+  const ctx = React.useContext(DialogContext);
+  if (!ctx) throw new Error("DialogContent must be used within Dialog");
+
+  if (!ctx.open) return null;
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
+      onClick={() => ctx.onOpenChange(false)}
+    >
+      <div
+        className={cn(
+          "relative w-full max-w-lg gap-4 border bg-background p-6 shadow-lg duration-200 rounded-lg",
+          className
+        )}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <button
+          onClick={() => ctx.onOpenChange(false)}
+          className="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 text-foreground"
+          aria-label="Close"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M18 6 6 18"/><path d="m6 6 12 12"/>
+          </svg>
+        </button>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+export function DialogHeader({ className, children }: { className?: string; children: React.ReactNode }) {
+  return (
+    <div className={cn("flex flex-col space-y-1.5 text-center sm:text-left", className)}>
+      {children}
+    </div>
+  );
+}
+
+export function DialogFooter({ className, children }: { className?: string; children: React.ReactNode }) {
+  return (
+    <div className={cn("flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2", className)}>
+      {children}
+    </div>
+  );
+}
+
+export function DialogTitle({ className, children }: { className?: string; children: React.ReactNode }) {
+  return (
+    <h2 className={cn("text-lg font-semibold leading-none tracking-tight", className)}>
+      {children}
+    </h2>
+  );
+}
+
+export function DialogDescription({ className, children }: { className?: string; children: React.ReactNode }) {
+  return (
+    <p className={cn("text-sm text-muted-foreground", className)}>
+      {children}
+    </p>
+  );
+}
+
+// ─── Alert ───────────────────────────────────────────────────────────────────
+
+const alertVariants = cva(
+  "relative w-full rounded-lg border p-4",
+  {
+    variants: {
+      variant: {
+        default: "bg-background text-foreground",
+        destructive: "border-destructive/50 text-destructive dark:border-destructive [&>svg]:text-destructive",
+      },
+    },
+    defaultVariants: {
+      variant: "default",
+    },
+  }
+);
+
+export interface AlertProps extends React.HTMLAttributes<HTMLDivElement>, VariantProps<typeof alertVariants> {}
+
+export function Alert({ className, variant, children, ...props }: AlertProps) {
+  return (
+    <div
+      className={cn(alertVariants({ variant }), className)}
+      role="alert"
+      {...props}
+    >
+      {children}
+    </div>
+  );
+}
+
+export function AlertTitle({ className, children, ...props }: React.HTMLAttributes<HTMLHeadingElement>) {
+  return (
+    <h5
+      className={cn("mb-1 font-medium leading-none tracking-tight", className)}
+      {...props}
+    >
+      {children}
+    </h5>
+  );
+}
+
+export function AlertDescription({ className, children, ...props }: React.HTMLAttributes<HTMLDivElement>) {
+  return (
+    <div
+      className={cn("text-sm [&_p]:leading-relaxed", className)}
+      {...props}
+    >
+      {children}
+    </div>
+  );
+}
+
+// ─── Checkbox ──────────────────────────────────────────────────────────────────
+
+export interface CheckboxProps extends Omit<React.InputHTMLAttributes<HTMLInputElement>, "type"> {
+  checked?: boolean;
+  onCheckedChange?: (checked: boolean) => void;
+}
+
+export const Checkbox = React.forwardRef<HTMLInputElement, CheckboxProps>(
+  ({ className, checked, onCheckedChange, onChange, ...props }, ref) => {
+    return (
+      <input
+        type="checkbox"
+        ref={ref}
+        checked={checked}
+        onChange={(e) => {
+          onChange?.(e);
+          onCheckedChange?.(e.target.checked);
+        }}
+        className={cn(
+          "h-4 w-4 rounded border border-input bg-background ring-offset-background",
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+          "disabled:cursor-not-allowed disabled:opacity-50",
+          "cursor-pointer",
+          className
+        )}
+        {...props}
+      />
+    );
+  }
+);
+Checkbox.displayName = "Checkbox";
+
+// ─── Switch ───────────────────────────────────────────────────────────────────
+
+interface SwitchProps {
+  checked?: boolean;
+  onCheckedChange?: (checked: boolean) => void;
+  disabled?: boolean;
+  className?: string;
+}
+
+export const Switch = React.forwardRef<HTMLInputElement, SwitchProps>(
+  ({ className, checked, onCheckedChange, disabled, ...props }, ref) => {
+    return (
+      <input
+        type="checkbox"
+        ref={ref}
+        checked={checked}
+        onChange={(e) => {
+          onCheckedChange?.(e.target.checked);
+        }}
+        disabled={disabled}
+        className={cn(
+          "h-5 w-9 rounded-full bg-secondary border-2 border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-50",
+          checked ? "bg-primary" : "",
+          className
+        )}
+        {...props}
+      />
+    );
+  }
+);
+Switch.displayName = "Switch";
+
+export { cn };
