@@ -13,7 +13,7 @@ import { ResourceActionMenu } from "./ResourceActionMenu";
 import { ConfirmDeleteDialog } from "./ConfirmDeleteDialog";
 import { ScaleModal } from "./ScaleModal";
 import { EditResourceModal } from "./EditResourceModal";
-import { WorkloadLogsModal } from "./WorkloadLogsModal";
+import { openWorkloadLogsTab } from "@/lib/logsDock";
 import { useColumnConfig } from "@/hooks/useColumnConfig";
 import { DEFAULT_COLUMNS } from "@/config/defaultColumns";
 import { ColumnConfigModal } from "@/components/tables/ColumnConfigModal";
@@ -29,7 +29,6 @@ type ActiveModal =
   | { type: "scale"; deployment: DeploymentInfo }
   | { type: "restart"; deployment: DeploymentInfo }
   | { type: "rollback"; deployment: DeploymentInfo }
-  | { type: "logs"; deployment: DeploymentInfo }
   | { type: "edit"; deployment: DeploymentInfo; yaml: string }
   | { type: "delete"; deployment: DeploymentInfo }
   | null;
@@ -170,7 +169,13 @@ export function DeploymentList({ deployments, clusterId, namespace: _namespace, 
                         {
                           label: "Logs",
                           icon: FileText,
-                          onClick: () => setActiveModal({ type: "logs", deployment }),
+                          onClick: () =>
+                            openWorkloadLogsTab({
+                              clusterId,
+                              namespace: deployment.namespace,
+                              workloadName: deployment.name,
+                              workloadType: "deployment",
+                            }),
                         },
                         {
                           label: "Edit",
@@ -193,18 +198,6 @@ export function DeploymentList({ deployments, clusterId, namespace: _namespace, 
           </TableBody>
         </Table>
       </div>
-
-      {activeModal?.type === "logs" && (
-        <WorkloadLogsModal
-          open
-          onOpenChange={(o) => { if (!o) setActiveModal(null); }}
-          clusterId={clusterId}
-          namespace={activeModal.deployment.namespace}
-          workloadType="deployment"
-          workloadName={activeModal.deployment.name}
-          labels={activeModal.deployment.labels}
-        />
-      )}
 
       {activeModal?.type === "scale" && (
         <ScaleModal

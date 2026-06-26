@@ -282,8 +282,29 @@ pub async fn get_node_fingerprint(
         .ok_or_else(|| format!("No TLS fingerprint found for node {}", node))
 }
 
+/// Build the REST API path for a cross-cluster (remote) VM migration.
+///
+/// IMPORTANT: the Proxmox REST API registers this endpoint as
+/// `{vmid}/remote_migrate` (underscore). `remote-migrate` (dash) is only the
+/// `qm` CLI command name and is **not** a valid REST path — using it makes PVE
+/// return `501 Not Implemented`.
+pub fn remote_migrate_path(node: &str, vmid: u32) -> String {
+    format!("nodes/{}/qemu/{}/remote_migrate", node, vmid)
+}
+
+/// Validate the path-interpolated identifiers for a remote migration before any
+/// request is built. `node` flows into the URL path, so it must pass the shared
+/// node allowlist; `vmid` must be in range. Enforced here so the cross-cluster
+/// caller benefits from the same traversal/injection choke-point as the
+/// single-cluster path.
+pub fn validate_remote_migrate_inputs(node: &str, vmid: u32) -> Result<(), String> {
+    crate::proxmox::validate::validate_node(node)?;
+    crate::proxmox::validate::validate_vmid(vmid)?;
+    Ok(())
+}
+
 /// Perform a cross-cluster (remote) VM migration.
-/// POST /nodes/{node}/qemu/{vmid}/remote-migrate
+/// POST /nodes/{node}/qemu/{vmid}/remote_migrate
 ///
 /// `target_endpoint` is the property string built by
 /// [`build_remote_target_endpoint`]. Returns the UPID task string.
@@ -298,9 +319,10 @@ pub async fn remote_migrate_vm(
     online: bool,
     ticket: &str,
 ) -> Result<String, String> {
+    validate_remote_migrate_inputs(node, vmid)?;
     let online_str = if online { "1" } else { "0" };
     let vmid_str = vmid.to_string();
-    let path = format!("nodes/{}/qemu/{}/remote-migrate", node, vmid);
+    let path = remote_migrate_path(node, vmid);
     let params: &[(&str, &str)] = &[
         ("target-endpoint", target_endpoint),
         ("target-vmid", &vmid_str),
@@ -342,6 +364,34 @@ pub async fn cancel_migration(
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn test_validate_remote_migrate_inputs_rejects_path_traversal_node() {
+        // The cross-cluster migration path interpolates `node` into the URL, so
+        // a node containing path separators must be rejected before any request
+        // is built (mirrors the single-cluster choke-point).
+        assert!(validate_remote_migrate_inputs("vmhost3", 104).is_ok());
+        assert!(validate_remote_migrate_inputs("../../etc", 104).is_err());
+        assert!(validate_remote_migrate_inputs("node/evil", 104).is_err());
+        assert!(validate_remote_migrate_inputs("node%2fevil", 104).is_err());
+        // vmid out of range is also rejected.
+        assert!(validate_remote_migrate_inputs("vmhost3", 1).is_err());
+    }
+
+    #[test]
+    fn test_remote_migrate_path_uses_rest_underscore_form() {
+        // Regression guard for the 501 Not Implemented bug: the PVE REST API
+        // endpoint is `{vmid}/remote_migrate` (underscore). The dashed
+        // `remote-migrate` is only the `qm` CLI name and 501s over REST.
+        assert_eq!(
+            remote_migrate_path("vmhost3", 104),
+            "nodes/vmhost3/qemu/104/remote_migrate"
+        );
+        assert!(
+            !remote_migrate_path("n", 1).contains("remote-migrate"),
+            "REST path must not use the dashed CLI form"
+        );
+    }
 
     #[test]
     fn test_interpret_running() {

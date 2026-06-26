@@ -1620,7 +1620,7 @@ export interface CephMgr {
 export interface CephFs {
   name: string;
   metadataPool?: string;
-  dataPoolIds?: number[];
+  dataPool?: string;
 }
 
 export interface CephHealth {
@@ -1927,10 +1927,16 @@ export const listCephfs = (
   node: string
 ): Promise<CephFs[]> => invoke("list_cephfs", { clusterId, node });
 
+export interface CephFlag {
+  name: string;
+  value: number;
+  description?: string;
+}
+
 export const getCephFlags = (
   clusterId: string,
   node: string
-): Promise<Record<string, unknown>> =>
+): Promise<CephFlag[]> =>
   invoke("get_ceph_flags", { clusterId, node });
 
 // ─── Firewall (cluster + guest) ───────────────────────────────────────────────

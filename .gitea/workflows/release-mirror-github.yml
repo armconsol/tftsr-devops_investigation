@@ -1,0 +1,155 @@
+name: Mirror Release Assets to GitHub
+
+# Copies a Gitea release (notes, prerelease flag and all binary assets) to the
+# corresponding GitHub Release on the public mirror. The Gitea pipeline remains
+# the single builder; this job only re-publishes the already-built artifacts.
+#
+#   - release (published/edited): mirror just that release.
+#   - workflow_dispatch:          mirror a specific tag, or ALL releases when
+#                                 the `tag` input is left empty (backfill).
+on:
+  release:
+    types: [published, edited]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to mirror (leave empty to backfill ALL releases)"
+        required: false
+        default: ""
+
+concurrency:
+  group: release-mirror-github
+  cancel-in-progress: false
+
+jobs:
+  mirror:
+    runs-on: linux-amd64
+    container:
+      image: alpine:latest
+    steps:
+      - name: Install dependencies
+        run: apk add --no-cache curl jq
+
+      - name: Mirror release(s) to GitHub
+        env:
+          GITEA_API: ${{ secrets.GITEA_API_URL }}/api/v1/repos/${{ github.repository }}
+          GITEA_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          GH_REPO: armconsol/tftsr-devops_investigation
+          GH_TOKEN: ${{ secrets.GH_RELEASE_TOKEN }}
+          EVENT_TAG: ${{ github.event.release.tag_name }}
+          INPUT_TAG: ${{ github.event.inputs.tag }}
+        run: |
+          set -euo pipefail
+
+          GH_API="https://api.github.com/repos/${GH_REPO}"
+          GH_UPLOADS="https://uploads.github.com/repos/${GH_REPO}"
+          WORK="$(mktemp -d)"
+
+          gh_curl() {
+            curl -sS -H "Authorization: Bearer ${GH_TOKEN}" \
+                 -H "Accept: application/vnd.github+json" \
+                 -H "X-GitHub-Api-Version: 2022-11-28" "$@"
+          }
+          gitea_curl() {
+            curl -sS -H "Authorization: token ${GITEA_TOKEN}" "$@"
+          }
+
+          # Resolve which tags to mirror.
+          if [ -n "${EVENT_TAG}" ]; then
+            TAGS="${EVENT_TAG}"
+          elif [ -n "${INPUT_TAG}" ]; then
+            TAGS="${INPUT_TAG}"
+          else
+            echo "No tag specified — backfilling ALL Gitea releases."
+            TAGS="$(gitea_curl "${GITEA_API}/releases?limit=100" | jq -r '.[].tag_name')"
+          fi
+
+          if [ -z "${TAGS}" ]; then
+            echo "Nothing to mirror."
+            exit 0
+          fi
+
+          mirror_one() {
+            TAG="$1"
+            echo "════════ Mirroring ${TAG} ════════"
+
+            REL="$(gitea_curl "${GITEA_API}/releases/tags/${TAG}")"
+            REL_ID="$(echo "${REL}" | jq -r '.id // empty')"
+            if [ -z "${REL_ID}" ]; then
+              echo "  ⚠ No Gitea release for ${TAG}; skipping."
+              return 0
+            fi
+
+            NAME="$(echo "${REL}" | jq -r '.name // .tag_name')"
+            BODY="$(echo "${REL}" | jq -r '.body // ""')"
+            PRERELEASE="$(echo "${REL}" | jq -r '.prerelease')"
+            TARGET="$(echo "${REL}" | jq -r '.target_commitish // empty')"
+
+            # Find or create the GitHub release for this tag. target_commitish is
+            # only honoured by GitHub when the tag does not yet exist; if the
+            # push-mirror has already created the tag it is ignored.
+            GH_REL="$(gh_curl "${GH_API}/releases/tags/${TAG}")"
+            GH_REL_ID="$(echo "${GH_REL}" | jq -r '.id // empty')"
+
+            PAYLOAD="$(jq -n \
+              --arg tag "${TAG}" \
+              --arg name "${NAME}" \
+              --arg body "${BODY}" \
+              --arg target "${TARGET}" \
+              --argjson prerelease "${PRERELEASE}" \
+              '{tag_name: $tag, name: $name, body: $body, draft: false, prerelease: $prerelease}
+               + (if $target == "" then {} else {target_commitish: $target} end)')"
+
+            if [ -z "${GH_REL_ID}" ]; then
+              echo "  Creating GitHub release ${TAG}..."
+              GH_REL="$(gh_curl -X POST "${GH_API}/releases" -d "${PAYLOAD}")"
+              GH_REL_ID="$(echo "${GH_REL}" | jq -r '.id // empty')"
+            else
+              echo "  Updating GitHub release ${TAG} (id=${GH_REL_ID})..."
+              GH_REL="$(gh_curl -X PATCH "${GH_API}/releases/${GH_REL_ID}" -d "${PAYLOAD}")"
+            fi
+
+            if [ -z "${GH_REL_ID}" ]; then
+              echo "  ✗ Failed to create/find GitHub release for ${TAG}"
+              echo "${GH_REL}" | jq -r '.message // .' || true
+              return 1
+            fi
+
+            # Names of assets already on the GitHub release (for idempotent re-runs).
+            EXISTING="$(echo "${GH_REL}" | jq -r '.assets[]?.name')"
+
+            # Walk every Gitea asset, download internally, upload to GitHub.
+            echo "${REL}" | jq -c '.assets[]?' | while read -r ASSET; do
+              A_NAME="$(echo "${ASSET}" | jq -r '.name')"
+              A_URL="$(echo "${ASSET}" | jq -r '.browser_download_url')"
+              # GitHub normalises spaces in asset names to periods.
+              GH_NAME="$(echo "${A_NAME}" | tr ' ' '.')"
+
+              if echo "${EXISTING}" | grep -qxF "${GH_NAME}"; then
+                echo "  • ${GH_NAME} already present; skipping."
+                continue
+              fi
+
+              echo "  ↓ ${A_NAME} → ${GH_NAME}"
+              gitea_curl -L -o "${WORK}/asset.bin" "${A_URL}"
+
+              echo "  ↑ uploading ${GH_NAME}"
+              curl -sS -X POST \
+                -H "Authorization: Bearer ${GH_TOKEN}" \
+                -H "Content-Type: application/octet-stream" \
+                -H "X-GitHub-Api-Version: 2022-11-28" \
+                --data-binary "@${WORK}/asset.bin" \
+                "${GH_UPLOADS}/releases/${GH_REL_ID}/assets?name=$(jq -rn --arg n "${GH_NAME}" '$n|@uri')" \
+                | jq -r '.name // .message // "  (no response)"'
+              rm -f "${WORK}/asset.bin"
+            done
+
+            echo "  ✓ ${TAG} mirrored."
+          }
+
+          RC=0
+          for TAG in ${TAGS}; do
+            mirror_one "${TAG}" || RC=1
+          done
+          rm -rf "${WORK}"
+          exit "${RC}"

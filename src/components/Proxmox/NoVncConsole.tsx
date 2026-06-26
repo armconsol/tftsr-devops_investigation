@@ -2,8 +2,10 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import RFB from '@novnc/novnc';
 import { Button } from '@/components/ui/index';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/index';
-import { Loader2, Power, RotateCcw, Keyboard, AlertCircle } from 'lucide-react';
+import { Loader2, Power, RotateCcw, Keyboard, Clipboard, AlertCircle } from 'lucide-react';
 import { openVncConsole, openLxcConsole } from '@/lib/proxmoxClient';
+import { readClipboardText, writeClipboardText } from '@/lib/clipboard';
+import { isPasteShortcut } from '@/lib/consoleClipboard';
 
 export type ConsoleKind = 'qemu' | 'lxc';
 
@@ -81,6 +83,13 @@ export function NoVncConsole({ clusterId, node, vmId, kind, title }: NoVncConsol
         setStatus('error');
         setError(`Authentication failed: ${detail?.reason ?? 'unknown reason'}`);
       });
+      // Guest → host copy: noVNC emits `clipboard` when the remote session's
+      // clipboard changes (RFB CutText / extended clipboard). Mirror it to the
+      // system clipboard so the user can paste elsewhere.
+      rfb.addEventListener('clipboard', (e: Event) => {
+        const detail = (e as CustomEvent<{ text?: string }>).detail;
+        if (detail?.text) void writeClipboardText(detail.text);
+      });
 
       rfbRef.current = rfb;
     } catch (err) {
@@ -99,6 +108,26 @@ export function NoVncConsole({ clusterId, node, vmId, kind, title }: NoVncConsol
     rfbRef.current?.sendCtrlAltDel();
   }, []);
 
+  // Host → guest paste: read the system clipboard and push it into the remote
+  // session. Bound to a button and to Ctrl/Cmd+Shift+V (Ctrl+V must reach the
+  // guest unmodified).
+  const handlePaste = useCallback(async () => {
+    if (!rfbRef.current || status !== 'connected') return;
+    const text = await readClipboardText();
+    if (text) rfbRef.current.clipboardPasteFrom(text);
+  }, [status]);
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (isPasteShortcut(e)) {
+        e.preventDefault();
+        void handlePaste();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [handlePaste]);
+
   return (
     <div className="flex h-full flex-col gap-3">
       <div className="flex items-center justify-between">
@@ -110,6 +139,10 @@ export function NoVncConsole({ clusterId, node, vmId, kind, title }: NoVncConsol
           <Button variant="outline" size="sm" onClick={handleCtrlAltDel} disabled={status !== 'connected'}>
             <Keyboard className="mr-2 h-4 w-4" />
             Ctrl+Alt+Del
+          </Button>
+          <Button variant="outline" size="sm" onClick={handlePaste} disabled={status !== 'connected'} title="Paste clipboard into guest (Ctrl+Shift+V)">
+            <Clipboard className="mr-2 h-4 w-4" />
+            Paste
           </Button>
           <Button variant="outline" size="sm" onClick={connect}>
             <RotateCcw className="mr-2 h-4 w-4" />
