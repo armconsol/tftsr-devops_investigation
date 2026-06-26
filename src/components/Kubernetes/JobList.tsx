@@ -6,7 +6,7 @@ import { deleteResourceCmd, getResourceYamlCmd } from "@/lib/tauriCommands";
 import { ResourceActionMenu } from "./ResourceActionMenu";
 import { ConfirmDeleteDialog } from "./ConfirmDeleteDialog";
 import { EditResourceModal } from "./EditResourceModal";
-import { WorkloadLogsModal } from "./WorkloadLogsModal";
+import { openWorkloadLogsTab } from "@/lib/logsDock";
 import { useColumnConfig } from "@/hooks/useColumnConfig";
 import { DEFAULT_COLUMNS } from "@/config/defaultColumns";
 import { ColumnConfigModal } from "@/components/tables/ColumnConfigModal";
@@ -21,7 +21,6 @@ interface JobListProps {
 }
 
 type ActiveModal =
-  | { type: "logs"; job: JobInfo }
   | { type: "edit"; job: JobInfo; yaml: string }
   | { type: "delete"; job: JobInfo }
   | null;
@@ -131,7 +130,13 @@ export function JobList({
                         {
                           label: "Logs",
                           icon: FileText,
-                          onClick: () => setActiveModal({ type: "logs", job }),
+                          onClick: () =>
+                            openWorkloadLogsTab({
+                              clusterId: cid,
+                              namespace: job.namespace,
+                              workloadName: job.name,
+                              workloadType: "job",
+                            }),
                         },
                         {
                           label: "Edit",
@@ -154,18 +159,6 @@ export function JobList({
           </TableBody>
         </Table>
       </div>
-
-      {activeModal?.type === "logs" && (
-        <WorkloadLogsModal
-          open
-          onOpenChange={(o) => { if (!o) setActiveModal(null); }}
-          clusterId={cid}
-          namespace={activeModal.job.namespace}
-          workloadType="job"
-          workloadName={activeModal.job.name}
-          labels={activeModal.job.labels}
-        />
-      )}
 
       {activeModal?.type === "edit" && (
         <EditResourceModal

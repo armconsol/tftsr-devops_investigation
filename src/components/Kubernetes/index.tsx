@@ -62,6 +62,5 @@ export { EndpointSliceList } from "./EndpointSliceList";
 export { IngressClassList } from "./IngressClassList";
 export { NamespaceList } from "./NamespaceList";
 export { WorkloadOverview } from "./WorkloadOverview";
-export { WorkloadLogsModal } from "./WorkloadLogsModal";
 export { CrdList } from "./CrdList";
 export { CustomResourceList } from "./CustomResourceList";
