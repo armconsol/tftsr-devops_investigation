@@ -22,7 +22,7 @@ jobs:
     outputs:
       release_tag: ${{ steps.bump.outputs.release_tag }}
     steps:
-      - name: Bump patch version and create tag
+      - name: Bump version, edit config files, and create tag
         id: bump
         env:
           RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
@@ -32,7 +32,7 @@ jobs:
 
           API="http://172.0.0.29:3000/api/v1/repos/$GITHUB_REPOSITORY"
 
-          # Checkout the source so we can read Cargo.toml
+          # Checkout master so we can read versions and commit the bump back
           git init
           git remote add origin "http://oauth2:${RELEASE_TOKEN}@172.0.0.29:3000/${GITHUB_REPOSITORY}.git"
           git fetch --depth=1 origin "$GITHUB_SHA"
@@ -45,36 +45,70 @@ jobs:
           CARGO_TAG="v${CARGO_VERSION}"
           echo "Cargo.toml declares: $CARGO_TAG"
 
-          # Get the latest clean semver tag (vX.Y.Z only, ignore rc/test suffixes)
+          # Get the latest clean semver tag (vX.Y.Z only, ignore beta/rc suffixes)
           LATEST=$(curl -s "$API/tags?limit=50" \
             -H "Authorization: token $RELEASE_TOKEN" | \
             jq -r '.[].name' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | \
             sort -V | tail -1)
-          echo "Latest git tag: ${LATEST:-none}"
+          echo "Latest stable tag: ${LATEST:-none}"
 
-          # Version resolution:
-          #   1. Cargo.toml > latest tag → use Cargo.toml (major/minor bump)
-          #   2. Cargo.toml == latest tag → tag already exists, use it for builds
-          #   3. Cargo.toml < latest tag  → auto-increment patch on latest tag
+          # Version resolution policy:
+          #   - No prior tag            → use Cargo.toml as-is.
+          #   - Cargo.toml > latest tag → use Cargo.toml. This is how an explicit
+          #                               MAJOR (or higher) bump is signalled from a
+          #                               beta PR; master never invents a major itself.
+          #   - Cargo.toml <= latest    → default MINOR bump off the latest tag
+          #                               (vX.Y.Z → vX.(Y+1).0). Every beta→master
+          #                               promotion ships a new minor stable.
           if [ -z "$LATEST" ]; then
             NEXT="$CARGO_TAG"
-          elif [ "$(printf '%s\n' "$LATEST" "$CARGO_TAG" | sort -V | tail -1)" = "$CARGO_TAG" ]; then
-            # Cargo.toml >= latest tag (covers both "ahead" and "equal" cases)
+          elif [ "$CARGO_TAG" != "$LATEST" ] && \
+               [ "$(printf '%s\n' "$LATEST" "$CARGO_TAG" | sort -V | tail -1)" = "$CARGO_TAG" ]; then
             NEXT="$CARGO_TAG"
-            if [ "$CARGO_TAG" = "$LATEST" ]; then
-              echo "Cargo.toml matches latest tag — reusing $NEXT for builds"
-            else
-              echo "Cargo.toml version $CARGO_TAG is ahead of $LATEST — using Cargo.toml"
-            fi
+            echo "Cargo.toml $CARGO_TAG is ahead of $LATEST — honoring explicit bump"
           else
             MAJOR=$(echo "$LATEST" | cut -d. -f1 | tr -d 'v')
             MINOR=$(echo "$LATEST" | cut -d. -f2)
-            PATCH=$(echo "$LATEST" | cut -d. -f3)
-            NEXT="v${MAJOR}.${MINOR}.$((PATCH + 1))"
+            NEXT="v${MAJOR}.$((MINOR + 1)).0"
+            echo "Default minor bump: $LATEST → $NEXT"
           fi
 
-          echo "Latest tag: ${LATEST:-none}  →  Next: $NEXT"
+          NEW_VERSION="${NEXT#v}"
+          echo "Resolved next release: $NEXT (version $NEW_VERSION)"
 
+          # If the resolved version differs from what the config files declare,
+          # rewrite all version-bearing files so the built binaries report $NEXT,
+          # then commit the bump back to master ([skip ci] avoids re-triggering).
+          if [ "$NEW_VERSION" != "$CARGO_VERSION" ]; then
+            echo "Updating version files: $CARGO_VERSION → $NEW_VERSION"
+
+            # src-tauri/Cargo.toml — first 'version = "..."' (the [package] one)
+            sed -i "0,/^version = \".*\"/s//version = \"${NEW_VERSION}\"/" src-tauri/Cargo.toml
+
+            # package.json — top-level "version": "..."
+            sed -i "0,/\"version\": \".*\"/s//\"version\": \"${NEW_VERSION}\"/" package.json
+
+            # src-tauri/tauri.conf.json — top-level "version": "..."
+            sed -i "0,/\"version\": \".*\"/s//\"version\": \"${NEW_VERSION}\"/" src-tauri/tauri.conf.json
+
+            # src-tauri/Cargo.lock — the version line for the trcaa crate entry
+            sed -i "/^name = \"trcaa\"/{n;s/^version = \".*\"/version = \"${NEW_VERSION}\"/}" src-tauri/Cargo.lock
+
+            # Unshallow so pushing a new commit to master is accepted (Gitea
+            # rejects branch updates from a shallow clone).
+            git fetch --unshallow origin 2>/dev/null \
+              || git fetch --depth=2147483647 origin 2>/dev/null || true
+
+            git add src-tauri/Cargo.toml package.json src-tauri/tauri.conf.json src-tauri/Cargo.lock
+            git commit -m "chore: release ${NEXT} [skip ci]"
+            git push origin HEAD:master
+            echo "✓ Version bump committed to master"
+          else
+            echo "Config files already at $NEW_VERSION — no bump commit needed"
+          fi
+
+          # Tag the current HEAD — the bump commit when one was made, otherwise the
+          # merge commit (explicit-ahead or first-tag case).
           if git ls-remote --exit-code --tags origin "refs/tags/$NEXT" >/dev/null 2>&1; then
             echo "Tag $NEXT already exists; builds will target this tag."
           else
@@ -107,7 +141,12 @@ jobs:
             "http://oauth2:${RELEASE_TOKEN}@172.0.0.29:3000/${GITHUB_REPOSITORY}.git"
           git fetch --unshallow origin || git fetch --depth=2147483647 origin || true
           git fetch --tags origin
-          git checkout "$GITHUB_SHA" 2>/dev/null || git checkout FETCH_HEAD
+          # Base the CHANGELOG commit on the CURRENT master tip. The autotag job
+          # may have just pushed a "chore: release vX.Y.0 [skip ci]" version-bump
+          # commit to master; checking out $GITHUB_SHA (the pre-bump merge commit)
+          # would make the later 'git push origin HEAD:master' a non-fast-forward.
+          git fetch origin master
+          git checkout -B master FETCH_HEAD
           git config user.name "gitea-actions[bot]"
           git config user.email "gitea-actions@local"
 
@@ -353,12 +392,14 @@ jobs:
     runs-on: linux-amd64
     container:
       image: 172.0.0.29:3000/sarman/tftsr-linux-amd64:rust1.88-node22
+    env:
+      RELEASE_TAG: ${{ needs.autotag.outputs.release_tag }}
     steps:
       - name: Checkout
         run: |
           git init
           git remote add origin http://172.0.0.29:3000/sarman/tftsr-devops_investigation.git
-          git fetch --depth=1 origin "$GITHUB_SHA"
+          git fetch --depth=1 origin "refs/tags/${RELEASE_TAG}"
           git checkout FETCH_HEAD
       - name: Cache cargo registry
         uses: actions/cache@v4
@@ -392,12 +433,9 @@ jobs:
         run: |
           set -eu
           API="http://172.0.0.29:3000/api/v1/repos/$GITHUB_REPOSITORY"
-          TAG=$(curl -s "$API/tags?limit=50" \
-            -H "Authorization: token $RELEASE_TOKEN" | \
-            jq -r '.[].name' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | \
-            sort -V | tail -1 || true)
+          TAG="${RELEASE_TAG}"
           if [ -z "$TAG" ]; then
-            echo "ERROR: Could not resolve release tag from repository tags."
+            echo "ERROR: release_tag from autotag job is empty."
             exit 1
           fi
           echo "Creating release for $TAG..."
@@ -451,12 +489,14 @@ jobs:
     runs-on: linux-amd64
     container:
       image: 172.0.0.29:3000/sarman/tftsr-windows-cross:rust1.88-node22
+    env:
+      RELEASE_TAG: ${{ needs.autotag.outputs.release_tag }}
     steps:
       - name: Checkout
         run: |
           git init
           git remote add origin http://172.0.0.29:3000/sarman/tftsr-devops_investigation.git
-          git fetch --depth=1 origin "$GITHUB_SHA"
+          git fetch --depth=1 origin "refs/tags/${RELEASE_TAG}"
           git checkout FETCH_HEAD
       - name: Cache cargo registry
         uses: actions/cache@v4
@@ -495,12 +535,9 @@ jobs:
         run: |
           set -eu
           API="http://172.0.0.29:3000/api/v1/repos/$GITHUB_REPOSITORY"
-          TAG=$(curl -s "$API/tags?limit=50" \
-            -H "Authorization: token $RELEASE_TOKEN" | \
-            jq -r '.[].name' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | \
-            sort -V | tail -1 || true)
+          TAG="${RELEASE_TAG}"
           if [ -z "$TAG" ]; then
-            echo "ERROR: Could not resolve release tag from repository tags."
+            echo "ERROR: release_tag from autotag job is empty."
             exit 1
           fi
           echo "Creating release for $TAG..."
@@ -551,12 +588,14 @@ jobs:
   build-macos-arm64:
     needs: autotag
     runs-on: macos-arm64
+    env:
+      RELEASE_TAG: ${{ needs.autotag.outputs.release_tag }}
     steps:
       - name: Checkout
         run: |
           git init
           git remote add origin http://172.0.0.29:3000/sarman/tftsr-devops_investigation.git
-          git fetch --depth=1 origin "$GITHUB_SHA"
+          git fetch --depth=1 origin "refs/tags/${RELEASE_TAG}"
           git checkout FETCH_HEAD
       - name: Build
         env:
@@ -581,12 +620,9 @@ jobs:
         run: |
           set -eu
           API="http://172.0.0.29:3000/api/v1/repos/$GITHUB_REPOSITORY"
-          TAG=$(curl -s "$API/tags?limit=50" \
-            -H "Authorization: token $RELEASE_TOKEN" | \
-            jq -r '.[].name' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | \
-            sort -V | tail -1 || true)
+          TAG="${RELEASE_TAG}"
           if [ -z "$TAG" ]; then
-            echo "ERROR: Could not resolve release tag from repository tags."
+            echo "ERROR: release_tag from autotag job is empty."
             exit 1
           fi
           echo "Creating release for $TAG..."
@@ -638,12 +674,14 @@ jobs:
     runs-on: linux-amd64
     container:
       image: 172.0.0.29:3000/sarman/tftsr-linux-arm64:rust1.88-node22
+    env:
+      RELEASE_TAG: ${{ needs.autotag.outputs.release_tag }}
     steps:
       - name: Checkout
         run: |
           git init
           git remote add origin http://172.0.0.29:3000/sarman/tftsr-devops_investigation.git
-          git fetch --depth=1 origin "$GITHUB_SHA"
+          git fetch --depth=1 origin "refs/tags/${RELEASE_TAG}"
           git checkout FETCH_HEAD
       - name: Cache cargo registry
         uses: actions/cache@v4
@@ -686,12 +724,9 @@ jobs:
         run: |
           set -eu
           API="http://172.0.0.29:3000/api/v1/repos/$GITHUB_REPOSITORY"
-          TAG=$(curl -s "$API/tags?limit=50" \
-            -H "Authorization: token $RELEASE_TOKEN" | \
-            jq -r '.[].name' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | \
-            sort -V | tail -1 || true)
+          TAG="${RELEASE_TAG}"
           if [ -z "$TAG" ]; then
-            echo "ERROR: Could not resolve release tag from repository tags."
+            echo "ERROR: release_tag from autotag job is empty."
             exit 1
           fi
           echo "Creating release for $TAG..."
