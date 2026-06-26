@@ -1,0 +1,237 @@
+name: Test
+
+on:
+  push:
+    branches:
+      - master
+      - beta
+  pull_request:
+
+jobs:
+  rust-fmt-check:
+    runs-on: ubuntu-latest
+    container:
+      image: rustlang/rust:nightly
+    env:
+      SODIUM_LIB_DIR: /usr/lib/x86_64-linux-gnu
+    steps:
+      - name: Checkout
+        run: |
+          set -eux
+          git init
+          git remote add origin https://gogs.tftsr.com/sarman/tftsr-devops_investigation.git
+          if [ -n "${GITHUB_SHA:-}" ] && git fetch --depth=1 origin "$GITHUB_SHA"; then
+            echo "Fetched commit SHA: $GITHUB_SHA"
+          elif [ -n "${GITHUB_REF_NAME:-}" ] && git fetch --depth=1 origin "$GITHUB_REF_NAME"; then
+            echo "Fetched ref name: $GITHUB_REF_NAME"
+          elif [ -n "${GITHUB_REF:-}" ]; then
+            REF_NAME="${GITHUB_REF#refs/heads/}"
+            git fetch --depth=1 origin "$REF_NAME"
+            echo "Fetched ref from GITHUB_REF: $REF_NAME"
+          else
+            git fetch --depth=1 origin master
+            echo "Fetched fallback ref: master"
+          fi
+          git checkout FETCH_HEAD
+      - name: Install Node.js
+        run: |
+          apt-get update && apt-get install -y curl
+          curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+          apt-get install -y nodejs
+      - name: Install system dependencies
+        run: |
+          apt-get update && apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libssl-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libdbus-1-dev \
+            libsodium-dev \
+            pkg-config
+      - name: Install Rust components
+        run: rustup component add rustfmt
+      - name: Install dependencies with retry
+        run: |
+          for i in 1 2 3; do
+            if npm install --legacy-peer-deps --prefer-offline --no-audit; then
+              exit 0
+            fi
+            echo "Attempt $i failed, retrying in 5 seconds..."
+            sleep 5
+          done
+          echo "All retry attempts failed"
+          exit 1
+      - name: Update version from Git
+        run: node scripts/update-version.mjs
+      - run: cargo generate-lockfile --manifest-path src-tauri/Cargo.toml
+      - run: cargo fmt --manifest-path src-tauri/Cargo.toml --check
+
+  rust-clippy:
+    runs-on: ubuntu-latest
+    container:
+      image: rustlang/rust:nightly
+    env:
+      SODIUM_LIB_DIR: /usr/lib/x86_64-linux-gnu
+    steps:
+      - name: Checkout
+        run: |
+          set -eux
+          git init
+          git remote add origin https://gogs.tftsr.com/sarman/tftsr-devops_investigation.git
+          if [ -n "${GITHUB_SHA:-}" ] && git fetch --depth=1 origin "$GITHUB_SHA"; then
+            echo "Fetched commit SHA: $GITHUB_SHA"
+          elif [ -n "${GITHUB_REF_NAME:-}" ] && git fetch --depth=1 origin "$GITHUB_REF_NAME"; then
+            echo "Fetched ref name: $GITHUB_REF_NAME"
+          elif [ -n "${GITHUB_REF:-}" ]; then
+            REF_NAME="${GITHUB_REF#refs/heads/}"
+            git fetch --depth=1 origin "$REF_NAME"
+            echo "Fetched ref from GITHUB_REF: $REF_NAME"
+          else
+            git fetch --depth=1 origin master
+            echo "Fetched fallback ref: master"
+          fi
+          git checkout FETCH_HEAD
+      - name: Install system dependencies
+        run: |
+          apt-get update && apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libssl-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libdbus-1-dev \
+            libsodium-dev \
+            pkg-config
+      - name: Install clippy
+        run: rustup component add clippy
+      - run: cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
+
+  rust-tests:
+    runs-on: ubuntu-latest
+    container:
+      image: rustlang/rust:nightly
+    env:
+      SODIUM_LIB_DIR: /usr/lib/x86_64-linux-gnu
+    steps:
+      - name: Checkout
+        run: |
+          set -eux
+          git init
+          git remote add origin https://gogs.tftsr.com/sarman/tftsr-devops_investigation.git
+          if [ -n "${GITHUB_SHA:-}" ] && git fetch --depth=1 origin "$GITHUB_SHA"; then
+            echo "Fetched commit SHA: $GITHUB_SHA"
+          elif [ -n "${GITHUB_REF_NAME:-}" ] && git fetch --depth=1 origin "$GITHUB_REF_NAME"; then
+            echo "Fetched ref name: $GITHUB_REF_NAME"
+          elif [ -n "${GITHUB_REF:-}" ]; then
+            REF_NAME="${GITHUB_REF#refs/heads/}"
+            git fetch --depth=1 origin "$REF_NAME"
+            echo "Fetched ref from GITHUB_REF: $REF_NAME"
+          else
+            git fetch --depth=1 origin master
+            echo "Fetched fallback ref: master"
+          fi
+          git checkout FETCH_HEAD
+      - name: Install system dependencies
+        run: |
+          apt-get update && apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libssl-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libdbus-1-dev \
+            libsodium-dev \
+            pkg-config
+      - run: cargo test --manifest-path src-tauri/Cargo.toml -- --test-threads=1
+
+      - name: Run shell module tests
+        run: 'cargo test --manifest-path src-tauri/Cargo.toml "shell::" -- --test-threads=1'
+
+  frontend-typecheck:
+    runs-on: ubuntu-latest
+    container:
+      image: node:22-alpine
+    steps:
+      - name: Checkout
+        run: |
+          set -eux
+          apk add --no-cache git
+          git init
+          git remote add origin https://gogs.tftsr.com/sarman/tftsr-devops_investigation.git
+          if [ -n "${GITHUB_SHA:-}" ] && git fetch --depth=1 origin "$GITHUB_SHA"; then
+            echo "Fetched commit SHA: $GITHUB_SHA"
+          elif [ -n "${GITHUB_REF_NAME:-}" ] && git fetch --depth=1 origin "$GITHUB_REF_NAME"; then
+            echo "Fetched ref name: $GITHUB_REF_NAME"
+          elif [ -n "${GITHUB_REF:-}" ]; then
+            REF_NAME="${GITHUB_REF#refs/heads/}"
+            git fetch --depth=1 origin "$REF_NAME"
+            echo "Fetched ref from GITHUB_REF: $REF_NAME"
+          else
+            git fetch --depth=1 origin master
+            echo "Fetched fallback ref: master"
+          fi
+          git checkout FETCH_HEAD
+      - name: Cache npm
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-npm-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-npm-
+      - name: Install dependencies with retry
+        run: |
+          for i in 1 2 3; do
+            if npm ci --legacy-peer-deps --prefer-offline --no-audit; then
+              exit 0
+            fi
+            echo "Attempt $i failed, retrying in 5 seconds..."
+            sleep 5
+          done
+          echo "All retry attempts failed"
+          exit 1
+      - run: npx tsc --noEmit
+
+  frontend-tests:
+    runs-on: ubuntu-latest
+    container:
+      image: node:22-alpine
+    steps:
+      - name: Checkout
+        run: |
+          set -eux
+          apk add --no-cache git
+          git init
+          git remote add origin https://gogs.tftsr.com/sarman/tftsr-devops_investigation.git
+          if [ -n "${GITHUB_SHA:-}" ] && git fetch --depth=1 origin "$GITHUB_SHA"; then
+            echo "Fetched commit SHA: $GITHUB_SHA"
+          elif [ -n "${GITHUB_REF_NAME:-}" ] && git fetch --depth=1 origin "$GITHUB_REF_NAME"; then
+            echo "Fetched ref name: $GITHUB_REF_NAME"
+          elif [ -n "${GITHUB_REF:-}" ]; then
+            REF_NAME="${GITHUB_REF#refs/heads/}"
+            git fetch --depth=1 origin "$REF_NAME"
+            echo "Fetched ref from GITHUB_REF: $REF_NAME"
+          else
+            git fetch --depth=1 origin master
+            echo "Fetched fallback ref: master"
+          fi
+          git checkout FETCH_HEAD
+      - name: Cache npm
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-npm-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-npm-
+      - name: Install dependencies with retry
+        run: |
+          for i in 1 2 3; do
+            if npm ci --legacy-peer-deps --prefer-offline --no-audit; then
+              exit 0
+            fi
+            echo "Attempt $i failed, retrying in 5 seconds..."
+            sleep 5
+          done
+          echo "All retry attempts failed"
+          exit 1
+      - run: npm run test:run

@@ -1,0 +1,31 @@
+node_modules/
+dist/
+src-tauri/target/
+.env
+*.local
+.secrets
+secrets.yml
+secrets.yaml
+artifacts/
+*.png
+/screenshots/
+
+# kubectl binaries (downloaded during build)
+src-tauri/binaries/
+
+SECURITYAUDIT.md
+
+# Internal / private documents — never commit
+USER_GUIDE.md
+USER_GUIDE.docx
+~$*.docx
+TICKET_*.md
+BUGFIX_SUMMARY.md
+PR_DESCRIPTION.md
+docs/images/user-guide/
+*.bak
+.DS_Store
+
+# Logs
+.logs/
+*.log

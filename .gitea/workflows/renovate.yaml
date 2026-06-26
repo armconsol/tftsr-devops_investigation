@@ -1,0 +1,22 @@
+name: Renovate
+
+on:
+  schedule:
+    - cron: '0 6 * * *'  # Daily at 6 AM UTC
+  workflow_dispatch:
+
+jobs:
+  renovate:
+    runs-on: ubuntu-latest
+    container:
+      image: renovate/renovate:latest
+    steps:
+      - name: Run Renovate
+        run: renovate
+        env:
+          RENOVATE_TOKEN: ${{ secrets.RENOVATE_TOKEN }}
+          RENOVATE_PLATFORM: gitea
+          RENOVATE_ENDPOINT: https://gogs.tftsr.com/api/v1
+          RENOVATE_AUTODISCOVER: 'false'
+          RENOVATE_REPOSITORIES: '["sarman/tftsr-devops_investigation"]'
+          RENOVATE_AUTOMERGE: 'false'

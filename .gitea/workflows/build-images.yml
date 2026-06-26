@@ -1,0 +1,104 @@
+name: Build CI Docker Images
+
+# Rebuilds the pre-baked builder images and pushes them to the local Gitea
+# container registry (172.0.0.29:3000).
+#
+# WHEN TO RUN:
+#   - Automatically: whenever a Dockerfile under .docker/ changes on master.
+#   - Manually: via workflow_dispatch (e.g. first-time setup, forced rebuild).
+#
+# ONE-TIME SERVER PREREQUISITE (run once on 172.0.0.29 before first use):
+#   echo '{"insecure-registries":["172.0.0.29:3000"]}' \
+#     | sudo tee /etc/docker/daemon.json
+#   sudo systemctl restart docker
+#
+# Images produced:
+#   172.0.0.29:3000/sarman/tftsr-linux-amd64:rust1.88-node22
+#   172.0.0.29:3000/sarman/tftsr-windows-cross:rust1.88-node22
+#   172.0.0.29:3000/sarman/tftsr-linux-arm64:rust1.88-node22
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - '.docker/**'
+  workflow_dispatch:
+
+concurrency:
+  group: build-ci-images
+  cancel-in-progress: false
+
+env:
+  REGISTRY: 172.0.0.29:3000
+  REGISTRY_USER: sarman
+
+jobs:
+  linux-amd64:
+    runs-on: linux-amd64
+    container:
+      image: alpine:latest
+    steps:
+      - name: Checkout
+        run: |
+          apk add --no-cache git docker-cli
+          git init
+          git remote add origin http://172.0.0.29:3000/sarman/tftsr-devops_investigation.git
+          git fetch --depth=1 origin "$GITHUB_SHA"
+          git checkout FETCH_HEAD
+      - name: Build and push linux-amd64 builder
+        env:
+          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        run: |
+          echo "$RELEASE_TOKEN" | docker login $REGISTRY -u $REGISTRY_USER --password-stdin
+          docker build \
+            -t $REGISTRY/$REGISTRY_USER/tftsr-linux-amd64:rust1.88-node22 \
+            -f .docker/Dockerfile.linux-amd64 .
+          docker push $REGISTRY/$REGISTRY_USER/tftsr-linux-amd64:rust1.88-node22
+          echo "✓ Pushed $REGISTRY/$REGISTRY_USER/tftsr-linux-amd64:rust1.88-node22"
+
+  windows-cross:
+    runs-on: linux-amd64
+    container:
+      image: alpine:latest
+    steps:
+      - name: Checkout
+        run: |
+          apk add --no-cache git docker-cli
+          git init
+          git remote add origin http://172.0.0.29:3000/sarman/tftsr-devops_investigation.git
+          git fetch --depth=1 origin "$GITHUB_SHA"
+          git checkout FETCH_HEAD
+      - name: Build and push windows-cross builder
+        env:
+          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        run: |
+          echo "$RELEASE_TOKEN" | docker login $REGISTRY -u $REGISTRY_USER --password-stdin
+          docker build \
+            -t $REGISTRY/$REGISTRY_USER/tftsr-windows-cross:rust1.88-node22 \
+            -f .docker/Dockerfile.windows-cross .
+          docker push $REGISTRY/$REGISTRY_USER/tftsr-windows-cross:rust1.88-node22
+          echo "✓ Pushed $REGISTRY/$REGISTRY_USER/tftsr-windows-cross:rust1.88-node22"
+
+  linux-arm64:
+    runs-on: linux-amd64
+    container:
+      image: alpine:latest
+    steps:
+      - name: Checkout
+        run: |
+          apk add --no-cache git docker-cli
+          git init
+          git remote add origin http://172.0.0.29:3000/sarman/tftsr-devops_investigation.git
+          git fetch --depth=1 origin "$GITHUB_SHA"
+          git checkout FETCH_HEAD
+      - name: Build and push linux-arm64 builder
+        env:
+          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        run: |
+          echo "$RELEASE_TOKEN" | docker login $REGISTRY -u $REGISTRY_USER --password-stdin
+          docker build \
+            -t $REGISTRY/$REGISTRY_USER/tftsr-linux-arm64:rust1.88-node22 \
+            -f .docker/Dockerfile.linux-arm64 .
+          docker push $REGISTRY/$REGISTRY_USER/tftsr-linux-arm64:rust1.88-node22
+          echo "✓ Pushed $REGISTRY/$REGISTRY_USER/tftsr-linux-arm64:rust1.88-node22"

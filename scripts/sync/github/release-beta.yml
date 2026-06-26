@@ -1,0 +1,531 @@
+# Deployed to GitHub at `.github/workflows/release-beta.yml`.
+# This copy is kept in the Gitea repository for version control only.
+# It is NOT synced into GitHub's `.github/` directory.
+# yamllint disable rule:line-length rule:truthy
+---
+name: Release Beta
+
+# Runs on every merge to beta — reads the base version from Cargo.toml,
+# increments the beta prerelease number for that base version, pushes a new
+# beta tag, generates a changelog, then builds multi-platform release artifacts
+# and uploads them to GitHub Releases as a prerelease.
+# workflow_dispatch allows manual triggering.
+
+on:
+  push:
+    branches:
+      - beta
+    paths-ignore:
+      - CHANGELOG.md
+  workflow_dispatch:
+
+concurrency:
+  group: release-beta
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  packages: read
+
+jobs:
+  guard:
+    # Skip release builds for commits produced by the two-way sync bot.
+    # Inbound reconcile pushes synthetic "[skip-sync]" commits to beta; without
+    # this gate every sync round-trip would cut a duplicate beta release.
+    runs-on: ubuntu-latest
+    outputs:
+      skip: ${{ steps.check.outputs.skip }}
+    steps:
+      - name: Detect sync-bot commit
+        id: check
+        env:
+          EV_NAME: ${{ github.event_name }}
+          HEAD_MSG: ${{ github.event.head_commit.message }}
+          HEAD_AUTHOR: ${{ github.event.head_commit.author.email }}
+        run: |
+          set -eu
+          SKIP=false
+          if [ "${EV_NAME}" = "push" ]; then
+            MSG=$(printf '%s' "${HEAD_MSG}" | head -1 || true)
+            case "$MSG" in
+              *"[skip-sync]"*) SKIP=true ;;
+            esac
+            if [ "${HEAD_AUTHOR}" = "sync@tftsr.com" ]; then SKIP=true; fi
+          fi
+          echo "skip=$SKIP" >> "$GITHUB_OUTPUT"
+
+  autotag:
+    needs: guard
+    if: needs.guard.outputs.skip == 'false'
+    runs-on: ubuntu-latest
+    outputs:
+      release_tag: ${{ steps.bump.outputs.release_tag }}
+      base_tag: ${{ steps.bump.outputs.base_tag }}
+    steps:
+      - name: Checkout (full history + all tags)
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Create next beta tag
+        id: bump
+        run: |
+          set -eu
+
+          # Read the base version declared in Cargo.toml
+          CARGO_VERSION=$(grep '^version' src-tauri/Cargo.toml | head -1 | sed 's/version = "//;s/"//')
+          BASE_TAG="v${CARGO_VERSION}"
+          echo "Cargo.toml declares base version: $BASE_TAG"
+
+          git fetch --tags --force
+
+          # Find existing beta tags for this exact base version and increment N.
+          LATEST_BETA=$(git tag --sort=-version:refname | grep -E "^${BASE_TAG}-beta\.[0-9]+$" | head -1 || echo "")
+          echo "Latest beta tag for ${BASE_TAG}: ${LATEST_BETA:-none}"
+
+          if [ -z "$LATEST_BETA" ]; then
+            NEXT="${BASE_TAG}-beta.1"
+          else
+            LATEST_N=$(echo "$LATEST_BETA" | sed -E "s/^${BASE_TAG}-beta\.([0-9]+)$/\1/")
+            NEXT="${BASE_TAG}-beta.$((LATEST_N + 1))"
+          fi
+
+          echo "Next beta tag: $NEXT"
+
+          if git ls-remote --exit-code --tags origin "refs/tags/$NEXT" >/dev/null 2>&1; then
+            echo "Tag $NEXT already exists; builds will target this tag."
+          else
+            git tag -a "$NEXT" -m "Beta release $NEXT"
+            git push origin "refs/tags/$NEXT"
+            echo "Tag $NEXT pushed successfully"
+          fi
+
+          echo "release_tag=$NEXT" >> "$GITHUB_OUTPUT"
+          echo "base_tag=$BASE_TAG" >> "$GITHUB_OUTPUT"
+
+  changelog:
+    needs: autotag
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (full history + all tags)
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Install git-cliff
+        run: |
+          set -eu
+          CLIFF_VER="2.7.0"
+          curl -fsSL \
+            "https://github.com/orhun/git-cliff/releases/download/v${CLIFF_VER}/git-cliff-${CLIFF_VER}-x86_64-unknown-linux-musl.tar.gz" \
+            | tar -xz --strip-components=1 -C /usr/local/bin \
+              "git-cliff-${CLIFF_VER}/git-cliff"
+
+      - name: Generate changelog
+        env:
+          RELEASE_TAG: ${{ needs.autotag.outputs.release_tag }}
+          BASE_TAG: ${{ needs.autotag.outputs.base_tag }}
+        run: |
+          set -eu
+          CURRENT_TAG="${RELEASE_TAG}"
+          echo "Building changelog for beta release $CURRENT_TAG"
+
+          if ! git rev-parse "refs/tags/${CURRENT_TAG}" >/dev/null 2>&1; then
+            echo "ERROR: tag ${CURRENT_TAG} not found locally after fetch"
+            exit 1
+          fi
+
+          mkdir -p .github-release
+          git-cliff --config cliff.toml --output CHANGELOG.md
+          PREV_TAG=$(git tag --sort=-version:refname | grep -E "^${BASE_TAG}-beta\.[0-9]+$" \
+            | grep -v "^${CURRENT_TAG}$" | head -1 || echo "")
+          if [ -n "$PREV_TAG" ]; then
+            # Generate changelog for ONLY this beta version (from previous beta tag to current tag)
+            git-cliff --config cliff.toml "${PREV_TAG}..${CURRENT_TAG}" --strip all > .github-release/release_body.md || true
+          else
+            echo "No previous beta tag found for ${BASE_TAG}, generating from all git commits"
+            git-cliff --config cliff.toml --unreleased --strip all > .github-release/release_body.md || true
+          fi
+          echo "=== Release body preview ==="
+          cat .github-release/release_body.md
+
+      - name: Create or update GitHub prerelease
+        env:
+          RELEASE_TAG: ${{ needs.autotag.outputs.release_tag }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eu
+          TAG="${RELEASE_TAG}"
+          BODY=$(cat .github-release/release_body.md)
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Updating existing prerelease $TAG..."
+            gh release edit "$TAG" --notes "$BODY" --prerelease
+            echo "✓ Prerelease body updated"
+          else
+            echo "Creating prerelease $TAG..."
+            gh release create "$TAG" \
+              --title "TRCAA $TAG" \
+              --notes "$BODY" \
+              --prerelease
+            echo "✓ Prerelease created"
+          fi
+
+      - name: Commit CHANGELOG.md to beta
+        env:
+          RELEASE_TAG: ${{ needs.autotag.outputs.release_tag }}
+        run: |
+          TAG="${RELEASE_TAG}"
+          if ! echo "$TAG" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+-beta\.[0-9]+$'; then
+            echo "ERROR: Unexpected beta tag format: $TAG"
+            exit 1
+          fi
+          git add CHANGELOG.md
+          if git diff --staged --quiet; then
+            echo "No CHANGELOG.md changes to commit"
+          else
+            git commit -m "chore: update CHANGELOG.md for ${TAG} [skip ci]"
+            if git push origin HEAD:beta; then
+              echo "✓ CHANGELOG.md committed to beta"
+            else
+              echo "⚠ Could not push CHANGELOG.md to beta (branch protection requires PR)."
+              echo "  The changelog is still available as a release asset and in the release notes."
+            fi
+          fi
+
+      - name: Upload CHANGELOG.md as release asset
+        env:
+          RELEASE_TAG: ${{ needs.autotag.outputs.release_tag }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eu
+          TAG="${RELEASE_TAG}"
+          # Remove existing asset if present to allow re-upload
+          gh release delete-asset "$TAG" CHANGELOG.md --yes 2>/dev/null || true
+          gh release upload "$TAG" CHANGELOG.md
+          echo "✓ CHANGELOG.md uploaded"
+
+  wiki-sync:
+    needs: guard
+    if: needs.guard.outputs.skip == 'false'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - name: Configure git
+        run: |
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git config --global user.name "github-actions[bot]"
+
+      - name: Clone and sync wiki
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eu
+          mkdir -p .github-release/wiki-workdir
+          cd .github-release/wiki-workdir
+          WIKI_URL="https://x-access-token:${GH_TOKEN}@github.com/msicie/apollo_nxt-trcaa.wiki.git"
+
+          if ! git clone "$WIKI_URL" wiki 2>/dev/null; then
+            echo "Wiki doesn't exist yet, creating initial structure..."
+            mkdir -p wiki
+            cd wiki
+            git init
+            git checkout -b master
+            echo "# Wiki" > Home.md
+            git add Home.md
+            git commit -m "Initial wiki commit"
+            git remote add origin "$WIKI_URL"
+          fi
+
+          cd wiki
+          if [ -d "$GITHUB_WORKSPACE/docs/wiki" ]; then
+            cp -v "$GITHUB_WORKSPACE"/docs/wiki/*.md . 2>/dev/null || echo "No wiki files to copy"
+          fi
+
+          git add -A
+          if ! git diff --staged --quiet; then
+            git commit -m "docs: sync from docs/wiki/ at commit ${GITHUB_SHA:0:8}"
+            if git push origin master; then
+              echo "✓ Wiki successfully synced"
+            else
+              echo "⚠ Wiki push failed"
+              exit 1
+            fi
+          else
+            echo "No wiki changes to commit"
+          fi
+
+  build-linux-amd64:
+    needs: [autotag, changelog]
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/msicie/trcaa-linux-amd64:rust1.88-node22
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+      - name: Mark workspace as safe for git
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - name: Cache cargo registry
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+          key: ${{ runner.os }}-cargo-linux-amd64-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-linux-amd64-
+      - name: Cache npm
+        uses: actions/cache@v5
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-npm-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-npm-
+      - name: Download kubectl binaries
+        run: |
+          chmod +x scripts/download-kubectl.sh
+          ./scripts/download-kubectl.sh
+      - name: Build
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: "1"
+        run: |
+          npm ci --legacy-peer-deps
+          CI=true npx tauri build --target x86_64-unknown-linux-gnu
+      - name: Upload artifacts to GitHub release
+        env:
+          RELEASE_TAG: ${{ needs.autotag.outputs.release_tag }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eu
+          TAG="${RELEASE_TAG}"
+          ARTIFACTS=$(find src-tauri/target/x86_64-unknown-linux-gnu/release/bundle -type f \
+            \( -name "*.deb" -o -name "*.rpm" \))
+          if [ -z "$ARTIFACTS" ]; then
+            echo "ERROR: No Linux amd64 artifacts found."
+            exit 1
+          fi
+          printf '%s\n' "$ARTIFACTS" | while IFS= read -r f; do
+            NAME="linux-amd64-$(basename "$f")"
+            echo "Uploading $NAME..."
+            gh release upload "$TAG" "$f#$NAME" --clobber
+            echo "✓ Uploaded $NAME"
+          done
+
+  build-windows-amd64:
+    needs: [autotag, changelog]
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/msicie/trcaa-windows-cross:rust1.88-node22
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+      - name: Mark workspace as safe for git
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - name: Cache cargo registry
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+          key: ${{ runner.os }}-cargo-windows-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-windows-
+      - name: Cache npm
+        uses: actions/cache@v5
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-npm-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-npm-
+      - name: Download kubectl binaries
+        run: |
+          chmod +x scripts/download-kubectl.sh
+          ./scripts/download-kubectl.sh
+      - name: Build
+        env:
+          CC_x86_64_pc_windows_gnu: x86_64-w64-mingw32-gcc
+          CXX_x86_64_pc_windows_gnu: x86_64-w64-mingw32-g++
+          AR_x86_64_pc_windows_gnu: x86_64-w64-mingw32-ar
+          CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER: x86_64-w64-mingw32-gcc
+          OPENSSL_NO_VENDOR: "0"
+          OPENSSL_STATIC: "1"
+          SODIUM_LIB_DIR: /usr/x86_64-w64-mingw32/lib
+          SODIUM_STATIC: "1"
+        run: |
+          npm ci --legacy-peer-deps
+          CI=true npx tauri build --target x86_64-pc-windows-gnu
+      - name: Upload artifacts to GitHub release
+        env:
+          RELEASE_TAG: ${{ needs.autotag.outputs.release_tag }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eu
+          TAG="${RELEASE_TAG}"
+          ARTIFACTS=$(find src-tauri/target/x86_64-pc-windows-gnu/release/bundle -type f \
+            \( -name "*.exe" -o -name "*.msi" \) 2>/dev/null)
+          if [ -z "$ARTIFACTS" ]; then
+            echo "ERROR: No Windows amd64 artifacts found."
+            exit 1
+          fi
+          printf '%s\n' "$ARTIFACTS" | while IFS= read -r f; do
+            NAME="windows-amd64-$(basename "$f")"
+            echo "Uploading $NAME..."
+            gh release upload "$TAG" "$f#$NAME" --clobber
+            echo "✓ Uploaded $NAME"
+          done
+
+  build-macos-arm64:
+    needs: [autotag, changelog]
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+      - name: Download kubectl binaries
+        run: |
+          chmod +x scripts/download-kubectl.sh
+          ./scripts/download-kubectl.sh
+      - name: Build
+        env:
+          MACOSX_DEPLOYMENT_TARGET: "11.0"
+        run: |
+          npm ci --legacy-peer-deps
+          rustup target add aarch64-apple-darwin
+          CI=true npx tauri build --target aarch64-apple-darwin --bundles app
+          APP=$(find src-tauri/target/aarch64-apple-darwin/release/bundle/macos -maxdepth 1 -type d -name "*.app" | head -n 1)
+          if [ -z "$APP" ]; then
+            echo "ERROR: Could not find macOS app bundle"
+            exit 1
+          fi
+          APP_NAME=$(basename "$APP" .app)
+          codesign --deep --force --sign - "$APP"
+          mkdir -p src-tauri/target/aarch64-apple-darwin/release/bundle/dmg
+          DMG=src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/${APP_NAME}.dmg
+          hdiutil create -volname "$APP_NAME" -srcfolder "$APP" -ov -format UDZO "$DMG"
+      - name: Upload artifacts to GitHub release
+        env:
+          RELEASE_TAG: ${{ needs.autotag.outputs.release_tag }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eu
+          TAG="${RELEASE_TAG}"
+          ARTIFACTS=$(find src-tauri/target/aarch64-apple-darwin/release/bundle -type f -name "*.dmg")
+          if [ -z "$ARTIFACTS" ]; then
+            echo "ERROR: No macOS arm64 DMG artifacts found."
+            exit 1
+          fi
+          printf '%s\n' "$ARTIFACTS" | while IFS= read -r f; do
+            NAME="macos-arm64-$(basename "$f")"
+            echo "Uploading $NAME..."
+            gh release upload "$TAG" "$f#$NAME" --clobber
+            echo "✓ Uploaded $NAME"
+          done
+
+  build-linux-arm64:
+    needs: [autotag, changelog]
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/msicie/trcaa-linux-arm64:rust1.88-node22
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+      - name: Mark workspace as safe for git
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - name: Cache cargo registry
+        uses: actions/cache@v5
+        with:
+          path: |
+            /root/.cargo/registry/index
+            /root/.cargo/registry/cache
+            /root/.cargo/git/db
+          key: ${{ runner.os }}-cargo-arm64-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-arm64-
+      - name: Cache npm
+        uses: actions/cache@v5
+        with:
+          path: /root/.npm
+          key: ${{ runner.os }}-npm-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-npm-
+      - name: Set Rust toolchain default
+        env:
+          RUSTUP_HOME: /root/.rustup
+          CARGO_HOME: /root/.cargo
+        run: |
+          rustup default 1.88.0
+          rustup target add aarch64-unknown-linux-gnu
+      - name: Download kubectl binaries
+        run: |
+          chmod +x scripts/download-kubectl.sh
+          ./scripts/download-kubectl.sh
+      - name: Build
+        env:
+          RUSTUP_HOME: /root/.rustup
+          CARGO_HOME: /root/.cargo
+          CC_aarch64_unknown_linux_gnu: aarch64-linux-gnu-gcc
+          CXX_aarch64_unknown_linux_gnu: aarch64-linux-gnu-g++
+          AR_aarch64_unknown_linux_gnu: aarch64-linux-gnu-ar
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
+          PKG_CONFIG_SYSROOT_DIR: /usr/aarch64-linux-gnu
+          PKG_CONFIG_PATH: /usr/lib/aarch64-linux-gnu/pkgconfig
+          PKG_CONFIG_ALLOW_CROSS: "1"
+          OPENSSL_NO_VENDOR: "0"
+          OPENSSL_STATIC: "1"
+          APPIMAGE_EXTRACT_AND_RUN: "1"
+        run: |
+          npm ci --legacy-peer-deps
+          CI=true npx tauri build --target aarch64-unknown-linux-gnu --bundles deb,rpm
+      - name: Upload artifacts to GitHub release
+        env:
+          RELEASE_TAG: ${{ needs.autotag.outputs.release_tag }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eu
+          TAG="${RELEASE_TAG}"
+          ARTIFACTS=$(find src-tauri/target/aarch64-unknown-linux-gnu/release/bundle -type f \
+            \( -name "*.deb" -o -name "*.rpm" -o -name "*.AppImage" \))
+          if [ -z "$ARTIFACTS" ]; then
+            echo "ERROR: No Linux arm64 artifacts found."
+            exit 1
+          fi
+          printf '%s\n' "$ARTIFACTS" | while IFS= read -r f; do
+            NAME="linux-arm64-$(basename "$f")"
+            echo "Uploading $NAME..."
+            gh release upload "$TAG" "$f#$NAME" --clobber
+            echo "✓ Uploaded $NAME"
+          done
