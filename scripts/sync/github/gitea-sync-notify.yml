@@ -1,0 +1,66 @@
+# Deployed to GitHub repo msicie/apollo_nxt-trcaa at .github/workflows/gitea-sync-notify.yml
+# Kept here in the Gitea repo for version control ONLY; it is NOT synced into
+# GitHub's .github/ (that path is excluded from the two-way sync). Deploy/update it
+# on GitHub manually or via `gh`.
+#
+# Purpose: as soon as main/beta change or any PR is opened/updated/closed on GitHub,
+# trigger Gitea's "Sync Inbound" workflow so changes flow back quickly (instead of
+# waiting for the 15-minute poll). Commits produced by the sync bot are ignored to
+# avoid echo loops.
+#
+# Required GitHub repo secrets:
+#   GITEA_SYNC_URL        e.g. https://gogs.tftsr.com
+#   GITEA_DISPATCH_TOKEN  Gitea PAT allowed to dispatch the workflow
+name: Notify Gitea Sync
+
+on:
+  push:
+    branches:
+      - main
+      - beta
+    paths-ignore:
+      - '.github/**'
+  pull_request:
+    types: [opened, synchronize, reopened, closed]
+
+concurrency:
+  group: gitea-sync-notify
+  cancel-in-progress: false
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Skip sync-bot commits
+        id: guard
+        env:
+          EV_NAME: ${{ github.event_name }}
+          HEAD_MSG: ${{ github.event.head_commit.message }}
+          HEAD_AUTHOR: ${{ github.event.head_commit.author.email }}
+        run: |
+          set -eu
+          SKIP=false
+          if [ "${EV_NAME}" = "push" ]; then
+            MSG=$(printf '%s' "${HEAD_MSG}" | head -1 || true)
+            case "$MSG" in
+              *"[skip-sync]"*) SKIP=true ;;
+            esac
+            if [ "${HEAD_AUTHOR}" = "sync@tftsr.com" ]; then SKIP=true; fi
+          fi
+          echo "skip=$SKIP" >> "$GITHUB_OUTPUT"
+
+      - name: Dispatch Gitea Sync Inbound
+        if: steps.guard.outputs.skip == 'false'
+        env:
+          GITEA_SYNC_URL: ${{ secrets.GITEA_SYNC_URL }}
+          GITEA_DISPATCH_TOKEN: ${{ secrets.GITEA_DISPATCH_TOKEN }}
+        run: |
+          set -eu
+          # Trigger the workflow_dispatch endpoint of sync-inbound.yml on Gitea.
+          curl -fsSL -X POST \
+            -H "Authorization: token ${GITEA_DISPATCH_TOKEN}" \
+            -H "Content-Type: application/json" \
+            "${GITEA_SYNC_URL}/api/v1/repos/sarman/tftsr-devops_investigation/actions/workflows/sync-inbound.yml/dispatches" \
+            -d '{"ref":"master"}' \
+            && echo "Gitea sync triggered" \
+            || { echo "Gitea dispatch failed (poll fallback will cover it)"; exit 0; }
