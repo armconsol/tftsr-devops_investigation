@@ -18,7 +18,7 @@ import {
   listCephfs,
   getCephFlags,
 } from '@/lib/proxmoxClient';
-import type { CephMonitor, CephMgr, CephFs, CephHealth, CephPool, CephOsd } from '@/lib/proxmoxClient';
+import type { CephMonitor, CephMgr, CephFs, CephHealth, CephPool, CephOsd, CephFlag } from '@/lib/proxmoxClient';
 import type { ClusterInfo } from '@/lib/domain';
 import { toast } from 'sonner';
 
@@ -36,7 +36,7 @@ export function ProxmoxCephPage() {
   const [monitors, setMonitors] = useState<CephMonitor[]>([]);
   const [managers, setManagers] = useState<CephMgr[]>([]);
   const [cephFsList, setCephFsList] = useState<CephFs[]>([]);
-  const [cephFlags, setCephFlags] = useState<Record<string, unknown> | null>(null);
+  const [cephFlags, setCephFlags] = useState<CephFlag[] | null>(null);
   const [tabLoading, setTabLoading] = useState(false);
   const { nodeNames, selectedNode: tabNode, setSelectedNode, loading: nodesLoading } =
     useProxmoxNodes(clusterId);
@@ -101,6 +101,13 @@ export function ProxmoxCephPage() {
     if (!clusterId || !tabNode) return;
     loadData(clusterId, tabNode);
   }, [clusterId, tabNode, loadData]);
+
+  // Reset the shared per-tab loading flag when the active tab changes so an
+  // in-flight load on a previous tab can't leave another tab's refresh control
+  // stuck in the spinning/disabled state.
+  useEffect(() => {
+    setTabLoading(false);
+  }, [activeTab]);
 
   const handleClusterChange = (id: string) => {
     setClusterId(id);
@@ -380,7 +387,7 @@ export function ProxmoxCephPage() {
                     <tr className="border-b">
                       <th className="py-2 px-3 text-left font-medium text-muted-foreground">Name</th>
                       <th className="py-2 px-3 text-left font-medium text-muted-foreground">Metadata Pool</th>
-                      <th className="py-2 px-3 text-left font-medium text-muted-foreground">Data Pool IDs</th>
+                      <th className="py-2 px-3 text-left font-medium text-muted-foreground">Data Pool</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -388,7 +395,7 @@ export function ProxmoxCephPage() {
                       <tr key={fs.name} className="border-b last:border-0 hover:bg-muted/50">
                         <td className="py-2 px-3">{fs.name}</td>
                         <td className="py-2 px-3">{fs.metadataPool ?? '—'}</td>
-                        <td className="py-2 px-3">{(fs.dataPoolIds ?? []).join(', ') || '—'}</td>
+                        <td className="py-2 px-3">{fs.dataPool ?? '—'}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -405,10 +412,37 @@ export function ProxmoxCephPage() {
               </div>
               {cephFlags === null ? (
                 <div className="text-center py-8 text-muted-foreground">No data found.</div>
+              ) : cephFlags.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">No flags set.</div>
               ) : (
-                <pre className="text-xs bg-muted p-3 rounded overflow-auto">
-                  {JSON.stringify(cephFlags, null, 2)}
-                </pre>
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b">
+                      <th className="py-2 px-3 text-left font-medium text-muted-foreground">Flag</th>
+                      <th className="py-2 px-3 text-left font-medium text-muted-foreground">State</th>
+                      <th className="py-2 px-3 text-left font-medium text-muted-foreground">Description</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {cephFlags.map((flag) => (
+                      <tr key={flag.name} className="border-b last:border-0 hover:bg-muted/50">
+                        <td className="py-2 px-3 font-mono">{flag.name}</td>
+                        <td className="py-2 px-3">
+                          {flag.value ? (
+                            <Badge className="bg-amber-100 text-amber-800 text-xs px-2 py-0.5 rounded">
+                              set
+                            </Badge>
+                          ) : (
+                            <Badge className="bg-gray-100 text-gray-700 text-xs px-2 py-0.5 rounded">
+                              unset
+                            </Badge>
+                          )}
+                        </td>
+                        <td className="py-2 px-3 text-muted-foreground">{flag.description ?? '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               )}
             </TabsContent>
           </Tabs>

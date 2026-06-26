@@ -12,7 +12,7 @@ import {
 import { ResourceActionMenu } from "./ResourceActionMenu";
 import { ConfirmDeleteDialog } from "./ConfirmDeleteDialog";
 import { EditResourceModal } from "./EditResourceModal";
-import { WorkloadLogsModal } from "./WorkloadLogsModal";
+import { openWorkloadLogsTab } from "@/lib/logsDock";
 import { useColumnConfig } from "@/hooks/useColumnConfig";
 import { DEFAULT_COLUMNS } from "@/config/defaultColumns";
 import { ColumnConfigModal } from "@/components/tables/ColumnConfigModal";
@@ -27,7 +27,6 @@ interface CronJobListProps {
 }
 
 type ActiveModal =
-  | { type: "logs"; cj: CronJobInfo }
   | { type: "edit"; cj: CronJobInfo; yaml: string }
   | { type: "delete"; cj: CronJobInfo }
   | null;
@@ -191,7 +190,13 @@ export function CronJobList({
                         {
                           label: "Logs",
                           icon: FileText,
-                          onClick: () => setActiveModal({ type: "logs", cj }),
+                          onClick: () =>
+                            openWorkloadLogsTab({
+                              clusterId: cid,
+                              namespace: cj.namespace,
+                              workloadName: cj.name,
+                              workloadType: "cronjob",
+                            }),
                         },
                         {
                           label: "Edit",
@@ -214,18 +219,6 @@ export function CronJobList({
           </TableBody>
         </Table>
       </div>
-
-      {activeModal?.type === "logs" && (
-        <WorkloadLogsModal
-          open
-          onOpenChange={(o) => { if (!o) setActiveModal(null); }}
-          clusterId={cid}
-          namespace={activeModal.cj.namespace}
-          workloadType="cronjob"
-          workloadName={activeModal.cj.name}
-          labels={activeModal.cj.labels}
-        />
-      )}
 
       {activeModal?.type === "edit" && (
         <EditResourceModal
