@@ -208,9 +208,8 @@ pub async fn publish_page(
 
     let page_id = result["id"].as_str().unwrap_or("");
     let page_url = format!(
-        "{}/pages/viewpage.action?pageId={}",
-        config.base_url.trim_end_matches('/'),
-        page_id
+        "{}/pages/viewpage.action?pageId={page_id}",
+        config.base_url.trim_end_matches('/')
     );
 
     Ok(PublishResult {
@@ -229,9 +228,8 @@ pub async fn update_page(
 ) -> Result<PublishResult, String> {
     let client = reqwest::Client::new();
     let url = format!(
-        "{}/rest/api/content/{}",
-        config.base_url.trim_end_matches('/'),
-        page_id
+        "{}/rest/api/content/{page_id}",
+        config.base_url.trim_end_matches('/')
     );
 
     let body = serde_json::json!({
@@ -271,9 +269,8 @@ pub async fn update_page(
 
     let updated_page_id = result["id"].as_str().unwrap_or(page_id);
     let page_url = format!(
-        "{}/pages/viewpage.action?pageId={}",
-        config.base_url.trim_end_matches('/'),
-        updated_page_id
+        "{}/pages/viewpage.action?pageId={updated_page_id}",
+        config.base_url.trim_end_matches('/')
     );
 
     Ok(PublishResult {

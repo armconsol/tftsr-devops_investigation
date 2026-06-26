@@ -39,7 +39,7 @@ pub async fn migrate_vm(
     target_cluster: &str,
     ticket: &str,
 ) -> Result<MigrationTask, String> {
-    let path = format!("nodes/{}/qemu/{}/migrate", node, vm_id);
+    let path = format!("nodes/{node}/qemu/{vm_id}/migrate");
     let body = serde_json::json!({
         "target": target_node,
         "online": 1,
@@ -49,7 +49,7 @@ pub async fn migrate_vm(
     let response: serde_json::Value = client
         .post::<serde_json::Value, _>(&path, &body, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to migrate VM {}: {}", vm_id, e))?;
+        .map_err(|e| format!("Failed to migrate VM {vm_id}: {e}"))?;
 
     // handle_response unwraps the "data" envelope; migrate returns the task UPID as a string.
     let task_id = response.as_str().unwrap_or("").to_string();
@@ -76,11 +76,11 @@ pub async fn list_migration_status(
     node: &str,
     ticket: &str,
 ) -> Result<Vec<MigrationTask>, String> {
-    let path = format!("nodes/{}/tasks", node);
+    let path = format!("nodes/{node}/tasks");
     let response: serde_json::Value = client
         .get(&path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to list migration tasks for node {}: {}", node, e))?;
+        .map_err(|e| format!("Failed to list migration tasks for node {node}: {e}"))?;
 
     if let Some(tasks) = response.as_array() {
         let task_list: Vec<MigrationTask> = tasks
@@ -141,11 +141,11 @@ pub async fn get_migration_task_status(
     task_id: &str,
     ticket: &str,
 ) -> Result<MigrationStatus, String> {
-    let path = format!("nodes/{}/tasks/{}", node, task_id);
+    let path = format!("nodes/{node}/tasks/{task_id}");
     let response: serde_json::Value = client
         .get(&path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to get migration task {}: {}", task_id, e))?;
+        .map_err(|e| format!("Failed to get migration task {task_id}: {e}"))?;
 
     {
         let data = &response;
@@ -226,10 +226,8 @@ pub fn build_remote_target_endpoint(
     port: u16,
     fingerprint: Option<&str>,
 ) -> String {
-    let mut endpoint = format!(
-        "apitoken=PVEAPIToken={}={},host={},port={}",
-        full_tokenid, secret, host, port
-    );
+    let mut endpoint =
+        format!("apitoken=PVEAPIToken={full_tokenid}={secret},host={host},port={port}");
     if let Some(fp) = fingerprint.map(|f| f.trim()).filter(|f| !f.is_empty()) {
         endpoint.push_str(&format!(",fingerprint={}", normalize_fingerprint(fp)));
     }
@@ -273,13 +271,13 @@ pub async fn get_node_fingerprint(
     node: &str,
     ticket: &str,
 ) -> Result<String, String> {
-    let path = format!("nodes/{}/certificates/info", node);
+    let path = format!("nodes/{node}/certificates/info");
     let response: serde_json::Value = client
         .get(&path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to fetch certificate info for node {}: {}", node, e))?;
+        .map_err(|e| format!("Failed to fetch certificate info for node {node}: {e}"))?;
     extract_node_fingerprint(&response)
-        .ok_or_else(|| format!("No TLS fingerprint found for node {}", node))
+        .ok_or_else(|| format!("No TLS fingerprint found for node {node}"))
 }
 
 /// Build the REST API path for a cross-cluster (remote) VM migration.
@@ -289,7 +287,7 @@ pub async fn get_node_fingerprint(
 /// `qm` CLI command name and is **not** a valid REST path — using it makes PVE
 /// return `501 Not Implemented`.
 pub fn remote_migrate_path(node: &str, vmid: u32) -> String {
-    format!("nodes/{}/qemu/{}/remote_migrate", node, vmid)
+    format!("nodes/{node}/qemu/{vmid}/remote_migrate")
 }
 
 /// Validate the path-interpolated identifiers for a remote migration before any
@@ -334,7 +332,7 @@ pub async fn remote_migrate_vm(
     let response: serde_json::Value = client
         .post_form(&path, params, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to remote-migrate VM {}: {}", vmid, e))?;
+        .map_err(|e| format!("Failed to remote-migrate VM {vmid}: {e}"))?;
 
     let upid = response
         .as_str()
@@ -350,13 +348,13 @@ pub async fn cancel_migration(
     vm_id: u32,
     ticket: &str,
 ) -> Result<(), String> {
-    let path = format!("nodes/{}/qemu/{}/migrate", node, vm_id);
+    let path = format!("nodes/{node}/qemu/{vm_id}/migrate");
     let params = vec![("cancel", "1")];
 
     let _response: serde_json::Value = client
         .post_form(&path, &params, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to cancel migration for VM {}: {}", vm_id, e))?;
+        .map_err(|e| format!("Failed to cancel migration for VM {vm_id}: {e}"))?;
     Ok(())
 }
 

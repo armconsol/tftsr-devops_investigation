@@ -32,7 +32,7 @@ pub async fn list_evpn_zones(
     let response: serde_json::Value = client
         .get(path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to list EVPN zones: {}", e))?;
+        .map_err(|e| format!("Failed to list EVPN zones: {e}"))?;
 
     if let Some(zones) = response.as_array() {
         let zone_list: Vec<EvpnZone> = zones
@@ -90,7 +90,7 @@ pub async fn create_evpn_zone(
     let _response: serde_json::Value = client
         .post(path, &config, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to create EVPN zone {}: {}", zone, e))?;
+        .map_err(|e| format!("Failed to create EVPN zone {zone}: {e}"))?;
     Ok(())
 }
 
@@ -102,7 +102,7 @@ pub async fn update_evpn_zone(
     vni: u32,
     ticket: &str,
 ) -> Result<(), String> {
-    let path = format!("cluster/sdn/zones/{}", zone);
+    let path = format!("cluster/sdn/zones/{zone}");
     let config = serde_json::json!({
         "asn": asn,
         "vni": vni
@@ -111,7 +111,7 @@ pub async fn update_evpn_zone(
     let _response: serde_json::Value = client
         .put(&path, &config, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to update EVPN zone {}: {}", zone, e))?;
+        .map_err(|e| format!("Failed to update EVPN zone {zone}: {e}"))?;
     Ok(())
 }
 
@@ -121,11 +121,11 @@ pub async fn delete_evpn_zone(
     zone: &str,
     ticket: &str,
 ) -> Result<(), String> {
-    let path = format!("cluster/sdn/zones/{}", zone);
+    let path = format!("cluster/sdn/zones/{zone}");
     let _response: serde_json::Value = client
         .delete(&path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to delete EVPN zone {}: {}", zone, e))?;
+        .map_err(|e| format!("Failed to delete EVPN zone {zone}: {e}"))?;
     Ok(())
 }
 
@@ -138,7 +138,7 @@ pub async fn list_vnets(
     let response: serde_json::Value = client
         .get(path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to list virtual networks: {}", e))?;
+        .map_err(|e| format!("Failed to list virtual networks: {e}"))?;
 
     if let Some(vnets) = response.as_array() {
         let vnet_list: Vec<VirtualNetwork> = vnets
@@ -188,7 +188,7 @@ pub async fn create_vnet(
     let _response: serde_json::Value = client
         .post(path, &config, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to create virtual network {}: {}", vnet, e))?;
+        .map_err(|e| format!("Failed to create virtual network {vnet}: {e}"))?;
     Ok(())
 }
 
@@ -200,7 +200,7 @@ pub async fn update_vnet(
     l2vni: u32,
     ticket: &str,
 ) -> Result<(), String> {
-    let path = format!("cluster/sdn/vnets/{}", vnet);
+    let path = format!("cluster/sdn/vnets/{vnet}");
     let config = serde_json::json!({
         "zone": zone,
         "l2vni": l2vni
@@ -209,7 +209,7 @@ pub async fn update_vnet(
     let _response: serde_json::Value = client
         .put(&path, &config, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to update virtual network {}: {}", vnet, e))?;
+        .map_err(|e| format!("Failed to update virtual network {vnet}: {e}"))?;
     Ok(())
 }
 
@@ -219,11 +219,11 @@ pub async fn delete_vnet(
     vnet: &str,
     ticket: &str,
 ) -> Result<(), String> {
-    let path = format!("cluster/sdn/vnets/{}", vnet);
+    let path = format!("cluster/sdn/vnets/{vnet}");
     let _response: serde_json::Value = client
         .delete(&path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to delete virtual network {}: {}", vnet, e))?;
+        .map_err(|e| format!("Failed to delete virtual network {vnet}: {e}"))?;
     Ok(())
 }
 
@@ -233,11 +233,11 @@ pub async fn get_vnet_status(
     vnet: &str,
     ticket: &str,
 ) -> Result<serde_json::Value, String> {
-    let path = format!("cluster/sdn/vnets/{}/status", vnet);
+    let path = format!("cluster/sdn/vnets/{vnet}/status");
     client
         .get(&path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to get virtual network {}: {}", vnet, e))
+        .map_err(|e| format!("Failed to get virtual network {vnet}: {e}"))
 }
 
 /// List DHCP leases
@@ -246,11 +246,11 @@ pub async fn list_dhcp_leases(
     vnet: &str,
     ticket: &str,
 ) -> Result<Vec<serde_json::Value>, String> {
-    let path = format!("cluster/sdn/vnets/{}/dhcp/status", vnet);
+    let path = format!("cluster/sdn/vnets/{vnet}/dhcp/status");
     let response: serde_json::Value = client
         .get(&path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to list DHCP leases for vnet {}: {}", vnet, e))?;
+        .map_err(|e| format!("Failed to list DHCP leases for vnet {vnet}: {e}"))?;
 
     if let Some(leases) = response.as_array() {
         Ok(leases.to_vec())

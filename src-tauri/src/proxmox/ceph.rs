@@ -128,11 +128,11 @@ pub async fn list_pools(
     ticket: &str,
 ) -> Result<Vec<CephPool>, String> {
     validate_node(node)?;
-    let path = format!("nodes/{}/ceph/pool", node);
+    let path = format!("nodes/{node}/ceph/pool");
     let response: serde_json::Value = client
         .get(&path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to list Ceph pools: {}", e))?;
+        .map_err(|e| format!("Failed to list Ceph pools: {e}"))?;
 
     parse_pools(&response)
 }
@@ -146,7 +146,7 @@ pub async fn create_pool(
     ticket: &str,
 ) -> Result<(), String> {
     validate_node(node)?;
-    let path = format!("nodes/{}/ceph/pool", node);
+    let path = format!("nodes/{node}/ceph/pool");
     let config = serde_json::json!({
         "pool": pool,
         "pg_num": pg_num
@@ -155,7 +155,7 @@ pub async fn create_pool(
     let _response: serde_json::Value = client
         .post(&path, &config, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to create Ceph pool {}: {}", pool, e))?;
+        .map_err(|e| format!("Failed to create Ceph pool {pool}: {e}"))?;
     Ok(())
 }
 
@@ -167,11 +167,11 @@ pub async fn delete_pool(
     ticket: &str,
 ) -> Result<(), String> {
     validate_node(node)?;
-    let path = format!("nodes/{}/ceph/pool/{}", node, pool);
+    let path = format!("nodes/{node}/ceph/pool/{pool}");
     let _response: serde_json::Value = client
         .delete(&path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to delete Ceph pool {}: {}", pool, e))?;
+        .map_err(|e| format!("Failed to delete Ceph pool {pool}: {e}"))?;
     Ok(())
 }
 
@@ -184,7 +184,7 @@ pub async fn set_pool_quota(
     ticket: &str,
 ) -> Result<(), String> {
     validate_node(node)?;
-    let path = format!("nodes/{}/ceph/pool/{}", node, pool);
+    let path = format!("nodes/{node}/ceph/pool/{pool}");
     let config = serde_json::json!({
         "max_bytes": max_bytes
     });
@@ -192,7 +192,7 @@ pub async fn set_pool_quota(
     let _response: serde_json::Value = client
         .put(&path, &config, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to set quota for Ceph pool {}: {}", pool, e))?;
+        .map_err(|e| format!("Failed to set quota for Ceph pool {pool}: {e}"))?;
     Ok(())
 }
 
@@ -281,11 +281,11 @@ pub async fn list_osds(
     ticket: &str,
 ) -> Result<Vec<CephOsd>, String> {
     validate_node(node)?;
-    let path = format!("nodes/{}/ceph/osd", node);
+    let path = format!("nodes/{node}/ceph/osd");
     let response: serde_json::Value = client
         .get(&path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to list Ceph OSDs: {}", e))?;
+        .map_err(|e| format!("Failed to list Ceph OSDs: {e}"))?;
 
     parse_osds(&response)
 }
@@ -299,7 +299,7 @@ pub async fn set_osd_weight(
     ticket: &str,
 ) -> Result<(), String> {
     validate_node(node)?;
-    let path = format!("nodes/{}/ceph/osd/{}", node, osd_id);
+    let path = format!("nodes/{node}/ceph/osd/{osd_id}");
     let config = serde_json::json!({
         "weight": weight
     });
@@ -307,7 +307,7 @@ pub async fn set_osd_weight(
     let _response: serde_json::Value = client
         .put(&path, &config, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to set weight for OSD {}: {}", osd_id, e))?;
+        .map_err(|e| format!("Failed to set weight for OSD {osd_id}: {e}"))?;
     Ok(())
 }
 
@@ -319,11 +319,11 @@ pub async fn osd_out(
     ticket: &str,
 ) -> Result<(), String> {
     validate_node(node)?;
-    let path = format!("nodes/{}/ceph/osd/{}/out", node, osd_id);
+    let path = format!("nodes/{node}/ceph/osd/{osd_id}/out");
     let _response: serde_json::Value = client
         .post_form(&path, &[], Some(ticket))
         .await
-        .map_err(|e| format!("Failed to mark OSD {} out: {}", osd_id, e))?;
+        .map_err(|e| format!("Failed to mark OSD {osd_id} out: {e}"))?;
     Ok(())
 }
 
@@ -335,11 +335,11 @@ pub async fn osd_in(
     ticket: &str,
 ) -> Result<(), String> {
     validate_node(node)?;
-    let path = format!("nodes/{}/ceph/osd/{}/in", node, osd_id);
+    let path = format!("nodes/{node}/ceph/osd/{osd_id}/in");
     let _response: serde_json::Value = client
         .post_form(&path, &[], Some(ticket))
         .await
-        .map_err(|e| format!("Failed to mark OSD {} in: {}", osd_id, e))?;
+        .map_err(|e| format!("Failed to mark OSD {osd_id} in: {e}"))?;
     Ok(())
 }
 
@@ -350,11 +350,11 @@ pub async fn list_mds(
     ticket: &str,
 ) -> Result<Vec<serde_json::Value>, String> {
     validate_node(node)?;
-    let path = format!("nodes/{}/ceph/mds", node);
+    let path = format!("nodes/{node}/ceph/mds");
     let response: serde_json::Value = client
         .get(&path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to list Ceph MDS: {}", e))?;
+        .map_err(|e| format!("Failed to list Ceph MDS: {e}"))?;
 
     if let Some(mds) = response.as_array() {
         Ok(mds.to_vec())
@@ -371,11 +371,11 @@ pub async fn get_mds_status(
     ticket: &str,
 ) -> Result<serde_json::Value, String> {
     validate_node(node)?;
-    let path = format!("nodes/{}/ceph/mds/{}", node, mds);
+    let path = format!("nodes/{node}/ceph/mds/{mds}");
     client
         .get(&path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to get MDS {}: {}", mds, e))
+        .map_err(|e| format!("Failed to get MDS {mds}: {e}"))
 }
 
 /// Trigger MDS failover
@@ -386,11 +386,11 @@ pub async fn mds_failover(
     ticket: &str,
 ) -> Result<(), String> {
     validate_node(node)?;
-    let path = format!("nodes/{}/ceph/mds/{}/failover", node, mds);
+    let path = format!("nodes/{node}/ceph/mds/{mds}/failover");
     let _response: serde_json::Value = client
         .post_form(&path, &[], Some(ticket))
         .await
-        .map_err(|e| format!("Failed to trigger MDS failover {}: {}", mds, e))?;
+        .map_err(|e| format!("Failed to trigger MDS failover {mds}: {e}"))?;
     Ok(())
 }
 
@@ -402,11 +402,11 @@ pub async fn list_rbd(
     ticket: &str,
 ) -> Result<Vec<serde_json::Value>, String> {
     validate_node(node)?;
-    let path = format!("nodes/{}/ceph/pool/{}/rbd", node, pool);
+    let path = format!("nodes/{node}/ceph/pool/{pool}/rbd");
     let response: serde_json::Value = client
         .get(&path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to list RBD images in pool {}: {}", pool, e))?;
+        .map_err(|e| format!("Failed to list RBD images in pool {pool}: {e}"))?;
 
     if let Some(images) = response.as_array() {
         Ok(images.to_vec())
@@ -425,7 +425,7 @@ pub async fn create_rbd(
     ticket: &str,
 ) -> Result<(), String> {
     validate_node(node)?;
-    let path = format!("nodes/{}/ceph/pool/{}/rbd", node, pool);
+    let path = format!("nodes/{node}/ceph/pool/{pool}/rbd");
     let config = serde_json::json!({
         "image": image,
         "size": size
@@ -434,7 +434,7 @@ pub async fn create_rbd(
     let _response: serde_json::Value = client
         .post(&path, &config, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to create RBD image {}: {}", image, e))?;
+        .map_err(|e| format!("Failed to create RBD image {image}: {e}"))?;
     Ok(())
 }
 
@@ -447,11 +447,11 @@ pub async fn delete_rbd(
     ticket: &str,
 ) -> Result<(), String> {
     validate_node(node)?;
-    let path = format!("nodes/{}/ceph/pool/{}/rbd/{}", node, pool, image);
+    let path = format!("nodes/{node}/ceph/pool/{pool}/rbd/{image}");
     let _response: serde_json::Value = client
         .delete(&path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to delete RBD image {}: {}", image, e))?;
+        .map_err(|e| format!("Failed to delete RBD image {image}: {e}"))?;
     Ok(())
 }
 
@@ -466,10 +466,10 @@ pub async fn clone_rbd(
     ticket: &str,
 ) -> Result<(), String> {
     validate_node(node)?;
-    let path = format!("nodes/{}/ceph/pool/{}/clone", node, source_pool);
+    let path = format!("nodes/{node}/ceph/pool/{source_pool}/clone");
     let config = serde_json::json!({
         "source": source_image,
-        "dest": format!("{}/{}", dest_pool, dest_image)
+        "dest": format!("{dest_pool}/{dest_image}")
     });
 
     let _response: serde_json::Value =
@@ -477,10 +477,7 @@ pub async fn clone_rbd(
             .post(&path, &config, Some(ticket))
             .await
             .map_err(|e| {
-                format!(
-                    "Failed to clone RBD image {} to {}/{}: {}",
-                    source_image, dest_pool, dest_image, e
-                )
+                format!("Failed to clone RBD image {source_image} to {dest_pool}/{dest_image}: {e}")
             })?;
     Ok(())
 }
@@ -495,7 +492,7 @@ pub async fn resize_rbd(
     ticket: &str,
 ) -> Result<(), String> {
     validate_node(node)?;
-    let path = format!("nodes/{}/ceph/pool/{}/rbd/{}/resize", node, pool, image);
+    let path = format!("nodes/{node}/ceph/pool/{pool}/rbd/{image}/resize");
     let config = serde_json::json!({
         "size": size
     });
@@ -503,7 +500,7 @@ pub async fn resize_rbd(
     let _response: serde_json::Value = client
         .post(&path, &config, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to resize RBD image {}: {}", image, e))?;
+        .map_err(|e| format!("Failed to resize RBD image {image}: {e}"))?;
     Ok(())
 }
 
@@ -517,21 +514,15 @@ pub async fn create_snapshot(
     ticket: &str,
 ) -> Result<(), String> {
     validate_node(node)?;
-    let path = format!("nodes/{}/ceph/pool/{}/rbd/{}/snapshot", node, pool, image);
+    let path = format!("nodes/{node}/ceph/pool/{pool}/rbd/{image}/snapshot");
     let config = serde_json::json!({
         "snapshot": snapshot
     });
 
-    let _response: serde_json::Value =
-        client
-            .post(&path, &config, Some(ticket))
-            .await
-            .map_err(|e| {
-                format!(
-                    "Failed to create snapshot {} for RBD image {}: {}",
-                    snapshot, image, e
-                )
-            })?;
+    let _response: serde_json::Value = client
+        .post(&path, &config, Some(ticket))
+        .await
+        .map_err(|e| format!("Failed to create snapshot {snapshot} for RBD image {image}: {e}"))?;
     Ok(())
 }
 
@@ -541,8 +532,7 @@ fn validate_node(node: &str) -> Result<(), String> {
     }
     if !node.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
         return Err(format!(
-            "Invalid node name '{}': only alphanumeric characters and hyphens are allowed",
-            node
+            "Invalid node name '{node}': only alphanumeric characters and hyphens are allowed"
         ));
     }
     Ok(())
@@ -589,11 +579,11 @@ pub async fn list_managers(
     ticket: &str,
 ) -> Result<Vec<CephMgr>, String> {
     validate_node(node)?;
-    let path = format!("nodes/{}/ceph/mgr", node);
+    let path = format!("nodes/{node}/ceph/mgr");
     let response: serde_json::Value = client
         .get(&path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to list Ceph managers on node {}: {}", node, e))?;
+        .map_err(|e| format!("Failed to list Ceph managers on node {node}: {e}"))?;
 
     parse_managers(&response)
 }
@@ -648,11 +638,11 @@ pub async fn list_cephfs(
     ticket: &str,
 ) -> Result<Vec<CephFs>, String> {
     validate_node(node)?;
-    let path = format!("nodes/{}/ceph/fs", node);
+    let path = format!("nodes/{node}/ceph/fs");
     let response: serde_json::Value = client
         .get(&path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to list CephFS on node {}: {}", node, e))?;
+        .map_err(|e| format!("Failed to list CephFS on node {node}: {e}"))?;
 
     parse_cephfs(&response)
 }
@@ -670,7 +660,7 @@ pub async fn get_ceph_flags(
     client
         .get("cluster/ceph/flags", Some(ticket))
         .await
-        .map_err(|e| format!("Failed to get Ceph flags: {}", e))
+        .map_err(|e| format!("Failed to get Ceph flags: {e}"))
 }
 
 /// Parse an (already `data`-unwrapped) `nodes/{node}/ceph/mon` response.
@@ -730,11 +720,11 @@ pub async fn list_monitors(
     ticket: &str,
 ) -> Result<Vec<CephMonitor>, String> {
     validate_node(node)?;
-    let path = format!("nodes/{}/ceph/mon", node);
+    let path = format!("nodes/{node}/ceph/mon");
     let response: serde_json::Value = client
         .get(&path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to list Ceph monitors: {}", e))?;
+        .map_err(|e| format!("Failed to list Ceph monitors: {e}"))?;
 
     parse_monitors(&response)
 }
@@ -747,11 +737,11 @@ pub async fn get_monitor_status(
     ticket: &str,
 ) -> Result<serde_json::Value, String> {
     validate_node(node)?;
-    let path = format!("nodes/{}/ceph/mon/{}", node, monitor);
+    let path = format!("nodes/{node}/ceph/mon/{monitor}");
     client
         .get(&path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to get monitor {}: {}", monitor, e))
+        .map_err(|e| format!("Failed to get monitor {monitor}: {e}"))
 }
 
 /// Get Ceph quorum health
@@ -761,11 +751,11 @@ pub async fn quorum_health(
     ticket: &str,
 ) -> Result<serde_json::Value, String> {
     validate_node(node)?;
-    let path = format!("nodes/{}/ceph/status", node);
+    let path = format!("nodes/{node}/ceph/status");
     client
         .get(&path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to get Ceph health: {}", e))
+        .map_err(|e| format!("Failed to get Ceph health: {e}"))
 }
 
 /// Parse an (already `data`-unwrapped) `nodes/{node}/ceph/status` response into
@@ -835,11 +825,11 @@ pub async fn get_ceph_health(
     ticket: &str,
 ) -> Result<CephHealth, String> {
     validate_node(node)?;
-    let path = format!("nodes/{}/ceph/status", node);
+    let path = format!("nodes/{node}/ceph/status");
     let response: serde_json::Value = client
         .get(&path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to get Ceph health: {}", e))?;
+        .map_err(|e| format!("Failed to get Ceph health: {e}"))?;
 
     Ok(parse_ceph_health(&response))
 }
@@ -1212,7 +1202,7 @@ mod tests {
     #[test]
     fn test_ceph_health_uses_node_path() {
         let node = "pve1";
-        let path = format!("nodes/{}/ceph/status", node);
+        let path = format!("nodes/{node}/ceph/status");
         assert!(path.contains("nodes/"));
         assert!(path.contains("/ceph/status"));
         assert!(!path.contains("cluster/"));
@@ -1221,7 +1211,7 @@ mod tests {
     #[test]
     fn test_list_pools_uses_node_path() {
         let node = "pve1";
-        let path = format!("nodes/{}/ceph/pool", node);
+        let path = format!("nodes/{node}/ceph/pool");
         assert!(path.starts_with("nodes/"));
         assert!(!path.starts_with("cluster/"));
     }
@@ -1229,7 +1219,7 @@ mod tests {
     #[test]
     fn test_list_osds_uses_node_path() {
         let node = "pve1";
-        let path = format!("nodes/{}/ceph/osd", node);
+        let path = format!("nodes/{node}/ceph/osd");
         assert!(path.starts_with("nodes/"));
         assert!(!path.starts_with("cluster/"));
     }
@@ -1237,7 +1227,7 @@ mod tests {
     #[test]
     fn test_list_monitors_uses_node_path() {
         let node = "pve1";
-        let path = format!("nodes/{}/ceph/mon", node);
+        let path = format!("nodes/{node}/ceph/mon");
         assert!(path.starts_with("nodes/"));
         assert!(!path.starts_with("cluster/"));
     }
@@ -1245,9 +1235,9 @@ mod tests {
     #[test]
     fn test_write_operations_use_node_paths() {
         let node = "pve1";
-        let create_pool_path = format!("nodes/{}/ceph/pool", node);
-        let set_osd_weight_path = format!("nodes/{}/ceph/osd/{}", node, 1);
-        let rbd_resize_path = format!("nodes/{}/ceph/pool/{}/rbd/{}/resize", node, "rbd", "vm-100");
+        let create_pool_path = format!("nodes/{node}/ceph/pool");
+        let set_osd_weight_path = format!("nodes/{node}/ceph/osd/{}", 1);
+        let rbd_resize_path = format!("nodes/{node}/ceph/pool/{}/rbd/{}/resize", "rbd", "vm-100");
         assert!(create_pool_path.starts_with("nodes/"));
         assert!(set_osd_weight_path.starts_with("nodes/"));
         assert!(rbd_resize_path.starts_with("nodes/"));

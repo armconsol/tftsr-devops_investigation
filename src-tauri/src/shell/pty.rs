@@ -51,8 +51,7 @@ impl PtySession {
             .context("Failed to spawn command in PTY")?;
 
         debug!(
-            "PTY session spawned: {} (PID: {:?})",
-            command,
+            "PTY session spawned: {command} (PID: {:?})",
             child.process_id()
         );
 

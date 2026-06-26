@@ -30,7 +30,7 @@ pub async fn list_updates_all_remotes(
     let response: serde_json::Value = client
         .get(path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to list updates from all remotes: {}", e))?;
+        .map_err(|e| format!("Failed to list updates from all remotes: {e}"))?;
 
     let arr = match response.as_array() {
         Some(a) => a,
@@ -71,7 +71,7 @@ pub async fn refresh_updates_all(
     let _response: serde_json::Value = client
         .post_form(path, &[], Some(ticket))
         .await
-        .map_err(|e| format!("Failed to refresh updates: {}", e))?;
+        .map_err(|e| format!("Failed to refresh updates: {e}"))?;
     Ok(())
 }
 
@@ -89,7 +89,7 @@ pub async fn install_updates_remotes(
     let _response: serde_json::Value = client
         .post(path, &config, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to install updates: {}", e))?;
+        .map_err(|e| format!("Failed to install updates: {e}"))?;
     Ok(())
 }
 
@@ -119,7 +119,7 @@ pub async fn list_pve_remotes(
     let response: serde_json::Value = client
         .get(path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to list PVE remotes: {}", e))?;
+        .map_err(|e| format!("Failed to list PVE remotes: {e}"))?;
 
     // response IS already the data (handle_response already unwrapped the envelope)
     if let Some(arr) = response.as_array() {
@@ -137,11 +137,11 @@ pub async fn check_remote_updates(
     remote: &str,
     ticket: &str,
 ) -> Result<Vec<RemoteUpdateInfo>, String> {
-    let path = format!("pve/{}/updates", remote);
+    let path = format!("pve/{remote}/updates");
     let response: serde_json::Value = client
         .get(&path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to check updates for remote {}: {}", remote, e))?;
+        .map_err(|e| format!("Failed to check updates for remote {remote}: {e}"))?;
 
     let arr = match response.as_array() {
         Some(a) => a,

@@ -65,7 +65,7 @@ pub async fn search_wiki(
             }
         });
 
-        tracing::info!("Searching Azure DevOps Wiki with query: {}", expanded_query);
+        tracing::info!("Searching Azure DevOps Wiki with query: {expanded_query}");
 
         let resp = client
             .post(&search_url)
@@ -95,10 +95,8 @@ pub async fn search_wiki(
 
                 let path = item["path"].as_str().unwrap_or("");
                 let url = format!(
-                    "{}/_wiki/wikis/{}/{}",
-                    org_url.trim_end_matches('/'),
-                    project,
-                    path
+                    "{}/_wiki/wikis/{project}/{path}",
+                    org_url.trim_end_matches('/')
                 );
 
                 let excerpt = strip_html_tags(item["content"].as_str().unwrap_or(""))
@@ -145,9 +143,8 @@ async fn fetch_wiki_page(
 ) -> Result<String, String> {
     let client = reqwest::Client::new();
     let page_url = format!(
-        "{}/_apis/wiki/wikis/{}/pages?path={}&api-version=7.0&includeContent=true",
+        "{}/_apis/wiki/wikis/{wiki_id}/pages?path={}&api-version=7.0&includeContent=true",
         org_url.trim_end_matches('/'),
-        wiki_id,
         urlencoding::encode(page_path)
     );
 
@@ -211,10 +208,7 @@ pub async fn search_work_items(
             "query": wiql_query
         });
 
-        tracing::info!(
-            "Searching Azure DevOps work items with query: {}",
-            expanded_query
-        );
+        tracing::info!("Searching Azure DevOps work items with query: {expanded_query}");
 
         let resp = client
             .post(&wiql_url)
@@ -263,9 +257,8 @@ async fn fetch_work_item_details(
 ) -> Result<SearchResult, String> {
     let client = reqwest::Client::new();
     let item_url = format!(
-        "{}/_apis/wit/workitems/{}?api-version=7.0",
-        org_url.trim_end_matches('/'),
-        id
+        "{}/_apis/wit/workitems/{id}?api-version=7.0",
+        org_url.trim_end_matches('/')
     );
 
     let resp = client
@@ -288,8 +281,7 @@ async fn fetch_work_item_details(
 
     let fields = &json["fields"];
     let title = format!(
-        "Work Item {}: {}",
-        id,
+        "Work Item {id}: {}",
         fields["System.Title"].as_str().unwrap_or("No title")
     );
 
