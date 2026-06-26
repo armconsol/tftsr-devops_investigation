@@ -53,12 +53,11 @@ jobs:
         env:
           RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
           GH_SYNC_TOKEN: ${{ secrets.GH_SYNC_TOKEN }}
-          GITEA_API_URL: ${{ secrets.GITEA_API_URL }}
         run: |
           set -eu
           export GH_REPO="${GH_REPO}"
           export GH_TOKEN="${GH_SYNC_TOKEN}"
-          export GITEA_API="${GITEA_API_URL}/api/v1/repos/${GITHUB_REPOSITORY}"
+          export GITEA_API="https://gogs.tftsr.com/api/v1/repos/${GITHUB_REPOSITORY}"
           export GITEA_TOKEN="${RELEASE_TOKEN}"
           export GITEA_PUSH_URL="https://oauth2:${RELEASE_TOKEN}@gogs.tftsr.com/${GITHUB_REPOSITORY}.git"
           sh scripts/sync/mirror_prs.sh
