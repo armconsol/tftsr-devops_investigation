@@ -4,7 +4,7 @@ All notable changes to TRCAA are documented here.
 Commit types shown: feat, fix, perf, docs, refactor.
 CI, chore, and build changes are excluded.
 
-## [Unreleased]
+## [1.4.0] — 2026-06-26
 
 ### Bug Fixes
 - **proxmox**: Use remote_migrate REST path and validate cross-DC inputs
@@ -14,6 +14,7 @@ CI, chore, and build changes are excluded.
 - **k8s**: Open pod & workload logs in the bottom dock with live streaming
 - **ci**: Revert model name to qwen3.5-122b-think
 - **ci**: Add missing sys import to PR review verification script
+- **ci**: Auto-tag cuts a new minor stable on every beta→master promotion
 
 ### Documentation
 - **proxmox**: Document 501 migration gotcha and console clipboard
