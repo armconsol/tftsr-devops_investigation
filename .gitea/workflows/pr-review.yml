@@ -301,7 +301,7 @@ jobs:
             } > /tmp/prompt_batch.txt
 
             jq -cn \
-              --arg model "qwen3.5-122b-thinking" \
+              --arg model "qwen3.5-122b-think" \
               --rawfile content /tmp/prompt_batch.txt \
               '{model: $model, messages: [{role: "user", content: $content}], stream: false}' \
               > /tmp/body.json
