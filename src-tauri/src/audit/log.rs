@@ -3,8 +3,7 @@ use sha2::{Digest, Sha256};
 
 fn compute_entry_hash(entry: &AuditEntry, prev_hash: &str) -> String {
     let payload = format!(
-        "{}|{}|{}|{}|{}|{}|{}|{}",
-        prev_hash,
+        "{prev_hash}|{}|{}|{}|{}|{}|{}|{}",
         entry.id,
         entry.timestamp,
         entry.action,

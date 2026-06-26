@@ -68,13 +68,13 @@ pub async fn get_node_dns(
     ticket: &str,
 ) -> Result<NodeDns, String> {
     validate_node_name(node)?;
-    let path = format!("nodes/{}/dns", node);
+    let path = format!("nodes/{node}/dns");
     let response: serde_json::Value = client
         .get(&path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to get DNS config for node {}: {}", node, e))?;
+        .map_err(|e| format!("Failed to get DNS config for node {node}: {e}"))?;
 
-    serde_json::from_value(response).map_err(|e| format!("Failed to deserialize DNS config: {}", e))
+    serde_json::from_value(response).map_err(|e| format!("Failed to deserialize DNS config: {e}"))
 }
 
 /// Update DNS configuration for a node
@@ -88,7 +88,7 @@ pub async fn update_node_dns(
     ticket: &str,
 ) -> Result<(), String> {
     validate_node_name(node)?;
-    let path = format!("nodes/{}/dns", node);
+    let path = format!("nodes/{node}/dns");
 
     let mut body = serde_json::json!({ "search": search });
     if let Some(v) = dns1 {
@@ -104,7 +104,7 @@ pub async fn update_node_dns(
     let _response: serde_json::Value = client
         .put(&path, &body, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to update DNS config for node {}: {}", node, e))?;
+        .map_err(|e| format!("Failed to update DNS config for node {node}: {e}"))?;
 
     Ok(())
 }
@@ -116,14 +116,14 @@ pub async fn get_node_time(
     ticket: &str,
 ) -> Result<NodeTime, String> {
     validate_node_name(node)?;
-    let path = format!("nodes/{}/time", node);
+    let path = format!("nodes/{node}/time");
     let response: serde_json::Value = client
         .get(&path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to get time for node {}: {}", node, e))?;
+        .map_err(|e| format!("Failed to get time for node {node}: {e}"))?;
 
     serde_json::from_value(response)
-        .map_err(|e| format!("Failed to deserialize time response: {}", e))
+        .map_err(|e| format!("Failed to deserialize time response: {e}"))
 }
 
 /// Update the timezone for a node
@@ -134,13 +134,13 @@ pub async fn update_node_time(
     ticket: &str,
 ) -> Result<(), String> {
     validate_node_name(node)?;
-    let path = format!("nodes/{}/time", node);
+    let path = format!("nodes/{node}/time");
     let body = serde_json::json!({ "timezone": timezone });
 
     let _response: serde_json::Value = client
         .put(&path, &body, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to update timezone for node {}: {}", node, e))?;
+        .map_err(|e| format!("Failed to update timezone for node {node}: {e}"))?;
 
     Ok(())
 }
@@ -152,11 +152,11 @@ pub async fn reboot_node(
     ticket: &str,
 ) -> Result<String, String> {
     validate_node_name(node)?;
-    let path = format!("nodes/{}/status", node);
+    let path = format!("nodes/{node}/status");
     let response: serde_json::Value = client
         .post_form(&path, &[("command", "reboot")], Some(ticket))
         .await
-        .map_err(|e| format!("Failed to reboot node {}: {}", node, e))?;
+        .map_err(|e| format!("Failed to reboot node {node}: {e}"))?;
 
     response
         .as_str()
@@ -171,11 +171,11 @@ pub async fn shutdown_node(
     ticket: &str,
 ) -> Result<String, String> {
     validate_node_name(node)?;
-    let path = format!("nodes/{}/status", node);
+    let path = format!("nodes/{node}/status");
     let response: serde_json::Value = client
         .post_form(&path, &[("command", "shutdown")], Some(ticket))
         .await
-        .map_err(|e| format!("Failed to shut down node {}: {}", node, e))?;
+        .map_err(|e| format!("Failed to shut down node {node}: {e}"))?;
 
     response
         .as_str()
@@ -191,14 +191,14 @@ pub async fn get_node_journal(
     ticket: &str,
 ) -> Result<Vec<String>, String> {
     validate_node_name(node)?;
-    let path = format!("nodes/{}/journal?lastentries={}", node, lastentries);
+    let path = format!("nodes/{node}/journal?lastentries={lastentries}");
     let response: serde_json::Value = client
         .get(&path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to get journal for node {}: {}", node, e))?;
+        .map_err(|e| format!("Failed to get journal for node {node}: {e}"))?;
 
     serde_json::from_value::<Vec<String>>(response)
-        .map_err(|e| format!("Failed to deserialize journal entries: {}", e))
+        .map_err(|e| format!("Failed to deserialize journal entries: {e}"))
 }
 
 /// Get a full diagnostic report for a node
@@ -208,11 +208,11 @@ pub async fn get_node_report(
     ticket: &str,
 ) -> Result<String, String> {
     validate_node_name(node)?;
-    let path = format!("nodes/{}/report", node);
+    let path = format!("nodes/{node}/report");
     let response: serde_json::Value = client
         .get(&path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to get report for node {}: {}", node, e))?;
+        .map_err(|e| format!("Failed to get report for node {node}: {e}"))?;
 
     response
         .as_str()
@@ -366,14 +366,14 @@ mod tests {
     #[test]
     fn test_dns_path_format() {
         let node = "pve-node-1";
-        let path = format!("nodes/{}/dns", node);
+        let path = format!("nodes/{node}/dns");
         assert_eq!(path, "nodes/pve-node-1/dns");
     }
 
     #[test]
     fn test_time_path_format() {
         let node = "pve01";
-        let path = format!("nodes/{}/time", node);
+        let path = format!("nodes/{node}/time");
         assert_eq!(path, "nodes/pve01/time");
     }
 
@@ -381,21 +381,21 @@ mod tests {
     fn test_journal_path_includes_lastentries() {
         let node = "pve01";
         let lastentries: u32 = 100;
-        let path = format!("nodes/{}/journal?lastentries={}", node, lastentries);
+        let path = format!("nodes/{node}/journal?lastentries={lastentries}");
         assert_eq!(path, "nodes/pve01/journal?lastentries=100");
     }
 
     #[test]
     fn test_status_path_format() {
         let node = "pve01";
-        let path = format!("nodes/{}/status", node);
+        let path = format!("nodes/{node}/status");
         assert_eq!(path, "nodes/pve01/status");
     }
 
     #[test]
     fn test_report_path_format() {
         let node = "pve01";
-        let path = format!("nodes/{}/report", node);
+        let path = format!("nodes/{node}/report");
         assert_eq!(path, "nodes/pve01/report");
     }
 

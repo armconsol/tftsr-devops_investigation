@@ -35,7 +35,7 @@ pub async fn list_backup_jobs(
     let response: serde_json::Value = client
         .get(path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to list backup jobs: {}", e))?;
+        .map_err(|e| format!("Failed to list backup jobs: {e}"))?;
 
     if let Some(jobs) = response.as_array() {
         let backup_jobs: Vec<BackupJob> = jobs
@@ -74,7 +74,7 @@ pub async fn create_backup_job(
     job: &BackupJob,
     ticket: &str,
 ) -> Result<(), String> {
-    let path = format!("nodes/{}/backup/jobs", node);
+    let path = format!("nodes/{node}/backup/jobs");
     let config = serde_json::json!({
         "jobid": job.job_id,
         "name": job.name,
@@ -88,7 +88,7 @@ pub async fn create_backup_job(
     let _response: serde_json::Value = client
         .post(&path, &config, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to create backup job {}: {}", job.job_id, e))?;
+        .map_err(|e| format!("Failed to create backup job {}: {e}", job.job_id))?;
     Ok(())
 }
 
@@ -100,7 +100,7 @@ pub async fn update_backup_job(
     job: &BackupJob,
     ticket: &str,
 ) -> Result<(), String> {
-    let path = format!("nodes/{}/backup/jobs/{}", node, job_id);
+    let path = format!("nodes/{node}/backup/jobs/{job_id}");
     let config = serde_json::json!({
         "name": job.name,
         "schedule": job.schedule,
@@ -113,7 +113,7 @@ pub async fn update_backup_job(
     let _response: serde_json::Value = client
         .put(&path, &config, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to update backup job {}: {}", job_id, e))?;
+        .map_err(|e| format!("Failed to update backup job {job_id}: {e}"))?;
     Ok(())
 }
 
@@ -124,11 +124,11 @@ pub async fn delete_backup_job(
     job_id: u32,
     ticket: &str,
 ) -> Result<(), String> {
-    let path = format!("nodes/{}/backup/jobs/{}", node, job_id);
+    let path = format!("nodes/{node}/backup/jobs/{job_id}");
     let _response: serde_json::Value = client
         .delete(&path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to delete backup job {}: {}", job_id, e))?;
+        .map_err(|e| format!("Failed to delete backup job {job_id}: {e}"))?;
     Ok(())
 }
 
@@ -196,7 +196,7 @@ pub async fn list_datastores(
     let response: serde_json::Value = client
         .get(path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to list datastores: {}", e))?;
+        .map_err(|e| format!("Failed to list datastores: {e}"))?;
 
     if let Some(datastores) = response.as_array() {
         let datastore_list: Vec<DatastoreInfo> = datastores
@@ -233,11 +233,11 @@ pub async fn get_datastore_status(
     datastore: &str,
     ticket: &str,
 ) -> Result<DatastoreInfo, String> {
-    let path = format!("nodes/{}/backup/status?datastore={}", node, datastore);
+    let path = format!("nodes/{node}/backup/status?datastore={datastore}");
     let response: serde_json::Value = client
         .get(&path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to get datastore status: {}", e))?;
+        .map_err(|e| format!("Failed to get datastore status: {e}"))?;
 
     // response IS already the data (handle_response already unwrapped the envelope)
     let ds = &response;
@@ -263,11 +263,11 @@ pub async fn list_backup_snapshots(
     datastore: &str,
     ticket: &str,
 ) -> Result<Vec<serde_json::Value>, String> {
-    let path = format!("nodes/{}/backup/snapshots?datastore={}", node, datastore);
+    let path = format!("nodes/{node}/backup/snapshots?datastore={datastore}");
     let response: serde_json::Value = client
         .get(&path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to list backup snapshots: {}", e))?;
+        .map_err(|e| format!("Failed to list backup snapshots: {e}"))?;
 
     if let Some(snapshots) = response.as_array() {
         Ok(snapshots.to_vec())
@@ -286,7 +286,7 @@ pub async fn restore_backup(
     target_vmid: u32,
     ticket: &str,
 ) -> Result<(), String> {
-    let path = format!("nodes/{}/backup/restore", node);
+    let path = format!("nodes/{node}/backup/restore");
     let config = serde_json::json!({
         "datastore": datastore,
         "backup": backup_id,
@@ -294,16 +294,10 @@ pub async fn restore_backup(
         "target-vmid": target_vmid
     });
 
-    let _response: serde_json::Value =
-        client
-            .post(&path, &config, Some(ticket))
-            .await
-            .map_err(|e| {
-                format!(
-                    "Failed to restore backup {} to VM {}: {}",
-                    backup_id, target_vmid, e
-                )
-            })?;
+    let _response: serde_json::Value = client
+        .post(&path, &config, Some(ticket))
+        .await
+        .map_err(|e| format!("Failed to restore backup {backup_id} to VM {target_vmid}: {e}"))?;
     Ok(())
 }
 

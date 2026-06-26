@@ -62,8 +62,7 @@ pub async fn upload_image_attachment(
 
     if !is_supported_image_format(mime_type.as_str()) {
         return Err(format!(
-            "Unsupported image format: {}. Supported formats: {}",
-            mime_type,
+            "Unsupported image format: {mime_type}. Supported formats: {}",
             SUPPORTED_IMAGE_MIME_TYPES.join(", ")
         ));
     }
@@ -156,8 +155,7 @@ pub async fn upload_image_attachment_by_content(
 
     if !is_supported_image_format(mime_type.as_str()) {
         return Err(format!(
-            "Unsupported image format: {}. Supported formats: {}",
-            mime_type,
+            "Unsupported image format: {mime_type}. Supported formats: {}",
             SUPPORTED_IMAGE_MIME_TYPES.join(", ")
         ));
     }
@@ -251,8 +249,7 @@ pub async fn upload_paste_image(
 
     if !is_supported_image_format(mime_type.as_str()) {
         return Err(format!(
-            "Unsupported image format: {}. Supported formats: {}",
-            mime_type,
+            "Unsupported image format: {mime_type}. Supported formats: {}",
             SUPPORTED_IMAGE_MIME_TYPES.join(", ")
         ));
     }
@@ -698,7 +695,7 @@ mod tests {
     fn test_get_image_attachment_data_base64_format() {
         let bytes = b"\x89PNG\r\n\x1a\n";
         let b64 = base64::engine::general_purpose::STANDARD.encode(bytes);
-        let result = format!("data:{};base64,{}", "image/png", b64);
+        let result = format!("data:{};base64,{b64}", "image/png");
         assert!(result.starts_with("data:image/png;base64,"));
         assert!(!result.is_empty());
     }

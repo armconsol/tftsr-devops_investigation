@@ -515,7 +515,7 @@ pub async fn chat_message(
             .await
             .map_err(|e| {
                 let error_msg = format!("AI provider request failed: {e}");
-                warn!("{}", error_msg);
+                warn!("{error_msg}");
                 error_msg
             })?;
 
@@ -722,8 +722,8 @@ pub async fn detect_tool_calling_support(provider_config: ProviderConfig) -> Res
                 || error_msg.contains("503")
             {
                 info!(
-                    "Tool calling not supported for provider {}: {}",
-                    provider_config.name, e
+                    "Tool calling not supported for provider {}: {e}",
+                    provider_config.name
                 );
                 Ok(false)
             } else {
@@ -784,7 +784,7 @@ async fn search_integration_sources(
         let db = match state.db.lock() {
             Ok(db) => db,
             Err(e) => {
-                tracing::warn!("Failed to lock database: {}", e);
+                tracing::warn!("Failed to lock database: {e}");
                 return String::new();
             }
         };
@@ -794,7 +794,7 @@ async fn search_integration_sources(
         ) {
             Ok(stmt) => stmt,
             Err(e) => {
-                tracing::warn!("Failed to prepare statement: {}", e);
+                tracing::warn!("Failed to prepare statement: {e}");
                 return String::new();
             }
         };
@@ -810,7 +810,7 @@ async fn search_integration_sources(
         }) {
             Ok(rows) => rows,
             Err(e) => {
-                tracing::warn!("Failed to query integration configs: {}", e);
+                tracing::warn!("Failed to query integration configs: {e}");
                 return String::new();
             }
         };
@@ -1015,10 +1015,7 @@ async fn search_integration_sources(
                                         results
                                     }
                                     Err(e) => {
-                                        tracing::warn!(
-                                            "Webview fetch failed for Confluence: {}",
-                                            e
-                                        );
+                                        tracing::warn!("Webview fetch failed for Confluence: {e}");
                                         Vec::new()
                                     }
                                 }
@@ -1042,10 +1039,7 @@ async fn search_integration_sources(
                                         results
                                     }
                                     Err(e) => {
-                                        tracing::warn!(
-                                            "Webview fetch failed for ServiceNow: {}",
-                                            e
-                                        );
+                                        tracing::warn!("Webview fetch failed for ServiceNow: {e}");
                                         Vec::new()
                                     }
                                 }
@@ -1069,7 +1063,7 @@ async fn search_integration_sources(
                                         results.extend(wiki_results);
                                     }
                                     Err(e) => {
-                                        tracing::warn!("Webview fetch failed for ADO wiki: {}", e);
+                                        tracing::warn!("Webview fetch failed for ADO wiki: {e}");
                                     }
                                 }
 
@@ -1085,7 +1079,7 @@ async fn search_integration_sources(
                                         results.extend(wi_results);
                                     }
                                     Err(e) => {
-                                        tracing::warn!("Webview fetch failed for ADO work items: {}", e);
+                                        tracing::warn!("Webview fetch failed for ADO work items: {e}");
                                     }
                                 }
 
@@ -1162,9 +1156,7 @@ async fn execute_tool_call(
 
             // Execute the add_ado_comment command
             tracing::info!(
-                "AI executing tool: add_ado_comment({}, \"{}\")",
-                work_item_id,
-                comment_text
+                "AI executing tool: add_ado_comment({work_item_id}, \"{comment_text}\")"
             );
             crate::commands::integrations::add_ado_comment(
                 work_item_id,

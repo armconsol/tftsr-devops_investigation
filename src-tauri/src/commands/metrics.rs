@@ -21,11 +21,7 @@ impl Drop for TempKubeconfig {
             // Only log when the file actually existed; NotFound is expected on
             // Windows when the path was never written.
             if e.kind() != std::io::ErrorKind::NotFound {
-                tracing::warn!(
-                    "Failed to remove temp kubeconfig {}: {}",
-                    self.0.display(),
-                    e
-                );
+                tracing::warn!("Failed to remove temp kubeconfig {}: {e}", self.0.display());
             }
         }
     }

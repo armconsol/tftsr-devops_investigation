@@ -179,16 +179,16 @@ impl SessionManager {
             )
             .await
             {
-                error!("Session {} I/O task failed: {}", session_id_clone, e);
+                error!("Session {session_id_clone} I/O task failed: {e}");
             }
 
             // Remove from registry on exit
             let mut sessions = sessions_clone.write().await;
             sessions.remove(&session_id_clone);
-            info!("Session {} removed from registry", session_id_clone);
+            info!("Session {session_id_clone} removed from registry");
         });
 
-        info!("Session {} started: {:?}", session_id, session_type);
+        info!("Session {session_id} started: {session_type:?}");
         Ok(())
     }
 
@@ -208,16 +208,10 @@ impl SessionManager {
         // After this returns, the PtySession is consumed and dropped, releasing
         // the master/slave PTY handles.
         let cleanup = |pty: &mut PtySession, session_id: &str, reason: &str| {
-            debug!(
-                "Cleaning up PTY for session {} (reason: {})",
-                session_id, reason
-            );
+            debug!("Cleaning up PTY for session {session_id} (reason: {reason})");
             if pty.is_alive() {
                 if let Err(e) = pty.kill() {
-                    warn!(
-                        "Failed to kill PTY child for session {} during cleanup: {}",
-                        session_id, e
-                    );
+                    warn!("Failed to kill PTY child for session {session_id} during cleanup: {e}");
                 }
             }
         };
@@ -227,8 +221,8 @@ impl SessionManager {
                 // Read from PTY stdout/stderr
                 _ = poll_interval.tick() => {
                     if !pty_session.is_alive() {
-                        debug!("Session {} PTY process exited", session_id);
-                        let _ = app_handle.emit(&format!("terminal-closed-{}", session_id), ());
+                        debug!("Session {session_id} PTY process exited");
+                        let _ = app_handle.emit(&format!("terminal-closed-{session_id}"), ());
                         cleanup(&mut pty_session, &session_id, "process exited");
                         break;
                     }
@@ -236,16 +230,16 @@ impl SessionManager {
                     match pty_session.read() {
                         Ok(data) if !data.is_empty() => {
                             // Emit to frontend
-                            if let Err(e) = app_handle.emit(&format!("terminal-output-{}", session_id), data) {
-                                warn!("Failed to emit terminal output for session {}: {}", session_id, e);
+                            if let Err(e) = app_handle.emit(&format!("terminal-output-{session_id}"), data) {
+                                warn!("Failed to emit terminal output for session {session_id}: {e}");
                             }
                         }
                         Ok(_) => {
                             // No data available
                         }
                         Err(e) => {
-                            error!("Failed to read from PTY for session {}: {}", session_id, e);
-                            let _ = app_handle.emit(&format!("terminal-error-{}", session_id), e.to_string());
+                            error!("Failed to read from PTY for session {session_id}: {e}");
+                            let _ = app_handle.emit(&format!("terminal-error-{session_id}"), e.to_string());
                             cleanup(&mut pty_session, &session_id, "read error");
                             break;
                         }
@@ -255,8 +249,8 @@ impl SessionManager {
                 // Handle stdin from frontend
                 Some(data) = stdin_rx.recv() => {
                     if let Err(e) = pty_session.write(&data) {
-                        error!("Failed to write to PTY for session {}: {}", session_id, e);
-                        let _ = app_handle.emit(&format!("terminal-error-{}", session_id), e.to_string());
+                        error!("Failed to write to PTY for session {session_id}: {e}");
+                        let _ = app_handle.emit(&format!("terminal-error-{session_id}"), e.to_string());
                         cleanup(&mut pty_session, &session_id, "write error");
                         break;
                     }
@@ -272,12 +266,9 @@ impl SessionManager {
                                 // signal failed, etc.). Surface the error to
                                 // the frontend and terminate the session
                                 // rather than continuing with a stale layout.
-                                error!(
-                                    "Failed to resize PTY for session {}: {}. Terminating session.",
-                                    session_id, e
-                                );
+                                error!("Failed to resize PTY for session {session_id}: {e}. Terminating session.");
                                 let _ = app_handle.emit(
-                                    &format!("terminal-error-{}", session_id),
+                                    &format!("terminal-error-{session_id}"),
                                     format!("PTY resize failed; session terminated: {e}"),
                                 );
                                 cleanup(&mut pty_session, &session_id, "resize error");
@@ -285,7 +276,7 @@ impl SessionManager {
                             }
                         }
                         ControlCommand::Terminate => {
-                            info!("Session {} received terminate command", session_id);
+                            info!("Session {session_id} received terminate command");
                             cleanup(&mut pty_session, &session_id, "terminate command");
                             break;
                         }
@@ -386,7 +377,7 @@ mod tests {
     #[test]
     fn test_control_command_debug() {
         let cmd = ControlCommand::Resize { rows: 24, cols: 80 };
-        let debug_str = format!("{:?}", cmd);
+        let debug_str = format!("{cmd:?}");
         assert!(debug_str.contains("Resize"));
     }
 }

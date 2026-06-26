@@ -92,13 +92,9 @@ pub fn build_vncwebsocket_url(
     vnc_ticket: &str,
 ) -> String {
     format!(
-        "wss://{}:{}/api2/json/nodes/{}/qemu/{}/vncwebsocket?port={}&vncticket={}",
-        host,
-        port,
-        node,
-        vmid,
+        "wss://{host}:{port}/api2/json/nodes/{node}/qemu/{vmid}/vncwebsocket?port={}&vncticket={}",
         urlencoding::encode(vnc_port),
-        urlencoding::encode(vnc_ticket),
+        urlencoding::encode(vnc_ticket)
     )
 }
 
@@ -112,13 +108,9 @@ pub fn build_lxc_vncwebsocket_url(
     vnc_ticket: &str,
 ) -> String {
     format!(
-        "wss://{}:{}/api2/json/nodes/{}/lxc/{}/vncwebsocket?port={}&vncticket={}",
-        host,
-        port,
-        node,
-        vmid,
+        "wss://{host}:{port}/api2/json/nodes/{node}/lxc/{vmid}/vncwebsocket?port={}&vncticket={}",
         urlencoding::encode(vnc_port),
-        urlencoding::encode(vnc_ticket),
+        urlencoding::encode(vnc_ticket)
     )
 }
 
@@ -131,19 +123,16 @@ pub fn build_node_vncwebsocket_url(
     vnc_ticket: &str,
 ) -> String {
     format!(
-        "wss://{}:{}/api2/json/nodes/{}/vncwebsocket?port={}&vncticket={}",
-        host,
-        port,
-        node,
+        "wss://{host}:{port}/api2/json/nodes/{node}/vncwebsocket?port={}&vncticket={}",
         urlencoding::encode(vnc_port),
-        urlencoding::encode(vnc_ticket),
+        urlencoding::encode(vnc_ticket)
     )
 }
 
 /// Build the `Cookie` header value carrying the Proxmox auth ticket. The cookie
 /// name differs by product: `PVEAuthCookie` for PVE, `PBSAuthCookie` for PBS.
 pub fn build_auth_cookie(cookie_name: &str, auth_ticket: &str) -> String {
-    format!("{}={}", cookie_name, auth_ticket)
+    format!("{cookie_name}={auth_ticket}")
 }
 
 /// Normalise a TLS fingerprint to a bare lower-case hex string (strips colons,
@@ -171,8 +160,7 @@ pub fn verify_cert_fingerprint(expected: &str, der: &[u8]) -> Result<(), String>
         Ok(())
     } else {
         Err(format!(
-            "TLS fingerprint mismatch: expected {}, got {}",
-            expected_norm, actual
+            "TLS fingerprint mismatch: expected {expected_norm}, got {actual}"
         ))
     }
 }
@@ -203,10 +191,10 @@ pub async fn start_vnc_proxy(
 ) -> Result<VncConsoleSession, String> {
     let listener = TcpListener::bind("127.0.0.1:0")
         .await
-        .map_err(|e| format!("Failed to bind local VNC proxy socket: {}", e))?;
+        .map_err(|e| format!("Failed to bind local VNC proxy socket: {e}"))?;
     let local_port = listener
         .local_addr()
-        .map_err(|e| format!("Failed to read local proxy address: {}", e))?
+        .map_err(|e| format!("Failed to read local proxy address: {e}"))?
         .port();
 
     let cookie = build_auth_cookie(&cookie_name, &auth_ticket);
@@ -225,16 +213,16 @@ pub async fn start_vnc_proxy(
                 )
                 .await
                 {
-                    tracing::warn!("VNC proxy bridge ended: {}", e);
+                    tracing::warn!("VNC proxy bridge ended: {e}");
                 }
             }
-            Ok(Err(e)) => tracing::warn!("VNC proxy failed to accept connection: {}", e),
+            Ok(Err(e)) => tracing::warn!("VNC proxy failed to accept connection: {e}"),
             Err(_) => tracing::warn!("VNC proxy timed out waiting for a client; releasing socket"),
         }
     });
 
     Ok(VncConsoleSession {
-        local_url: format!("ws://127.0.0.1:{}", local_port),
+        local_url: format!("ws://127.0.0.1:{local_port}"),
         ticket: vnc_ticket,
         local_port,
     })
@@ -251,12 +239,12 @@ async fn bridge_connection(
     // Accept the inbound websocket from noVNC.
     let inbound_ws = tokio_tungstenite::accept_async(inbound)
         .await
-        .map_err(|e| format!("Failed to accept inbound websocket: {}", e))?;
+        .map_err(|e| format!("Failed to accept inbound websocket: {e}"))?;
 
     // Build the upstream request with the auth cookie header.
     let mut request = upstream_url
         .into_client_request()
-        .map_err(|e| format!("Invalid upstream URL: {}", e))?;
+        .map_err(|e| format!("Invalid upstream URL: {e}"))?;
     request.headers_mut().insert(
         COOKIE,
         cookie
@@ -272,13 +260,13 @@ async fn bridge_connection(
         .danger_accept_invalid_certs(true)
         .danger_accept_invalid_hostnames(true)
         .build()
-        .map_err(|e| format!("Failed to build TLS connector: {}", e))?;
+        .map_err(|e| format!("Failed to build TLS connector: {e}"))?;
     let connector = tokio_tungstenite::Connector::NativeTls(tls);
 
     let (upstream_ws, _resp) =
         tokio_tungstenite::connect_async_tls_with_config(request, None, false, Some(connector))
             .await
-            .map_err(|e| format!("Failed to connect to PVE vncwebsocket: {}", e))?;
+            .map_err(|e| format!("Failed to connect to PVE vncwebsocket: {e}"))?;
 
     // Pin the peer certificate fingerprint when one is configured.
     if let Some(expected) = expected_fingerprint.filter(|f| !f.trim().is_empty()) {
@@ -286,7 +274,7 @@ async fn bridge_connection(
             tokio_tungstenite::MaybeTlsStream::NativeTls(s) => s
                 .get_ref()
                 .peer_certificate()
-                .map_err(|e| format!("Failed to read peer certificate: {}", e))?
+                .map_err(|e| format!("Failed to read peer certificate: {e}"))?
                 .map(|c| c.to_der().map_err(|e| e.to_string()))
                 .transpose()?,
             _ => None,
@@ -346,12 +334,12 @@ pub async fn vncproxy_vm(
     vmid: u32,
     ticket: &str,
 ) -> Result<VncProxyInfo, String> {
-    let path = format!("nodes/{}/qemu/{}/vncproxy", node, vmid);
+    let path = format!("nodes/{node}/qemu/{vmid}/vncproxy");
     let params: &[(&str, &str)] = &[("websocket", "1")];
     let response: serde_json::Value = client
         .post_form(&path, params, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to open VNC proxy for VM {}: {}", vmid, e))?;
+        .map_err(|e| format!("Failed to open VNC proxy for VM {vmid}: {e}"))?;
     parse_vncproxy_response(&response)
 }
 
@@ -363,12 +351,12 @@ pub async fn vncproxy_lxc(
     vmid: u32,
     ticket: &str,
 ) -> Result<VncProxyInfo, String> {
-    let path = format!("nodes/{}/lxc/{}/vncproxy", node, vmid);
+    let path = format!("nodes/{node}/lxc/{vmid}/vncproxy");
     let params: &[(&str, &str)] = &[("websocket", "1")];
     let response: serde_json::Value = client
         .post_form(&path, params, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to open VNC proxy for container {}: {}", vmid, e))?;
+        .map_err(|e| format!("Failed to open VNC proxy for container {vmid}: {e}"))?;
     parse_vncproxy_response(&response)
 }
 
@@ -379,12 +367,12 @@ pub async fn vncshell_node(
     node: &str,
     ticket: &str,
 ) -> Result<VncProxyInfo, String> {
-    let path = format!("nodes/{}/vncshell", node);
+    let path = format!("nodes/{node}/vncshell");
     let params: &[(&str, &str)] = &[("websocket", "1")];
     let response: serde_json::Value = client
         .post_form(&path, params, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to open node shell for {}: {}", node, e))?;
+        .map_err(|e| format!("Failed to open node shell for {node}: {e}"))?;
     parse_vncproxy_response(&response)
 }
 
@@ -395,12 +383,12 @@ pub async fn termproxy_node(
     node: &str,
     ticket: &str,
 ) -> Result<VncProxyInfo, String> {
-    let path = format!("nodes/{}/termproxy", node);
+    let path = format!("nodes/{node}/termproxy");
     let params: &[(&str, &str)] = &[];
     let response: serde_json::Value = client
         .post_form(&path, params, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to open terminal proxy for {}: {}", node, e))?;
+        .map_err(|e| format!("Failed to open terminal proxy for {node}: {e}"))?;
     parse_vncproxy_response(&response)
 }
 

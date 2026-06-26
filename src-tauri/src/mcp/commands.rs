@@ -190,8 +190,8 @@ pub async fn initiate_mcp_oauth(
 
     if server.auth_type != "oauth2" {
         return Err(format!(
-            "Server {} uses auth_type '{}', not oauth2",
-            id, server.auth_type
+            "Server {id} uses auth_type '{}', not oauth2",
+            server.auth_type
         ));
     }
 
@@ -240,8 +240,7 @@ pub async fn initiate_mcp_oauth(
         hex::encode(bytes)
     };
     let auth_url = format!(
-        "{}&state={}",
-        base_auth_url,
+        "{base_auth_url}&state={}",
         urlencoding::encode(&state_nonce)
     );
 
