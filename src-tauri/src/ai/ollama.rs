@@ -70,7 +70,7 @@ impl Provider for OllamaProvider {
                         tracing::debug!("Ollama not started (not installed or already running)");
                     }
                     Err(e) => {
-                        tracing::warn!("Failed to auto-start Ollama: {}", e);
+                        tracing::warn!("Failed to auto-start Ollama: {e}");
                         // Continue anyway - maybe it's already running or will start soon
                     }
                 }
@@ -248,9 +248,7 @@ impl Provider for OllamaProvider {
                             Ok(s) => s,
                             Err(e) => {
                                 tracing::warn!(
-                                    "Failed to serialize tool call arguments at index {}: {}",
-                                    idx,
-                                    e
+                                    "Failed to serialize tool call arguments at index {idx}: {e}"
                                 );
                                 continue;
                             }
@@ -302,9 +300,8 @@ impl Provider for OllamaProvider {
 
         // If we get here, all retries failed
         anyhow::bail!(
-            "Failed to get response from Ollama after {} attempts. Last error: {:?}",
-            max_retries + 1,
-            last_error
+            "Failed to get response from Ollama after {} attempts. Last error: {last_error:?}",
+            max_retries + 1
         )
     }
 }

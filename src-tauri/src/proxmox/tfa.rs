@@ -22,8 +22,7 @@ fn validate_userid(userid: &str) -> Result<(), String> {
     let parts: Vec<&str> = userid.splitn(2, '@').collect();
     if parts.len() != 2 {
         return Err(format!(
-            "Invalid userid '{}': must contain exactly one '@'",
-            userid
+            "Invalid userid '{userid}': must contain exactly one '@'"
         ));
     }
     let local = parts[0];
@@ -31,8 +30,7 @@ fn validate_userid(userid: &str) -> Result<(), String> {
 
     if local.is_empty() || realm.is_empty() {
         return Err(format!(
-            "Invalid userid '{}': local and realm parts must not be empty",
-            userid
+            "Invalid userid '{userid}': local and realm parts must not be empty"
         ));
     }
 
@@ -41,15 +39,13 @@ fn validate_userid(userid: &str) -> Result<(), String> {
         .all(|c| c.is_alphanumeric() || c == '-' || c == '.')
     {
         return Err(format!(
-            "Invalid userid '{}': local part contains disallowed characters",
-            userid
+            "Invalid userid '{userid}': local part contains disallowed characters"
         ));
     }
 
     if !realm.chars().all(|c| c.is_alphanumeric() || c == '-') {
         return Err(format!(
-            "Invalid userid '{}': realm part contains disallowed characters",
-            userid
+            "Invalid userid '{userid}': realm part contains disallowed characters"
         ));
     }
 
@@ -63,8 +59,7 @@ fn validate_tfa_id(id: &str) -> Result<(), String> {
     }
     if !id.chars().all(|c| c.is_alphanumeric() || c == '-') {
         return Err(format!(
-            "Invalid TFA id '{}': must contain only alphanumeric characters and hyphens",
-            id
+            "Invalid TFA id '{id}': must contain only alphanumeric characters and hyphens"
         ));
     }
     Ok(())
@@ -80,7 +75,7 @@ pub async fn list_tfa_entries(
     let response: serde_json::Value = client
         .get("access/tfa", Some(ticket))
         .await
-        .map_err(|e| format!("Failed to list TFA entries: {}", e))?;
+        .map_err(|e| format!("Failed to list TFA entries: {e}"))?;
 
     match response.as_array() {
         Some(arr) => {
@@ -132,7 +127,7 @@ pub async fn add_tfa_entry(
     client
         .post_form(&path, &params, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to add TFA entry for user '{}': {}", userid, e))
+        .map_err(|e| format!("Failed to add TFA entry for user '{userid}': {e}"))
 }
 
 /// Delete a specific TFA entry for a user.
@@ -153,12 +148,10 @@ pub async fn delete_tfa_entry(
         urlencoding::encode(id)
     );
 
-    let _response: serde_json::Value = client.delete(&path, Some(ticket)).await.map_err(|e| {
-        format!(
-            "Failed to delete TFA entry '{}' for user '{}': {}",
-            id, userid, e
-        )
-    })?;
+    let _response: serde_json::Value = client
+        .delete(&path, Some(ticket))
+        .await
+        .map_err(|e| format!("Failed to delete TFA entry '{id}' for user '{userid}': {e}"))?;
 
     Ok(())
 }
@@ -256,7 +249,7 @@ mod tests {
         // without a real client.
         let userid = "user@pam";
         let encoded = urlencoding::encode(userid).to_string();
-        let path = format!("access/tfa/{}", encoded);
+        let path = format!("access/tfa/{encoded}");
         assert_eq!(path, "access/tfa/user%40pam");
     }
 

@@ -95,22 +95,20 @@ impl ProxmoxClient {
             .form(&params)
             .send()
             .await
-            .map_err(|e| anyhow!("Authentication request failed: {}", e))?;
+            .map_err(|e| anyhow!("Authentication request failed: {e}"))?;
 
         if !response.status().is_success() {
             let status = response.status();
             let text = response.text().await.unwrap_or_default();
             return Err(anyhow!(
-                "Authentication failed with status {}: {}",
-                status,
-                text
+                "Authentication failed with status {status}: {text}"
             ));
         }
 
         let envelope: ProxmoxEnvelope<AuthResponse> = response
             .json()
             .await
-            .map_err(|e| anyhow!("Failed to parse authentication response: {}", e))?;
+            .map_err(|e| anyhow!("Failed to parse authentication response: {e}"))?;
 
         let auth = envelope.data;
         self.ticket = Some(auth.ticket.clone());
@@ -148,14 +146,14 @@ impl ProxmoxClient {
         if let Some(token) = &self.api_token {
             headers.insert(
                 reqwest::header::AUTHORIZATION,
-                format!("PVEAPIAuth {}", token)
+                format!("PVEAPIAuth {token}")
                     .parse()
                     .expect("Invalid auth header"),
             );
         } else if let Some(ticket) = ticket {
             headers.insert(
                 "Cookie",
-                format!("PVEAuthCookie={}", ticket)
+                format!("PVEAuthCookie={ticket}")
                     .parse()
                     .expect("Invalid cookie header"),
             );
@@ -187,7 +185,7 @@ impl ProxmoxClient {
             .headers(headers)
             .send()
             .await
-            .map_err(|e| anyhow!("GET request failed: {}", e))?;
+            .map_err(|e| anyhow!("GET request failed: {e}"))?;
 
         self.handle_response(response).await
     }
@@ -209,7 +207,7 @@ impl ProxmoxClient {
             .json(body)
             .send()
             .await
-            .map_err(|e| anyhow!("POST request failed: {}", e))?;
+            .map_err(|e| anyhow!("POST request failed: {e}"))?;
 
         self.handle_response(response).await
     }
@@ -231,7 +229,7 @@ impl ProxmoxClient {
             .form(params)
             .send()
             .await
-            .map_err(|e| anyhow!("POST form request failed: {}", e))?;
+            .map_err(|e| anyhow!("POST form request failed: {e}"))?;
 
         self.handle_response(response).await
     }
@@ -253,7 +251,7 @@ impl ProxmoxClient {
             .json(body)
             .send()
             .await
-            .map_err(|e| anyhow!("PUT request failed: {}", e))?;
+            .map_err(|e| anyhow!("PUT request failed: {e}"))?;
 
         self.handle_response(response).await
     }
@@ -275,7 +273,7 @@ impl ProxmoxClient {
             .multipart(form)
             .send()
             .await
-            .map_err(|e| anyhow!("POST multipart request failed: {}", e))?;
+            .map_err(|e| anyhow!("POST multipart request failed: {e}"))?;
 
         self.handle_response(response).await
     }
@@ -295,7 +293,7 @@ impl ProxmoxClient {
             .headers(headers)
             .send()
             .await
-            .map_err(|e| anyhow!("DELETE request failed: {}", e))?;
+            .map_err(|e| anyhow!("DELETE request failed: {e}"))?;
 
         self.handle_response(response).await
     }
@@ -308,24 +306,20 @@ impl ProxmoxClient {
         if !response.status().is_success() {
             let status = response.status();
             let text = response.text().await.unwrap_or_default();
-            return Err(anyhow!(
-                "API request failed with status {}: {}",
-                status,
-                text
-            ));
+            return Err(anyhow!("API request failed with status {status}: {text}"));
         }
 
         let data: HashMap<String, serde_json::Value> = response
             .json()
             .await
-            .map_err(|e| anyhow!("Failed to parse API response: {}", e))?;
+            .map_err(|e| anyhow!("Failed to parse API response: {e}"))?;
 
         // Proxmox API wraps data in "data" field
         data.get("data")
             .ok_or_else(|| anyhow!("Response missing 'data' field"))
             .and_then(|d| {
                 serde_json::from_value(d.clone())
-                    .map_err(|e| anyhow!("Failed to deserialize data: {}", e))
+                    .map_err(|e| anyhow!("Failed to deserialize data: {e}"))
             })
     }
 
@@ -479,7 +473,7 @@ mod tests {
                 assert!(client.csrf_token.is_some());
             }
             Err(e) => {
-                panic!("Authentication failed: {}", e);
+                panic!("Authentication failed: {e}");
             }
         }
     }
@@ -519,7 +513,7 @@ mod tests {
                 println!("  Found {} resources", resources.len());
             }
             Err(e) => {
-                panic!("Failed to get cluster resources: {}", e);
+                panic!("Failed to get cluster resources: {e}");
             }
         }
     }
@@ -567,7 +561,7 @@ mod tests {
                 }
             }
             Err(e) => {
-                panic!("Failed to get nodes: {}", e);
+                panic!("Failed to get nodes: {e}");
             }
         }
     }
@@ -611,7 +605,7 @@ mod tests {
                 println!("  Found {} VMs", vms.len());
             }
             Err(e) => {
-                panic!("Failed to get VMs: {}", e);
+                panic!("Failed to get VMs: {e}");
             }
         }
     }

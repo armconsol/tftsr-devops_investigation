@@ -31,11 +31,11 @@ pub async fn get_node_metrics(
     ticket: &str,
 ) -> Result<NodeMetrics, String> {
     crate::proxmox::validate::validate_node(node)?;
-    let path = format!("nodes/{}/status", node);
+    let path = format!("nodes/{node}/status");
     let response: serde_json::Value = client
         .get(&path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to get node metrics for {}: {}", node, e))?;
+        .map_err(|e| format!("Failed to get node metrics for {node}: {e}"))?;
 
     {
         let data = &response;
@@ -66,7 +66,7 @@ pub async fn list_nodes(
     let response: serde_json::Value = client
         .get(path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to list nodes: {}", e))?;
+        .map_err(|e| format!("Failed to list nodes: {e}"))?;
 
     if let Some(resources) = response.as_array() {
         let node_list: Vec<NodeStatus> = resources
@@ -144,8 +144,7 @@ impl std::str::FromStr for RrdTimeframe {
             "month" => Ok(RrdTimeframe::Month),
             "year" => Ok(RrdTimeframe::Year),
             _ => Err(format!(
-                "Invalid timeframe '{}' — must be one of: hour, day, week, month, year",
-                s
+                "Invalid timeframe '{s}' — must be one of: hour, day, week, month, year"
             )),
         }
     }
@@ -160,10 +159,7 @@ fn validate_storage(storage: &str) -> Result<(), String> {
         .chars()
         .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
     {
-        return Err(format!(
-            "storage '{}' contains invalid characters — only alphanumeric, '-', '_' are allowed",
-            storage
-        ));
+        return Err(format!("storage '{storage}' contains invalid characters — only alphanumeric, '-', '_' are allowed"));
     }
     Ok(())
 }
@@ -171,7 +167,7 @@ fn validate_storage(storage: &str) -> Result<(), String> {
 /// Validate a VMID: must be in range 100–999999999.
 fn validate_vmid(vmid: u32) -> Result<(), String> {
     if !(100..=999_999_999).contains(&vmid) {
-        return Err(format!("vmid {} is out of valid range 100–999999999", vmid));
+        return Err(format!("vmid {vmid} is out of valid range 100–999999999"));
     }
     Ok(())
 }
@@ -188,12 +184,12 @@ pub async fn get_node_rrd_data(
 ) -> Result<Vec<serde_json::Value>, String> {
     crate::proxmox::validate::validate_node(node)?;
     let tf: RrdTimeframe = timeframe.parse()?;
-    let path = format!("nodes/{}/rrddata?timeframe={}", node, tf.as_str());
+    let path = format!("nodes/{node}/rrddata?timeframe={}", tf.as_str());
 
     let response: serde_json::Value = client
         .get(&path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to get node RRD data for {}: {}", node, e))?;
+        .map_err(|e| format!("Failed to get node RRD data for {node}: {e}"))?;
 
     response
         .as_array()
@@ -215,17 +211,12 @@ pub async fn get_vm_rrd_data(
     crate::proxmox::validate::validate_node(node)?;
     validate_vmid(vmid)?;
     let tf: RrdTimeframe = timeframe.parse()?;
-    let path = format!(
-        "nodes/{}/qemu/{}/rrddata?timeframe={}",
-        node,
-        vmid,
-        tf.as_str()
-    );
+    let path = format!("nodes/{node}/qemu/{vmid}/rrddata?timeframe={}", tf.as_str());
 
     let response: serde_json::Value = client
         .get(&path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to get VM RRD data for {}/{}: {}", node, vmid, e))?;
+        .map_err(|e| format!("Failed to get VM RRD data for {node}/{vmid}: {e}"))?;
 
     response
         .as_array()
@@ -248,18 +239,14 @@ pub async fn get_storage_rrd_data(
     validate_storage(storage)?;
     let tf: RrdTimeframe = timeframe.parse()?;
     let path = format!(
-        "nodes/{}/storage/{}/rrddata?timeframe={}",
-        node,
-        storage,
+        "nodes/{node}/storage/{storage}/rrddata?timeframe={}",
         tf.as_str()
     );
 
-    let response: serde_json::Value = client.get(&path, Some(ticket)).await.map_err(|e| {
-        format!(
-            "Failed to get storage RRD data for {}/{}: {}",
-            node, storage, e
-        )
-    })?;
+    let response: serde_json::Value = client
+        .get(&path, Some(ticket))
+        .await
+        .map_err(|e| format!("Failed to get storage RRD data for {node}/{storage}: {e}"))?;
 
     response.as_array().cloned().ok_or_else(|| {
         "Unexpected response format for storage RRD data: expected array".to_string()
@@ -407,7 +394,7 @@ mod tests {
     fn test_rrd_path_node() {
         let node = "pve-node1";
         let tf = RrdTimeframe::Hour;
-        let path = format!("nodes/{}/rrddata?timeframe={}", node, tf.as_str());
+        let path = format!("nodes/{node}/rrddata?timeframe={}", tf.as_str());
         assert_eq!(path, "nodes/pve-node1/rrddata?timeframe=hour");
     }
 
@@ -416,12 +403,7 @@ mod tests {
         let node = "pve-node1";
         let vmid: u32 = 100;
         let tf = RrdTimeframe::Day;
-        let path = format!(
-            "nodes/{}/qemu/{}/rrddata?timeframe={}",
-            node,
-            vmid,
-            tf.as_str()
-        );
+        let path = format!("nodes/{node}/qemu/{vmid}/rrddata?timeframe={}", tf.as_str());
         assert_eq!(path, "nodes/pve-node1/qemu/100/rrddata?timeframe=day");
     }
 
@@ -431,9 +413,7 @@ mod tests {
         let storage = "local-lvm";
         let tf = RrdTimeframe::Week;
         let path = format!(
-            "nodes/{}/storage/{}/rrddata?timeframe={}",
-            node,
-            storage,
+            "nodes/{node}/storage/{storage}/rrddata?timeframe={}",
             tf.as_str()
         );
         assert_eq!(

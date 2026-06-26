@@ -43,7 +43,7 @@ pub async fn upload_certificate(
     let response: serde_json::Value = client
         .post(path, &config, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to upload certificate: {}", e))?;
+        .map_err(|e| format!("Failed to upload certificate: {e}"))?;
 
     {
         let data = &response;
@@ -120,11 +120,11 @@ pub async fn get_certificate(
     cert_id: &str,
     ticket: &str,
 ) -> Result<Certificate, String> {
-    let path = format!("config/certificate/{}", cert_id);
+    let path = format!("config/certificate/{cert_id}");
     let response: serde_json::Value = client
         .get(&path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to get certificate {}: {}", cert_id, e))?;
+        .map_err(|e| format!("Failed to get certificate {cert_id}: {e}"))?;
 
     {
         let data = &response;
@@ -204,7 +204,7 @@ pub async fn list_certificates(
     let response: serde_json::Value = client
         .get(path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to list certificates: {}", e))?;
+        .map_err(|e| format!("Failed to list certificates: {e}"))?;
 
     if let Some(certs) = response.as_array() {
         let cert_list: Vec<Certificate> = certs
@@ -285,11 +285,11 @@ pub async fn delete_certificate(
     cert_id: &str,
     ticket: &str,
 ) -> Result<(), String> {
-    let path = format!("config/certificate/{}", cert_id);
+    let path = format!("config/certificate/{cert_id}");
     let _response: serde_json::Value = client
         .delete(&path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to delete certificate {}: {}", cert_id, e))?;
+        .map_err(|e| format!("Failed to delete certificate {cert_id}: {e}"))?;
     Ok(())
 }
 
@@ -299,11 +299,11 @@ pub async fn list_node_certificates(
     node: &str,
     ticket: &str,
 ) -> Result<Vec<Certificate>, String> {
-    let path = format!("nodes/{}/certificates", node);
+    let path = format!("nodes/{node}/certificates");
     let response: serde_json::Value = client
         .get(&path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to list node certificates for {}: {}", node, e))?;
+        .map_err(|e| format!("Failed to list node certificates for {node}: {e}"))?;
 
     if let Some(certs) = response.as_array() {
         let cert_list: Vec<Certificate> = certs
@@ -387,7 +387,7 @@ pub async fn upload_node_certificate(
     name: Option<&str>,
     ticket: &str,
 ) -> Result<Certificate, String> {
-    let path = format!("nodes/{}/certificates", node);
+    let path = format!("nodes/{node}/certificates");
     let config = serde_json::json!({
         "certificate": certificate,
         "privatekey": private_key,
@@ -397,7 +397,7 @@ pub async fn upload_node_certificate(
     let response: serde_json::Value = client
         .post(&path, &config, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to upload node certificate for {}: {}", node, e))?;
+        .map_err(|e| format!("Failed to upload node certificate for {node}: {e}"))?;
 
     {
         let data = &response;

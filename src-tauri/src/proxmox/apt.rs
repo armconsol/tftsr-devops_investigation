@@ -30,11 +30,11 @@ pub async fn list_apt_updates(
     node: &str,
     ticket: &str,
 ) -> Result<Vec<APTUpdate>, String> {
-    let path = format!("nodes/{}/apt/update", node);
+    let path = format!("nodes/{node}/apt/update");
     let response: serde_json::Value = client
         .get(&path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to list APT updates: {}", e))?;
+        .map_err(|e| format!("Failed to list APT updates: {e}"))?;
 
     let arr = match response.as_array() {
         Some(a) => a,
@@ -76,11 +76,11 @@ pub async fn update_apt_repos(
     node: &str,
     ticket: &str,
 ) -> Result<(), String> {
-    let path = format!("nodes/{}/apt/sources", node);
+    let path = format!("nodes/{node}/apt/sources");
     let _response: serde_json::Value = client
         .post_form(&path, &[], Some(ticket))
         .await
-        .map_err(|e| format!("Failed to update APT repositories: {}", e))?;
+        .map_err(|e| format!("Failed to update APT repositories: {e}"))?;
     Ok(())
 }
 
@@ -90,11 +90,11 @@ pub async fn list_apt_repositories(
     node: &str,
     ticket: &str,
 ) -> Result<Vec<APTRepository>, String> {
-    let path = format!("nodes/{}/apt/repositories", node);
+    let path = format!("nodes/{node}/apt/repositories");
     let response: serde_json::Value = client
         .get(&path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to list APT repositories: {}", e))?;
+        .map_err(|e| format!("Failed to list APT repositories: {e}"))?;
 
     // response IS already the data object (handle_response unwrapped the envelope)
     // GET /nodes/{node}/apt/repositories returns {"files": [...], "infos": [...], ...}
@@ -134,7 +134,7 @@ pub async fn list_apt_repositories(
                 .get("Enabled")
                 .and_then(|e| e.as_bool())
                 .unwrap_or(true);
-            let repository_id = format!("{}-{}", type_, url);
+            let repository_id = format!("{type_}-{url}");
 
             APTRepository {
                 repository_id,
@@ -157,7 +157,7 @@ pub async fn add_apt_repository(
     repo: &APTRepository,
     ticket: &str,
 ) -> Result<(), String> {
-    let path = format!("nodes/{}/apt/sources", node);
+    let path = format!("nodes/{node}/apt/sources");
     let config = serde_json::json!({
         "id": repo.repository_id,
         "url": repo.url,
@@ -170,7 +170,7 @@ pub async fn add_apt_repository(
     let _response: serde_json::Value = client
         .post(&path, &config, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to add APT repository {}: {}", repo.repository_id, e))?;
+        .map_err(|e| format!("Failed to add APT repository {}: {e}", repo.repository_id))?;
     Ok(())
 }
 
@@ -182,7 +182,7 @@ pub async fn update_apt_repository(
     repo: &APTRepository,
     ticket: &str,
 ) -> Result<(), String> {
-    let path = format!("nodes/{}/apt/sources/{}", node, repo_id);
+    let path = format!("nodes/{node}/apt/sources/{repo_id}");
     let config = serde_json::json!({
         "url": repo.url,
         "distribution": repo.distribution,
@@ -194,7 +194,7 @@ pub async fn update_apt_repository(
     let _response: serde_json::Value = client
         .put(&path, &config, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to update APT repository {}: {}", repo_id, e))?;
+        .map_err(|e| format!("Failed to update APT repository {repo_id}: {e}"))?;
     Ok(())
 }
 
@@ -205,11 +205,11 @@ pub async fn delete_apt_repository(
     repo_id: &str,
     ticket: &str,
 ) -> Result<(), String> {
-    let path = format!("nodes/{}/apt/sources/{}", node, repo_id);
+    let path = format!("nodes/{node}/apt/sources/{repo_id}");
     let _response: serde_json::Value = client
         .delete(&path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to delete APT repository {}: {}", repo_id, e))?;
+        .map_err(|e| format!("Failed to delete APT repository {repo_id}: {e}"))?;
     Ok(())
 }
 
@@ -312,7 +312,7 @@ pub async fn install_apt_package(
     package: &str,
     ticket: &str,
 ) -> Result<(), String> {
-    let path = format!("nodes/{}/apt", node);
+    let path = format!("nodes/{node}/apt");
     let config = serde_json::json!({
         "packages": [package]
     });
@@ -320,7 +320,7 @@ pub async fn install_apt_package(
     let _response: serde_json::Value = client
         .post(&path, &config, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to install APT package {}: {}", package, e))?;
+        .map_err(|e| format!("Failed to install APT package {package}: {e}"))?;
     Ok(())
 }
 
@@ -330,7 +330,7 @@ pub async fn upgrade_apt_packages(
     node: &str,
     ticket: &str,
 ) -> Result<(), String> {
-    let path = format!("nodes/{}/apt", node);
+    let path = format!("nodes/{node}/apt");
     let config = serde_json::json!({
         "dist_upgrade": true
     });
@@ -338,6 +338,6 @@ pub async fn upgrade_apt_packages(
     let _response: serde_json::Value = client
         .post(&path, &config, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to upgrade APT packages: {}", e))?;
+        .map_err(|e| format!("Failed to upgrade APT packages: {e}"))?;
     Ok(())
 }

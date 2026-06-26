@@ -164,9 +164,8 @@ pub async fn export_document(
     // Ensure the directory exists
     std::fs::create_dir_all(&base_dir).map_err(|e| {
         format!(
-            "Failed to create export directory {}: {}",
-            base_dir.display(),
-            e
+            "Failed to create export directory {}: {e}",
+            base_dir.display()
         )
     })?;
 

@@ -1,5 +1,5 @@
 // Input validation helpers for Proxmox path-interpolated identifiers.
-// All node names flow into URL paths via format!("nodes/{}/...", node);
+// All node names flow into URL paths via format!("nodes/{node}/...");
 // vmids flow into URL paths as decimal integers. A single validation
 // choke-point here prevents traversal and injection in every caller.
 

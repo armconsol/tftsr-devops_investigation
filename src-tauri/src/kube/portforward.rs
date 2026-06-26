@@ -109,12 +109,12 @@ impl PortForwardSession {
                         *status_clone.lock().await = PortForwardStatus::Stopped;
                     }
                     Ok(status) => {
-                        let error_msg = format!("kubectl process exited with status: {}", status);
+                        let error_msg = format!("kubectl process exited with status: {status}");
                         *status_clone.lock().await = PortForwardStatus::Error(error_msg.clone());
                         *error_clone.lock().await = Some(error_msg);
                     }
                     Err(e) => {
-                        let error_msg = format!("Failed to wait for kubectl process: {}", e);
+                        let error_msg = format!("Failed to wait for kubectl process: {e}");
                         *status_clone.lock().await = PortForwardStatus::Error(error_msg.clone());
                         *error_clone.lock().await = Some(error_msg);
                     }

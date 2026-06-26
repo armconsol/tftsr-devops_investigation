@@ -92,11 +92,11 @@ pub async fn list_network_interfaces(
     node: &str,
     ticket: &str,
 ) -> Result<Vec<NetworkInterface>, String> {
-    let path = format!("nodes/{}/network", node);
+    let path = format!("nodes/{node}/network");
     let response: serde_json::Value = client
         .get(&path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to list network interfaces for node {}: {}", node, e))?;
+        .map_err(|e| format!("Failed to list network interfaces for node {node}: {e}"))?;
 
     let interfaces: Vec<NetworkInterface> = response
         .as_array()
@@ -105,7 +105,7 @@ pub async fn list_network_interfaces(
         .filter_map(|iface| {
             serde_json::from_value(iface.clone())
                 .map_err(|e| {
-                    tracing::warn!("Failed to deserialize interface: {}", e);
+                    tracing::warn!("Failed to deserialize interface: {e}");
                     e
                 })
                 .ok()
@@ -122,7 +122,7 @@ pub async fn create_network_interface(
     config: &NetworkInterfaceConfig,
     ticket: &str,
 ) -> Result<(), String> {
-    let path = format!("nodes/{}/network", node);
+    let path = format!("nodes/{node}/network");
 
     let mut body = serde_json::json!({
         "iface": config.iface,
@@ -151,7 +151,7 @@ pub async fn create_network_interface(
     let _response: serde_json::Value = client
         .post(&path, &body, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to create network interface {}: {}", config.iface, e))?;
+        .map_err(|e| format!("Failed to create network interface {}: {e}", config.iface))?;
 
     Ok(())
 }
@@ -164,7 +164,7 @@ pub async fn update_network_interface(
     config: &NetworkInterfaceConfig,
     ticket: &str,
 ) -> Result<(), String> {
-    let path = format!("nodes/{}/network/{}", node, iface);
+    let path = format!("nodes/{node}/network/{iface}");
 
     let mut body = serde_json::json!({
         "iface": config.iface,
@@ -193,7 +193,7 @@ pub async fn update_network_interface(
     let _response: serde_json::Value = client
         .put(&path, &body, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to update network interface {}: {}", iface, e))?;
+        .map_err(|e| format!("Failed to update network interface {iface}: {e}"))?;
 
     Ok(())
 }
@@ -209,11 +209,11 @@ pub async fn reload_network_config(
 ) -> Result<String, String> {
     crate::proxmox::validate::validate_node(node)?;
 
-    let path = format!("nodes/{}/network", node);
+    let path = format!("nodes/{node}/network");
     client
         .put(&path, &serde_json::json!({}), Some(ticket))
         .await
-        .map_err(|e| format!("Failed to reload network config on node {}: {}", node, e))
+        .map_err(|e| format!("Failed to reload network config on node {node}: {e}"))
 }
 
 /// Delete a network interface
@@ -223,12 +223,12 @@ pub async fn delete_network_interface(
     iface: &str,
     ticket: &str,
 ) -> Result<(), String> {
-    let path = format!("nodes/{}/network/{}", node, iface);
+    let path = format!("nodes/{node}/network/{iface}");
 
     let _response: serde_json::Value = client
         .delete(&path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to delete network interface {}: {}", iface, e))?;
+        .map_err(|e| format!("Failed to delete network interface {iface}: {e}"))?;
 
     Ok(())
 }
