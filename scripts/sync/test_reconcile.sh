@@ -21,6 +21,17 @@ FAIL=0
 pass() { printf '  ok   %s\n' "$1"; }
 fail() { printf '  FAIL %s\n' "$1"; FAIL=$((FAIL+1)); }
 
+# --- Static checks: the script must parse and key conditionals be well-formed --
+# (Guards against false "missing ]" reports: proven mechanically, not by eye.)
+printf 'Test 0: static syntax + conditional integrity\n'
+if sh -n "${RECONCILE}"; then pass "reconcile.sh parses (sh -n)"; else fail "reconcile.sh has a parse error"; fi
+# shellcheck disable=SC2016  # intentional literal: assert this exact source line exists
+if grep -qF '[ -n "${p}" ] || continue' "${RECONCILE}"; then
+  pass "path guard conditional is well-formed ([ ... ] present)"
+else
+  fail "path guard conditional missing closing ]"
+fi
+
 # Read a file's content from a bare repo branch; empty if absent.
 # Use --git-dir so it works regardless of safe.bareRepository config.
 show() { git --git-dir="$1" show "$2:$3" 2>/dev/null || true; }
