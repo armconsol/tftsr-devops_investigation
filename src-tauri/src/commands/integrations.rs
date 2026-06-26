@@ -904,7 +904,7 @@ pub async fn authenticate_with_webview(
     )
     .map_err(|e| format!("Failed to persist webview: {e}"))?;
 
-    tracing::info!("Persisted webview {} for service {}", webview_id, service);
+    tracing::info!("Persisted webview {webview_id} for service {service}");
 
     // Set up window close handler to remove from tracking and database
     if let Some(webview_window) = app_handle.get_webview_window(&webview_id) {
@@ -923,7 +923,7 @@ pub async fn authenticate_with_webview(
                     // Remove from in-memory tracking
                     if let Ok(mut webviews_lock) = webviews.lock() {
                         webviews_lock.remove(&service);
-                        tracing::info!("Removed {} from webview tracking", service);
+                        tracing::info!("Removed {service} from webview tracking");
                     }
 
                     // Remove from database
@@ -932,9 +932,9 @@ pub async fn authenticate_with_webview(
                             "DELETE FROM persistent_webviews WHERE service = ?1",
                             rusqlite::params![service],
                         ) {
-                            tracing::warn!("Failed to remove persistent webview from DB: {}", e);
+                            tracing::warn!("Failed to remove persistent webview from DB: {e}");
                         } else {
-                            tracing::info!("Removed {} from persistent webviews database", service);
+                            tracing::info!("Removed {service} from persistent webviews database");
                         }
                     }
                 });
@@ -1176,7 +1176,7 @@ pub async fn get_fresh_cookies_from_webview(
         Ok(cookies) if !cookies.is_empty() => Ok(Some(cookies)),
         Ok(_) => Ok(None), // No cookies available
         Err(e) => {
-            tracing::warn!("Failed to extract cookies from {}: {}", service, e);
+            tracing::warn!("Failed to extract cookies from {service}: {e}");
             Ok(None)
         }
     }
@@ -1219,10 +1219,7 @@ pub async fn restore_persistent_webviews(
 
     for (service, webview_label, base_url) in webviews_to_restore {
         tracing::info!(
-            "Restoring persistent webview {} for service {} at {}",
-            webview_label,
-            service,
-            base_url
+            "Restoring persistent webview {webview_label} for service {service} at {base_url}"
         );
 
         // Get project name from integration config if available
@@ -1256,10 +1253,10 @@ pub async fn restore_persistent_webviews(
                     .map_err(|e| format!("Failed to lock webviews: {e}"))?
                     .insert(service.clone(), webview_label.clone());
 
-                tracing::info!("Successfully restored webview for {}", service);
+                tracing::info!("Successfully restored webview for {service}");
             }
             Err(e) => {
-                tracing::warn!("Failed to restore webview for {}: {}", service, e);
+                tracing::warn!("Failed to restore webview for {service}: {e}");
                 // Remove from database if restoration failed
                 let db = app_state
                     .db
@@ -1294,7 +1291,7 @@ pub async fn remove_persistent_webview(
     )
     .map_err(|e| format!("Failed to remove persistent webview: {e}"))?;
 
-    tracing::info!("Removed persistent webview for service: {}", service);
+    tracing::info!("Removed persistent webview for service: {service}");
     Ok(())
 }
 

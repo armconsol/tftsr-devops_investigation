@@ -49,7 +49,7 @@ impl Drop for KubeconfigGuard {
         if let Some(path) = self.path.take() {
             if let Err(e) = std::fs::remove_file(&path) {
                 if e.kind() != std::io::ErrorKind::NotFound {
-                    tracing::warn!("Failed to remove temp kubeconfig {}: {}", path.display(), e);
+                    tracing::warn!("Failed to remove temp kubeconfig {}: {e}", path.display());
                 }
             }
         }

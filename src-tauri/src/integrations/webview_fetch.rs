@@ -154,7 +154,7 @@ pub async fn search_confluence_webview<R: tauri::Runtime>(
             urlencoding::encode(&cql)
         );
 
-        tracing::info!("Executing Confluence search via webview with CQL: {}", cql);
+        tracing::info!("Executing Confluence search via webview with CQL: {cql}");
 
         let response = fetch_from_webview(webview_window, &search_url, "GET", None).await?;
 
@@ -165,12 +165,7 @@ pub async fn search_confluence_webview<R: tauri::Runtime>(
                 let space_key = item["content"]["space"]["key"].as_str();
 
                 let url = if let (Some(id), Some(space)) = (content_id, space_key) {
-                    format!(
-                        "{}/display/{}/{}",
-                        base_url.trim_end_matches('/'),
-                        space,
-                        id
-                    )
+                    format!("{}/display/{space}/{id}", base_url.trim_end_matches('/'))
                 } else {
                     base_url.to_string()
                 };
@@ -363,8 +358,7 @@ pub async fn search_servicenow_webview<R: tauri::Runtime>(
                 for item in inc_array {
                     let number = item["number"].as_str().unwrap_or("Unknown");
                     let title = format!(
-                        "Incident {}: {}",
-                        number,
+                        "Incident {number}: {}",
                         item["short_description"].as_str().unwrap_or("No title")
                     );
                     let sys_id = item["sys_id"].as_str().unwrap_or("");
@@ -427,10 +421,7 @@ pub async fn search_azuredevops_wiki_webview<R: tauri::Runtime>(
             urlencoding::encode(project)
         );
 
-        tracing::info!(
-            "Executing Azure DevOps wiki search via webview for: {}",
-            search_text
-        );
+        tracing::info!("Executing Azure DevOps wiki search via webview for: {search_text}");
 
         // First, get list of wikis
         let wikis_response = fetch_from_webview(webview_window, &search_url, "GET", None).await?;
@@ -517,10 +508,9 @@ fn search_page_recursive(
             let page_id = page.get("id").and_then(|i| i.as_i64()).unwrap_or(0);
             let title = path.trim_start_matches('/').replace('/', " > ");
             let url = format!(
-                "{}/_wiki/wikis/{}/{}/{}",
+                "{}/_wiki/wikis/{}/{page_id}/{}",
                 org_url.trim_end_matches('/'),
                 urlencoding::encode(wiki_id),
-                page_id,
                 urlencoding::encode(path.trim_start_matches('/'))
             );
 
@@ -617,8 +607,8 @@ pub async fn search_azuredevops_workitems_webview<R: tauri::Runtime>(
         .to_string();
 
         tracing::info!("Executing Azure DevOps work item search via webview");
-        tracing::debug!("WIQL query: {}", wiql_query);
-        tracing::debug!("Request URL: {}", wiql_url);
+        tracing::debug!("WIQL query: {wiql_query}");
+        tracing::debug!("Request URL: {wiql_url}");
 
         let wiql_response =
             fetch_from_webview(webview_window, &wiql_url, "POST", Some(&body)).await?;
@@ -628,9 +618,8 @@ pub async fn search_azuredevops_workitems_webview<R: tauri::Runtime>(
             for item in work_items.iter().take(5) {
                 if let Some(id) = item.get("id").and_then(|i| i.as_i64()) {
                     let details_url = format!(
-                        "{}/_apis/wit/workitems/{}?api-version=7.0",
-                        org_url.trim_end_matches('/'),
-                        id
+                        "{}/_apis/wit/workitems/{id}?api-version=7.0",
+                        org_url.trim_end_matches('/')
                     );
 
                     if let Ok(details) =
@@ -703,7 +692,7 @@ pub async fn add_azuredevops_comment_webview<R: tauri::Runtime>(
     })
     .to_string();
 
-    tracing::info!("Adding comment to Azure DevOps work item {}", work_item_id);
+    tracing::info!("Adding comment to Azure DevOps work item {work_item_id}");
 
     let response = fetch_from_webview(webview_window, &comment_url, "POST", Some(&body)).await?;
 

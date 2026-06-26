@@ -59,7 +59,7 @@ pub async fn start_resource_watcher(
     tokio::spawn(async move {
         let watcher = Watcher::new(cluster_id, namespace, resource_type, watcher_tx);
         if let Err(e) = watcher.start().await {
-            tracing::error!("Watcher failed: {}", e);
+            tracing::error!("Watcher failed: {e}");
         }
     });
 
@@ -89,7 +89,7 @@ pub async fn start_all_resources_watcher(
             let watcher =
                 Watcher::new(cluster_id, namespace, resource_type.to_string(), watcher_tx);
             if let Err(e) = watcher.start().await {
-                tracing::error!("Watcher for {} failed: {}", resource_type, e);
+                tracing::error!("Watcher for {resource_type} failed: {e}");
             }
         });
     }

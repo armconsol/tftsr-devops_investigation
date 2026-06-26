@@ -49,7 +49,7 @@ async fn main() {
     let ticket = match client.authenticate(&cli.password).await {
         Ok(t) => t,
         Err(e) => {
-            eprintln!("Authentication failed: {}", e);
+            eprintln!("Authentication failed: {e}");
             process::exit(1);
         }
     };
@@ -147,9 +147,9 @@ async fn main() {
     };
 
     match result {
-        Ok(json) => println!("{}", json),
+        Ok(json) => println!("{json}"),
         Err(e) => {
-            eprintln!("Error: {}", e);
+            eprintln!("Error: {e}");
             process::exit(1);
         }
     }
@@ -196,9 +196,9 @@ async fn list_vms(
 ) -> Result<String, String> {
     let vms = crate::proxmox::vm::list_vms(_client, ticket)
         .await
-        .map_err(|e| format!("Failed to list VMs: {}", e))?;
+        .map_err(|e| format!("Failed to list VMs: {e}"))?;
 
-    serde_json::to_string_pretty(&vms).map_err(|e| format!("Failed to serialize: {}", e))
+    serde_json::to_string_pretty(&vms).map_err(|e| format!("Failed to serialize: {e}"))
 }
 
 async fn list_pools(
@@ -209,9 +209,9 @@ async fn list_pools(
 ) -> Result<String, String> {
     let pools = crate::proxmox::ceph::list_pools(_client, node, ticket)
         .await
-        .map_err(|e| format!("Failed to list pools: {}", e))?;
+        .map_err(|e| format!("Failed to list pools: {e}"))?;
 
-    serde_json::to_string_pretty(&pools).map_err(|e| format!("Failed to serialize: {}", e))
+    serde_json::to_string_pretty(&pools).map_err(|e| format!("Failed to serialize: {e}"))
 }
 
 async fn list_osds(
@@ -222,9 +222,9 @@ async fn list_osds(
 ) -> Result<String, String> {
     let osds = crate::proxmox::ceph::list_osds(_client, node, ticket)
         .await
-        .map_err(|e| format!("Failed to list OSDs: {}", e))?;
+        .map_err(|e| format!("Failed to list OSDs: {e}"))?;
 
-    serde_json::to_string_pretty(&osds).map_err(|e| format!("Failed to serialize: {}", e))
+    serde_json::to_string_pretty(&osds).map_err(|e| format!("Failed to serialize: {e}"))
 }
 
 async fn get_ceph_health(
@@ -235,9 +235,9 @@ async fn get_ceph_health(
 ) -> Result<String, String> {
     let health = crate::proxmox::ceph::get_ceph_health(_client, node, ticket)
         .await
-        .map_err(|e| format!("Failed to get Ceph health: {}", e))?;
+        .map_err(|e| format!("Failed to get Ceph health: {e}"))?;
 
-    serde_json::to_string_pretty(&health).map_err(|e| format!("Failed to serialize: {}", e))
+    serde_json::to_string_pretty(&health).map_err(|e| format!("Failed to serialize: {e}"))
 }
 
 async fn list_realms(
@@ -247,9 +247,9 @@ async fn list_realms(
 ) -> Result<String, String> {
     let realms = crate::proxmox::auth_realm::list_auth_realms(_client, ticket)
         .await
-        .map_err(|e| format!("Failed to list realms: {}", e))?;
+        .map_err(|e| format!("Failed to list realms: {e}"))?;
 
-    serde_json::to_string_pretty(&realms).map_err(|e| format!("Failed to serialize: {}", e))
+    serde_json::to_string_pretty(&realms).map_err(|e| format!("Failed to serialize: {e}"))
 }
 
 async fn list_updates(
@@ -260,9 +260,9 @@ async fn list_updates(
 ) -> Result<String, String> {
     let updates = crate::proxmox::apt::list_apt_updates(_client, node, ticket)
         .await
-        .map_err(|e| format!("Failed to list updates: {}", e))?;
+        .map_err(|e| format!("Failed to list updates: {e}"))?;
 
-    serde_json::to_string_pretty(&updates).map_err(|e| format!("Failed to serialize: {}", e))
+    serde_json::to_string_pretty(&updates).map_err(|e| format!("Failed to serialize: {e}"))
 }
 
 async fn get_shell_ticket(
@@ -273,9 +273,9 @@ async fn get_shell_ticket(
 ) -> Result<String, String> {
     let shell_ticket = crate::proxmox::shell::get_shell_ticket(_client, remote, ticket)
         .await
-        .map_err(|e| format!("Failed to get shell ticket: {}", e))?;
+        .map_err(|e| format!("Failed to get shell ticket: {e}"))?;
 
-    serde_json::to_string_pretty(&shell_ticket).map_err(|e| format!("Failed to serialize: {}", e))
+    serde_json::to_string_pretty(&shell_ticket).map_err(|e| format!("Failed to serialize: {e}"))
 }
 
 async fn list_certificates(
@@ -285,9 +285,9 @@ async fn list_certificates(
 ) -> Result<String, String> {
     let certs = crate::proxmox::certificates::list_certificates(_client, ticket)
         .await
-        .map_err(|e| format!("Failed to list certificates: {}", e))?;
+        .map_err(|e| format!("Failed to list certificates: {e}"))?;
 
-    serde_json::to_string_pretty(&certs).map_err(|e| format!("Failed to serialize: {}", e))
+    serde_json::to_string_pretty(&certs).map_err(|e| format!("Failed to serialize: {e}"))
 }
 
 async fn list_firewall_rules(
@@ -298,9 +298,9 @@ async fn list_firewall_rules(
 ) -> Result<String, String> {
     let rules = crate::proxmox::firewall::list_firewall_rules(_client, node, ticket)
         .await
-        .map_err(|e| format!("Failed to list firewall rules: {}", e))?;
+        .map_err(|e| format!("Failed to list firewall rules: {e}"))?;
 
-    serde_json::to_string_pretty(&rules).map_err(|e| format!("Failed to serialize: {}", e))
+    serde_json::to_string_pretty(&rules).map_err(|e| format!("Failed to serialize: {e}"))
 }
 
 async fn list_sdn_controllers(
@@ -310,9 +310,9 @@ async fn list_sdn_controllers(
 ) -> Result<String, String> {
     let controllers = crate::proxmox::sdn::list_evpn_zones(_client, ticket)
         .await
-        .map_err(|e| format!("Failed to list SDN controllers: {}", e))?;
+        .map_err(|e| format!("Failed to list SDN controllers: {e}"))?;
 
-    serde_json::to_string_pretty(&controllers).map_err(|e| format!("Failed to serialize: {}", e))
+    serde_json::to_string_pretty(&controllers).map_err(|e| format!("Failed to serialize: {e}"))
 }
 
 async fn list_sdn_vnets(
@@ -322,9 +322,9 @@ async fn list_sdn_vnets(
 ) -> Result<String, String> {
     let vnets = crate::proxmox::sdn::list_vnets(_client, ticket)
         .await
-        .map_err(|e| format!("Failed to list SDN virtual networks: {}", e))?;
+        .map_err(|e| format!("Failed to list SDN virtual networks: {e}"))?;
 
-    serde_json::to_string_pretty(&vnets).map_err(|e| format!("Failed to serialize: {}", e))
+    serde_json::to_string_pretty(&vnets).map_err(|e| format!("Failed to serialize: {e}"))
 }
 
 async fn list_sdn_zones(
@@ -334,9 +334,9 @@ async fn list_sdn_zones(
 ) -> Result<String, String> {
     let zones = crate::proxmox::sdn::list_evpn_zones(_client, ticket)
         .await
-        .map_err(|e| format!("Failed to list SDN zones: {}", e))?;
+        .map_err(|e| format!("Failed to list SDN zones: {e}"))?;
 
-    serde_json::to_string_pretty(&zones).map_err(|e| format!("Failed to serialize: {}", e))
+    serde_json::to_string_pretty(&zones).map_err(|e| format!("Failed to serialize: {e}"))
 }
 
 async fn list_ceph_clusters(
@@ -346,9 +346,9 @@ async fn list_ceph_clusters(
 ) -> Result<String, String> {
     let clusters = crate::proxmox::ceph_cluster::list_ceph_clusters(_client, ticket)
         .await
-        .map_err(|e| format!("Failed to list Ceph clusters: {}", e))?;
+        .map_err(|e| format!("Failed to list Ceph clusters: {e}"))?;
 
-    serde_json::to_string_pretty(&clusters).map_err(|e| format!("Failed to serialize: {}", e))
+    serde_json::to_string_pretty(&clusters).map_err(|e| format!("Failed to serialize: {e}"))
 }
 
 async fn list_migrations(
@@ -359,9 +359,9 @@ async fn list_migrations(
 ) -> Result<String, String> {
     let tasks = crate::proxmox::migration::list_migration_status(_client, node, ticket)
         .await
-        .map_err(|e| format!("Failed to list migrations: {}", e))?;
+        .map_err(|e| format!("Failed to list migrations: {e}"))?;
 
-    serde_json::to_string_pretty(&tasks).map_err(|e| format!("Failed to serialize: {}", e))
+    serde_json::to_string_pretty(&tasks).map_err(|e| format!("Failed to serialize: {e}"))
 }
 
 async fn list_tasks(
@@ -372,7 +372,7 @@ async fn list_tasks(
 ) -> Result<String, String> {
     let tasks = crate::proxmox::tasks::list_tasks(_client, node, ticket)
         .await
-        .map_err(|e| format!("Failed to list tasks: {}", e))?;
+        .map_err(|e| format!("Failed to list tasks: {e}"))?;
 
-    serde_json::to_string_pretty(&tasks).map_err(|e| format!("Failed to serialize: {}", e))
+    serde_json::to_string_pretty(&tasks).map_err(|e| format!("Failed to serialize: {e}"))
 }

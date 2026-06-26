@@ -61,10 +61,7 @@ pub async fn search_confluence(
             urlencoding::encode(&safe_query)
         );
 
-        tracing::info!(
-            "Searching Confluence with expanded query: {}",
-            expanded_query
-        );
+        tracing::info!("Searching Confluence with expanded query: {expanded_query}");
 
         let resp = client
             .get(&search_url)
@@ -95,10 +92,8 @@ pub async fn search_confluence(
 
                 let url = if let (Some(id_str), Some(space)) = (id, space_key) {
                     format!(
-                        "{}/display/{}/{}",
-                        base_url.trim_end_matches('/'),
-                        space,
-                        id_str
+                        "{}/display/{space}/{id_str}",
+                        base_url.trim_end_matches('/')
                     )
                 } else {
                     base_url.to_string()
@@ -142,9 +137,8 @@ async fn fetch_page_content(
 ) -> Result<String, String> {
     let client = reqwest::Client::new();
     let content_url = format!(
-        "{}/rest/api/content/{}?expand=body.storage",
-        base_url.trim_end_matches('/'),
-        page_id
+        "{}/rest/api/content/{page_id}?expand=body.storage",
+        base_url.trim_end_matches('/')
     );
 
     let resp = client

@@ -42,13 +42,11 @@ pub async fn list_storage_content_iso(
     storage: &str,
     ticket: &str,
 ) -> Result<Vec<serde_json::Value>, String> {
-    let path = format!("nodes/{}/storage/{}/content", node, storage);
-    let response: serde_json::Value = client.get(&path, Some(ticket)).await.map_err(|e| {
-        format!(
-            "Failed to list storage content for {}/{}: {}",
-            node, storage, e
-        )
-    })?;
+    let path = format!("nodes/{node}/storage/{storage}/content");
+    let response: serde_json::Value = client
+        .get(&path, Some(ticket))
+        .await
+        .map_err(|e| format!("Failed to list storage content for {node}/{storage}: {e}"))?;
 
     response
         .as_array()
@@ -76,12 +74,12 @@ pub async fn upload_iso(
     file_bytes: Vec<u8>,
     ticket: &str,
 ) -> Result<String, String> {
-    let path = format!("nodes/{}/storage/{}/upload", node, storage);
+    let path = format!("nodes/{node}/storage/{storage}/upload");
 
     let file_part = reqwest::multipart::Part::bytes(file_bytes)
         .file_name(filename.to_string())
         .mime_str("application/octet-stream")
-        .map_err(|e| format!("Failed to build multipart part: {}", e))?;
+        .map_err(|e| format!("Failed to build multipart part: {e}"))?;
 
     let form = reqwest::multipart::Form::new()
         .text("content", "iso")
@@ -91,7 +89,7 @@ pub async fn upload_iso(
     let task_id: String = client
         .post_multipart(&path, form, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to upload ISO to {}/{}: {}", node, storage, e))?;
+        .map_err(|e| format!("Failed to upload ISO to {node}/{storage}: {e}"))?;
 
     Ok(task_id)
 }

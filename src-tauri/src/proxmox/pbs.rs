@@ -53,8 +53,7 @@ pub struct PbsTask {
 fn validate_store(store: &str) -> Result<(), String> {
     if store.is_empty() || store.len() > 64 {
         return Err(format!(
-            "Invalid store name '{}': must be 1–64 characters",
-            store
+            "Invalid store name '{store}': must be 1–64 characters"
         ));
     }
     if !store
@@ -62,8 +61,7 @@ fn validate_store(store: &str) -> Result<(), String> {
         .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
     {
         return Err(format!(
-            "Invalid store name '{}': only alphanumeric, hyphens, and underscores allowed",
-            store
+            "Invalid store name '{store}': only alphanumeric, hyphens, and underscores allowed"
         ));
     }
     Ok(())
@@ -73,14 +71,12 @@ fn validate_store(store: &str) -> Result<(), String> {
 fn validate_node(node: &str) -> Result<(), String> {
     if node.is_empty() || node.len() > 64 {
         return Err(format!(
-            "Invalid node name '{}': must be 1–64 characters",
-            node
+            "Invalid node name '{node}': must be 1–64 characters"
         ));
     }
     if !node.chars().all(|c| c.is_alphanumeric() || c == '-') {
         return Err(format!(
-            "Invalid node name '{}': only alphanumeric characters and hyphens allowed",
-            node
+            "Invalid node name '{node}': only alphanumeric characters and hyphens allowed"
         ));
     }
     Ok(())
@@ -96,7 +92,7 @@ pub async fn list_pbs_datastores(
     let response: serde_json::Value = client
         .get("datastore", Some(ticket))
         .await
-        .map_err(|e| format!("Failed to list PBS datastores: {}", e))?;
+        .map_err(|e| format!("Failed to list PBS datastores: {e}"))?;
 
     match response.as_array() {
         Some(arr) => {
@@ -119,11 +115,11 @@ pub async fn get_pbs_datastore_status(
     store: &str,
 ) -> Result<serde_json::Value, String> {
     validate_store(store)?;
-    let path = format!("datastore/{}/status", store);
+    let path = format!("datastore/{store}/status");
     client
         .get(&path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to get PBS datastore status for '{}': {}", store, e))
+        .map_err(|e| format!("Failed to get PBS datastore status for '{store}': {e}"))
 }
 
 /// List namespaces within a PBS datastore.
@@ -138,7 +134,7 @@ pub async fn list_pbs_namespaces(
     store: &str,
 ) -> Result<Vec<PbsNamespace>, String> {
     validate_store(store)?;
-    let path = format!("datastore/{}/namespace", store);
+    let path = format!("datastore/{store}/namespace");
 
     match client.get::<serde_json::Value>(&path, Some(ticket)).await {
         Ok(response) => match response.as_array() {
@@ -161,8 +157,7 @@ pub async fn list_pbs_namespaces(
                 Ok(vec![])
             } else {
                 Err(format!(
-                    "Failed to list PBS namespaces for store '{}': {}",
-                    store, e
+                    "Failed to list PBS namespaces for store '{store}': {e}"
                 ))
             }
         }
@@ -182,19 +177,15 @@ pub async fn list_pbs_snapshots(
     validate_store(store)?;
 
     let path = if ns.is_empty() {
-        format!("datastore/{}/snapshots", store)
+        format!("datastore/{store}/snapshots")
     } else {
-        format!(
-            "datastore/{}/snapshots?ns={}",
-            store,
-            urlencoding::encode(ns)
-        )
+        format!("datastore/{store}/snapshots?ns={}", urlencoding::encode(ns))
     };
 
     let response: serde_json::Value = client
         .get(&path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to list PBS snapshots for store '{}': {}", store, e))?;
+        .map_err(|e| format!("Failed to list PBS snapshots for store '{store}': {e}"))?;
 
     match response.as_array() {
         Some(arr) => {
@@ -219,12 +210,12 @@ pub async fn list_pbs_tasks(
     node: &str,
 ) -> Result<Vec<PbsTask>, String> {
     validate_node(node)?;
-    let path = format!("nodes/{}/tasks", node);
+    let path = format!("nodes/{node}/tasks");
 
     let response: serde_json::Value = client
         .get(&path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to list PBS tasks for node '{}': {}", node, e))?;
+        .map_err(|e| format!("Failed to list PBS tasks for node '{node}': {e}"))?;
 
     match response.as_array() {
         Some(arr) => {
@@ -247,11 +238,11 @@ pub async fn get_pbs_node_status(
     node: &str,
 ) -> Result<serde_json::Value, String> {
     validate_node(node)?;
-    let path = format!("nodes/{}/status", node);
+    let path = format!("nodes/{node}/status");
     client
         .get(&path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to get PBS node status for '{}': {}", node, e))
+        .map_err(|e| format!("Failed to get PBS node status for '{node}': {e}"))
 }
 
 #[cfg(test)]
@@ -385,11 +376,7 @@ mod tests {
     fn test_snapshot_path_with_namespace() {
         let store = "main";
         let ns = "my-namespace";
-        let path = format!(
-            "datastore/{}/snapshots?ns={}",
-            store,
-            urlencoding::encode(ns)
-        );
+        let path = format!("datastore/{store}/snapshots?ns={}", urlencoding::encode(ns));
         assert_eq!(path, "datastore/main/snapshots?ns=my-namespace");
     }
 
@@ -398,13 +385,9 @@ mod tests {
         let store = "main";
         let ns = "";
         let path = if ns.is_empty() {
-            format!("datastore/{}/snapshots", store)
+            format!("datastore/{store}/snapshots")
         } else {
-            format!(
-                "datastore/{}/snapshots?ns={}",
-                store,
-                urlencoding::encode(ns)
-            )
+            format!("datastore/{store}/snapshots?ns={}", urlencoding::encode(ns))
         };
         assert_eq!(path, "datastore/main/snapshots");
     }

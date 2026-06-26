@@ -28,12 +28,7 @@ pub async fn authenticate_with_webview(
 ) -> Result<ExtractedCredentials, String> {
     let trimmed_base_url = base_url.trim_end_matches('/');
 
-    tracing::info!(
-        "authenticate_with_webview called: service={}, base_url={}, project_name={:?}",
-        service,
-        base_url,
-        project_name
-    );
+    tracing::info!("authenticate_with_webview called: service={service}, base_url={base_url}, project_name={project_name:?}");
 
     let login_url = match service {
         "confluence" => format!("{trimmed_base_url}/login.action"),
@@ -41,10 +36,10 @@ pub async fn authenticate_with_webview(
             // Azure DevOps - go directly to project if provided, otherwise org home
             if let Some(project) = project_name {
                 let url = format!("{trimmed_base_url}/{project}");
-                tracing::info!("Azure DevOps URL with project: {}", url);
+                tracing::info!("Azure DevOps URL with project: {url}");
                 url
             } else {
-                tracing::info!("Azure DevOps URL without project: {}", trimmed_base_url);
+                tracing::info!("Azure DevOps URL without project: {trimmed_base_url}");
                 trimmed_base_url.to_string()
             }
         }
@@ -52,12 +47,12 @@ pub async fn authenticate_with_webview(
         _ => return Err(format!("Unknown service: {service}")),
     };
 
-    tracing::info!("Final login_url for {} = {}", service, login_url);
+    tracing::info!("Final login_url for {service} = {login_url}");
 
     // Create persistent browser window (stays open for browsing and fresh cookie extraction)
     let webview_label = format!("{service}-auth");
 
-    tracing::info!("Creating webview window with label: {}", webview_label);
+    tracing::info!("Creating webview window with label: {webview_label}");
 
     let parsed_url = login_url.parse().map_err(|e| {
         let err_msg = format!("Failed to parse URL '{login_url}': {e}");
@@ -65,7 +60,7 @@ pub async fn authenticate_with_webview(
         err_msg
     })?;
 
-    tracing::info!("Parsed URL successfully: {:?}", parsed_url);
+    tracing::info!("Parsed URL successfully: {parsed_url:?}");
 
     let webview = WebviewWindowBuilder::new(
         &app_handle,
@@ -93,7 +88,7 @@ pub async fn authenticate_with_webview(
     // Ensure window is focused
     webview
         .set_focus()
-        .map_err(|e| tracing::warn!("Failed to set focus: {}", e))
+        .map_err(|e| tracing::warn!("Failed to set focus: {e}"))
         .ok();
 
     // Wait for user to complete login
