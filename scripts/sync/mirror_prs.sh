@@ -87,7 +87,7 @@ while : ; do
     # before it ever lands as a Gitea branch.
     git -C "${WORK}/repo" fetch -q github "pull/${NUM}/head"
     SAFE_TREE="$(git -C "${WORK}/repo" cat-file -p "FETCH_HEAD^{tree}" \
-      | awk -F'\t' '$2 != ".github" && $2 != ".gitea"' \
+      | awk -F'\t' '!($2 ~ /^\.(github|gitea)$/)' \
       | git -C "${WORK}/repo" mktree)"
     SAFE_COMMIT="$(printf 'Mirror of GitHub PR #%s (CI definitions stripped) [skip-sync]\n' "${NUM}" \
       | git -C "${WORK}/repo" -c user.name='gitea-sync-bot' -c user.email='sync@tftsr.com' \
