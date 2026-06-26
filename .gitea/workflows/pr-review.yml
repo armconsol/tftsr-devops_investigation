@@ -406,7 +406,7 @@ jobs:
           # tags when the model correctly quotes unchanged files, while still flagging
           # fabricated code that doesn't exist anywhere in the codebase.
           python3 - << 'PYEOF'
-          import re, os, subprocess
+          import re, os, subprocess, sys
 
           review = open('/tmp/pr_review.txt').read()
 
