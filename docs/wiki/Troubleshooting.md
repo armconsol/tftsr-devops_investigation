@@ -223,6 +223,61 @@ Common causes:
 
 ---
 
+## Proxmox
+
+### Cross-datacenter migration fails with `501 Not Implemented`
+
+Symptom (from the migration log / toast):
+
+```
+Failed to remote-migrate VM 104: API request failed with status 501 Not Implemented:
+{"data":null,"message":"Method 'POST /nodes/vmhost3/qemu/104/remote-migrate' not implemented"}
+```
+
+**Cause:** The Proxmox REST API registers the cross-cluster endpoint as
+`POST /nodes/{node}/qemu/{vmid}/remote_migrate` — with an **underscore**. The
+dashed form `remote-migrate` is only the `qm remote-migrate` **CLI** command
+name; it is not a valid REST path, so `pveproxy` returns `501 Not Implemented`.
+
+**Fix:** The path is built by `remote_migrate_path()` in
+`src-tauri/src/proxmox/migration.rs` and must use the underscore form. Both
+`migration.rs` and `proxmox/vm.rs` delegate to it; unit tests
+(`test_remote_migrate_path_uses_rest_underscore_form`,
+`test_remote_migrate_uses_rest_underscore_path`) guard against regressing back
+to the dash. The remote-migrate request params are `target-endpoint`,
+`target-vmid`, `target-bridge`, `target-storage`, and `online`.
+
+> Cross-DC migration is an **experimental** PVE feature and requires
+> `VM.Migrate` permission. The app provisions a short-lived API token on the
+> destination remote for the duration of the task and deletes it afterwards.
+
+### Console copy/paste does not work
+
+The in-app VM/LXC and node-shell consoles support clipboard via
+`tauri-plugin-clipboard-manager`. If copy/paste stops working, check:
+
+- **Capability grants** — `src-tauri/capabilities/default.json` must include
+  `clipboard-manager:allow-read-text` and `clipboard-manager:allow-write-text`
+  (guarded by `test_capabilities_allow_clipboard_text`). Without them the Tauri
+  ACL rejects the clipboard calls at runtime.
+- **Plugin registration** — `tauri_plugin_clipboard_manager::init()` must be
+  registered in `src-tauri/src/lib.rs`.
+- **Shortcuts** — paste is **Ctrl/Cmd+Shift+V** (a bare `Ctrl+V` is forwarded to
+  the guest); in the xterm terminal, copy the current selection with
+  **Ctrl/Cmd+Shift+C**. Graphical (noVNC) consoles also expose a **Paste**
+  toolbar button. Shortcut detection lives in `src/lib/consoleClipboard.ts` and
+  the clipboard wrapper in `src/lib/clipboard.ts`.
+- **Protocol limit** — VNC clipboard is **text-only** (RFB CutText / extended
+  clipboard); images cannot be transferred through the console.
+- **Security note** — clipboard sync is bidirectional and the guest→host
+  direction is automatic (standard VNC behavior): a guest's clipboard changes are
+  mirrored to the host system clipboard. Treat a console guest as an untrusted
+  boundary — a compromised guest can overwrite your host clipboard, so review
+  text before pasting it into a host shell/browser. Host→guest paste is always
+  user-initiated (Paste button / Ctrl+Shift+V).
+
+---
+
 ## Gitea
 
 ### API Token Authentication

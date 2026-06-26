@@ -494,7 +494,7 @@ pub async fn get_vm_pending_config(
 }
 
 /// Migrate a VM to a remote cluster
-/// POST /nodes/{node}/qemu/{vmid}/remote-migrate
+/// POST /nodes/{node}/qemu/{vmid}/remote_migrate
 /// Returns the UPID task string.
 pub async fn remote_migrate_vm(
     client: &crate::proxmox::client::ProxmoxClient,
@@ -509,7 +509,7 @@ pub async fn remote_migrate_vm(
     validate_vmid(vmid)?;
 
     let online_str = if online { "1" } else { "0" };
-    let path = format!("nodes/{}/qemu/{}/remote-migrate", node, vmid);
+    let path = crate::proxmox::migration::remote_migrate_path(node, vmid);
     let params: &[(&str, &str)] = &[
         ("target", target_node),
         ("targetstorage", target_storage),
@@ -531,6 +531,16 @@ pub async fn remote_migrate_vm(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_remote_migrate_uses_rest_underscore_path() {
+        // vm.rs delegates to the shared helper; assert it yields the REST
+        // (underscore) form, not the dashed CLI name that 501s.
+        assert_eq!(
+            crate::proxmox::migration::remote_migrate_path("vmhost3", 104),
+            "nodes/vmhost3/qemu/104/remote_migrate"
+        );
+    }
 
     #[test]
     fn test_vm_info_serialization() {

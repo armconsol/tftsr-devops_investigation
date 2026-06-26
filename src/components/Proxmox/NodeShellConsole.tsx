@@ -2,9 +2,11 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import RFB from '@novnc/novnc';
 import { Button } from '@/components/ui/index';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/index';
-import { Loader2, Power, RotateCcw, AlertCircle } from 'lucide-react';
+import { Loader2, Power, RotateCcw, Clipboard, AlertCircle } from 'lucide-react';
 import { openNodeShell, type NodeShellSession } from '@/lib/proxmoxClient';
 import { XtermConsole } from './XtermConsole';
+import { readClipboardText, writeClipboardText } from '@/lib/clipboard';
+import { isPasteShortcut } from '@/lib/consoleClipboard';
 
 type Status = 'connecting' | 'connected' | 'disconnected' | 'error';
 
@@ -66,6 +68,25 @@ export function NodeShellConsole({ clusterId, node, title }: NodeShellConsolePro
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clusterId, node]);
 
+  // Host → guest paste for the graphical (noVNC) shell. The xterm branch wires
+  // its own paste handler. Bound to a button and Ctrl/Cmd+Shift+V.
+  const handlePaste = useCallback(async () => {
+    if (!rfbRef.current || status !== 'connected' || session?.kind !== 'novnc') return;
+    const text = await readClipboardText();
+    if (text) rfbRef.current.clipboardPasteFrom(text);
+  }, [status, session]);
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (session?.kind === 'novnc' && isPasteShortcut(e)) {
+        e.preventDefault();
+        void handlePaste();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [handlePaste, session]);
+
   // noVNC rendering for PVE graphical shells.
   useEffect(() => {
     if (!session || session.kind !== 'novnc' || !screenRef.current) return;
@@ -89,6 +110,11 @@ export function NodeShellConsole({ clusterId, node, title }: NodeShellConsolePro
         setStatus('error');
         setError(`Authentication failed: ${detail?.reason ?? 'unknown reason'}`);
       });
+      // Guest → host copy: mirror the remote clipboard to the system clipboard.
+      rfb.addEventListener('clipboard', (e: Event) => {
+        const detail = (e as CustomEvent<{ text?: string }>).detail;
+        if (detail?.text) void writeClipboardText(detail.text);
+      });
       rfbRef.current = rfb;
     } catch (err) {
       setStatus('error');
@@ -109,6 +135,16 @@ export function NodeShellConsole({ clusterId, node, title }: NodeShellConsolePro
           <Button variant="outline" size="sm" onClick={connect}>
             <RotateCcw className="mr-2 h-4 w-4" />
             Reconnect
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handlePaste}
+            disabled={status !== 'connected' || session?.kind !== 'novnc'}
+            title="Paste clipboard into shell (Ctrl+Shift+V)"
+          >
+            <Clipboard className="mr-2 h-4 w-4" />
+            Paste
           </Button>
           <Button
             variant="outline"
