@@ -15,12 +15,15 @@ CI, chore, and build changes are excluded.
 - **ci**: Revert model name to qwen3.5-122b-think
 - **ci**: Add missing sys import to PR review verification script
 - **ci**: Auto-tag cuts a new minor stable on every beta→master promotion
+- **sync**: Drop GITEA_API_URL secret dependency in inbound mirror
+- **sync**: Redact tokens in reconcile git output; harden PR-head path filter
 
 ### Documentation
 - **proxmox**: Document 501 migration gotcha and console clipboard
 
 ### Features
 - **proxmox**: Add console copy/paste via clipboard-manager
+- **sync**: Add two-way content sync with GitHub msicie/apollo_nxt-trcaa
 
 ### Refactoring
 - **review**: Address PR #142 review suggestions
