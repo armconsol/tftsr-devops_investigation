@@ -48,6 +48,12 @@ vi.mock("@tauri-apps/plugin-fs", () => ({
   exists: vi.fn(() => Promise.resolve(false)),
 }));
 
+// Mock Tauri clipboard-manager plugin (console copy/paste)
+vi.mock("@tauri-apps/plugin-clipboard-manager", () => ({
+  readText: vi.fn(() => Promise.resolve("")),
+  writeText: vi.fn(() => Promise.resolve()),
+}));
+
 // Mock console.error to suppress React warnings
 const originalError = console.error;
 beforeAll(() => {

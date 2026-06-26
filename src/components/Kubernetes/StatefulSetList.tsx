@@ -12,7 +12,7 @@ import { ResourceActionMenu } from "./ResourceActionMenu";
 import { ConfirmDeleteDialog } from "./ConfirmDeleteDialog";
 import { ScaleModal } from "./ScaleModal";
 import { EditResourceModal } from "./EditResourceModal";
-import { WorkloadLogsModal } from "./WorkloadLogsModal";
+import { openWorkloadLogsTab } from "@/lib/logsDock";
 import { useColumnConfig } from "@/hooks/useColumnConfig";
 import { DEFAULT_COLUMNS } from "@/config/defaultColumns";
 import { ColumnConfigModal } from "@/components/tables/ColumnConfigModal";
@@ -27,7 +27,6 @@ interface StatefulSetListProps {
 type ActiveModal =
   | { type: "scale"; ss: StatefulSetInfo }
   | { type: "restart"; ss: StatefulSetInfo }
-  | { type: "logs"; ss: StatefulSetInfo }
   | { type: "edit"; ss: StatefulSetInfo; yaml: string }
   | { type: "delete"; ss: StatefulSetInfo }
   | null;
@@ -147,7 +146,13 @@ export function StatefulSetList({ statefulsets, clusterId, namespace: _namespace
                         {
                           label: "Logs",
                           icon: FileText,
-                          onClick: () => setActiveModal({ type: "logs", ss }),
+                          onClick: () =>
+                            openWorkloadLogsTab({
+                              clusterId,
+                              namespace: ss.namespace,
+                              workloadName: ss.name,
+                              workloadType: "statefulset",
+                            }),
                         },
                         {
                           label: "Edit",
@@ -170,18 +175,6 @@ export function StatefulSetList({ statefulsets, clusterId, namespace: _namespace
           </TableBody>
         </Table>
       </div>
-
-      {activeModal?.type === "logs" && (
-        <WorkloadLogsModal
-          open
-          onOpenChange={(o) => { if (!o) setActiveModal(null); }}
-          clusterId={clusterId}
-          namespace={activeModal.ss.namespace}
-          workloadType="statefulset"
-          workloadName={activeModal.ss.name}
-          labels={activeModal.ss.labels}
-        />
-      )}
 
       {activeModal?.type === "scale" && (
         <ScaleModal
