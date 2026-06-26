@@ -25,6 +25,8 @@
     "fs:scope-temp-recursive",
     "shell:allow-open",
     "opener:allow-open-url",
+    "clipboard-manager:allow-read-text",
+    "clipboard-manager:allow-write-text",
     "http:default"
   ]
 }

@@ -9,6 +9,8 @@ import {
   encodeResize,
   encodePing,
 } from '@/lib/termproxy';
+import { readClipboardText, writeClipboardText } from '@/lib/clipboard';
+import { isCopyShortcut, isPasteShortcut } from '@/lib/consoleClipboard';
 
 type Status = 'connecting' | 'connected' | 'disconnected' | 'error';
 
@@ -61,6 +63,26 @@ export function XtermConsole({ session, onStatusChange }: XtermConsoleProps) {
     const ws = new WebSocket(session.localUrl);
     ws.binaryType = 'arraybuffer';
     wsRef.current = ws;
+
+    // Ctrl/Cmd+Shift+C copies the current selection; Ctrl/Cmd+Shift+V pastes
+    // the system clipboard into the session. Returning false stops xterm from
+    // also forwarding the chord to the remote shell. All other keys (including
+    // a bare Ctrl+C used to send SIGINT) pass straight through.
+    term.attachCustomKeyEventHandler((e: KeyboardEvent): boolean => {
+      if (e.type !== 'keydown') return true;
+      if (isCopyShortcut(e)) {
+        const selection = term.getSelection();
+        if (selection) void writeClipboardText(selection);
+        return false;
+      }
+      if (isPasteShortcut(e)) {
+        void readClipboardText().then((text) => {
+          if (text && ws.readyState === WebSocket.OPEN) ws.send(encodeData(text));
+        });
+        return false;
+      }
+      return true;
+    });
 
     const decoder = new TextDecoder();
 
