@@ -6,7 +6,7 @@ import type { PodInfo } from "@/lib/tauriCommands";
 import { deleteResourceCmd, forceDeleteResourceCmd, getResourceYamlCmd } from "@/lib/tauriCommands";
 import { ResourceActionMenu } from "./ResourceActionMenu";
 import { ConfirmDeleteDialog } from "./ConfirmDeleteDialog";
-import { LogStreamPanel } from "./LogStreamPanel";
+import { openPodLogsTab } from "@/lib/logsDock";
 import { InteractiveShellModal } from "./InteractiveShellModal";
 import { InteractiveAttachModal } from "./InteractiveAttachModal";
 import { EditResourceModal } from "./EditResourceModal";
@@ -23,7 +23,6 @@ interface PodListProps {
 }
 
 type ActiveModal =
-  | { type: "logs"; pod: PodInfo }
   | { type: "shell"; pod: PodInfo }
   | { type: "attach"; pod: PodInfo }
   | { type: "edit"; pod: PodInfo; yaml: string }
@@ -165,7 +164,13 @@ export function PodList({ pods, clusterId, namespace, onRefresh }: PodListProps)
                         {
                           label: "Logs",
                           icon: FileText,
-                          onClick: () => setActiveModal({ type: "logs", pod }),
+                          onClick: () =>
+                            openPodLogsTab({
+                              clusterId,
+                              namespace: pod.namespace,
+                              podName: pod.name,
+                              containers: pod.containers,
+                            }),
                         },
                         {
                           label: "Shell",
@@ -209,17 +214,6 @@ export function PodList({ pods, clusterId, namespace, onRefresh }: PodListProps)
           </TableBody>
         </Table>
       </div>
-
-      {activeModal?.type === "logs" && (
-        <LogStreamPanel
-          open
-          onOpenChange={(o) => { if (!o) setActiveModal(null); }}
-          clusterId={clusterId}
-          namespace={activeModal.pod.namespace}
-          podName={activeModal.pod.name}
-          containers={activeModal.pod.containers}
-        />
-      )}
 
       {activeModal?.type === "shell" && (
         <InteractiveShellModal
