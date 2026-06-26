@@ -47,7 +47,7 @@ pub async fn add_proxmox_cluster(
     client
         .authenticate(&password)
         .await
-        .map_err(|e| format!("Failed to authenticate with Proxmox: {}", e))?;
+        .map_err(|e| format!("Failed to authenticate with Proxmox: {e}"))?;
 
     // Encrypt raw password so we can re-authenticate after app restart.
     let credentials = serde_json::json!({
@@ -57,7 +57,7 @@ pub async fn add_proxmox_cluster(
     let encrypted_credentials = crate::integrations::auth::encrypt_token(
         &serde_json::to_string(&credentials).map_err(|e| e.to_string())?,
     )
-    .map_err(|e| format!("Failed to encrypt credentials: {}", e))?;
+    .map_err(|e| format!("Failed to encrypt credentials: {e}"))?;
 
     // Create cluster info
     let cluster = ClusterInfo {
@@ -76,7 +76,7 @@ pub async fn add_proxmox_cluster(
         let db = state
             .db
             .lock()
-            .map_err(|e| format!("Failed to lock database: {}", e))?;
+            .map_err(|e| format!("Failed to lock database: {e}"))?;
 
         db.execute(
             "INSERT INTO proxmox_clusters (id, name, cluster_type, url, port, username, auth_method, encrypted_credentials, created_at, updated_at)
@@ -97,7 +97,7 @@ pub async fn add_proxmox_cluster(
                 cluster.updated_at,
             ],
         )
-        .map_err(|e| format!("Failed to store cluster: {}", e))?;
+        .map_err(|e| format!("Failed to store cluster: {e}"))?;
     }
 
     // Insert the authenticated client into the in-memory pool.
@@ -117,10 +117,10 @@ pub async fn remove_proxmox_cluster(id: String, state: State<'_, AppState>) -> R
         let db = state
             .db
             .lock()
-            .map_err(|e| format!("Failed to lock database: {}", e))?;
+            .map_err(|e| format!("Failed to lock database: {e}"))?;
 
         db.execute("DELETE FROM proxmox_clusters WHERE id = ?1", [id.clone()])
-            .map_err(|e| format!("Failed to remove cluster: {}", e))?;
+            .map_err(|e| format!("Failed to remove cluster: {e}"))?;
     }
 
     // Remove from memory
@@ -141,13 +141,13 @@ pub async fn list_proxmox_clusters(
         let db = state
             .db
             .lock()
-            .map_err(|e| format!("Failed to lock database: {}", e))?;
+            .map_err(|e| format!("Failed to lock database: {e}"))?;
 
         let mut stmt = db
             .prepare(
                 "SELECT id, name, cluster_type, url, port, username, created_at, updated_at FROM proxmox_clusters",
             )
-            .map_err(|e| format!("Failed to prepare query: {}", e))?;
+            .map_err(|e| format!("Failed to prepare query: {e}"))?;
 
         let cluster_iter = stmt
             .query_map([], |row| {
@@ -166,7 +166,7 @@ pub async fn list_proxmox_clusters(
                     updated_at: row.get(7)?,
                 })
             })
-            .map_err(|e| format!("Failed to query clusters: {}", e))?;
+            .map_err(|e| format!("Failed to query clusters: {e}"))?;
 
         cluster_iter
             .collect::<Result<Vec<ClusterInfo>, _>>()
@@ -206,13 +206,13 @@ pub async fn get_proxmox_cluster(
         let db = state
             .db
             .lock()
-            .map_err(|e| format!("Failed to lock database: {}", e))?;
+            .map_err(|e| format!("Failed to lock database: {e}"))?;
 
         let mut stmt = db
             .prepare(
                 "SELECT id, name, cluster_type, url, port, username, created_at, updated_at FROM proxmox_clusters WHERE id = ?1",
             )
-            .map_err(|e| format!("Failed to prepare query: {}", e))?;
+            .map_err(|e| format!("Failed to prepare query: {e}"))?;
 
         stmt.query_row([id], |row| {
             Ok(ClusterInfo {
@@ -231,7 +231,7 @@ pub async fn get_proxmox_cluster(
             })
         })
         .optional()
-        .map_err(|e| format!("Failed to query cluster: {}", e))?
+        .map_err(|e| format!("Failed to query cluster: {e}"))?
     };
 
     Ok(cluster)
@@ -258,13 +258,13 @@ async fn get_proxmox_client_for_cluster(
         let db = state
             .db
             .lock()
-            .map_err(|e| format!("Failed to lock database: {}", e))?;
+            .map_err(|e| format!("Failed to lock database: {e}"))?;
 
         let mut stmt = db
             .prepare(
                 "SELECT url, port, username, encrypted_credentials FROM proxmox_clusters WHERE id = ?1",
             )
-            .map_err(|e| format!("Failed to prepare query: {}", e))?;
+            .map_err(|e| format!("Failed to prepare query: {e}"))?;
 
         stmt.query_row([cluster_id], |row| {
             Ok((
@@ -275,16 +275,16 @@ async fn get_proxmox_client_for_cluster(
             ))
         })
         .optional()
-        .map_err(|e| format!("Failed to query cluster: {}", e))?
-        .ok_or_else(|| format!("Cluster {} not found in database", cluster_id))?
+        .map_err(|e| format!("Failed to query cluster: {e}"))?
+        .ok_or_else(|| format!("Cluster {cluster_id} not found in database"))?
     };
 
     // Decrypt credentials
     let credentials_json = crate::integrations::auth::decrypt_token(&encrypted_credentials)
-        .map_err(|e| format!("Failed to decrypt credentials: {}", e))?;
+        .map_err(|e| format!("Failed to decrypt credentials: {e}"))?;
 
     let credentials: serde_json::Value = serde_json::from_str(&credentials_json)
-        .map_err(|e| format!("Failed to parse credentials: {}", e))?;
+        .map_err(|e| format!("Failed to parse credentials: {e}"))?;
 
     let password = credentials
         .get("password")
@@ -298,7 +298,7 @@ async fn get_proxmox_client_for_cluster(
     let ticket = client
         .authenticate(password)
         .await
-        .map_err(|e| format!("Failed to authenticate with Proxmox: {}", e))?;
+        .map_err(|e| format!("Failed to authenticate with Proxmox: {e}"))?;
 
     client.set_ticket(&ticket);
 
@@ -343,7 +343,7 @@ pub async fn ping_proxmox_cluster(
     client_guard
         .get::<serde_json::Value>("version", client_guard.ticket.as_deref())
         .await
-        .map_err(|e| format!("Connection test failed: {}", e))
+        .map_err(|e| format!("Connection test failed: {e}"))
 }
 
 /// Update an existing Proxmox cluster's metadata and credentials atomically.
@@ -363,7 +363,7 @@ pub async fn update_proxmox_cluster(
     let encrypted_credentials = crate::integrations::auth::encrypt_token(
         &serde_json::to_string(&credentials).map_err(|e| e.to_string())?,
     )
-    .map_err(|e| format!("Failed to encrypt credentials: {}", e))?;
+    .map_err(|e| format!("Failed to encrypt credentials: {e}"))?;
 
     let updated_at = Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
 
@@ -371,7 +371,7 @@ pub async fn update_proxmox_cluster(
         let db = state
             .db
             .lock()
-            .map_err(|e| format!("Failed to lock database: {}", e))?;
+            .map_err(|e| format!("Failed to lock database: {e}"))?;
 
         let rows = db
             .execute(
@@ -393,10 +393,10 @@ pub async fn update_proxmox_cluster(
                     id,
                 ],
             )
-            .map_err(|e| format!("Failed to update cluster: {}", e))?;
+            .map_err(|e| format!("Failed to update cluster: {e}"))?;
 
         if rows == 0 {
-            return Err(format!("Cluster {} not found", id));
+            return Err(format!("Cluster {id} not found"));
         }
     }
 
@@ -431,12 +431,12 @@ pub async fn list_proxmox_vms(
     let vms =
         crate::proxmox::vm::list_vms(&client_guard, client_guard.ticket.as_deref().unwrap_or(""))
             .await
-            .map_err(|e| format!("Failed to list VMs: {}", e))?;
+            .map_err(|e| format!("Failed to list VMs: {e}"))?;
 
     // Convert VmInfo structs to JSON
     let json_vms: Vec<serde_json::Value> = vms
         .into_iter()
-        .map(|vm| serde_json::to_value(vm).map_err(|e| format!("Failed to serialize VM: {}", e)))
+        .map(|vm| serde_json::to_value(vm).map_err(|e| format!("Failed to serialize VM: {e}")))
         .collect::<Result<Vec<_>, _>>()?;
 
     Ok(json_vms)
@@ -460,9 +460,9 @@ pub async fn get_proxmox_vm(
         client_guard.ticket.as_deref().unwrap_or(""),
     )
     .await
-    .map_err(|e| format!("Failed to get VM {}: {}", vm_id, e))?;
+    .map_err(|e| format!("Failed to get VM {vm_id}: {e}"))?;
 
-    serde_json::to_value(vm).map_err(|e| format!("Failed to serialize VM: {}", e))
+    serde_json::to_value(vm).map_err(|e| format!("Failed to serialize VM: {e}"))
 }
 
 /// Start a Proxmox VM
@@ -483,7 +483,7 @@ pub async fn start_proxmox_vm(
         client_guard.ticket.as_deref().unwrap_or(""),
     )
     .await
-    .map_err(|e| format!("Failed to start VM {}: {}", vm_id, e))
+    .map_err(|e| format!("Failed to start VM {vm_id}: {e}"))
 }
 
 /// Stop a Proxmox VM
@@ -504,7 +504,7 @@ pub async fn stop_proxmox_vm(
         client_guard.ticket.as_deref().unwrap_or(""),
     )
     .await
-    .map_err(|e| format!("Failed to stop VM {}: {}", vm_id, e))
+    .map_err(|e| format!("Failed to stop VM {vm_id}: {e}"))
 }
 
 /// Reboot a Proxmox VM
@@ -525,7 +525,7 @@ pub async fn reboot_proxmox_vm(
         client_guard.ticket.as_deref().unwrap_or(""),
     )
     .await
-    .map_err(|e| format!("Failed to reboot VM {}: {}", vm_id, e))
+    .map_err(|e| format!("Failed to reboot VM {vm_id}: {e}"))
 }
 
 /// Shutdown a Proxmox VM
@@ -546,7 +546,7 @@ pub async fn shutdown_proxmox_vm(
         client_guard.ticket.as_deref().unwrap_or(""),
     )
     .await
-    .map_err(|e| format!("Failed to shutdown VM {}: {}", vm_id, e))
+    .map_err(|e| format!("Failed to shutdown VM {vm_id}: {e}"))
 }
 
 /// Resume a paused Proxmox VM
@@ -567,7 +567,7 @@ pub async fn resume_proxmox_vm(
         client_guard.ticket.as_deref().unwrap_or(""),
     )
     .await
-    .map_err(|e| format!("Failed to resume VM {}: {}", vm_id, e))
+    .map_err(|e| format!("Failed to resume VM {vm_id}: {e}"))
 }
 
 /// Suspend a running Proxmox VM
@@ -588,7 +588,7 @@ pub async fn suspend_proxmox_vm(
         client_guard.ticket.as_deref().unwrap_or(""),
     )
     .await
-    .map_err(|e| format!("Failed to suspend VM {}: {}", vm_id, e))
+    .map_err(|e| format!("Failed to suspend VM {vm_id}: {e}"))
 }
 
 /// Clone a Proxmox VM
@@ -613,7 +613,7 @@ pub async fn clone_vm(
         client_guard.ticket.as_deref().unwrap_or(""),
     )
     .await
-    .map_err(|e| format!("Failed to clone VM {}: {}", vm_id, e))
+    .map_err(|e| format!("Failed to clone VM {vm_id}: {e}"))
 }
 
 /// Delete a Proxmox VM
@@ -634,7 +634,7 @@ pub async fn delete_vm(
         client_guard.ticket.as_deref().unwrap_or(""),
     )
     .await
-    .map_err(|e| format!("Failed to delete VM {}: {}", vm_id, e))
+    .map_err(|e| format!("Failed to delete VM {vm_id}: {e}"))
 }
 
 /// List Proxmox nodes in a cluster
@@ -649,7 +649,7 @@ pub async fn list_proxmox_nodes(
     let response: serde_json::Value = client_guard
         .get("nodes", Some(client_guard.ticket.as_deref().unwrap_or("")))
         .await
-        .map_err(|e| format!("Failed to list nodes: {}", e))?;
+        .map_err(|e| format!("Failed to list nodes: {e}"))?;
 
     let nodes: Vec<serde_json::Value> = response
         .as_array()
@@ -664,15 +664,14 @@ pub async fn list_proxmox_nodes(
 /// or virtio property strings.
 fn validate_pve_identifier(value: &str, field: &str) -> Result<(), String> {
     if value.is_empty() {
-        return Err(format!("{} must not be empty", field));
+        return Err(format!("{field} must not be empty"));
     }
     if !value
         .chars()
         .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '_')
     {
         return Err(format!(
-            "{} contains invalid characters — only alphanumeric, '.', '-', '_' are allowed",
-            field
+            "{field} contains invalid characters — only alphanumeric, '.', '-', '_' are allowed"
         ));
     }
     Ok(())
@@ -681,16 +680,13 @@ fn validate_pve_identifier(value: &str, field: &str) -> Result<(), String> {
 /// Like `validate_pve_identifier` but also allows `@` for PVE user IDs (`user@realm`).
 fn validate_pve_userid(value: &str, field: &str) -> Result<(), String> {
     if value.is_empty() {
-        return Err(format!("{} must not be empty", field));
+        return Err(format!("{field} must not be empty"));
     }
     if !value
         .chars()
         .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '_' || c == '@')
     {
-        return Err(format!(
-            "{} contains invalid characters — only alphanumeric, '.', '-', '_', '@' are allowed",
-            field
-        ));
+        return Err(format!("{field} contains invalid characters — only alphanumeric, '.', '-', '_', '@' are allowed"));
     }
     Ok(())
 }
@@ -698,16 +694,13 @@ fn validate_pve_userid(value: &str, field: &str) -> Result<(), String> {
 /// Validates an HA resource SID (format `type:vmid`, e.g. `qemu:100`).
 fn validate_pve_ha_resource(value: &str, field: &str) -> Result<(), String> {
     if value.is_empty() {
-        return Err(format!("{} must not be empty", field));
+        return Err(format!("{field} must not be empty"));
     }
     if !value
         .chars()
         .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '_' || c == ':')
     {
-        return Err(format!(
-            "{} contains invalid characters — only alphanumeric, '.', '-', '_', ':' are allowed",
-            field
-        ));
+        return Err(format!("{field} contains invalid characters — only alphanumeric, '.', '-', '_', ':' are allowed"));
     }
     Ok(())
 }
@@ -778,7 +771,7 @@ pub async fn create_proxmox_vm(
     let ide2 = iso
         .as_deref()
         .filter(|s| !s.is_empty())
-        .map(|s| format!("{},media=cdrom", s))
+        .map(|s| format!("{s},media=cdrom"))
         .unwrap_or_else(|| "none,media=cdrom".to_string());
 
     let config = serde_json::json!({
@@ -789,9 +782,9 @@ pub async fn create_proxmox_vm(
         "sockets": sockets,
         "ostype": os_type,
         "scsihw": "virtio-scsi-pci",
-        "scsi0": format!("{}:{}", storage, disk_size),
+        "scsi0": format!("{storage}:{disk_size}"),
         "ide2": ide2,
-        "net0": format!("virtio,bridge={}", net_bridge),
+        "net0": format!("virtio,bridge={net_bridge}"),
         "boot": "order=scsi0;ide2"
     });
 
@@ -803,7 +796,7 @@ pub async fn create_proxmox_vm(
         client_guard.ticket.as_deref().unwrap_or(""),
     )
     .await
-    .map_err(|e| format!("Failed to create VM: {}", e))
+    .map_err(|e| format!("Failed to create VM: {e}"))
 }
 
 /// Normalize the `cluster/backup` API response into a list of backup jobs.
@@ -838,7 +831,7 @@ fn normalize_backup_jobs(response: &serde_json::Value) -> Vec<serde_json::Value>
                         .to_string();
                     job_obj.insert(
                         "id".to_string(),
-                        serde_json::Value::String(format!("backup-{}", storage)),
+                        serde_json::Value::String(format!("backup-{storage}")),
                     );
                 }
             }
@@ -873,7 +866,7 @@ pub async fn list_proxmox_backup_jobs(
     let response: serde_json::Value = client_guard
         .get(path, Some(client_guard.ticket.as_deref().unwrap_or("")))
         .await
-        .map_err(|e| format!("Failed to list backup jobs: {}", e))?;
+        .map_err(|e| format!("Failed to list backup jobs: {e}"))?;
 
     Ok(normalize_backup_jobs(&response))
 }
@@ -893,7 +886,7 @@ pub async fn list_proxmox_datastores(
             Some(client_guard.ticket.as_deref().unwrap_or("")),
         )
         .await
-        .map_err(|e| format!("Failed to list cluster storage: {}", e))?;
+        .map_err(|e| format!("Failed to list cluster storage: {e}"))?;
 
     let entries = response.as_array().ok_or("Invalid response format")?;
 
@@ -908,9 +901,9 @@ pub async fn list_proxmox_datastores(
 
             // Avoid double-slash when cluster/resources omits "node" for shared storage
             let storage_id = if node_name.is_empty() {
-                format!("storage/{}", storage_name)
+                format!("storage/{storage_name}")
             } else {
-                format!("storage/{}/{}", node_name, storage_name)
+                format!("storage/{node_name}/{storage_name}")
             };
             if storage_name.is_empty() {
                 tracing::warn!(
@@ -1022,11 +1015,11 @@ pub async fn get_proxmox_storage_config(
     validate_pve_identifier(&storage, "storage")?;
     let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
-    let path = format!("storage/{}", storage);
+    let path = format!("storage/{storage}");
     client_guard
         .get(&path, Some(client_guard.ticket.as_deref().unwrap_or("")))
         .await
-        .map_err(|e| format!("Failed to get storage config for {}: {}", storage, e))
+        .map_err(|e| format!("Failed to get storage config for {storage}: {e}"))
 }
 
 /// Update a datacenter-level storage configuration.
@@ -1047,7 +1040,7 @@ pub async fn update_proxmox_storage(
     let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
     let ticket = client_guard.ticket.as_deref().unwrap_or("");
-    let path = format!("storage/{}", storage);
+    let path = format!("storage/{storage}");
     let body: serde_json::Map<String, serde_json::Value> = params
         .into_iter()
         .map(|(k, v)| (k, serde_json::Value::String(v)))
@@ -1055,7 +1048,7 @@ pub async fn update_proxmox_storage(
     let _: serde_json::Value = client_guard
         .put(&path, &serde_json::Value::Object(body), Some(ticket))
         .await
-        .map_err(|e| format!("Failed to update storage {}: {}", storage, e))?;
+        .map_err(|e| format!("Failed to update storage {storage}: {e}"))?;
     Ok(())
 }
 
@@ -1070,11 +1063,11 @@ pub async fn delete_proxmox_storage(
     let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
     let ticket = client_guard.ticket.as_deref().unwrap_or("");
-    let path = format!("storage/{}", storage);
+    let path = format!("storage/{storage}");
     let _: serde_json::Value = client_guard
         .delete(&path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to delete storage {}: {}", storage, e))?;
+        .map_err(|e| format!("Failed to delete storage {storage}: {e}"))?;
     Ok(())
 }
 #[tauri::command]
@@ -1090,15 +1083,15 @@ pub async fn trigger_proxmox_backup_job(
 
     // Read the job configuration (storage, vmid, mode, node, …).
     let job: serde_json::Value = client_guard
-        .get(&format!("cluster/backup/{}", job_id), Some(ticket))
+        .get(&format!("cluster/backup/{job_id}"), Some(ticket))
         .await
-        .map_err(|e| format!("Failed to read backup job {}: {}", job_id, e))?;
+        .map_err(|e| format!("Failed to read backup job {job_id}: {e}"))?;
 
     // Resolve the node to run vzdump on (job node, else first cluster node).
     let nodes_resp: serde_json::Value = client_guard
         .get("nodes", Some(ticket))
         .await
-        .map_err(|e| format!("Failed to list nodes: {}", e))?;
+        .map_err(|e| format!("Failed to list nodes: {e}"))?;
     let cluster_nodes: Vec<String> = nodes_resp
         .as_array()
         .map(|arr| {
@@ -1119,9 +1112,9 @@ pub async fn trigger_proxmox_backup_job(
         .collect();
 
     let _: serde_json::Value = client_guard
-        .post_form(&format!("nodes/{}/vzdump", node), &params_ref, Some(ticket))
+        .post_form(&format!("nodes/{node}/vzdump"), &params_ref, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to trigger backup job {}: {}", job_id, e))?;
+        .map_err(|e| format!("Failed to trigger backup job {job_id}: {e}"))?;
     Ok(())
 }
 
@@ -1141,12 +1134,12 @@ pub async fn list_ceph_pools(
         client_guard.ticket.as_deref().unwrap_or(""),
     )
     .await
-    .map_err(|e| format!("Failed to list Ceph pools: {}", e))?;
+    .map_err(|e| format!("Failed to list Ceph pools: {e}"))?;
 
     let json_pools: Vec<serde_json::Value> = pools
         .into_iter()
         .map(|pool| {
-            serde_json::to_value(pool).map_err(|e| format!("Failed to serialize Ceph pool: {}", e))
+            serde_json::to_value(pool).map_err(|e| format!("Failed to serialize Ceph pool: {e}"))
         })
         .collect::<Result<Vec<_>, _>>()?;
 
@@ -1169,12 +1162,12 @@ pub async fn list_ceph_osd(
         client_guard.ticket.as_deref().unwrap_or(""),
     )
     .await
-    .map_err(|e| format!("Failed to list Ceph OSDs: {}", e))?;
+    .map_err(|e| format!("Failed to list Ceph OSDs: {e}"))?;
 
     let json_osds: Vec<serde_json::Value> = osds
         .into_iter()
         .map(|osd| {
-            serde_json::to_value(osd).map_err(|e| format!("Failed to serialize Ceph OSD: {}", e))
+            serde_json::to_value(osd).map_err(|e| format!("Failed to serialize Ceph OSD: {e}"))
         })
         .collect::<Result<Vec<_>, _>>()?;
 
@@ -1197,9 +1190,9 @@ pub async fn get_ceph_health(
         client_guard.ticket.as_deref().unwrap_or(""),
     )
     .await
-    .map_err(|e| format!("Failed to get Ceph health: {}", e))?;
+    .map_err(|e| format!("Failed to get Ceph health: {e}"))?;
 
-    serde_json::to_value(health).map_err(|e| format!("Failed to serialize Ceph health: {}", e))
+    serde_json::to_value(health).map_err(|e| format!("Failed to serialize Ceph health: {e}"))
 }
 
 // ─── Phase 1 - Core Management Features ───────────────────────────────────────
@@ -1218,11 +1211,11 @@ pub async fn list_auth_realms(
         client_guard.ticket.as_deref().unwrap_or(""),
     )
     .await
-    .map_err(|e| format!("Failed to list auth realms: {}", e))?;
+    .map_err(|e| format!("Failed to list auth realms: {e}"))?;
 
     let json_realms: Vec<serde_json::Value> = realms
         .into_iter()
-        .map(|r| serde_json::to_value(r).map_err(|e| format!("Failed to serialize realm: {}", e)))
+        .map(|r| serde_json::to_value(r).map_err(|e| format!("Failed to serialize realm: {e}")))
         .collect::<Result<Vec<_>, _>>()?;
 
     Ok(json_realms)
@@ -1267,7 +1260,7 @@ pub async fn add_ldap_realm(
         client_guard.ticket.as_deref().unwrap_or(""),
     )
     .await
-    .map_err(|e| format!("Failed to add LDAP realm: {}", e))
+    .map_err(|e| format!("Failed to add LDAP realm: {e}"))
 }
 
 /// Add AD realm
@@ -1309,7 +1302,7 @@ pub async fn add_ad_realm(
         client_guard.ticket.as_deref().unwrap_or(""),
     )
     .await
-    .map_err(|e| format!("Failed to add AD realm: {}", e))
+    .map_err(|e| format!("Failed to add AD realm: {e}"))
 }
 
 /// Add OpenID realm
@@ -1345,7 +1338,7 @@ pub async fn add_openid_realm(
         client_guard.ticket.as_deref().unwrap_or(""),
     )
     .await
-    .map_err(|e| format!("Failed to add OpenID realm: {}", e))
+    .map_err(|e| format!("Failed to add OpenID realm: {e}"))
 }
 
 /// List ACME accounts
@@ -1362,11 +1355,11 @@ pub async fn list_acme_accounts(
         client_guard.ticket.as_deref().unwrap_or(""),
     )
     .await
-    .map_err(|e| format!("Failed to list ACME accounts: {}", e))?;
+    .map_err(|e| format!("Failed to list ACME accounts: {e}"))?;
 
     let json_accounts: Vec<serde_json::Value> = accounts
         .into_iter()
-        .map(|a| serde_json::to_value(a).map_err(|e| format!("Failed to serialize account: {}", e)))
+        .map(|a| serde_json::to_value(a).map_err(|e| format!("Failed to serialize account: {e}")))
         .collect::<Result<Vec<_>, _>>()?;
 
     Ok(json_accounts)
@@ -1390,9 +1383,9 @@ pub async fn register_acme_account(
         client_guard.ticket.as_deref().unwrap_or(""),
     )
     .await
-    .map_err(|e| format!("Failed to register ACME account: {}", e))?;
+    .map_err(|e| format!("Failed to register ACME account: {e}"))?;
 
-    serde_json::to_value(account).map_err(|e| format!("Failed to serialize account: {}", e))
+    serde_json::to_value(account).map_err(|e| format!("Failed to serialize account: {e}"))
 }
 
 /// Get ACME challenges
@@ -1411,13 +1404,11 @@ pub async fn get_acme_challenges(
         client_guard.ticket.as_deref().unwrap_or(""),
     )
     .await
-    .map_err(|e| format!("Failed to get ACME challenges: {}", e))?;
+    .map_err(|e| format!("Failed to get ACME challenges: {e}"))?;
 
     let json_challenges: Vec<serde_json::Value> = challenges
         .into_iter()
-        .map(|c| {
-            serde_json::to_value(c).map_err(|e| format!("Failed to serialize challenge: {}", e))
-        })
+        .map(|c| serde_json::to_value(c).map_err(|e| format!("Failed to serialize challenge: {e}")))
         .collect::<Result<Vec<_>, _>>()?;
 
     Ok(json_challenges)
@@ -1439,11 +1430,11 @@ pub async fn list_apt_updates(
         client_guard.ticket.as_deref().unwrap_or(""),
     )
     .await
-    .map_err(|e| format!("Failed to list APT updates: {}", e))?;
+    .map_err(|e| format!("Failed to list APT updates: {e}"))?;
 
     let json_updates: Vec<serde_json::Value> = updates
         .into_iter()
-        .map(|u| serde_json::to_value(u).map_err(|e| format!("Failed to serialize update: {}", e)))
+        .map(|u| serde_json::to_value(u).map_err(|e| format!("Failed to serialize update: {e}")))
         .collect::<Result<Vec<_>, _>>()?;
 
     Ok(json_updates)
@@ -1465,7 +1456,7 @@ pub async fn update_apt_repos(
         client_guard.ticket.as_deref().unwrap_or(""),
     )
     .await
-    .map_err(|e| format!("Failed to update APT repos: {}", e))
+    .map_err(|e| format!("Failed to update APT repos: {e}"))
 }
 
 /// List APT repositories
@@ -1484,11 +1475,11 @@ pub async fn list_apt_repositories(
         client_guard.ticket.as_deref().unwrap_or(""),
     )
     .await
-    .map_err(|e| format!("Failed to list APT repos: {}", e))?;
+    .map_err(|e| format!("Failed to list APT repos: {e}"))?;
 
     let json_repos: Vec<serde_json::Value> = repos
         .into_iter()
-        .map(|r| serde_json::to_value(r).map_err(|e| format!("Failed to serialize repo: {}", e)))
+        .map(|r| serde_json::to_value(r).map_err(|e| format!("Failed to serialize repo: {e}")))
         .collect::<Result<Vec<_>, _>>()?;
 
     Ok(json_repos)
@@ -1510,9 +1501,9 @@ pub async fn get_shell_ticket(
         client_guard.ticket.as_deref().unwrap_or(""),
     )
     .await
-    .map_err(|e| format!("Failed to get shell ticket: {}", e))?;
+    .map_err(|e| format!("Failed to get shell ticket: {e}"))?;
 
-    serde_json::to_value(ticket).map_err(|e| format!("Failed to serialize ticket: {}", e))
+    serde_json::to_value(ticket).map_err(|e| format!("Failed to serialize ticket: {e}"))
 }
 
 /// List certificates
@@ -1540,11 +1531,11 @@ pub async fn list_certificates(
         }
     }
 
-    let certs = certs.map_err(|e| format!("Failed to list certificates: {}", e))?;
+    let certs = certs.map_err(|e| format!("Failed to list certificates: {e}"))?;
 
     let json_certs: Vec<serde_json::Value> = certs
         .into_iter()
-        .map(|c| serde_json::to_value(c).map_err(|e| format!("Failed to serialize cert: {}", e)))
+        .map(|c| serde_json::to_value(c).map_err(|e| format!("Failed to serialize cert: {e}")))
         .collect::<Result<Vec<_>, _>>()?;
 
     Ok(json_certs)
@@ -1570,9 +1561,9 @@ pub async fn upload_certificate(
         client_guard.ticket.as_deref().unwrap_or(""),
     )
     .await
-    .map_err(|e| format!("Failed to upload certificate: {}", e))?;
+    .map_err(|e| format!("Failed to upload certificate: {e}"))?;
 
-    serde_json::to_value(cert).map_err(|e| format!("Failed to serialize cert: {}", e))
+    serde_json::to_value(cert).map_err(|e| format!("Failed to serialize cert: {e}"))
 }
 
 /// Get certificate
@@ -1591,9 +1582,9 @@ pub async fn get_certificate(
         client_guard.ticket.as_deref().unwrap_or(""),
     )
     .await
-    .map_err(|e| format!("Failed to get certificate {}: {}", cert_id, e))?;
+    .map_err(|e| format!("Failed to get certificate {cert_id}: {e}"))?;
 
-    serde_json::to_value(cert).map_err(|e| format!("Failed to serialize cert: {}", e))
+    serde_json::to_value(cert).map_err(|e| format!("Failed to serialize cert: {e}"))
 }
 
 // ─── Phase 2 - Advanced Management ────────────────────────────────────────────
@@ -1616,7 +1607,7 @@ pub async fn list_firewall_rules(
         client_guard.ticket.as_deref().unwrap_or(""),
     )
     .await
-    .map_err(|e| format!("Failed to list firewall rules: {}", e))?;
+    .map_err(|e| format!("Failed to list firewall rules: {e}"))?;
 
     // Normalize to match what FirewallRuleList component expects:
     // rule (position number), action, protocol, source, destination, port, status
@@ -1695,7 +1686,7 @@ pub async fn add_firewall_rule(
         client_guard.ticket.as_deref().unwrap_or(""),
     )
     .await
-    .map_err(|e| format!("Failed to add firewall rule: {}", e))
+    .map_err(|e| format!("Failed to add firewall rule: {e}"))
 }
 
 /// Delete firewall rule
@@ -1717,7 +1708,7 @@ pub async fn delete_firewall_rule(
         client_guard.ticket.as_deref().unwrap_or(""),
     )
     .await
-    .map_err(|e| format!("Failed to delete firewall rule {}: {}", rule_num, e))
+    .map_err(|e| format!("Failed to delete firewall rule {rule_num}: {e}"))
 }
 
 /// Update an existing firewall rule
@@ -1778,7 +1769,7 @@ pub async fn update_proxmox_firewall_rule(
         client_guard.ticket.as_deref().unwrap_or(""),
     )
     .await
-    .map_err(|e| format!("Failed to update firewall rule {}: {}", rule_num, e))
+    .map_err(|e| format!("Failed to update firewall rule {rule_num}: {e}"))
 }
 
 // SDN commands (extended from existing)
@@ -1796,12 +1787,12 @@ pub async fn list_sdn_controllers(
         client_guard.ticket.as_deref().unwrap_or(""),
     )
     .await
-    .map_err(|e| format!("Failed to list SDN controllers: {}", e))?;
+    .map_err(|e| format!("Failed to list SDN controllers: {e}"))?;
 
     let json_controllers: Vec<serde_json::Value> = controllers
         .into_iter()
         .map(|c| {
-            serde_json::to_value(c).map_err(|e| format!("Failed to serialize controller: {}", e))
+            serde_json::to_value(c).map_err(|e| format!("Failed to serialize controller: {e}"))
         })
         .collect::<Result<Vec<_>, _>>()?;
 
@@ -1822,11 +1813,11 @@ pub async fn list_sdn_vnets(
         client_guard.ticket.as_deref().unwrap_or(""),
     )
     .await
-    .map_err(|e| format!("Failed to list SDN virtual networks: {}", e))?;
+    .map_err(|e| format!("Failed to list SDN virtual networks: {e}"))?;
 
     let json_vnets: Vec<serde_json::Value> = vnets
         .into_iter()
-        .map(|v| serde_json::to_value(v).map_err(|e| format!("Failed to serialize vnet: {}", e)))
+        .map(|v| serde_json::to_value(v).map_err(|e| format!("Failed to serialize vnet: {e}")))
         .collect::<Result<Vec<_>, _>>()?;
 
     Ok(json_vnets)
@@ -1846,11 +1837,11 @@ pub async fn list_sdn_zones(
         client_guard.ticket.as_deref().unwrap_or(""),
     )
     .await
-    .map_err(|e| format!("Failed to list SDN zones: {}", e))?;
+    .map_err(|e| format!("Failed to list SDN zones: {e}"))?;
 
     let json_zones: Vec<serde_json::Value> = zones
         .into_iter()
-        .map(|z| serde_json::to_value(z).map_err(|e| format!("Failed to serialize zone: {}", e)))
+        .map(|z| serde_json::to_value(z).map_err(|e| format!("Failed to serialize zone: {e}")))
         .collect::<Result<Vec<_>, _>>()?;
 
     Ok(json_zones)
@@ -1873,11 +1864,11 @@ pub async fn list_ceph_clusters(
         client_guard.ticket.as_deref().unwrap_or(""),
     )
     .await
-    .map_err(|e| format!("Failed to list Ceph clusters: {}", e))?;
+    .map_err(|e| format!("Failed to list Ceph clusters: {e}"))?;
 
     let json_clusters: Vec<serde_json::Value> = ceph_clusters
         .into_iter()
-        .map(|c| serde_json::to_value(c).map_err(|e| format!("Failed to serialize cluster: {}", e)))
+        .map(|c| serde_json::to_value(c).map_err(|e| format!("Failed to serialize cluster: {e}")))
         .collect::<Result<Vec<_>, _>>()?;
 
     Ok(json_clusters)
@@ -1899,9 +1890,9 @@ pub async fn get_ceph_cluster_status(
         client_guard.ticket.as_deref().unwrap_or(""),
     )
     .await
-    .map_err(|e| format!("Failed to get Ceph cluster status: {}", e))?;
+    .map_err(|e| format!("Failed to get Ceph cluster status: {e}"))?;
 
-    serde_json::to_value(status).map_err(|e| format!("Failed to serialize status: {}", e))
+    serde_json::to_value(status).map_err(|e| format!("Failed to serialize status: {e}"))
 }
 
 // ─── Phase 4 - Advanced Operations ────────────────────────────────────────────
@@ -1929,9 +1920,9 @@ pub async fn migrate_vm(
         client_guard.ticket.as_deref().unwrap_or(""),
     )
     .await
-    .map_err(|e| format!("Failed to migrate VM {}: {}", vm_id, e))?;
+    .map_err(|e| format!("Failed to migrate VM {vm_id}: {e}"))?;
 
-    serde_json::to_value(task).map_err(|e| format!("Failed to serialize migration task: {}", e))
+    serde_json::to_value(task).map_err(|e| format!("Failed to serialize migration task: {e}"))
 }
 
 /// List migration status
@@ -1950,11 +1941,11 @@ pub async fn list_migration_status(
         client_guard.ticket.as_deref().unwrap_or(""),
     )
     .await
-    .map_err(|e| format!("Failed to list migration status: {}", e))?;
+    .map_err(|e| format!("Failed to list migration status: {e}"))?;
 
     let json_tasks: Vec<serde_json::Value> = tasks
         .into_iter()
-        .map(|t| serde_json::to_value(t).map_err(|e| format!("Failed to serialize task: {}", e)))
+        .map(|t| serde_json::to_value(t).map_err(|e| format!("Failed to serialize task: {e}")))
         .collect::<Result<Vec<_>, _>>()?;
 
     Ok(json_tasks)
@@ -1975,11 +1966,11 @@ pub async fn list_updates(
         client_guard.ticket.as_deref().unwrap_or(""),
     )
     .await
-    .map_err(|e| format!("Failed to list updates: {}", e))?;
+    .map_err(|e| format!("Failed to list updates: {e}"))?;
 
     let json_updates: Vec<serde_json::Value> = updates
         .into_iter()
-        .map(|u| serde_json::to_value(u).map_err(|e| format!("Failed to serialize update: {}", e)))
+        .map(|u| serde_json::to_value(u).map_err(|e| format!("Failed to serialize update: {e}")))
         .collect::<Result<Vec<_>, _>>()?;
 
     Ok(json_updates)
@@ -1996,7 +1987,7 @@ pub async fn refresh_updates(cluster_id: String, state: State<'_, AppState>) -> 
         client_guard.ticket.as_deref().unwrap_or(""),
     )
     .await
-    .map_err(|e| format!("Failed to refresh updates: {}", e))
+    .map_err(|e| format!("Failed to refresh updates: {e}"))
 }
 
 /// Install updates
@@ -2016,7 +2007,7 @@ pub async fn install_updates(
         client_guard.ticket.as_deref().unwrap_or(""),
     )
     .await
-    .map_err(|e| format!("Failed to install updates: {}", e))
+    .map_err(|e| format!("Failed to install updates: {e}"))
 }
 
 // Task Management
@@ -2036,11 +2027,11 @@ pub async fn list_tasks(
         client_guard.ticket.as_deref().unwrap_or(""),
     )
     .await
-    .map_err(|e| format!("Failed to list tasks: {}", e))?;
+    .map_err(|e| format!("Failed to list tasks: {e}"))?;
 
     let json_tasks: Vec<serde_json::Value> = tasks
         .into_iter()
-        .map(|t| serde_json::to_value(t).map_err(|e| format!("Failed to serialize task: {}", e)))
+        .map(|t| serde_json::to_value(t).map_err(|e| format!("Failed to serialize task: {e}")))
         .collect::<Result<Vec<_>, _>>()?;
 
     Ok(json_tasks)
@@ -2064,9 +2055,9 @@ pub async fn get_task_status(
         client_guard.ticket.as_deref().unwrap_or(""),
     )
     .await
-    .map_err(|e| format!("Failed to get task {}: {}", task_id, e))?;
+    .map_err(|e| format!("Failed to get task {task_id}: {e}"))?;
 
-    serde_json::to_value(task).map_err(|e| format!("Failed to serialize task: {}", e))
+    serde_json::to_value(task).map_err(|e| format!("Failed to serialize task: {e}"))
 }
 
 /// Stop task
@@ -2087,7 +2078,7 @@ pub async fn stop_task(
         client_guard.ticket.as_deref().unwrap_or(""),
     )
     .await
-    .map_err(|e| format!("Failed to stop task {}: {}", task_id, e))
+    .map_err(|e| format!("Failed to stop task {task_id}: {e}"))
 }
 
 // ─── Phase 5 - Infrastructure ─────────────────────────────────────────────────
@@ -2107,7 +2098,7 @@ pub async fn get_metrics_summary(
         client_guard.ticket.as_deref().unwrap_or(""),
     )
     .await
-    .map_err(|e| format!("Failed to list nodes: {}", e))?;
+    .map_err(|e| format!("Failed to list nodes: {e}"))?;
 
     let summary = serde_json::json!({
         "timestamp": chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string(),
@@ -2132,11 +2123,11 @@ pub async fn list_metric_collections(
         client_guard.ticket.as_deref().unwrap_or(""),
     )
     .await
-    .map_err(|e| format!("Failed to list nodes: {}", e))?;
+    .map_err(|e| format!("Failed to list nodes: {e}"))?;
 
     let collections: Vec<serde_json::Value> = nodes
         .into_iter()
-        .map(|n| serde_json::to_value(n).map_err(|e| format!("Failed to serialize node: {}", e)))
+        .map(|n| serde_json::to_value(n).map_err(|e| format!("Failed to serialize node: {e}")))
         .collect::<Result<Vec<_>, _>>()?;
 
     Ok(collections)
@@ -2158,7 +2149,7 @@ pub async fn list_ha_groups(
         client_guard.ticket.as_deref().unwrap_or(""),
     )
     .await
-    .map_err(|e| format!("Failed to list HA groups: {}", e))?;
+    .map_err(|e| format!("Failed to list HA groups: {e}"))?;
 
     groups
         .into_iter()
@@ -2188,7 +2179,7 @@ pub async fn create_ha_group(
         client_guard.ticket.as_deref().unwrap_or(""),
     )
     .await
-    .map_err(|e| format!("Failed to create HA group: {}", e))
+    .map_err(|e| format!("Failed to create HA group: {e}"))
 }
 
 /// Update HA group
@@ -2221,7 +2212,7 @@ pub async fn update_ha_group(
         client_guard.ticket.as_deref().unwrap_or(""),
     )
     .await
-    .map_err(|e| format!("Failed to update HA group: {}", e))
+    .map_err(|e| format!("Failed to update HA group: {e}"))
 }
 
 /// Delete HA group
@@ -2240,7 +2231,7 @@ pub async fn delete_ha_group(
         client_guard.ticket.as_deref().unwrap_or(""),
     )
     .await
-    .map_err(|e| format!("Failed to delete HA group: {}", e))
+    .map_err(|e| format!("Failed to delete HA group: {e}"))
 }
 
 /// List HA resources
@@ -2257,7 +2248,7 @@ pub async fn list_ha_resources(
         client_guard.ticket.as_deref().unwrap_or(""),
     )
     .await
-    .map_err(|e| format!("Failed to list HA resources: {}", e))?;
+    .map_err(|e| format!("Failed to list HA resources: {e}"))?;
 
     resources
         .into_iter()
@@ -2281,7 +2272,7 @@ pub async fn enable_ha_resource(
         client_guard.ticket.as_deref().unwrap_or(""),
     )
     .await
-    .map_err(|e| format!("Failed to enable HA resource: {}", e))
+    .map_err(|e| format!("Failed to enable HA resource: {e}"))
 }
 
 /// Disable HA resource
@@ -2296,7 +2287,7 @@ pub async fn disable_ha_resource(
     let ticket = client_guard.ticket.as_deref().unwrap_or("");
     crate::proxmox::ha::disable_ha_resource(&client_guard, &resource, ticket)
         .await
-        .map_err(|e| format!("Failed to disable HA resource: {}", e))
+        .map_err(|e| format!("Failed to disable HA resource: {e}"))
 }
 
 /// Delete (remove) an HA resource
@@ -2310,11 +2301,11 @@ pub async fn delete_ha_resource(
     let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
     let ticket = client_guard.ticket.as_deref().unwrap_or("");
-    let path = format!("cluster/ha/resources/{}", resource);
+    let path = format!("cluster/ha/resources/{resource}");
     let _: serde_json::Value = client_guard
         .delete(&path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to delete HA resource {}: {}", resource, e))?;
+        .map_err(|e| format!("Failed to delete HA resource {resource}: {e}"))?;
     Ok(())
 }
 
@@ -2352,7 +2343,7 @@ pub async fn update_ha_resource(
         ticket,
     )
     .await
-    .map_err(|e| format!("Failed to update HA resource: {}", e))
+    .map_err(|e| format!("Failed to update HA resource: {e}"))
 }
 
 // ─── Phase 7 - ACL / Users / Realms ──────────────────────────────────────────
@@ -2370,7 +2361,7 @@ pub async fn list_acls(
     let response: serde_json::Value = client_guard
         .get(path, Some(client_guard.ticket.as_deref().unwrap_or("")))
         .await
-        .map_err(|e| format!("Failed to list ACLs: {}", e))?;
+        .map_err(|e| format!("Failed to list ACLs: {e}"))?;
 
     // handle_response already unwraps the Proxmox `{"data": ...}` envelope.
     response
@@ -2392,7 +2383,7 @@ pub async fn list_users(
     let response: serde_json::Value = client_guard
         .get(path, Some(client_guard.ticket.as_deref().unwrap_or("")))
         .await
-        .map_err(|e| format!("Failed to list users: {}", e))?;
+        .map_err(|e| format!("Failed to list users: {e}"))?;
 
     response
         .as_array()
@@ -2414,7 +2405,7 @@ pub async fn list_realms(
         client_guard.ticket.as_deref().unwrap_or(""),
     )
     .await
-    .map_err(|e| format!("Failed to list realms: {}", e))?;
+    .map_err(|e| format!("Failed to list realms: {e}"))?;
 
     realms
         .into_iter()
@@ -2437,7 +2428,7 @@ pub async fn get_cluster_notes(
     let response: serde_json::Value = client_guard
         .get(path, Some(client_guard.ticket.as_deref().unwrap_or("")))
         .await
-        .map_err(|e| format!("Failed to get cluster notes: {}", e))?;
+        .map_err(|e| format!("Failed to get cluster notes: {e}"))?;
 
     Ok(response
         .get("notes")
@@ -2465,7 +2456,7 @@ pub async fn update_cluster_notes(
             Some(client_guard.ticket.as_deref().unwrap_or("")),
         )
         .await
-        .map_err(|e| format!("Failed to update cluster notes: {}", e))?;
+        .map_err(|e| format!("Failed to update cluster notes: {e}"))?;
 
     Ok(())
 }
@@ -2482,11 +2473,11 @@ pub async fn search_proxmox_resources(
     let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
 
-    let path = format!("cluster/resources?type=vm&search={}", query);
+    let path = format!("cluster/resources?type=vm&search={query}");
     let response: serde_json::Value = client_guard
         .get(&path, Some(client_guard.ticket.as_deref().unwrap_or("")))
         .await
-        .map_err(|e| format!("Failed to search resources: {}", e))?;
+        .map_err(|e| format!("Failed to search resources: {e}"))?;
 
     response
         .as_array()
@@ -2506,11 +2497,11 @@ pub async fn get_node_status(
     let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
 
-    let path = format!("nodes/{}/status", node_id);
+    let path = format!("nodes/{node_id}/status");
     let response: serde_json::Value = client_guard
         .get(&path, Some(client_guard.ticket.as_deref().unwrap_or("")))
         .await
-        .map_err(|e| format!("Failed to get node status: {}", e))?;
+        .map_err(|e| format!("Failed to get node status: {e}"))?;
 
     Ok(response)
 }
@@ -2529,11 +2520,11 @@ pub async fn get_syslog(
     let client_guard = client.lock().await;
 
     let limit_val = limit.unwrap_or(500);
-    let path = format!("nodes/{}/syslog?limit={}", node_id, limit_val);
+    let path = format!("nodes/{node_id}/syslog?limit={limit_val}");
     let response: serde_json::Value = client_guard
         .get(&path, Some(client_guard.ticket.as_deref().unwrap_or("")))
         .await
-        .map_err(|e| format!("Failed to get syslog: {}", e))?;
+        .map_err(|e| format!("Failed to get syslog: {e}"))?;
 
     response
         .as_array()
@@ -2556,11 +2547,11 @@ pub async fn list_network_interfaces(
     let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
 
-    let path = format!("nodes/{}/network", node_id);
+    let path = format!("nodes/{node_id}/network");
     let response: serde_json::Value = client_guard
         .get(&path, Some(client_guard.ticket.as_deref().unwrap_or("")))
         .await
-        .map_err(|e| format!("Failed to list network interfaces: {}", e))?;
+        .map_err(|e| format!("Failed to list network interfaces: {e}"))?;
 
     response
         .as_array()
@@ -2605,7 +2596,7 @@ pub async fn create_network_interface(
         body["comments"] = serde_json::Value::String(com);
     }
 
-    let path = format!("nodes/{}/network", node_id);
+    let path = format!("nodes/{node_id}/network");
     let _response: serde_json::Value = client_guard
         .post(
             &path,
@@ -2613,7 +2604,7 @@ pub async fn create_network_interface(
             Some(client_guard.ticket.as_deref().unwrap_or("")),
         )
         .await
-        .map_err(|e| format!("Failed to create network interface {}: {}", config.iface, e))?;
+        .map_err(|e| format!("Failed to create network interface {}: {e}", config.iface))?;
 
     Ok(())
 }
@@ -2656,7 +2647,7 @@ pub async fn update_network_interface(
         body["comments"] = serde_json::Value::String(com);
     }
 
-    let path = format!("nodes/{}/network/{}", node_id, iface);
+    let path = format!("nodes/{node_id}/network/{iface}");
     let _response: serde_json::Value = client_guard
         .put(
             &path,
@@ -2664,7 +2655,7 @@ pub async fn update_network_interface(
             Some(client_guard.ticket.as_deref().unwrap_or("")),
         )
         .await
-        .map_err(|e| format!("Failed to update network interface {}: {}", iface, e))?;
+        .map_err(|e| format!("Failed to update network interface {iface}: {e}"))?;
 
     Ok(())
 }
@@ -2682,11 +2673,11 @@ pub async fn delete_network_interface(
     let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
 
-    let path = format!("nodes/{}/network/{}", node_id, iface);
+    let path = format!("nodes/{node_id}/network/{iface}");
     let _response: serde_json::Value = client_guard
         .delete(&path, Some(client_guard.ticket.as_deref().unwrap_or("")))
         .await
-        .map_err(|e| format!("Failed to delete network interface {}: {}", iface, e))?;
+        .map_err(|e| format!("Failed to delete network interface {iface}: {e}"))?;
 
     Ok(())
 }
@@ -2837,7 +2828,7 @@ pub async fn upload_iso_image(
 
     let file_bytes = tokio::fs::read(&file_path)
         .await
-        .map_err(|e| format!("Failed to read file '{}': {}", file_path, e))?;
+        .map_err(|e| format!("Failed to read file '{file_path}': {e}"))?;
 
     let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
@@ -2868,7 +2859,7 @@ pub async fn get_subscription_status(
     let response: serde_json::Value = client_guard
         .get(path, Some(client_guard.ticket.as_deref().unwrap_or("")))
         .await
-        .map_err(|e| format!("Failed to get subscription status: {}", e))?;
+        .map_err(|e| format!("Failed to get subscription status: {e}"))?;
 
     Ok(response)
 }
@@ -2891,7 +2882,7 @@ pub async fn list_cluster_tasks(
     let response: serde_json::Value = client_guard
         .get(path, Some(client_guard.ticket.as_deref().unwrap_or("")))
         .await
-        .map_err(|e| format!("Failed to list cluster tasks: {}", e))?;
+        .map_err(|e| format!("Failed to list cluster tasks: {e}"))?;
 
     let mut tasks: Vec<serde_json::Value> = response
         .as_array()
@@ -2919,7 +2910,7 @@ pub async fn list_proxmox_containers(
     let response: serde_json::Value = client_guard
         .get(path, Some(client_guard.ticket.as_deref().unwrap_or("")))
         .await
-        .map_err(|e| format!("Failed to list containers: {}", e))?;
+        .map_err(|e| format!("Failed to list containers: {e}"))?;
 
     response
         .as_array()
@@ -2942,14 +2933,14 @@ pub async fn connect_proxmox_cluster(
         let db = state
             .db
             .lock()
-            .map_err(|e| format!("Failed to lock database: {}", e))?;
+            .map_err(|e| format!("Failed to lock database: {e}"))?;
 
         let mut stmt = db
             .prepare(
                 "SELECT url, port, username, encrypted_credentials \
                  FROM proxmox_clusters WHERE id = ?1",
             )
-            .map_err(|e| format!("Failed to prepare query: {}", e))?;
+            .map_err(|e| format!("Failed to prepare query: {e}"))?;
 
         stmt.query_row([&cluster_id], |row| {
             Ok((
@@ -2960,15 +2951,15 @@ pub async fn connect_proxmox_cluster(
             ))
         })
         .optional()
-        .map_err(|e| format!("Failed to query cluster: {}", e))?
-        .ok_or_else(|| format!("Cluster {} not found in database", cluster_id))?
+        .map_err(|e| format!("Failed to query cluster: {e}"))?
+        .ok_or_else(|| format!("Cluster {cluster_id} not found in database"))?
     };
 
     let credentials_json = crate::integrations::auth::decrypt_token(&encrypted_credentials)
-        .map_err(|e| format!("Failed to decrypt credentials: {}", e))?;
+        .map_err(|e| format!("Failed to decrypt credentials: {e}"))?;
 
     let credentials: serde_json::Value = serde_json::from_str(&credentials_json)
-        .map_err(|e| format!("Failed to parse credentials: {}", e))?;
+        .map_err(|e| format!("Failed to parse credentials: {e}"))?;
 
     let password = credentials
         .get("password")
@@ -2979,7 +2970,7 @@ pub async fn connect_proxmox_cluster(
     client
         .authenticate(password)
         .await
-        .map_err(|e| format!("Failed to authenticate with Proxmox: {}", e))?;
+        .map_err(|e| format!("Failed to authenticate with Proxmox: {e}"))?;
 
     {
         let mut clusters = state.proxmox_clusters.lock().await;
@@ -3019,7 +3010,7 @@ pub async fn create_sdn_zone(
     let ticket = client_guard.ticket.as_deref().unwrap_or("");
     crate::proxmox::sdn::create_evpn_zone(&client_guard, &zone, asn, vni, ticket)
         .await
-        .map_err(|e| format!("Failed to create SDN zone: {}", e))
+        .map_err(|e| format!("Failed to create SDN zone: {e}"))
 }
 
 /// Update an EVPN SDN zone
@@ -3037,7 +3028,7 @@ pub async fn update_sdn_zone(
     let ticket = client_guard.ticket.as_deref().unwrap_or("");
     crate::proxmox::sdn::update_evpn_zone(&client_guard, &zone, asn, vni, ticket)
         .await
-        .map_err(|e| format!("Failed to update SDN zone: {}", e))
+        .map_err(|e| format!("Failed to update SDN zone: {e}"))
 }
 
 /// Delete an SDN zone
@@ -3053,7 +3044,7 @@ pub async fn delete_sdn_zone(
     let ticket = client_guard.ticket.as_deref().unwrap_or("");
     crate::proxmox::sdn::delete_evpn_zone(&client_guard, &zone, ticket)
         .await
-        .map_err(|e| format!("Failed to delete SDN zone: {}", e))
+        .map_err(|e| format!("Failed to delete SDN zone: {e}"))
 }
 
 /// Create an SDN virtual network
@@ -3072,7 +3063,7 @@ pub async fn create_sdn_vnet(
     let ticket = client_guard.ticket.as_deref().unwrap_or("");
     crate::proxmox::sdn::create_vnet(&client_guard, &vnet, &zone, l2vni, ticket)
         .await
-        .map_err(|e| format!("Failed to create SDN vnet: {}", e))
+        .map_err(|e| format!("Failed to create SDN vnet: {e}"))
 }
 
 /// Update an SDN virtual network
@@ -3091,7 +3082,7 @@ pub async fn update_sdn_vnet(
     let ticket = client_guard.ticket.as_deref().unwrap_or("");
     crate::proxmox::sdn::update_vnet(&client_guard, &vnet, &zone, l2vni, ticket)
         .await
-        .map_err(|e| format!("Failed to update SDN vnet: {}", e))
+        .map_err(|e| format!("Failed to update SDN vnet: {e}"))
 }
 
 /// Delete an SDN virtual network
@@ -3107,7 +3098,7 @@ pub async fn delete_sdn_vnet(
     let ticket = client_guard.ticket.as_deref().unwrap_or("");
     crate::proxmox::sdn::delete_vnet(&client_guard, &vnet, ticket)
         .await
-        .map_err(|e| format!("Failed to delete SDN vnet: {}", e))
+        .map_err(|e| format!("Failed to delete SDN vnet: {e}"))
 }
 
 // ─── Backup Job CRUD ──────────────────────────────────────────────────────────
@@ -3144,7 +3135,7 @@ pub async fn create_proxmox_backup_job(
     let _: serde_json::Value = client_guard
         .post_form("cluster/backup", params, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to create backup job: {}", e))?;
+        .map_err(|e| format!("Failed to create backup job: {e}"))?;
     Ok(())
 }
 
@@ -3183,11 +3174,11 @@ pub async fn update_proxmox_backup_job(
         body["enabled"] = serde_json::Value::Number(if en { 1.into() } else { 0.into() });
     }
 
-    let path = format!("cluster/backup/{}", job_id);
+    let path = format!("cluster/backup/{job_id}");
     let _: serde_json::Value = client_guard
         .put(&path, &body, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to update backup job {}: {}", job_id, e))?;
+        .map_err(|e| format!("Failed to update backup job {job_id}: {e}"))?;
     Ok(())
 }
 
@@ -3203,11 +3194,11 @@ pub async fn delete_proxmox_backup_job(
     let client_guard = client.lock().await;
     let ticket = client_guard.ticket.as_deref().unwrap_or("");
 
-    let path = format!("cluster/backup/{}", job_id);
+    let path = format!("cluster/backup/{job_id}");
     let _: serde_json::Value = client_guard
         .delete(&path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to delete backup job {}: {}", job_id, e))?;
+        .map_err(|e| format!("Failed to delete backup job {job_id}: {e}"))?;
     Ok(())
 }
 
@@ -3225,11 +3216,11 @@ pub async fn start_proxmox_container(
     let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
     let ticket = client_guard.ticket.as_deref().unwrap_or("");
-    let path = format!("nodes/{}/lxc/{}/status/start", node_id, vm_id);
+    let path = format!("nodes/{node_id}/lxc/{vm_id}/status/start");
     let _: serde_json::Value = client_guard
         .post_form(&path, &[], Some(ticket))
         .await
-        .map_err(|e| format!("Failed to start container {}: {}", vm_id, e))?;
+        .map_err(|e| format!("Failed to start container {vm_id}: {e}"))?;
     Ok(())
 }
 
@@ -3245,11 +3236,11 @@ pub async fn stop_proxmox_container(
     let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
     let ticket = client_guard.ticket.as_deref().unwrap_or("");
-    let path = format!("nodes/{}/lxc/{}/status/stop", node_id, vm_id);
+    let path = format!("nodes/{node_id}/lxc/{vm_id}/status/stop");
     let _: serde_json::Value = client_guard
         .post_form(&path, &[], Some(ticket))
         .await
-        .map_err(|e| format!("Failed to stop container {}: {}", vm_id, e))?;
+        .map_err(|e| format!("Failed to stop container {vm_id}: {e}"))?;
     Ok(())
 }
 
@@ -3265,11 +3256,11 @@ pub async fn reboot_proxmox_container(
     let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
     let ticket = client_guard.ticket.as_deref().unwrap_or("");
-    let path = format!("nodes/{}/lxc/{}/status/reboot", node_id, vm_id);
+    let path = format!("nodes/{node_id}/lxc/{vm_id}/status/reboot");
     let _: serde_json::Value = client_guard
         .post_form(&path, &[], Some(ticket))
         .await
-        .map_err(|e| format!("Failed to reboot container {}: {}", vm_id, e))?;
+        .map_err(|e| format!("Failed to reboot container {vm_id}: {e}"))?;
     Ok(())
 }
 
@@ -3285,11 +3276,11 @@ pub async fn shutdown_proxmox_container(
     let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
     let ticket = client_guard.ticket.as_deref().unwrap_or("");
-    let path = format!("nodes/{}/lxc/{}/status/shutdown", node_id, vm_id);
+    let path = format!("nodes/{node_id}/lxc/{vm_id}/status/shutdown");
     let _: serde_json::Value = client_guard
         .post_form(&path, &[], Some(ticket))
         .await
-        .map_err(|e| format!("Failed to shutdown container {}: {}", vm_id, e))?;
+        .map_err(|e| format!("Failed to shutdown container {vm_id}: {e}"))?;
     Ok(())
 }
 
@@ -3305,11 +3296,11 @@ pub async fn suspend_proxmox_container(
     let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
     let ticket = client_guard.ticket.as_deref().unwrap_or("");
-    let path = format!("nodes/{}/lxc/{}/status/suspend", node_id, vm_id);
+    let path = format!("nodes/{node_id}/lxc/{vm_id}/status/suspend");
     let _: serde_json::Value = client_guard
         .post_form(&path, &[], Some(ticket))
         .await
-        .map_err(|e| format!("Failed to suspend container {}: {}", vm_id, e))?;
+        .map_err(|e| format!("Failed to suspend container {vm_id}: {e}"))?;
     Ok(())
 }
 
@@ -3325,11 +3316,11 @@ pub async fn resume_proxmox_container(
     let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
     let ticket = client_guard.ticket.as_deref().unwrap_or("");
-    let path = format!("nodes/{}/lxc/{}/status/resume", node_id, vm_id);
+    let path = format!("nodes/{node_id}/lxc/{vm_id}/status/resume");
     let _: serde_json::Value = client_guard
         .post_form(&path, &[], Some(ticket))
         .await
-        .map_err(|e| format!("Failed to resume container {}: {}", vm_id, e))?;
+        .map_err(|e| format!("Failed to resume container {vm_id}: {e}"))?;
     Ok(())
 }
 
@@ -3364,7 +3355,7 @@ pub async fn create_proxmox_acl(
     let _: serde_json::Value = client_guard
         .put("access/acl", &body, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to create ACL: {}", e))?;
+        .map_err(|e| format!("Failed to create ACL: {e}"))?;
     Ok(())
 }
 
@@ -3393,7 +3384,7 @@ pub async fn delete_proxmox_acl(
     let _: serde_json::Value = client_guard
         .put("access/acl", &body, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to delete ACL: {}", e))?;
+        .map_err(|e| format!("Failed to delete ACL: {e}"))?;
     Ok(())
 }
 
@@ -3431,7 +3422,7 @@ pub async fn create_proxmox_user(
     let _: serde_json::Value = client_guard
         .post_form("access/users", params, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to create user {}: {}", userid, e))?;
+        .map_err(|e| format!("Failed to create user {userid}: {e}"))?;
     Ok(())
 }
 
@@ -3461,11 +3452,11 @@ pub async fn update_proxmox_user(
         body["enable"] = serde_json::Value::Number(if en { 1.into() } else { 0.into() });
     }
 
-    let path = format!("access/users/{}", userid);
+    let path = format!("access/users/{userid}");
     let _: serde_json::Value = client_guard
         .put(&path, &body, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to update user {}: {}", userid, e))?;
+        .map_err(|e| format!("Failed to update user {userid}: {e}"))?;
     Ok(())
 }
 
@@ -3481,11 +3472,11 @@ pub async fn delete_proxmox_user(
     let client_guard = client.lock().await;
     let ticket = client_guard.ticket.as_deref().unwrap_or("");
 
-    let path = format!("access/users/{}", userid);
+    let path = format!("access/users/{userid}");
     let _: serde_json::Value = client_guard
         .delete(&path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to delete user {}: {}", userid, e))?;
+        .map_err(|e| format!("Failed to delete user {userid}: {e}"))?;
     Ok(())
 }
 
@@ -3514,7 +3505,7 @@ pub async fn create_proxmox_realm(
     let _: serde_json::Value = client_guard
         .post_form("access/domains", params, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to create realm {}: {}", realm, e))?;
+        .map_err(|e| format!("Failed to create realm {realm}: {e}"))?;
     Ok(())
 }
 
@@ -3536,11 +3527,11 @@ pub async fn update_proxmox_realm(
         body["comment"] = serde_json::Value::String(c);
     }
 
-    let path = format!("access/domains/{}", realm);
+    let path = format!("access/domains/{realm}");
     let _: serde_json::Value = client_guard
         .put(&path, &body, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to update realm {}: {}", realm, e))?;
+        .map_err(|e| format!("Failed to update realm {realm}: {e}"))?;
     Ok(())
 }
 
@@ -3556,11 +3547,11 @@ pub async fn delete_proxmox_realm(
     let client_guard = client.lock().await;
     let ticket = client_guard.ticket.as_deref().unwrap_or("");
 
-    let path = format!("access/domains/{}", realm);
+    let path = format!("access/domains/{realm}");
     let _: serde_json::Value = client_guard
         .delete(&path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to delete realm {}: {}", realm, e))?;
+        .map_err(|e| format!("Failed to delete realm {realm}: {e}"))?;
     Ok(())
 }
 
@@ -3839,7 +3830,7 @@ pub async fn start_remote_migration(
         let db = state
             .db
             .lock()
-            .map_err(|e| format!("Failed to lock database: {}", e))?;
+            .map_err(|e| format!("Failed to lock database: {e}"))?;
         db.query_row(
             "SELECT ssl_fingerprint FROM proxmox_clusters WHERE id = ?1",
             rusqlite::params![dest_cluster_id],
@@ -3874,8 +3865,7 @@ pub async fn start_remote_migration(
 
         // Create a short-lived, non-privilege-separated token on the destination.
         let tokenname = format!(
-            "tftsr-migrate-{}-{}",
-            vm_id,
+            "tftsr-migrate-{vm_id}-{}",
             chrono::Utc::now().timestamp_millis()
         );
         let token = crate::proxmox::auth_realm::create_user_token(
@@ -3945,9 +3935,7 @@ pub async fn start_remote_migration(
             .await
             {
                 tracing::warn!(
-                    "Failed to clean up temporary migration token '{}': {}",
-                    tokenname,
-                    cleanup_err
+                    "Failed to clean up temporary migration token '{tokenname}': {cleanup_err}"
                 );
             }
             return Err(e);
@@ -4100,7 +4088,7 @@ pub async fn open_node_shell(
         let db = state
             .db
             .lock()
-            .map_err(|e| format!("Failed to lock database: {}", e))?;
+            .map_err(|e| format!("Failed to lock database: {e}"))?;
         let ct: String = db
             .query_row(
                 "SELECT cluster_type FROM proxmox_clusters WHERE id = ?1",
@@ -4108,8 +4096,8 @@ pub async fn open_node_shell(
                 |row| row.get::<_, String>(0),
             )
             .optional()
-            .map_err(|e| format!("Failed to query cluster: {}", e))?
-            .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+            .map_err(|e| format!("Failed to query cluster: {e}"))?
+            .ok_or_else(|| format!("Cluster {cluster_id} not found"))?;
         ct.eq_ignore_ascii_case("pbs")
     };
 
@@ -4691,11 +4679,11 @@ pub async fn update_subscription(
     let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
     let ticket = client_guard.ticket.as_deref().unwrap_or("");
-    let path = format!("nodes/{}/subscription", node);
+    let path = format!("nodes/{node}/subscription");
     let _: serde_json::Value = client_guard
         .post_form(&path, &[("key", key.as_str())], Some(ticket))
         .await
-        .map_err(|e| format!("Failed to update subscription on node {}: {}", node, e))?;
+        .map_err(|e| format!("Failed to update subscription on node {node}: {e}"))?;
     Ok(())
 }
 
@@ -4761,7 +4749,7 @@ mod tests {
     #[test]
     fn test_normalize_backup_jobs_caps_at_100() {
         let many: Vec<serde_json::Value> = (0..150)
-            .map(|i| serde_json::json!({ "id": format!("backup-{}", i) }))
+            .map(|i| serde_json::json!({ "id": format!("backup-{i}") }))
             .collect();
         let jobs = normalize_backup_jobs(&serde_json::Value::Array(many));
         assert_eq!(jobs.len(), 100);
@@ -4896,7 +4884,7 @@ mod tests {
     #[test]
     fn test_ping_proxmox_cluster_error_message_format() {
         let raw = anyhow::anyhow!("connection refused");
-        let msg = format!("Connection test failed: {}", raw);
+        let msg = format!("Connection test failed: {raw}");
         assert!(msg.starts_with("Connection test failed:"));
         assert!(msg.contains("connection refused"));
     }
@@ -4904,7 +4892,7 @@ mod tests {
     #[test]
     fn test_list_proxmox_nodes_error_message_format() {
         let raw = "HTTP 403";
-        let msg = format!("Failed to list nodes: {}", raw);
+        let msg = format!("Failed to list nodes: {raw}");
         assert!(msg.starts_with("Failed to list nodes:"));
         assert!(msg.contains("403"));
     }
@@ -4915,7 +4903,7 @@ mod tests {
         let ide2 = iso
             .as_deref()
             .filter(|s| !s.is_empty())
-            .map(|s| format!("{},media=cdrom", s))
+            .map(|s| format!("{s},media=cdrom"))
             .unwrap_or_else(|| "none,media=cdrom".to_string());
         assert_eq!(ide2, "local:iso/ubuntu.iso,media=cdrom");
     }
@@ -4926,7 +4914,7 @@ mod tests {
         let ide2 = iso
             .as_deref()
             .filter(|s| !s.is_empty())
-            .map(|s| format!("{},media=cdrom", s))
+            .map(|s| format!("{s},media=cdrom"))
             .unwrap_or_else(|| "none,media=cdrom".to_string());
         assert_eq!(ide2, "none,media=cdrom");
     }
@@ -4937,7 +4925,7 @@ mod tests {
         let ide2 = iso
             .as_deref()
             .filter(|s| !s.is_empty())
-            .map(|s| format!("{},media=cdrom", s))
+            .map(|s| format!("{s},media=cdrom"))
             .unwrap_or_else(|| "none,media=cdrom".to_string());
         assert_eq!(ide2, "none,media=cdrom");
     }
@@ -4946,14 +4934,14 @@ mod tests {
     fn test_create_proxmox_vm_scsi0_format() {
         let storage = "local-lvm";
         let disk_size: u32 = 32;
-        let scsi0 = format!("{}:{}", storage, disk_size);
+        let scsi0 = format!("{storage}:{disk_size}");
         assert_eq!(scsi0, "local-lvm:32");
     }
 
     #[test]
     fn test_create_proxmox_vm_net0_format() {
         let bridge = "vmbr0";
-        let net0 = format!("virtio,bridge={}", bridge);
+        let net0 = format!("virtio,bridge={bridge}");
         assert_eq!(net0, "virtio,bridge=vmbr0");
     }
 
@@ -4961,7 +4949,7 @@ mod tests {
     fn test_create_proxmox_vm_error_message_format() {
         let vmid: u32 = 105;
         let raw = "storage not found";
-        let msg = format!("Failed to create VM: Failed to create VM {}: {}", vmid, raw);
+        let msg = format!("Failed to create VM: Failed to create VM {vmid}: {raw}");
         assert!(msg.contains("Failed to create VM"));
         assert!(msg.contains("105"));
     }

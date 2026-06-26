@@ -14,7 +14,7 @@ pub async fn extract_cookies_native(
     use objc::runtime::{Class, Object};
     use objc::{msg_send, sel, sel_impl};
 
-    tracing::info!("Attempting native cookie extraction for {} on domain {}", webview_label, domain);
+    tracing::info!("Attempting native cookie extraction for {webview_label} on domain {domain}");
 
     unsafe {
         // Get the WKWebsiteDataStore (where cookies are stored)

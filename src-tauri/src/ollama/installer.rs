@@ -132,17 +132,14 @@ pub async fn start_ollama_service() -> anyhow::Result<bool> {
                     }
                 }
                 Err(e) => {
-                    tracing::error!("Failed to launch Ollama.app: {}", e);
+                    tracing::error!("Failed to launch Ollama.app: {e}");
                 }
             }
         }
 
         // Fallback: try direct ollama serve with full path
         if let Some(ollama_bin) = find_ollama_binary() {
-            tracing::info!(
-                "Attempting to start ollama serve directly at {:?}...",
-                ollama_bin
-            );
+            tracing::info!("Attempting to start ollama serve directly at {ollama_bin:?}...");
             let result = std::process::Command::new(&ollama_bin)
                 .arg("serve")
                 .stdout(std::process::Stdio::null())
@@ -157,7 +154,7 @@ pub async fn start_ollama_service() -> anyhow::Result<bool> {
                     Ok(new_status.running)
                 }
                 Err(e) => {
-                    tracing::error!("Failed to start ollama serve: {}", e);
+                    tracing::error!("Failed to start ollama serve: {e}");
                     Ok(false)
                 }
             }
@@ -171,7 +168,7 @@ pub async fn start_ollama_service() -> anyhow::Result<bool> {
     {
         // On Linux, start ollama serve in background using full path
         if let Some(ollama_bin) = find_ollama_binary() {
-            tracing::info!("Starting ollama serve at {:?}...", ollama_bin);
+            tracing::info!("Starting ollama serve at {ollama_bin:?}...");
             let result = std::process::Command::new(&ollama_bin)
                 .arg("serve")
                 .stdout(std::process::Stdio::null())
@@ -191,7 +188,7 @@ pub async fn start_ollama_service() -> anyhow::Result<bool> {
                     }
                 }
                 Err(e) => {
-                    tracing::error!("Failed to start ollama serve: {}", e);
+                    tracing::error!("Failed to start ollama serve: {e}");
                     Ok(false)
                 }
             }

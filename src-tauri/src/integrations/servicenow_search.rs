@@ -25,7 +25,7 @@ pub async fn search_servicenow(
             urlencoding::encode(expanded_query)
         );
 
-        tracing::info!("Searching ServiceNow with query: {}", expanded_query);
+        tracing::info!("Searching ServiceNow with query: {expanded_query}");
 
         let resp = client
             .get(&search_url)
@@ -58,9 +58,8 @@ pub async fn search_servicenow(
                 let sys_id = item["sys_id"].as_str().unwrap_or("").to_string();
 
                 let url = format!(
-                    "{}/kb_view.do?sysparm_article={}",
-                    instance_url.trim_end_matches('/'),
-                    sys_id
+                    "{}/kb_view.do?sysparm_article={sys_id}",
+                    instance_url.trim_end_matches('/')
                 );
 
                 let excerpt = item["text"]
@@ -118,10 +117,7 @@ pub async fn search_incidents(
             urlencoding::encode(expanded_query)
         );
 
-        tracing::info!(
-            "Searching ServiceNow incidents with query: {}",
-            expanded_query
-        );
+        tracing::info!("Searching ServiceNow incidents with query: {expanded_query}");
 
         let resp = client
             .get(&search_url)
@@ -144,16 +140,14 @@ pub async fn search_incidents(
             for item in result_array.iter() {
                 let number = item["number"].as_str().unwrap_or("Unknown");
                 let title = format!(
-                    "Incident {}: {}",
-                    number,
+                    "Incident {number}: {}",
                     item["short_description"].as_str().unwrap_or("No title")
                 );
 
                 let sys_id = item["sys_id"].as_str().unwrap_or("");
                 let url = format!(
-                    "{}/incident.do?sys_id={}",
-                    instance_url.trim_end_matches('/'),
-                    sys_id
+                    "{}/incident.do?sys_id={sys_id}",
+                    instance_url.trim_end_matches('/')
                 );
 
                 let description = item["description"].as_str().unwrap_or("").to_string();

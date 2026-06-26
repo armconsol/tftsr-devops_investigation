@@ -46,11 +46,11 @@ pub async fn get_container_config(
 ) -> Result<serde_json::Value, String> {
     validate_node(node)?;
     validate_vmid(vmid)?;
-    let path = format!("nodes/{}/lxc/{}/config", node, vmid);
+    let path = format!("nodes/{node}/lxc/{vmid}/config");
     client
         .get(&path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to get container config for vmid {}: {}", vmid, e))
+        .map_err(|e| format!("Failed to get container config for vmid {vmid}: {e}"))
 }
 
 /// Create a new LXC container
@@ -99,11 +99,11 @@ pub async fn create_proxmox_container(
         form.push(("start", if start { "1" } else { "0" }));
     }
 
-    let path = format!("nodes/{}/lxc", node);
+    let path = format!("nodes/{node}/lxc");
     let response: serde_json::Value = client
         .post_form(&path, &form, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to create container on node {}: {}", node, e))?;
+        .map_err(|e| format!("Failed to create container on node {node}: {e}"))?;
 
     let upid = response
         .as_str()
@@ -168,7 +168,7 @@ mod tests {
     fn test_container_config_path_building() {
         let node = "pve-node1";
         let vmid = 110_u32;
-        let path = format!("nodes/{}/lxc/{}/config", node, vmid);
+        let path = format!("nodes/{node}/lxc/{vmid}/config");
         assert_eq!(path, "nodes/pve-node1/lxc/110/config");
     }
 

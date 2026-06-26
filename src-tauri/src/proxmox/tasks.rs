@@ -32,11 +32,11 @@ pub async fn list_tasks(
     node: &str,
     ticket: &str,
 ) -> Result<Vec<TaskInfo>, String> {
-    let path = format!("nodes/{}/tasks", node);
+    let path = format!("nodes/{node}/tasks");
     let response: serde_json::Value = client
         .get(&path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to list tasks for node {}: {}", node, e))?;
+        .map_err(|e| format!("Failed to list tasks for node {node}: {e}"))?;
 
     if let Some(tasks) = response.as_array() {
         let task_list: Vec<TaskInfo> = tasks
@@ -108,11 +108,11 @@ pub async fn get_task_status(
     task_id: &str,
     ticket: &str,
 ) -> Result<TaskInfo, String> {
-    let path = format!("nodes/{}/tasks/{}", node, task_id);
+    let path = format!("nodes/{node}/tasks/{task_id}");
     let response: serde_json::Value = client
         .get(&path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to get task {}: {}", task_id, e))?;
+        .map_err(|e| format!("Failed to get task {task_id}: {e}"))?;
 
     {
         let data = &response;
@@ -180,7 +180,7 @@ pub async fn stop_task(
     task_id: &str,
     ticket: &str,
 ) -> Result<(), String> {
-    let path = format!("nodes/{}/tasks/{}", node, task_id);
+    let path = format!("nodes/{node}/tasks/{task_id}");
     let config = serde_json::json!({
         "cancel": true
     });
@@ -188,7 +188,7 @@ pub async fn stop_task(
     let _response: serde_json::Value = client
         .post(&path, &config, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to stop task {}: {}", task_id, e))?;
+        .map_err(|e| format!("Failed to stop task {task_id}: {e}"))?;
     Ok(())
 }
 
@@ -199,11 +199,11 @@ pub async fn get_task_log(
     task_id: &str,
     ticket: &str,
 ) -> Result<Vec<TaskLogEntry>, String> {
-    let path = format!("nodes/{}/tasks/{}/log", node, task_id);
+    let path = format!("nodes/{node}/tasks/{task_id}/log");
     let response: serde_json::Value = client
         .get(&path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to get task log for {}: {}", task_id, e))?;
+        .map_err(|e| format!("Failed to get task log for {task_id}: {e}"))?;
 
     if let Some(log_entries) = response.as_array() {
         let log_list: Vec<TaskLogEntry> = log_entries
@@ -247,7 +247,7 @@ pub async fn forward_task(
     task_id: &str,
     ticket: &str,
 ) -> Result<TaskInfo, String> {
-    let path = format!("nodes/{}/tasks/{}/forward", node, task_id);
+    let path = format!("nodes/{node}/tasks/{task_id}/forward");
     let config = serde_json::json!({
         "target": target_node
     });
@@ -255,7 +255,7 @@ pub async fn forward_task(
     let response: serde_json::Value = client
         .post(&path, &config, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to forward task {}: {}", task_id, e))?;
+        .map_err(|e| format!("Failed to forward task {task_id}: {e}"))?;
 
     {
         let data = &response;
@@ -281,7 +281,7 @@ pub async fn forward_task(
             end_time: None,
             progress: 0,
             exit_status: None,
-            description: format!("Forwarded to {}", target_node),
+            description: format!("Forwarded to {target_node}"),
         })
     }
 }

@@ -30,11 +30,11 @@ pub async fn list_firewall_rules(
     ticket: &str,
 ) -> Result<Vec<FirewallRule>, String> {
     validate_node(node)?;
-    let path = format!("nodes/{}/firewall/rules", node);
+    let path = format!("nodes/{node}/firewall/rules");
     let response: serde_json::Value = client
         .get(&path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to list firewall rules: {}", e))?;
+        .map_err(|e| format!("Failed to list firewall rules: {e}"))?;
 
     if let Some(rules) = response.as_array() {
         let rule_list: Vec<FirewallRule> = rules
@@ -82,7 +82,7 @@ pub async fn add_rule(
     ticket: &str,
 ) -> Result<(), String> {
     validate_node(node)?;
-    let path = format!("nodes/{}/firewall/rules", node);
+    let path = format!("nodes/{node}/firewall/rules");
     let mut config = serde_json::json!({
         "action": rule.action,
         "proto": rule.protocol,
@@ -97,7 +97,7 @@ pub async fn add_rule(
     let _response: serde_json::Value = client
         .post(&path, &config, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to add firewall rule: {}", e))?;
+        .map_err(|e| format!("Failed to add firewall rule: {e}"))?;
     Ok(())
 }
 
@@ -109,11 +109,11 @@ pub async fn delete_rule(
     ticket: &str,
 ) -> Result<(), String> {
     validate_node(node)?;
-    let path = format!("nodes/{}/firewall/rules/{}", node, rule_num);
+    let path = format!("nodes/{node}/firewall/rules/{rule_num}");
     let _response: serde_json::Value = client
         .delete(&path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to delete firewall rule {}: {}", rule_num, e))?;
+        .map_err(|e| format!("Failed to delete firewall rule {rule_num}: {e}"))?;
     Ok(())
 }
 
@@ -126,7 +126,7 @@ pub async fn update_rule(
     ticket: &str,
 ) -> Result<(), String> {
     validate_node(node)?;
-    let path = format!("nodes/{}/firewall/rules/{}", node, rule_num);
+    let path = format!("nodes/{node}/firewall/rules/{rule_num}");
     let mut config = serde_json::json!({
         "action": rule.action,
         "proto": rule.protocol,
@@ -141,7 +141,7 @@ pub async fn update_rule(
     let _response: serde_json::Value = client
         .put(&path, &config, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to update firewall rule {}: {}", rule_num, e))?;
+        .map_err(|e| format!("Failed to update firewall rule {rule_num}: {e}"))?;
     Ok(())
 }
 
@@ -152,7 +152,7 @@ pub async fn enable_firewall(
     ticket: &str,
 ) -> Result<(), String> {
     validate_node(node)?;
-    let path = format!("nodes/{}/firewall/options", node);
+    let path = format!("nodes/{node}/firewall/options");
     let config = serde_json::json!({
         "enable": 1
     });
@@ -160,7 +160,7 @@ pub async fn enable_firewall(
     let _response: serde_json::Value = client
         .put(&path, &config, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to enable firewall: {}", e))?;
+        .map_err(|e| format!("Failed to enable firewall: {e}"))?;
     Ok(())
 }
 
@@ -171,7 +171,7 @@ pub async fn disable_firewall(
     ticket: &str,
 ) -> Result<(), String> {
     validate_node(node)?;
-    let path = format!("nodes/{}/firewall/options", node);
+    let path = format!("nodes/{node}/firewall/options");
     let config = serde_json::json!({
         "enable": 0
     });
@@ -179,7 +179,7 @@ pub async fn disable_firewall(
     let _response: serde_json::Value = client
         .put(&path, &config, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to disable firewall: {}", e))?;
+        .map_err(|e| format!("Failed to disable firewall: {e}"))?;
     Ok(())
 }
 
@@ -190,17 +190,17 @@ pub async fn get_firewall_status(
     ticket: &str,
 ) -> Result<FirewallStatus, String> {
     validate_node(node)?;
-    let path = format!("nodes/{}/firewall/rules", node);
+    let path = format!("nodes/{node}/firewall/rules");
     let rules_response: serde_json::Value = client
         .get(&path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to get firewall rules: {}", e))?;
+        .map_err(|e| format!("Failed to get firewall rules: {e}"))?;
 
-    let enabled_path = format!("nodes/{}/firewall/options", node);
+    let enabled_path = format!("nodes/{node}/firewall/options");
     let options_response: serde_json::Value = client
         .get(&enabled_path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to get firewall options: {}", e))?;
+        .map_err(|e| format!("Failed to get firewall options: {e}"))?;
 
     let enabled = options_response
         .get("enable")
@@ -257,8 +257,7 @@ fn validate_node(node: &str) -> Result<(), String> {
     }
     if !node.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
         return Err(format!(
-            "Invalid node name '{}': only alphanumeric characters and hyphens are allowed",
-            node
+            "Invalid node name '{node}': only alphanumeric characters and hyphens are allowed"
         ));
     }
     Ok(())
@@ -267,8 +266,7 @@ fn validate_node(node: &str) -> Result<(), String> {
 fn validate_vmid(vmid: u32) -> Result<(), String> {
     if !(100..=999_999_999).contains(&vmid) {
         return Err(format!(
-            "Invalid vmid {}: must be in range 100..=999999999",
-            vmid
+            "Invalid vmid {vmid}: must be in range 100..=999999999"
         ));
     }
     Ok(())
@@ -282,10 +280,7 @@ fn validate_firewall_zone(zone: &str) -> Result<(), String> {
         .chars()
         .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
     {
-        return Err(format!(
-            "Invalid firewall zone '{}': only alphanumeric characters, hyphens, and underscores are allowed",
-            zone
-        ));
+        return Err(format!("Invalid firewall zone '{zone}': only alphanumeric characters, hyphens, and underscores are allowed"));
     }
     Ok(())
 }
@@ -345,7 +340,7 @@ pub async fn list_cluster_firewall_rules(
     let response: serde_json::Value = client
         .get("cluster/firewall/rules", Some(ticket))
         .await
-        .map_err(|e| format!("Failed to list cluster firewall rules: {}", e))?;
+        .map_err(|e| format!("Failed to list cluster firewall rules: {e}"))?;
     parse_firewall_rules(response)
 }
 
@@ -357,7 +352,7 @@ pub async fn get_cluster_firewall_status(
     let response: serde_json::Value = client
         .get("cluster/firewall/options", Some(ticket))
         .await
-        .map_err(|e| format!("Failed to get cluster firewall options: {}", e))?;
+        .map_err(|e| format!("Failed to get cluster firewall options: {e}"))?;
 
     let enable = response.get("enable").and_then(|v| v.as_i64());
     let policy_in = response
@@ -385,13 +380,11 @@ pub async fn list_guest_firewall_rules(
 ) -> Result<Vec<FirewallRule>, String> {
     validate_node(node)?;
     validate_vmid(vmid)?;
-    let path = format!("nodes/{}/qemu/{}/firewall/rules", node, vmid);
-    let response: serde_json::Value = client.get(&path, Some(ticket)).await.map_err(|e| {
-        format!(
-            "Failed to list guest firewall rules for vmid {}: {}",
-            vmid, e
-        )
-    })?;
+    let path = format!("nodes/{node}/qemu/{vmid}/firewall/rules");
+    let response: serde_json::Value = client
+        .get(&path, Some(ticket))
+        .await
+        .map_err(|e| format!("Failed to list guest firewall rules for vmid {vmid}: {e}"))?;
     parse_firewall_rules(response)
 }
 
@@ -405,7 +398,7 @@ pub async fn add_guest_firewall_rule(
 ) -> Result<(), String> {
     validate_node(node)?;
     validate_vmid(vmid)?;
-    let path = format!("nodes/{}/qemu/{}/firewall/rules", node, vmid);
+    let path = format!("nodes/{node}/qemu/{vmid}/firewall/rules");
     let mut config = serde_json::json!({
         "action": rule.action,
         "proto": rule.protocol,
@@ -419,7 +412,7 @@ pub async fn add_guest_firewall_rule(
     let _response: serde_json::Value = client
         .post(&path, &config, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to add guest firewall rule for vmid {}: {}", vmid, e))?;
+        .map_err(|e| format!("Failed to add guest firewall rule for vmid {vmid}: {e}"))?;
     Ok(())
 }
 
@@ -433,12 +426,9 @@ pub async fn delete_guest_firewall_rule(
 ) -> Result<(), String> {
     validate_node(node)?;
     validate_vmid(vmid)?;
-    let path = format!("nodes/{}/qemu/{}/firewall/rules/{}", node, vmid, pos);
+    let path = format!("nodes/{node}/qemu/{vmid}/firewall/rules/{pos}");
     let _response: serde_json::Value = client.delete(&path, Some(ticket)).await.map_err(|e| {
-        format!(
-            "Failed to delete guest firewall rule at pos {} for vmid {}: {}",
-            pos, vmid, e
-        )
+        format!("Failed to delete guest firewall rule at pos {pos} for vmid {vmid}: {e}")
     })?;
     Ok(())
 }
@@ -452,15 +442,11 @@ pub async fn get_firewall_zone(
 ) -> Result<serde_json::Value, String> {
     validate_node(node)?;
     validate_firewall_zone(zone)?;
-    let path = format!(
-        "nodes/{}/firewall/zones/{}",
-        node,
-        urlencoding::encode(zone)
-    );
+    let path = format!("nodes/{node}/firewall/zones/{}", urlencoding::encode(zone));
     client
         .get(&path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to get firewall zone {}: {}", zone, e))
+        .map_err(|e| format!("Failed to get firewall zone {zone}: {e}"))
 }
 
 /// List firewall zones
@@ -470,11 +456,11 @@ pub async fn list_firewall_zones(
     ticket: &str,
 ) -> Result<Vec<serde_json::Value>, String> {
     validate_node(node)?;
-    let path = format!("nodes/{}/firewall/zones", node);
+    let path = format!("nodes/{node}/firewall/zones");
     let response: serde_json::Value = client
         .get(&path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to list firewall zones: {}", e))?;
+        .map_err(|e| format!("Failed to list firewall zones: {e}"))?;
 
     if let Some(zones) = response.as_array() {
         Ok(zones.to_vec())
@@ -637,8 +623,8 @@ mod tests {
         let node = "pve-node-01";
         let vmid: u32 = 100;
         let pos: u32 = 3;
-        let rules_path = format!("nodes/{}/qemu/{}/firewall/rules", node, vmid);
-        let delete_path = format!("nodes/{}/qemu/{}/firewall/rules/{}", node, vmid, pos);
+        let rules_path = format!("nodes/{node}/qemu/{vmid}/firewall/rules");
+        let delete_path = format!("nodes/{node}/qemu/{vmid}/firewall/rules/{pos}");
         assert_eq!(rules_path, "nodes/pve-node-01/qemu/100/firewall/rules");
         assert_eq!(delete_path, "nodes/pve-node-01/qemu/100/firewall/rules/3");
     }

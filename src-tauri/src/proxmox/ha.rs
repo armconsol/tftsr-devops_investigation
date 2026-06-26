@@ -219,10 +219,10 @@ pub async fn list_ha_groups(
                     client
                         .get("cluster/ha/rules", Some(ticket))
                         .await
-                        .map_err(|e| format!("Failed to list HA rules: {}", e))?;
+                        .map_err(|e| format!("Failed to list HA rules: {e}"))?;
                 Ok(parse_ha_rules_as_groups(&rules))
             } else {
-                Err(format!("Failed to list HA groups: {}", msg))
+                Err(format!("Failed to list HA groups: {msg}"))
             }
         }
     }
@@ -244,7 +244,7 @@ pub async fn create_ha_group(
     let _response: serde_json::Value = client
         .post(path, &config, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to create HA group {}: {}", group, e))?;
+        .map_err(|e| format!("Failed to create HA group {group}: {e}"))?;
     Ok(())
 }
 
@@ -261,7 +261,7 @@ pub async fn update_ha_group(
     nofailback: Option<bool>,
     ticket: &str,
 ) -> Result<(), String> {
-    let path = format!("cluster/ha/groups/{}", group);
+    let path = format!("cluster/ha/groups/{group}");
     let mut config = serde_json::Map::new();
     config.insert(
         "nodes".to_string(),
@@ -289,7 +289,7 @@ pub async fn update_ha_group(
     let _response: serde_json::Value = client
         .put(&path, &serde_json::Value::Object(config), Some(ticket))
         .await
-        .map_err(|e| format!("Failed to update HA group {}: {}", group, e))?;
+        .map_err(|e| format!("Failed to update HA group {group}: {e}"))?;
     Ok(())
 }
 
@@ -299,11 +299,11 @@ pub async fn delete_ha_group(
     group: &str,
     ticket: &str,
 ) -> Result<(), String> {
-    let path = format!("cluster/ha/groups/{}", group);
+    let path = format!("cluster/ha/groups/{group}");
     let _response: serde_json::Value = client
         .delete(&path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to delete HA group {}: {}", group, e))?;
+        .map_err(|e| format!("Failed to delete HA group {group}: {e}"))?;
     Ok(())
 }
 
@@ -316,7 +316,7 @@ pub async fn list_ha_resources(
     let response: serde_json::Value = client
         .get(path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to list HA resources: {}", e))?;
+        .map_err(|e| format!("Failed to list HA resources: {e}"))?;
 
     Ok(parse_ha_resources(&response))
 }
@@ -335,7 +335,7 @@ pub async fn update_ha_resource(
     comment: Option<&str>,
     ticket: &str,
 ) -> Result<(), String> {
-    let path = format!("cluster/ha/resources/{}", sid);
+    let path = format!("cluster/ha/resources/{sid}");
     let mut config = serde_json::Map::new();
     if let Some(g) = group {
         config.insert(
@@ -365,7 +365,7 @@ pub async fn update_ha_resource(
     let _response: serde_json::Value = client
         .put(&path, &serde_json::Value::Object(config), Some(ticket))
         .await
-        .map_err(|e| format!("Failed to update HA resource {}: {}", sid, e))?;
+        .map_err(|e| format!("Failed to update HA resource {sid}: {e}"))?;
     Ok(())
 }
 
@@ -375,11 +375,11 @@ pub async fn enable_ha_resource(
     resource: &str,
     ticket: &str,
 ) -> Result<(), String> {
-    let path = format!("cluster/ha/resources/{}/enable", resource);
+    let path = format!("cluster/ha/resources/{resource}/enable");
     let _response: serde_json::Value = client
         .post_form(&path, &[], Some(ticket))
         .await
-        .map_err(|e| format!("Failed to enable HA resource {}: {}", resource, e))?;
+        .map_err(|e| format!("Failed to enable HA resource {resource}: {e}"))?;
     Ok(())
 }
 
@@ -389,11 +389,11 @@ pub async fn disable_ha_resource(
     resource: &str,
     ticket: &str,
 ) -> Result<(), String> {
-    let path = format!("cluster/ha/resources/{}/disable", resource);
+    let path = format!("cluster/ha/resources/{resource}/disable");
     let _response: serde_json::Value = client
         .post_form(&path, &[], Some(ticket))
         .await
-        .map_err(|e| format!("Failed to disable HA resource {}: {}", resource, e))?;
+        .map_err(|e| format!("Failed to disable HA resource {resource}: {e}"))?;
     Ok(())
 }
 
@@ -404,11 +404,11 @@ pub async fn manage_ha_resource(
     action: &str,
     ticket: &str,
 ) -> Result<(), String> {
-    let path = format!("cluster/ha/resources/{}/{}", resource, action);
+    let path = format!("cluster/ha/resources/{resource}/{action}");
     let _response: serde_json::Value = client
         .post_form(&path, &[], Some(ticket))
         .await
-        .map_err(|e| format!("Failed to manage HA resource {}: {}", resource, e))?;
+        .map_err(|e| format!("Failed to manage HA resource {resource}: {e}"))?;
     Ok(())
 }
 
@@ -418,11 +418,11 @@ pub async fn get_ha_group_status(
     group: &str,
     ticket: &str,
 ) -> Result<serde_json::Value, String> {
-    let path = format!("cluster/ha/groups/{}/status", group);
+    let path = format!("cluster/ha/groups/{group}/status");
     client
         .get(&path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to get HA group {}: {}", group, e))
+        .map_err(|e| format!("Failed to get HA group {group}: {e}"))
 }
 
 /// Get HA resource status
@@ -431,11 +431,11 @@ pub async fn get_ha_resource_status(
     resource: &str,
     ticket: &str,
 ) -> Result<serde_json::Value, String> {
-    let path = format!("cluster/ha/resources/{}/status", resource);
+    let path = format!("cluster/ha/resources/{resource}/status");
     client
         .get(&path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to get HA resource {}: {}", resource, e))
+        .map_err(|e| format!("Failed to get HA resource {resource}: {e}"))
 }
 
 #[cfg(test)]
