@@ -38,6 +38,21 @@ EXCLUDE_PATH=".github"
 
 log() { printf '%s\n' "$*" >&2; }
 
+# Redact the userinfo password in any URL git might print (e.g. an authenticated
+# remote URL surfaced in a fetch/push error) so a token never lands in logs.
+redact() { sed -E 's#(://[^:/@]+:)[^@/]+@#\1***@#g'; }
+
+# Run a *network* git command (fetch/push) with credential-safe output while
+# preserving its exit status, so set -e still fails the run on a real error.
+git_net() {
+  _gn_out="$(mktemp)"
+  _gn_rc=0
+  git -C "${REPO}" "$@" >"${_gn_out}" 2>&1 || _gn_rc=$?
+  redact <"${_gn_out}" >&2
+  rm -f "${_gn_out}"
+  return "${_gn_rc}"
+}
+
 WORKDIR="${WORKDIR:-$(mktemp -d)}"
 REPO="${WORKDIR}/repo"
 
@@ -60,8 +75,8 @@ setup_repo() {
   git -C "${REPO}" remote add gitea "${GITEA_REPO_URL}"
   git -C "${REPO}" remote add github "${GITHUB_REPO_URL}"
   # Fetch all heads from both remotes (branches + sync-state-* live on gitea).
-  git -C "${REPO}" fetch -q gitea '+refs/heads/*:refs/remotes/gitea/*'
-  git -C "${REPO}" fetch -q github '+refs/heads/*:refs/remotes/github/*'
+  git_net fetch -q gitea '+refs/heads/*:refs/remotes/gitea/*'
+  git_net fetch -q github '+refs/heads/*:refs/remotes/github/*'
 }
 
 g() { git -C "${REPO}" "$@"; }
@@ -174,7 +189,7 @@ commit_and_push() {
     log "    ~ DRY_RUN would push ${_commit} -> ${_remote}/${_branch}"
     return 0
   fi
-  g push -q "${_remote}" "${_commit}:refs/heads/${_branch}"
+  git_net push -q "${_remote}" "${_commit}:refs/heads/${_branch}"
   log "    > pushed ${_commit} -> ${_remote}/${_branch}"
 }
 
