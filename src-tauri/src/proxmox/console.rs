@@ -415,6 +415,32 @@ mod tests {
     /// app CSP `connect-src`, so the bundled config must explicitly allow
     /// loopback `ws://`. This guard fails if that allowance is ever dropped.
     #[test]
+    fn test_capabilities_allow_clipboard_text() {
+        // Console copy/paste relies on tauri-plugin-clipboard-manager. The
+        // bundled capability set must grant text read+write or the frontend
+        // clipboard calls are rejected by the Tauri ACL at runtime.
+        let caps = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/capabilities/default.json"
+        ));
+        let parsed: serde_json::Value =
+            serde_json::from_str(caps).expect("capabilities/default.json must be valid JSON");
+        let perms = parsed
+            .get("permissions")
+            .and_then(|p| p.as_array())
+            .expect("capabilities must define a permissions array");
+        let has = |needle: &str| perms.iter().filter_map(|v| v.as_str()).any(|p| p == needle);
+        assert!(
+            has("clipboard-manager:allow-read-text"),
+            "capabilities must grant clipboard-manager:allow-read-text for console paste"
+        );
+        assert!(
+            has("clipboard-manager:allow-write-text"),
+            "capabilities must grant clipboard-manager:allow-write-text for console copy"
+        );
+    }
+
+    #[test]
     fn test_csp_allows_loopback_websocket() {
         let conf = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tauri.conf.json"));
         let parsed: serde_json::Value =

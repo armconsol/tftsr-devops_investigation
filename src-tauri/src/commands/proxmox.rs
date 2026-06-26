@@ -3827,6 +3827,13 @@ pub async fn start_remote_migration(
     online: bool,
     state: State<'_, AppState>,
 ) -> Result<RemoteMigrationStart, String> {
+    // `node` and `target_node` both flow into PVE REST URL paths (the source
+    // remote-migrate call and the destination certificate/fingerprint lookup),
+    // so validate them up-front against the shared node allowlist.
+    crate::proxmox::validate::validate_node(&node)?;
+    crate::proxmox::validate::validate_node(&target_node)?;
+    crate::proxmox::validate::validate_vmid(vm_id)?;
+
     // Resolve an optional stored fingerprint for the destination remote.
     let stored_fingerprint: Option<String> = {
         let db = state

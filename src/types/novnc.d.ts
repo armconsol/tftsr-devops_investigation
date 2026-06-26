@@ -25,6 +25,7 @@ declare module '@novnc/novnc' {
     compressionLevel: number;
     disconnect(): void;
     sendCtrlAltDel(): void;
+    clipboardPasteFrom(text: string): void;
     focus(): void;
     blur(): void;
     machineShutdown(): void;
