@@ -1575,7 +1575,13 @@ export const startPtyAttachSessionCmd = (
   });
 
 export const sendPtyStdinCmd = (sessionId: string, data: string) =>
-  invoke<void>("send_pty_stdin", { sessionId, data });
+  // The backend command expects `data: Vec<u8>`, so the string must be encoded
+  // to a UTF-8 byte sequence. Sending a raw string makes serde reject it with
+  // `invalid type: string "...", expected a sequence`.
+  invoke<void>("send_pty_stdin", {
+    sessionId,
+    data: Array.from(new TextEncoder().encode(data)),
+  });
 
 export const resizePtySessionCmd = (sessionId: string, rows: number, cols: number) =>
   invoke<void>("resize_pty_session", { sessionId, rows, cols });
