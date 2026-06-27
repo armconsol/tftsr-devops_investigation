@@ -646,3 +646,161 @@ impl ImageAttachment {
         }
     }
 }
+
+// ─── Remote Desktop Connection ───────────────────────────────────────────────
+
+/// Protocol types for remote desktop connections.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum RemoteProtocol {
+    Rdp,
+    Vnc,
+}
+
+impl std::fmt::Display for RemoteProtocol {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            RemoteProtocol::Rdp => write!(f, "rdp"),
+            RemoteProtocol::Vnc => write!(f, "vnc"),
+        }
+    }
+}
+
+impl std::str::FromStr for RemoteProtocol {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "rdp" => Ok(RemoteProtocol::Rdp),
+            "vnc" => Ok(RemoteProtocol::Vnc),
+            _ => Err(format!("Invalid protocol: {}", s)),
+        }
+    }
+}
+
+/// Represents a remote desktop connection configuration.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RemoteConnection {
+    pub id: String,
+    pub name: String,
+    pub protocol: RemoteProtocol,
+    pub hostname: String,
+    pub port: u16,
+    pub username: Option<String>,
+    pub password_encrypted: String,
+    pub domain: Option<String>,
+    pub resolution: String,
+    pub color_depth: u32,
+    pub clipboard_sync: bool,
+    pub drive_redirect: bool,
+    pub multi_monitor: bool,
+    pub compression: bool,
+    pub quality: u32,
+    pub created_at: String,
+    pub updated_at: String,
+    pub last_connected_at: Option<String>,
+}
+
+impl RemoteConnection {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        name: String,
+        protocol: RemoteProtocol,
+        hostname: String,
+        port: u16,
+        username: Option<String>,
+        password_encrypted: String,
+        domain: Option<String>,
+        resolution: String,
+        color_depth: u32,
+        clipboard_sync: bool,
+        drive_redirect: bool,
+        multi_monitor: bool,
+        compression: bool,
+        quality: u32,
+    ) -> Self {
+        let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+        RemoteConnection {
+            id: Uuid::now_v7().to_string(),
+            name,
+            protocol,
+            hostname,
+            port,
+            username,
+            password_encrypted,
+            domain,
+            resolution,
+            color_depth,
+            clipboard_sync,
+            drive_redirect,
+            multi_monitor,
+            compression,
+            quality,
+            created_at: now.clone(),
+            updated_at: now,
+            last_connected_at: None,
+        }
+    }
+}
+
+/// Lightweight summary for remote connection list views.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RemoteConnectionSummary {
+    pub id: String,
+    pub name: String,
+    pub protocol: RemoteProtocol,
+    pub hostname: String,
+    pub port: u16,
+    pub username: Option<String>,
+    pub status: String,
+    pub created_at: String,
+    pub updated_at: String,
+    pub last_connected_at: Option<String>,
+}
+
+/// Filter for listing remote connections.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct RemoteConnectionFilter {
+    pub protocol: Option<RemoteProtocol>,
+    pub name: Option<String>,
+    pub limit: Option<i64>,
+    pub offset: Option<i64>,
+}
+
+/// New remote connection data for creation.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NewRemoteConnection {
+    pub name: String,
+    pub protocol: RemoteProtocol,
+    pub hostname: String,
+    pub port: u16,
+    pub username: Option<String>,
+    pub password: String,
+    pub domain: Option<String>,
+    pub resolution: Option<String>,
+    pub color_depth: Option<u32>,
+    pub clipboard_sync: Option<bool>,
+    pub drive_redirect: Option<bool>,
+    pub multi_monitor: Option<bool>,
+    pub compression: Option<bool>,
+    pub quality: Option<u32>,
+}
+
+/// Update for existing remote connection.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct RemoteConnectionUpdate {
+    pub name: Option<String>,
+    pub protocol: Option<RemoteProtocol>,
+    pub hostname: Option<String>,
+    pub port: Option<u16>,
+    pub username: Option<Option<String>>,
+    pub password: Option<String>,
+    pub domain: Option<Option<String>>,
+    pub resolution: Option<String>,
+    pub color_depth: Option<u32>,
+    pub clipboard_sync: Option<bool>,
+    pub drive_redirect: Option<bool>,
+    pub multi_monitor: Option<bool>,
+    pub compression: Option<bool>,
+    pub quality: Option<u32>,
+}

@@ -11,6 +11,7 @@ pub mod metrics;
 pub mod ollama;
 pub mod pii;
 pub mod proxmox;
+pub mod remote;
 pub mod shell;
 pub mod state;
 
@@ -485,6 +486,19 @@ pub fn run() {
             commands::proxmox::get_pbs_node_status,
             // Proxmox Subscription Update
             commands::proxmox::update_subscription,
+            // Remote Desktop commands
+            remote::connection::add_remote_connection_cmd,
+            remote::connection::update_remote_connection_cmd,
+            remote::connection::remove_remote_connection_cmd,
+            remote::connection::list_remote_connections_cmd,
+            remote::connection::get_remote_connection_cmd,
+            remote::connection::test_remote_connection_cmd,
+            remote::connection::connect_remote_cmd,
+            remote::connection::disconnect_remote_cmd,
+            remote::rdp::test_rdp_connection_cmd,
+            remote::rdp::connect_rdp_cmd,
+            remote::vnc::test_vnc_connection_cmd,
+            remote::vnc::connect_vnc_cmd,
         ])
         .run(tauri::generate_context!())
         .expect("Error running Troubleshooting and RCA Assistant application");
