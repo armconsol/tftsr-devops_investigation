@@ -29,3 +29,4 @@ docs/images/user-guide/
 # Logs
 .logs/
 *.log
+plans/
