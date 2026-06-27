@@ -437,6 +437,31 @@ pub fn run_migrations(conn: &Connection) -> anyhow::Result<()> {
             "034_add_proxmox_username_column",
             "ALTER TABLE proxmox_clusters ADD COLUMN username TEXT NOT NULL DEFAULT '';",
         ),
+        (
+            "035_create_remote_connections",
+            "CREATE TABLE IF NOT EXISTS remote_connections (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                protocol TEXT NOT NULL CHECK(protocol IN ('rdp', 'vnc')),
+                hostname TEXT NOT NULL,
+                port INTEGER NOT NULL DEFAULT 3389,
+                username TEXT,
+                password_encrypted TEXT NOT NULL,
+                domain TEXT,
+                resolution TEXT NOT NULL DEFAULT '1280x800',
+                color_depth INTEGER NOT NULL DEFAULT 32,
+                clipboard_sync INTEGER NOT NULL DEFAULT 1,
+                drive_redirect INTEGER NOT NULL DEFAULT 0,
+                multi_monitor INTEGER NOT NULL DEFAULT 0,
+                compression INTEGER NOT NULL DEFAULT 1,
+                quality INTEGER NOT NULL DEFAULT 80,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+                last_connected_at TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_remote_connections_protocol ON remote_connections(protocol);
+            CREATE INDEX IF NOT EXISTS idx_remote_connections_last_connected ON remote_connections(last_connected_at);",
+        ),
     ];
 
     for (name, sql) in migrations {

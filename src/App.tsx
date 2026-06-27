@@ -20,6 +20,7 @@ import {
   Server,
   Server as ServerIcon,
   Settings,
+  Monitor,
 } from "lucide-react";
 import { Toaster } from "sonner";
 import { useSettingsStore } from "@/stores/settingsStore";
@@ -33,6 +34,7 @@ import Resolution from "@/pages/Resolution";
 import RCA from "@/pages/RCA";
 import Postmortem from "@/pages/Postmortem";
 import History from "@/pages/History";
+import RemoteDesktopPage from "@/pages/Remote/RemoteDesktopPage";
 import AIProviders from "@/pages/Settings/AIProviders";
 import Ollama from "@/pages/Settings/Ollama";
 import Integrations from "@/pages/Settings/Integrations";
@@ -98,6 +100,7 @@ const navItems = [
       { to: "/proxmox/nodes", label: "Node Detail" },
     ],
   },
+  { to: "/remote", icon: Monitor, label: "Remote Desktop" },
   { to: "/history", icon: Clock, label: "History" },
 ];
 
@@ -315,6 +318,7 @@ export default function App() {
             <Route path="/issue/:id/rca" element={<RCA />} />
             <Route path="/issue/:id/postmortem" element={<Postmortem />} />
             <Route path="/history" element={<History />} />
+            <Route path="/remote" element={<RemoteDesktopPage />} />
             <Route path="/settings/providers" element={<AIProviders />} />
             <Route path="/settings/ollama" element={<Ollama />} />
             <Route path="/settings/shell" element={<ShellExecution />} />
