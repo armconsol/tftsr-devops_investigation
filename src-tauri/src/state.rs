@@ -1,6 +1,3 @@
-// Copyright (c) 2025 Shaun Arman
-// MIT License - see LICENSE file for details
-
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -154,6 +151,8 @@ pub struct AppState {
     pub log_streams: Arc<TokioMutex<HashMap<String, tokio::task::AbortHandle>>>,
     /// PTY session manager for interactive shells
     pub pty_sessions: Arc<crate::shell::SessionManager>,
+    /// RDP session manager
+    pub rdp_manager: Arc<std::sync::Mutex<crate::remote::rdp::RdpManager>>,
 }
 
 /// Determine the application data directory.

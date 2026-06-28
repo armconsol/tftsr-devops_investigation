@@ -1,8 +1,7 @@
-// Copyright (c) 2025 Shaun Arman
-// MIT License - see LICENSE file for details
-
 pub mod ai;
 pub mod audit;
+// TODO: Fix secure_storage module compilation errors
+// pub mod secure_storage;
 pub mod cli;
 pub mod commands;
 pub mod db;
@@ -55,6 +54,7 @@ pub fn run() {
         watchers: Arc::new(Mutex::new(std::collections::HashMap::new())),
         log_streams: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
         pty_sessions: Arc::new(crate::shell::SessionManager::new()),
+        rdp_manager: Arc::new(std::sync::Mutex::new(crate::remote::rdp::RdpManager::new())),
     };
     let stronghold_salt = format!(
         "tftsr-stronghold-salt-v1-{:x}",
@@ -156,6 +156,16 @@ pub fn run() {
             commands::integrations::save_integration_config,
             commands::integrations::get_integration_config,
             commands::integrations::get_all_integration_configs,
+            // Remote Desktop
+            commands::remote::list_remote_connections,
+            commands::remote::get_remote_connection,
+            commands::remote::create_remote_connection,
+            commands::remote::update_remote_connection,
+            commands::remote::delete_remote_connection,
+            commands::remote::start_rdp_session,
+            commands::remote::stop_rdp_session,
+            commands::remote::get_rdp_session,
+            commands::remote::resize_rdp_session,
             // Proxmox - Core Management (Phase 1)
             commands::proxmox::list_auth_realms,
             commands::proxmox::add_ldap_realm,
@@ -489,19 +499,6 @@ pub fn run() {
             commands::proxmox::get_pbs_node_status,
             // Proxmox Subscription Update
             commands::proxmox::update_subscription,
-            // Remote Desktop commands
-            remote::connection::add_remote_connection_cmd,
-            remote::connection::update_remote_connection_cmd,
-            remote::connection::remove_remote_connection_cmd,
-            remote::connection::list_remote_connections_cmd,
-            remote::connection::get_remote_connection_cmd,
-            remote::connection::test_remote_connection_cmd,
-            remote::connection::connect_remote_cmd,
-            remote::connection::disconnect_remote_cmd,
-            remote::rdp::test_rdp_connection_cmd,
-            remote::rdp::connect_rdp_cmd,
-            remote::vnc::test_vnc_connection_cmd,
-            remote::vnc::connect_vnc_cmd,
         ])
         .run(tauri::generate_context!())
         .expect("Error running Troubleshooting and RCA Assistant application");

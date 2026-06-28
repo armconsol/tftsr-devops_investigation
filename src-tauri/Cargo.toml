@@ -25,6 +25,7 @@ rusqlite = { version = "0.31", features = ["bundled-sqlcipher-vendored-openssl"]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["full"] }
+tokio-stream = "0.1"
 reqwest = { version = "0.12", features = ["json", "stream", "multipart"] }
 regex = "1"
 aho-corasick = "1"
@@ -43,6 +44,8 @@ async-trait = "0.1"
 base64 = "0.22"
 dirs = "5"
 aes-gcm = "0.10"
+keyring = "3.0"
+zeroize = "1.7"
 rand = "0.9"
 lazy_static = "1.4"
 warp = "0.3"
@@ -63,8 +66,33 @@ http = "1.4"
 flate2 = { version = "1", features = ["rust_backend"] }
 serde_yaml = "0.9"
 portable-pty = "0.8"
-
-
+russh = "0.50.0-beta.7"
+russh-keys = "0.50.0-beta.7"
+openssh = "0.11.6"
+ssh2 = "0.9"
+ironrdp = { version = "0.16", features = [
+    "svc",
+    "cliprdr",
+    "graphics",
+    "input",
+    "connector",
+    "session",
+    "displaycontrol",
+] }
+ironrdp-async = "0.9"
+ironrdp-tokio = "0.9"
+ironrdp-graphics = "0.8"
+ironrdp-input = "0.6"
+ironrdp-cliprdr = "0.6"
+ironrdp-blocking = "0.9"
+ironrdp-tls = { version = "0.2", features = ["rustls"] }
+ironrdp-pdu = "0.8"
+ironrdp-svc = "0.7"
+x509-cert = { version = "0.2", features = ["std"] }
+tokio-rustls = "0.26"
+rustls = { version = "0.23", features = ["aws_lc_rs"] }
+sspi = "0.21"
+image = "0.25"
 
 [dev-dependencies]
 tokio-test = "0.4"
@@ -74,5 +102,4 @@ rustls = { version = "0.23", features = ["aws_lc_rs"] }
 [profile.release]
 opt-level = "s"
 strip = true
-
 

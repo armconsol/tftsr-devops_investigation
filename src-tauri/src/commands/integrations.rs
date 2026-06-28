@@ -454,6 +454,7 @@ pub async fn initiate_oauth(
                 log_streams,
                 pty_sessions,
                 proxmox_clusters,
+                rdp_manager: Arc::new(std::sync::Mutex::new(crate::remote::rdp::RdpManager::new())),
             };
             while let Some(callback) = callback_rx.recv().await {
                 tracing::info!("Received OAuth callback for state: {}", callback.state);
