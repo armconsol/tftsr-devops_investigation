@@ -1,3 +1,6 @@
+// Copyright (c) 2025 Shaun Arman
+// MIT License - see LICENSE file for details
+
 import { create } from "zustand";
 import type { ClusterInfo, ContextInfo, ResourceInfo, KubeconfigInfo } from "@/lib/tauriCommands";
 

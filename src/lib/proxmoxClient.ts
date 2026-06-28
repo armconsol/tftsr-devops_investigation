@@ -1,3 +1,6 @@
+// Copyright (c) 2025 Shaun Arman
+// MIT License - see LICENSE file for details
+
 /* eslint-disable @typescript-eslint/no-explicit-any */
 // Proxmox client module
 // Provides TypeScript client wrapper for Proxmox API

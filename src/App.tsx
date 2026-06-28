@@ -1,3 +1,6 @@
+// Copyright (c) 2025 Shaun Arman
+// MIT License - see LICENSE file for details
+
 import React, { useState, useEffect, useRef } from "react";
 import { Routes, Route, NavLink, useLocation } from "react-router-dom";
 import {
