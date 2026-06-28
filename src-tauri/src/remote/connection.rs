@@ -23,10 +23,10 @@ pub async fn add_remote_connection(
 ) -> anyhow::Result<RemoteConnection> {
     // Encrypt the password before storing
     let password_encrypted = encrypt_password(&config.password)?;
-    
+
     let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
     let id = Uuid::now_v7().to_string();
-    
+
     let conn = db.lock().unwrap();
     conn.execute(
         "INSERT INTO remote_connections 
@@ -43,7 +43,10 @@ pub async fn add_remote_connection(
             config.username,
             password_encrypted,
             config.domain,
-            config.resolution.clone().unwrap_or_else(|| "1280x800".to_string()),
+            config
+                .resolution
+                .clone()
+                .unwrap_or_else(|| "1280x800".to_string()),
             config.color_depth.unwrap_or(32),
             config.clipboard_sync.unwrap_or(true) as i64,
             config.drive_redirect.unwrap_or(false) as i64,
@@ -88,15 +91,13 @@ pub async fn update_remote_connection(
     // Perform the update in a block to ensure conn is released before await
     {
         let conn = db.lock().unwrap();
-        
+
         // First, get the existing connection
-        let mut stmt = conn.prepare(
-            "SELECT * FROM remote_connections WHERE id = ?1"
-        )?;
+        let mut stmt = conn.prepare("SELECT * FROM remote_connections WHERE id = ?1")?;
         let mut rows = stmt.query([id.clone()])?;
-        
+
         let row = rows.next()?.context("Connection not found")?;
-        
+
         // Collect all the values before dropping stmt and rows
         let _name: String = row.get::<_, String>(1)?;
         let _protocol_str: String = row.get::<_, String>(2)?;
@@ -114,15 +115,15 @@ pub async fn update_remote_connection(
         let _quality: i64 = row.get::<_, i64>(14)?;
         let _created_at: String = row.get::<_, String>(15)?;
         let _last_connected_at: Option<String> = row.get::<_, Option<String>>(16)?;
-        
+
         // Drop stmt and rows before reusing conn
         drop(rows);
         drop(stmt);
-        
+
         // Build update query dynamically
         let mut updates_list: Vec<String> = Vec::new();
         let mut params_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
-        
+
         if let Some(name) = &updates.name {
             updates_list.push("name = ?".to_string());
             params_values.push(Box::new(name.clone()));
@@ -180,21 +181,24 @@ pub async fn update_remote_connection(
             updates_list.push("quality = ?".to_string());
             params_values.push(Box::new(quality));
         }
-        
+
         if updates_list.is_empty() {
             return Err(anyhow::anyhow!("No updates provided"));
         }
-        
+
         let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
         updates_list.push("updated_at = ?".to_string());
         params_values.push(Box::new(now));
         params_values.push(Box::new(id.clone()));
-        
-        let query = format!("UPDATE remote_connections SET {} WHERE id = ?", updates_list.join(", "));
+
+        let query = format!(
+            "UPDATE remote_connections SET {} WHERE id = ?",
+            updates_list.join(", ")
+        );
         conn.execute(&query, rusqlite::params_from_iter(params_values.iter()))?;
         // conn is dropped at the end of this block
     }
-    
+
     // Return the updated connection (conn is now released)
     get_remote_connection(db, id).await
 }
@@ -205,13 +209,10 @@ pub async fn remove_remote_connection(
     id: String,
 ) -> anyhow::Result<()> {
     let conn = db.lock().unwrap();
-    
-    conn.execute(
-        "DELETE FROM remote_connections WHERE id = ?1",
-        [id],
-    )?;
+
+    conn.execute("DELETE FROM remote_connections WHERE id = ?1", [id])?;
     drop(conn);
-    
+
     Ok(())
 }
 
@@ -221,55 +222,57 @@ pub async fn list_remote_connections(
     filter: Option<RemoteConnectionFilter>,
 ) -> anyhow::Result<Vec<RemoteConnectionSummary>> {
     let conn = db.lock().unwrap();
-    
+
     let mut query = "SELECT id, name, protocol, hostname, port, username,
                             clipboard_sync, created_at, updated_at, last_connected_at
-                     FROM remote_connections".to_string();
-    
+                     FROM remote_connections"
+        .to_string();
+
     let mut params_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
-    
+
     // Use ref to avoid moving filter
     if let Some(ref filter) = filter {
         let mut conditions: Vec<String> = Vec::new();
-        
+
         if let Some(ref protocol) = filter.protocol {
             let protocol_str = protocol.to_string();
             conditions.push("protocol = ?".to_string());
             params_values.push(Box::new(protocol_str));
         }
-        
+
         if let Some(ref name) = filter.name {
             conditions.push("name LIKE ?".to_string());
             params_values.push(Box::new(format!("%{}%", name)));
         }
-        
+
         if !conditions.is_empty() {
             query.push_str(" WHERE ");
             query.push_str(&conditions.join(" AND "));
         }
     }
-    
+
     query.push_str(" ORDER BY updated_at DESC");
-    
+
     // Use filter with ref to avoid moving
     if let Some(ref filter) = filter {
         if let Some(limit) = filter.limit {
             query.push_str(&format!(" LIMIT {}", limit));
         }
-        
+
         if let Some(offset) = filter.offset {
             query.push_str(&format!(" OFFSET {}", offset));
         }
     }
-    
+
     let mut stmt = conn.prepare(&query)?;
-    
+
     // Collect all results first while stmt is still valid
     let mut result: anyhow::Result<Vec<RemoteConnectionSummary>> = Ok(Vec::new());
     if result.is_ok() {
         let rows = stmt.query_map(rusqlite::params_from_iter(params_values.iter()), |row| {
             let protocol_str: String = row.get(2)?;
-            let protocol = protocol_str.parse::<RemoteProtocol>()
+            let protocol = protocol_str
+                .parse::<RemoteProtocol>()
                 .map_err(|_| rusqlite::Error::InvalidParameterName("protocol".to_string()))?;
             Ok(RemoteConnectionSummary {
                 id: row.get(0)?,
@@ -284,7 +287,7 @@ pub async fn list_remote_connections(
                 last_connected_at: row.get::<_, Option<String>>(9)?,
             })
         })?;
-        
+
         for row in rows {
             result = result.and_then(|mut vec| {
                 vec.push(row?);
@@ -292,10 +295,10 @@ pub async fn list_remote_connections(
             });
         }
     }
-    
+
     drop(stmt);
     drop(conn);
-    
+
     result
 }
 
@@ -305,18 +308,33 @@ pub async fn get_remote_connection(
     id: String,
 ) -> anyhow::Result<RemoteConnection> {
     let conn = db.lock().unwrap();
-    
+
     // First, collect all the data we need
-    let (id_val, name, protocol_str, hostname, port, username, password_encrypted,
-         domain, resolution, color_depth, clipboard_sync, drive_redirect,
-         multi_monitor, compression, quality, created_at, updated_at, last_connected_at) = {
-        let mut stmt = conn.prepare(
-            "SELECT * FROM remote_connections WHERE id = ?1"
-        )?;
+    let (
+        id_val,
+        name,
+        protocol_str,
+        hostname,
+        port,
+        username,
+        password_encrypted,
+        domain,
+        resolution,
+        color_depth,
+        clipboard_sync,
+        drive_redirect,
+        multi_monitor,
+        compression,
+        quality,
+        created_at,
+        updated_at,
+        last_connected_at,
+    ) = {
+        let mut stmt = conn.prepare("SELECT * FROM remote_connections WHERE id = ?1")?;
         let mut rows = stmt.query([id.clone()])?;
-        
+
         let row = rows.next()?.context("Connection not found")?;
-        
+
         (
             row.get::<_, String>(0)?,
             row.get::<_, String>(1)?,
@@ -339,12 +357,13 @@ pub async fn get_remote_connection(
         )
     };
     // stmt and rows are dropped here
-    
-    let protocol = protocol_str.parse::<RemoteProtocol>()
+
+    let protocol = protocol_str
+        .parse::<RemoteProtocol>()
         .map_err(|e| anyhow::anyhow!("Invalid protocol: {}", e))?;
-    
+
     drop(conn);
-    
+
     Ok(RemoteConnection {
         id: id_val,
         name,
@@ -373,10 +392,10 @@ pub async fn test_remote_connection(
     id: String,
 ) -> anyhow::Result<bool> {
     let conn_info = get_remote_connection(db, id).await?;
-    
+
     // Decrypt the password for testing
     let password = decrypt_password(&conn_info.password_encrypted)?;
-    
+
     match conn_info.protocol {
         RemoteProtocol::Rdp => {
             // Test RDP connection
@@ -386,7 +405,8 @@ pub async fn test_remote_connection(
                 conn_info.username.as_deref(),
                 conn_info.domain.as_deref(),
                 &password,
-            ).await
+            )
+            .await
         }
         RemoteProtocol::Vnc => {
             // Test VNC connection
@@ -401,13 +421,13 @@ pub async fn connect_remote(
     id: String,
 ) -> anyhow::Result<String> {
     let conn_info = get_remote_connection(db.clone(), id.clone()).await?;
-    
+
     // Decrypt the password for connection
     let password = decrypt_password(&conn_info.password_encrypted)?;
-    
+
     // Generate a unique session ID
     let session_id = Uuid::now_v7().to_string();
-    
+
     match conn_info.protocol {
         RemoteProtocol::Rdp => {
             rdp::connect_rdp(
@@ -419,11 +439,12 @@ pub async fn connect_remote(
                 &conn_info.resolution,
                 conn_info.color_depth,
                 conn_info.clipboard_sync,
-            ).await?;
-            
+            )
+            .await?;
+
             // Update last_connected_at
             update_last_connected(db.clone(), id.clone()).await?;
-            
+
             Ok(format!("ws://127.0.0.1:8765/rdp/{}", session_id))
         }
         RemoteProtocol::Vnc => {
@@ -432,18 +453,22 @@ pub async fn connect_remote(
                 conn_info.port,
                 &password,
                 &conn_info.resolution,
-            ).await?;
-            
+            )
+            .await?;
+
             // Update last_connected_at
             update_last_connected(db.clone(), id.clone()).await?;
-            
+
             Ok(format!("ws://127.0.0.1:8765/vnc/{}", session_id))
         }
     }
 }
 
 /// Disconnect from a remote desktop session.
-pub async fn disconnect_remote(_db: Arc<Mutex<rusqlite::Connection>>, session_id: String) -> anyhow::Result<()> {
+pub async fn disconnect_remote(
+    _db: Arc<Mutex<rusqlite::Connection>>,
+    session_id: String,
+) -> anyhow::Result<()> {
     // In a real implementation, this would close the WebSocket connection
     // For now, we just log it
     tracing::info!("Disconnecting from session: {}", session_id);
@@ -457,55 +482,68 @@ async fn update_last_connected(
 ) -> anyhow::Result<()> {
     let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
     let conn = db.lock().unwrap();
-    
+
     conn.execute(
         "UPDATE remote_connections SET last_connected_at = ?1, updated_at = ?2 WHERE id = ?3",
         params![now, now, id],
     )?;
     drop(conn);
-    
+
     Ok(())
 }
 
 /// Encrypt a password using the application's encryption key.
+/// Returns base64-encoded nonce + ciphertext (first 12 bytes = nonce)
 fn encrypt_password(password: &str) -> anyhow::Result<String> {
     use aes_gcm::{
         aead::{Aead, KeyInit},
-        Aes256Gcm, Nonce,
+        Aes256Gcm,
     };
-    
-    // Get the encryption key from environment or use a default for testing
+    use rand::RngCore;
+
     let key_bytes = get_encryption_key()?;
     let key = aes_gcm::Key::<Aes256Gcm>::from_slice(&key_bytes);
-    
+
     let cipher = Aes256Gcm::new(key);
-    let nonce = Nonce::from_slice(&[0u8; 12]); // For demo, use fixed nonce
-    
-    let ciphertext = cipher.encrypt(nonce, password.as_bytes())
+    let mut nonce = [0u8; 12];
+    rand::rng().fill_bytes(&mut nonce);
+
+    let ciphertext = cipher
+        .encrypt(&nonce.into(), password.as_bytes())
         .map_err(|e| anyhow::anyhow!("Encryption failed: {:?}", e))?;
-    
-    Ok(base64::engine::general_purpose::STANDARD.encode(&ciphertext))
+
+    let mut result = nonce.to_vec();
+    result.extend(&ciphertext);
+
+    Ok(base64::engine::general_purpose::STANDARD.encode(&result))
 }
 
 /// Decrypt a password using the application's encryption key.
+/// Expects base64-encoded nonce + ciphertext (first 12 bytes = nonce)
 fn decrypt_password(encrypted: &str) -> anyhow::Result<String> {
     use aes_gcm::{
         aead::{Aead, KeyInit},
-        Aes256Gcm, Nonce,
+        Aes256Gcm,
     };
-    
+
     let key_bytes = get_encryption_key()?;
     let key = aes_gcm::Key::<Aes256Gcm>::from_slice(&key_bytes);
-    
+
     let cipher = Aes256Gcm::new(key);
-    let nonce = Nonce::from_slice(&[0u8; 12]);
-    
-    let ciphertext = base64::engine::general_purpose::STANDARD.decode(encrypted)
+
+    let full_data = base64::engine::general_purpose::STANDARD
+        .decode(encrypted)
         .map_err(|e| anyhow::anyhow!("Base64 decode failed: {:?}", e))?;
-    
-    let plaintext = cipher.decrypt(nonce, ciphertext.as_ref())
+
+    if full_data.len() < 12 {
+        return Err(anyhow::anyhow!("Encrypted data too short"));
+    }
+
+    let (nonce_bytes, ciphertext) = full_data.split_at(12);
+    let plaintext = cipher
+        .decrypt(nonce_bytes.into(), ciphertext)
         .map_err(|e| anyhow::anyhow!("Decryption failed: {:?}", e))?;
-    
+
     Ok(String::from_utf8(plaintext)?)
 }
 
@@ -524,13 +562,13 @@ fn get_encryption_key() -> anyhow::Result<Vec<u8>> {
             }));
         }
     }
-    
+
     // Try to load from .enckey file
     let data_dir = dirs::data_dir()
         .unwrap_or_else(|| std::path::PathBuf::from("."))
         .join("tftsr");
     let key_path = data_dir.join(".enckey");
-    
+
     if key_path.exists() {
         let key = std::fs::read_to_string(&key_path)?;
         return Ok(hex::decode(key.trim()).unwrap_or_else(|_| {
@@ -541,7 +579,7 @@ fn get_encryption_key() -> anyhow::Result<Vec<u8>> {
             bytes
         }));
     }
-    
+
     // Generate a new key for development
     let mut key = vec![0u8; 32];
     use rand::RngCore;
@@ -552,7 +590,7 @@ fn get_encryption_key() -> anyhow::Result<Vec<u8>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_encrypt_decrypt_password() {
         let password = "test-password-123";
@@ -560,7 +598,7 @@ mod tests {
         let decrypted = decrypt_password(&encrypted).unwrap();
         assert_eq!(password, decrypted);
     }
-    
+
     use crate::remote::types::{Protocol, Resolution};
 
     #[test]
@@ -568,25 +606,25 @@ mod tests {
         assert_eq!(Protocol::Rdp.to_string(), "rdp");
         assert_eq!(Protocol::Vnc.to_string(), "vnc");
     }
-    
+
     #[test]
     fn test_protocol_from_str() {
         assert_eq!("rdp".parse::<Protocol>().unwrap(), Protocol::Rdp);
         assert_eq!("vnc".parse::<Protocol>().unwrap(), Protocol::Vnc);
         assert!("invalid".parse::<Protocol>().is_err());
     }
-    
+
     #[test]
     fn test_resolution_parsing() {
         let res = Resolution::from_string("1920x1080");
         assert_eq!(res.width, 1920);
         assert_eq!(res.height, 1080);
-        
+
         let res = Resolution::from_string("invalid");
         assert_eq!(res.width, 1280);
         assert_eq!(res.height, 800);
     }
-    
+
     #[tokio::test]
     async fn test_test_remote_connection() {
         // This test requires a mock state, so we just verify the function compiles
@@ -619,9 +657,10 @@ pub async fn add_remote_connection_cmd(
     compression: Option<bool>,
     quality: Option<u32>,
 ) -> Result<RemoteConnection, String> {
-    let protocol = protocol.parse::<RemoteProtocol>()
+    let protocol = protocol
+        .parse::<RemoteProtocol>()
         .map_err(|e| format!("Invalid protocol: {}", e))?;
-    
+
     let new_connection = NewRemoteConnection {
         name,
         protocol,
@@ -638,11 +677,11 @@ pub async fn add_remote_connection_cmd(
         compression,
         quality,
     };
-    
+
     // Clone the db from state for the async function
     let db = state.db.lock().map_err(|e| e.to_string())?;
     drop(db);
-    
+
     add_remote_connection(state.db.clone(), new_connection)
         .await
         .map_err(|e| format!("Failed to add remote connection: {}", e))
@@ -669,10 +708,11 @@ pub async fn update_remote_connection_cmd(
     compression: Option<bool>,
     quality: Option<u32>,
 ) -> Result<RemoteConnection, String> {
-    let protocol = protocol.map(|p| p.parse::<RemoteProtocol>())
+    let protocol = protocol
+        .map(|p| p.parse::<RemoteProtocol>())
         .transpose()
         .map_err(|e| format!("Invalid protocol: {}", e))?;
-    
+
     let updates = RemoteConnectionUpdate {
         name,
         protocol,
@@ -689,7 +729,7 @@ pub async fn update_remote_connection_cmd(
         compression,
         quality,
     };
-    
+
     update_remote_connection(state.db.clone(), id, updates)
         .await
         .map_err(|e| format!("Failed to update remote connection: {}", e))
@@ -717,7 +757,9 @@ pub async fn list_remote_connections_cmd(
 ) -> Result<Vec<RemoteConnectionSummary>, String> {
     let filter = if protocol.is_some() || name.is_some() || limit.is_some() || offset.is_some() {
         Some(RemoteConnectionFilter {
-            protocol: protocol.map(|p| p.parse::<RemoteProtocol>()).transpose()
+            protocol: protocol
+                .map(|p| p.parse::<RemoteProtocol>())
+                .transpose()
                 .map_err(|e| format!("Invalid protocol: {}", e))?,
             name,
             limit,
@@ -726,7 +768,7 @@ pub async fn list_remote_connections_cmd(
     } else {
         None
     };
-    
+
     list_remote_connections(state.db.clone(), filter)
         .await
         .map_err(|e| format!("Failed to list remote connections: {}", e))
@@ -768,10 +810,10 @@ pub async fn connect_remote_cmd(
 /// Tauri command wrapper for disconnecting from a remote desktop.
 #[tauri::command]
 pub async fn disconnect_remote_cmd(
-    state: tauri::State<'_, AppState>,
+    _state: tauri::State<'_, AppState>,
     session_id: String,
 ) -> Result<(), String> {
-    disconnect_remote(state.db.clone(), session_id)
+    disconnect_remote(_state.db.clone(), session_id)
         .await
         .map_err(|e| format!("Failed to disconnect from remote desktop: {}", e))
 }
