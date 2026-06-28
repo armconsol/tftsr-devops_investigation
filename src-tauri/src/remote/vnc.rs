@@ -36,14 +36,14 @@ impl VncClient {
     pub async fn test_connection(&self) -> anyhow::Result<bool> {
         // In a real implementation, this would attempt to connect to the VNC server
         // and verify the connection works using the RFB protocol.
-        
+
         let address = format!("{}:{}", self.hostname, self.port);
-        
+
         // Try to establish a TCP connection
         let _stream = tokio::net::TcpStream::connect(&address)
             .await
             .context("Failed to connect to VNC server")?;
-        
+
         tracing::info!("VNC connection test successful to {}", address);
         Ok(true)
     }
@@ -51,18 +51,18 @@ impl VncClient {
     /// Connect to a VNC server and return a session handle.
     pub async fn connect(&self) -> anyhow::Result<VncSession> {
         let address = format!("{}:{}", self.hostname, self.port);
-        
+
         // In a real implementation, this would:
         // 1. Establish TCP connection to VNC server
         // 2. Perform RFB protocol handshake
         // 3. Authenticate with provided credentials
         // 4. Request desktop update and start receiving frames
-        
+
         tracing::info!("Connecting to VNC server at {}", address);
-        
+
         // Parse resolution
         let resolution = parse_resolution(&self.resolution);
-        
+
         Ok(VncSession {
             hostname: self.hostname.clone(),
             port: self.port,
@@ -155,7 +155,7 @@ pub async fn test_vnc_connection(
         "1280x800".to_string(),
         true,
     );
-    
+
     client.test_connection().await
 }
 
@@ -173,9 +173,9 @@ pub async fn connect_vnc(
         resolution.to_string(),
         true,
     );
-    
+
     let _session = client.connect().await?;
-    
+
     // Generate a WebSocket URL for the connection
     let session_id = uuid::Uuid::now_v7().to_string();
     Ok(format!("ws://127.0.0.1:8765/vnc/{}", session_id))
@@ -188,14 +188,8 @@ pub async fn test_vnc_connection_cmd(
     port: u16,
     password: String,
 ) -> Result<bool, String> {
-    let client = VncClient::new(
-        hostname,
-        port,
-        password,
-        "1280x800".to_string(),
-        true,
-    );
-    
+    let client = VncClient::new(hostname, port, password, "1280x800".to_string(), true);
+
     client.test_connection().await.map_err(|e| e.to_string())
 }
 
@@ -208,15 +202,13 @@ pub async fn connect_vnc_cmd(
     resolution: String,
     clipboard_sync: bool,
 ) -> Result<String, String> {
-    let client = VncClient::new(
-        hostname,
-        port,
-        password,
-        resolution,
-        clipboard_sync,
-    );
-    
-    client.connect().await.map(|_| "connected".to_string()).map_err(|e| e.to_string())
+    let client = VncClient::new(hostname, port, password, resolution, clipboard_sync);
+
+    client
+        .connect()
+        .await
+        .map(|_| "connected".to_string())
+        .map_err(|e| e.to_string())
 }
 
 #[cfg(test)]
@@ -239,7 +231,7 @@ mod tests {
             "1280x800".to_string(),
             true,
         );
-        
+
         assert_eq!(client.hostname, "127.0.0.1");
         assert_eq!(client.port, 5900);
     }

@@ -50,14 +50,14 @@ impl RdpClient {
     pub async fn test_connection(&self) -> anyhow::Result<bool> {
         // In a real implementation, this would attempt to connect to the RDP server
         // and verify the connection works. For now, we do a basic TCP connection test.
-        
+
         let address = format!("{}:{}", self.hostname, self.port);
-        
+
         // Try to establish a TCP connection
         let _stream = tokio::net::TcpStream::connect(&address)
             .await
             .context("Failed to connect to RDP server")?;
-        
+
         tracing::info!("RDP connection test successful to {}", address);
         Ok(true)
     }
@@ -65,18 +65,18 @@ impl RdpClient {
     /// Connect to an RDP server and return a session handle.
     pub async fn connect(&self) -> anyhow::Result<RdpSession> {
         let address = format!("{}:{}", self.hostname, self.port);
-        
+
         // In a real implementation, this would:
         // 1. Establish TCP connection to RDP server
         // 2. Perform RDP handshake and negotiation
         // 3. Authenticate with provided credentials
         // 4. Establish the remote desktop session
-        
+
         tracing::info!("Connecting to RDP server at {}", address);
-        
+
         // Parse resolution
         let resolution = parse_resolution(&self.resolution);
-        
+
         Ok(RdpSession {
             hostname: self.hostname.clone(),
             port: self.port,
@@ -172,7 +172,7 @@ pub async fn test_rdp_connection(
         32,
         true,
     );
-    
+
     client.test_connection().await
 }
 
@@ -198,9 +198,9 @@ pub async fn connect_rdp(
         color_depth,
         clipboard_sync,
     );
-    
+
     let _session = client.connect().await?;
-    
+
     // Generate a WebSocket URL for the connection
     let session_id = uuid::Uuid::now_v7().to_string();
     Ok(format!("ws://127.0.0.1:8765/rdp/{}", session_id))
@@ -226,7 +226,7 @@ pub async fn test_rdp_connection_cmd(
         32,
         true,
     );
-    
+
     client.test_connection().await.map_err(|e| e.to_string())
 }
 
@@ -254,8 +254,12 @@ pub async fn connect_rdp_cmd(
         color_depth,
         clipboard_sync,
     );
-    
-    client.connect().await.map(|_| "connected".to_string()).map_err(|e| e.to_string())
+
+    client
+        .connect()
+        .await
+        .map(|_| "connected".to_string())
+        .map_err(|e| e.to_string())
 }
 
 #[cfg(test)]
@@ -281,7 +285,7 @@ mod tests {
             32,
             true,
         );
-        
+
         assert_eq!(client.hostname, "127.0.0.1");
         assert_eq!(client.port, 3389);
     }
