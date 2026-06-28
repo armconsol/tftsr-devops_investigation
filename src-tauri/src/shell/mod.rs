@@ -1,3 +1,6 @@
+// Copyright (c) 2025 Shaun Arman
+// MIT License - see LICENSE file for details
+
 pub mod classifier;
 pub mod executor;
 pub mod helm;

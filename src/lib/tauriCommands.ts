@@ -1,3 +1,6 @@
+// Copyright (c) 2025 Shaun Arman
+// MIT License - see LICENSE file for details
+
 import { invoke } from "@tauri-apps/api/core";
 
 // ─── Types matching Rust backend models ───────────────────────────────────────
@@ -1620,3 +1623,149 @@ export const getPodMetricsCmd = (clusterId: string, namespace: string) =>
 
 export const getNodeMetricsCmd = (clusterId: string) =>
   invoke<NodeMetrics[]>("get_node_metrics", { clusterId });
+
+// ─── Remote Desktop Types ─────────────────────────────────────────────────────
+
+export type Protocol = "rdp" | "vnc";
+
+export interface RemoteConnection {
+  id: string;
+  name: string;
+  protocol: Protocol;
+  hostname: string;
+  port: number;
+  username?: string;
+  password_encrypted: string;
+  domain?: string;
+  resolution: string;
+  color_depth: number;
+  clipboard_sync: boolean;
+  drive_redirect: boolean;
+  multi_monitor: boolean;
+  compression: boolean;
+  quality: number;
+  created_at: string;
+  updated_at: string;
+  last_connected_at?: string;
+}
+
+export interface RemoteConnectionSummary {
+  id: string;
+  name: string;
+  protocol: Protocol;
+  hostname: string;
+  port: number;
+  username?: string;
+  status: string;
+  created_at: string;
+  updated_at: string;
+  last_connected_at?: string;
+}
+
+export interface NewRemoteConnection {
+  name: string;
+  protocol: Protocol;
+  hostname: string;
+  port: number;
+  username?: string;
+  password: string;
+  domain?: string;
+  resolution?: string;
+  color_depth?: number;
+  clipboard_sync?: boolean;
+  drive_redirect?: boolean;
+  multi_monitor?: boolean;
+  compression?: boolean;
+  quality?: number;
+}
+
+export interface RemoteConnectionUpdate {
+  name?: string;
+  protocol?: Protocol;
+  hostname?: string;
+  port?: number;
+  username?: string;
+  password?: string;
+  domain?: string;
+  resolution?: string;
+  color_depth?: number;
+  clipboard_sync?: boolean;
+  drive_redirect?: boolean;
+  multi_monitor?: boolean;
+  compression?: boolean;
+  quality?: number;
+}
+
+export interface RemoteConnectionFilter {
+  protocol?: Protocol;
+  name?: string;
+  limit?: number;
+  offset?: number;
+}
+
+// ─── Remote Desktop Commands ──────────────────────────────────────────────────
+
+export const addRemoteConnectionCmd = (connection: NewRemoteConnection) =>
+  invoke<RemoteConnection>("add_remote_connection_cmd", { ...connection });
+
+export const updateRemoteConnectionCmd = (
+  id: string,
+  updates: RemoteConnectionUpdate
+) => invoke<RemoteConnection>("update_remote_connection_cmd", { id, ...updates });
+
+export const removeRemoteConnectionCmd = (id: string) =>
+  invoke<void>("remove_remote_connection_cmd", { id });
+
+export const listRemoteConnectionsCmd = (filter?: RemoteConnectionFilter) =>
+  invoke<RemoteConnectionSummary[]>("list_remote_connections_cmd", {
+    protocol: filter?.protocol,
+    name: filter?.name,
+    limit: filter?.limit,
+    offset: filter?.offset,
+  });
+
+export const getRemoteConnectionCmd = (id: string) =>
+  invoke<RemoteConnection>("get_remote_connection_cmd", { id });
+
+export const testRemoteConnectionCmd = (id: string) =>
+  invoke<boolean>("test_remote_connection_cmd", { id });
+
+export const connectRemoteCmd = (id: string) =>
+  invoke<string>("connect_remote_cmd", { id });
+
+export const disconnectRemoteCmd = (sessionId: string) =>
+  invoke<void>("disconnect_remote_cmd", { sessionId });
+
+// ─── RDP-specific Commands ────────────────────────────────────────────────────
+
+export const testRdpConnectionCmd = (
+  hostname: string,
+  port: number,
+  username?: string,
+  domain?: string,
+  password?: string
+) => invoke<boolean>("test_rdp_connection_cmd", { hostname, port, username, domain, password });
+
+export const connectRdpCmd = (
+  hostname: string,
+  port: number,
+  username?: string,
+  domain?: string,
+  password?: string,
+  resolution?: string,
+  color_depth?: number,
+  clipboard_sync?: boolean
+) => invoke<string>("connect_rdp_cmd", { hostname, port, username, domain, password, resolution, color_depth, clipboard_sync });
+
+// ─── VNC-specific Commands ────────────────────────────────────────────────────
+
+export const testVncConnectionCmd = (hostname: string, port: number, password: string) =>
+  invoke<boolean>("test_vnc_connection_cmd", { hostname, port, password });
+
+export const connectVncCmd = (
+  hostname: string,
+  port: number,
+  password: string,
+  resolution?: string,
+  clipboard_sync?: boolean
+) => invoke<string>("connect_vnc_cmd", { hostname, port, password, resolution, clipboard_sync });
