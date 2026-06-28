@@ -1,3 +1,6 @@
+// Copyright (c) 2025 Shaun Arman
+// MIT License - see LICENSE file for details
+
 use crate::pii::patterns::get_patterns;
 use crate::pii::{PiiSpan, PiiType};
 use regex::Regex;

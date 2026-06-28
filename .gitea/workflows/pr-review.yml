@@ -62,7 +62,8 @@ jobs:
 
           # Split changed files into batches capped at MAX_BATCH_LINES each.
           # File boundaries are always respected — a file is never split across batches.
-          MAX_BATCH_LINES=2500
+          # Reduced from 2500 to 600 to stay within 131k token context window
+          MAX_BATCH_LINES=600
           BATCH=1
           BATCH_LINES=0
           TOTAL_LINES=0
