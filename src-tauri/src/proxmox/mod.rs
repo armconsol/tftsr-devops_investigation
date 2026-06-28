@@ -1,3 +1,6 @@
+// Copyright (c) 2025 Shaun Arman
+// MIT License - see LICENSE file for details
+
 // Proxmox integration module
 // Provides management for Proxmox VE and Proxmox Backup Server clusters
 
