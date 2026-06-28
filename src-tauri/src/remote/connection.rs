@@ -593,9 +593,13 @@ mod tests {
 
     #[test]
     fn test_encrypt_decrypt_password() {
+        // Set a fixed encryption key for testing
+        std::env::set_var("TRCAA_ENCRYPTION_KEY", "0000000000000000000000000000000000000000000000000000000000000000");
+        
         let password = "test-password-123";
         let encrypted = encrypt_password(password).unwrap();
         let decrypted = decrypt_password(&encrypted).unwrap();
+        
         assert_eq!(password, decrypted);
     }
 
