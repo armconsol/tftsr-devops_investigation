@@ -109,7 +109,7 @@ describe("Remote Desktop Commands", () => {
       await addRemoteConnectionCmd(mockConnection);
 
       expect(invoke).toHaveBeenCalledWith("create_remote_connection", {
-        new_conn: mockConnection,
+        newConn: mockConnection,
       });
     });
   });
