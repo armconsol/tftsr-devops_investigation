@@ -349,3 +349,31 @@ docker exec gogs_postgres_db psql -U gogs -d gogsdb -c "SELECT id, lower_name, i
 ```
 
 Database is named `gogsdb`. The PostgreSQL instance uses SCRAM-SHA-256 auth (MD5 also configured for the `gogs` user for compatibility with older clients).
+
+---
+
+## Remote Desktop (RDP)
+
+### Connecting Re-Prompts for a Password Already Saved on the Connection
+
+**Cause:** The RDP password is stored encrypted in `remote_credentials.rdp_password_encrypted`, but the backend had no function to retrieve it, and `start_rdp_session` required a `password` argument — so the UI always showed a "Connect" password dialog.
+
+**Fix:** `get_remote_rdp_password()` (`src-tauri/src/remote/connection.rs`) decrypts the stored password, and `start_rdp_session` now takes `password: Option<String>`. When the argument is omitted/blank, the stored password is used. The frontend (`src/pages/Remote/RemoteDesktopPage.tsx`) connects with stored credentials immediately and only shows the password dialog as a fallback if that fails.
+
+> **Security note — stored RDP credentials.** RDP passwords are encrypted at rest
+> (AES-256-GCM via `integrations::auth`) in `remote_credentials.rdp_password_encrypted`,
+> keyed by `TRCAA_ENCRYPTION_KEY` (or an auto-generated `.enckey`, mode `0600`).
+> The protection is therefore only as strong as that key: anyone who can read the
+> key file and the database can recover the passwords. Prefer the SSH-tunnel path
+> for untrusted networks, keep the encryption key off the database host where
+> possible, and treat the auto-generated `.enckey` as a secret (back it up
+> securely, never commit it). Decrypted passwords are only held in memory for the
+> duration of a connect call and are never logged or returned to the frontend.
+
+### Connecting Shows Only a Black Screen (No Desktop)
+
+**Cause (two parts):**
+1. `start_rdp_session` called the legacy **sync** `RdpManager::start_session`, which never actually connected via IronRDP and never started a WebSocket server — it returned a `ws://` URL pointing at a dead port, so no frames were ever sent.
+2. Even on the async path, the session id used by the frame sender, `register_session`, the `ws://.../rdp/{id}` URL, and `handle_client` did not match (each generated its own UUID), so frames could not be routed to the client.
+
+**Fix:** The command now drives the real async connect path (`start_session_with_password`). A single canonical session id is used across `RdpClientSession` (`new_with_id` / `create_session_with_id`), `WebSocketServer::register_session`, the returned URL, and `handle_client`, which now parses the id from the `/rdp/{id}` request path (`session_id_from_path`) instead of generating a new one. `handle_client` rejects connections for unregistered session ids.

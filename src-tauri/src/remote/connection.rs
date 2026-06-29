@@ -166,6 +166,49 @@ mod tests {
     }
 
     #[test]
+    fn test_get_remote_rdp_password_round_trip() {
+        let conn = setup_test_db();
+
+        let new_conn = crate::db::models::NewRemoteConnection {
+            name: "PW RDP".to_string(),
+            protocol: RemoteProtocol::Rdp,
+            hostname: "192.168.1.50".to_string(),
+            port: 3389,
+            username: Some("admin".to_string()),
+            password: "superSecret!42".to_string(),
+            domain: None,
+            ssh_enabled: false,
+            ssh_hostname: None,
+            ssh_port: None,
+            ssh_username: None,
+            ssh_password: None,
+            ssh_key_data: None,
+            ssh_key_passphrase: None,
+            resolution: Some("1920x1080".to_string()),
+            color_depth: Some(32),
+            clipboard_sync: Some(true),
+            drive_redirect: Some(false),
+            multi_monitor: Some(false),
+            compression: Some(true),
+            quality: Some(80),
+            auto_resize: true,
+            stretch_to_fill: false,
+        };
+
+        let connection = create_remote_connection(&conn, &new_conn).unwrap();
+
+        let stored = get_remote_rdp_password(&conn, &connection.id).unwrap();
+        assert_eq!(stored, Some("superSecret!42".to_string()));
+    }
+
+    #[test]
+    fn test_get_remote_rdp_password_missing_connection() {
+        let conn = setup_test_db();
+        let stored = get_remote_rdp_password(&conn, "does-not-exist").unwrap();
+        assert_eq!(stored, None);
+    }
+
+    #[test]
     fn test_add_and_get_ssh_tunnel_connection() {
         let conn = setup_test_db();
 
@@ -553,6 +596,45 @@ pub fn get_remote_ssh_credentials(
             Ok((ssh_password, ssh_key, ssh_key_passphrase))
         }
         Err(rusqlite::Error::QueryReturnedNoRows) => Ok((None, None, None)),
+        Err(e) => Err(format!("Failed to fetch remote credentials: {e}")),
+    }
+}
+
+/// Fetch and decrypt the stored RDP password for a remote connection.
+///
+/// Returns `Ok(Some(password))` when a non-empty RDP password is stored,
+/// or `Ok(None)` when no credentials row exists or the stored password is
+/// empty. This lets the caller connect using the saved password instead of
+/// prompting the user on every connection.
+pub fn get_remote_rdp_password(
+    conn: &rusqlite::Connection,
+    connection_id: &str,
+) -> Result<Option<String>, String> {
+    use crate::integrations::auth::decrypt_token;
+
+    let result = conn.query_row(
+        "SELECT rdp_password_encrypted
+         FROM remote_credentials
+         WHERE connection_id = ?1",
+        [connection_id],
+        |row| {
+            let rdp_password_enc: Option<String> = row.get(0)?;
+            Ok(rdp_password_enc)
+        },
+    );
+
+    match result {
+        Ok(Some(enc)) => {
+            let password =
+                decrypt_token(&enc).map_err(|e| format!("Failed to decrypt RDP password: {e}"))?;
+            if password.is_empty() {
+                Ok(None)
+            } else {
+                Ok(Some(password))
+            }
+        }
+        Ok(None) => Ok(None),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
         Err(e) => Err(format!("Failed to fetch remote credentials: {e}")),
     }
 }
