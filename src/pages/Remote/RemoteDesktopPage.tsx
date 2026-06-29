@@ -91,9 +91,10 @@ interface ConnectionFormProps {
   onSave: (data: ConnectionFormData) => Promise<void>;
   onCancel: () => void;
   title: string;
+  isEdit?: boolean;
 }
 
-function ConnectionForm({ initial, onSave, onCancel, title }: ConnectionFormProps) {
+function ConnectionForm({ initial, onSave, onCancel, title, isEdit = false }: ConnectionFormProps) {
   const [form, setForm] = useState<ConnectionFormData>({ ...defaultForm(), ...initial });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -106,7 +107,7 @@ function ConnectionForm({ initial, onSave, onCancel, title }: ConnectionFormProp
     setError(null);
     if (!form.name.trim()) { setError('Name is required'); return; }
     if (!form.hostname.trim()) { setError('Hostname is required'); return; }
-    if (!form.password.trim()) { setError('Password is required'); return; }
+    if (!isEdit && !form.password.trim()) { setError('Password is required'); return; }
     if (form.ssh_enabled && !form.ssh_hostname.trim()) { setError('SSH hostname is required when tunnel is enabled'); return; }
     setSaving(true);
     try {
@@ -177,8 +178,8 @@ function ConnectionForm({ initial, onSave, onCancel, title }: ConnectionFormProp
                 </div>
               </div>
               <div className="space-y-1">
-                <Label htmlFor="cf-password">Password</Label>
-                <Input id="cf-password" type="password" value={form.password} onChange={(e) => set('password', e.target.value)} />
+                <Label htmlFor="cf-password">Password{isEdit && <span className="text-muted-foreground font-normal"> (leave blank to keep existing)</span>}</Label>
+                <Input id="cf-password" type="password" value={form.password} onChange={(e) => set('password', e.target.value)} placeholder={isEdit ? '••••••••' : ''} />
               </div>
             </div>
           </TabsContent>
@@ -210,7 +211,7 @@ function ConnectionForm({ initial, onSave, onCancel, title }: ConnectionFormProp
                   </div>
                   <div className="space-y-1">
                     <Label htmlFor="cf-ssh-password">SSH Password (optional)</Label>
-                    <Input id="cf-ssh-password" type="password" value={form.ssh_password} onChange={(e) => set('ssh_password', e.target.value)} />
+                    <Input id="cf-ssh-password" type="password" value={form.ssh_password} onChange={(e) => set('ssh_password', e.target.value)} placeholder={isEdit ? '••••••••' : ''} />
                   </div>
                   <div className="space-y-1">
                     <Label htmlFor="cf-ssh-key">SSH Private Key (PEM, optional)</Label>
@@ -224,8 +225,11 @@ function ConnectionForm({ initial, onSave, onCancel, title }: ConnectionFormProp
                   </div>
                   <div className="space-y-1">
                     <Label htmlFor="cf-ssh-passphrase">Key Passphrase (optional)</Label>
-                    <Input id="cf-ssh-passphrase" type="password" value={form.ssh_key_passphrase} onChange={(e) => set('ssh_key_passphrase', e.target.value)} />
+                    <Input id="cf-ssh-passphrase" type="password" value={form.ssh_key_passphrase} onChange={(e) => set('ssh_key_passphrase', e.target.value)} placeholder={isEdit ? '••••••••' : ''} />
                   </div>
+                  {isEdit && (
+                    <p className="text-xs text-muted-foreground">SSH credential fields are write-only. Leave blank to keep existing stored values.</p>
+                  )}
                 </>
               )}
             </div>
@@ -672,6 +676,7 @@ export const RemoteDesktopPage: React.FC = () => {
               initial={editInitial}
               onSave={handleEdit}
               onCancel={() => setEditTarget(null)}
+              isEdit
             />
           )}
         </DialogContent>
