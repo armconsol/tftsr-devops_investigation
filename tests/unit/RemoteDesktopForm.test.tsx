@@ -42,4 +42,28 @@ describe("ConnectionForm tabs", () => {
     // ...and the SSH content is hidden again.
     expect(contentOwning("Enable SSH tunnel")).toHaveClass("hidden");
   });
+
+  it("does not submit the form (close the dialog) when switching tabs in edit mode", async () => {
+    const user = userEvent.setup();
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    const onCancel = vi.fn();
+
+    // Edit mode with all required fields pre-filled: password is optional here, so a
+    // stray form submission would pass validation and close the dialog.
+    render(
+      <ConnectionForm
+        title="Edit Connection"
+        isEdit
+        initial={{ name: "My Server", hostname: "192.168.1.10" }}
+        onSave={onSave}
+        onCancel={onCancel}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "SSH Tunnel" }));
+    await user.click(screen.getByRole("button", { name: "Display" }));
+
+    // Switching tabs must never trigger a save/submit.
+    expect(onSave).not.toHaveBeenCalled();
+  });
 });
