@@ -23,7 +23,6 @@ import {
   Server,
   Server as ServerIcon,
   Settings,
-  Monitor,
 } from "lucide-react";
 import { Toaster } from "sonner";
 import { useSettingsStore } from "@/stores/settingsStore";
@@ -38,6 +37,7 @@ import RCA from "@/pages/RCA";
 import Postmortem from "@/pages/Postmortem";
 import History from "@/pages/History";
 import RemoteDesktopPage from "@/pages/Remote/RemoteDesktopPage";
+import { RemoteDesktopPage as RemoteDesktopPageAlt } from "@/pages/RemoteDesktop/RemoteDesktopPage";
 import AIProviders from "@/pages/Settings/AIProviders";
 import Ollama from "@/pages/Settings/Ollama";
 import Integrations from "@/pages/Settings/Integrations";
@@ -103,7 +103,7 @@ const navItems = [
       { to: "/proxmox/nodes", label: "Node Detail" },
     ],
   },
-  { to: "/remote", icon: Monitor, label: "Remote Desktop" },
+  { to: "/remote-desktop", icon: Server, label: "Remote Desktop" },
   { to: "/history", icon: Clock, label: "History" },
 ];
 
@@ -321,7 +321,7 @@ export default function App() {
             <Route path="/issue/:id/rca" element={<RCA />} />
             <Route path="/issue/:id/postmortem" element={<Postmortem />} />
             <Route path="/history" element={<History />} />
-            <Route path="/remote" element={<RemoteDesktopPage />} />
+            <Route path="/remote" element={<RemoteDesktopPageAlt />} />
             <Route path="/settings/providers" element={<AIProviders />} />
             <Route path="/settings/ollama" element={<Ollama />} />
             <Route path="/settings/shell" element={<ShellExecution />} />
@@ -333,6 +333,7 @@ export default function App() {
           <Route path="/proxmox/storage" element={<ProxmoxStoragePage />} />
           <Route path="/proxmox/network" element={<ProxmoxNetworkPage />} />
           <Route path="/proxmox/firewall" element={<ProxmoxFirewallPage />} />
+          <Route path="/remote-desktop" element={<RemoteDesktopPage />} />
           <Route path="/proxmox/acl" element={<ProxmoxACLPage />} />
           <Route path="/proxmox/backup" element={<ProxmoxBackupPage />} />
           <Route path="/proxmox/ceph" element={<ProxmoxCephPage />} />

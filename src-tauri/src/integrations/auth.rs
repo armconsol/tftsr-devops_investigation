@@ -243,6 +243,12 @@ fn derive_aes_key() -> Result<[u8; 32], String> {
     Ok(key_bytes)
 }
 
+/// Returns the persistent encryption key material as a hex string.
+/// Usable by other modules (e.g. `secure_storage`) that need the same key.
+pub fn get_encryption_key_material_hex() -> Result<String, String> {
+    get_encryption_key_material()
+}
+
 /// Encrypt a token using AES-256-GCM.
 /// Key is derived from TRCAA_ENCRYPTION_KEY env var (or legacy TFTSR_ENCRYPTION_KEY) or a default dev key.
 /// Returns base64-encoded ciphertext with nonce prepended.
