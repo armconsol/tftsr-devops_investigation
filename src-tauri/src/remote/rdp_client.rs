@@ -152,10 +152,7 @@ impl RdpClientSession {
             self.connect_direct(&addr).await?
         };
 
-        info!(
-            "RDP connection established. Compression: {:?}",
-            connection_result.compression_type
-        );
+        info!("RDP connection established, beginning active stage");
 
         {
             let mut st = self.state.lock().unwrap();
@@ -438,16 +435,12 @@ impl RdpClientSession {
             request_data: None,
             autologon: false,
             enable_audio_playback: false,
-            compression_type: Some(ironrdp_pdu::rdp::client_info::CompressionType::Rdp61),
             pointer_software_rendering: true,
-            multitransport_flags: None,
             performance_flags: PerformanceFlags::default(),
             desktop_scale_factor: 0,
             hardware_id: None,
             license_cache: None,
             timezone_info: ironrdp_pdu::rdp::client_info::TimezoneInfo::default(),
-            alternate_shell: String::new(),
-            work_dir: String::new(),
         }
     }
 
