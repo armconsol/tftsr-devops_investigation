@@ -1,7 +1,6 @@
 pub mod ai;
 pub mod audit;
-// TODO: Fix secure_storage module compilation errors
-// pub mod secure_storage;
+
 pub mod cli;
 pub mod commands;
 pub mod db;
@@ -14,6 +13,7 @@ pub mod ollama;
 pub mod pii;
 pub mod proxmox;
 pub mod remote;
+pub mod secure_storage;
 pub mod shell;
 pub mod state;
 
