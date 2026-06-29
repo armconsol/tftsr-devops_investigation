@@ -51,7 +51,7 @@ export const RemoteDesktopPage: React.FC = () => {
     if (!session) return;
     // Clamp to Display Control valid range
     const w = Math.max(200, Math.min(8192, width % 2 === 0 ? width : width - 1));
-    const h = Math.max(200, Math.min(8192, height));
+    const h = Math.max(200, Math.min(8192, height % 2 === 0 ? height : height - 1));
     resizeRdpSession(session.id, w, h).catch((e: unknown) =>
       console.warn('resize_rdp_session failed:', e)
     );
@@ -116,10 +116,16 @@ export const RemoteDesktopPage: React.FC = () => {
       ws.onerror = () => {
         setWsStatus('error');
         setError('WebSocket connection failed');
+        wsRef.current?.close();
+        wsRef.current = null;
       };
 
       ws.onclose = () => {
         setWsStatus('disconnected');
+        const session = activeSessionRef.current;
+        if (session) {
+          stopRdpSession(session.id).catch(() => {});
+        }
       };
     } catch (err) {
       console.error('Failed to start RDP session:', err);
@@ -130,6 +136,7 @@ export const RemoteDesktopPage: React.FC = () => {
   };
 
   const disconnectFromRDP = async () => {
+    if (resizeTimerRef.current) clearTimeout(resizeTimerRef.current);
     wsRef.current?.close();
     wsRef.current = null;
     if (activeSession) {
@@ -171,24 +178,27 @@ export const RemoteDesktopPage: React.FC = () => {
   };
 
   const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    const r = canvasRef.current!.getBoundingClientRect();
+    if (!canvasRef.current) return;
+    const r = canvasRef.current.getBoundingClientRect();
     sendWsInput({ type: 'mouse', x: Math.floor(e.clientX - r.left), y: Math.floor(e.clientY - r.top), button: e.button, pressed: true });
   };
   const handleMouseUp = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    const r = canvasRef.current!.getBoundingClientRect();
+    if (!canvasRef.current) return;
+    const r = canvasRef.current.getBoundingClientRect();
     sendWsInput({ type: 'mouse', x: Math.floor(e.clientX - r.left), y: Math.floor(e.clientY - r.top), button: e.button, pressed: false });
   };
   const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (!e.buttons) return;
-    const r = canvasRef.current!.getBoundingClientRect();
+    if (!canvasRef.current) return;
+    const r = canvasRef.current.getBoundingClientRect();
     sendWsInput({ type: 'mouse_move', x: Math.floor(e.clientX - r.left), y: Math.floor(e.clientY - r.top) });
   };
   const handleKeyDown = (e: React.KeyboardEvent<HTMLCanvasElement>) => {
     e.preventDefault();
-    sendWsInput({ type: 'keyboard', keycode: e.keyCode, pressed: true });
+    sendWsInput({ type: 'keyboard', code: e.code, pressed: true });
   };
   const handleKeyUp = (e: React.KeyboardEvent<HTMLCanvasElement>) => {
-    sendWsInput({ type: 'keyboard', keycode: e.keyCode, pressed: false });
+    sendWsInput({ type: 'keyboard', code: e.code, pressed: false });
   };
 
   // ── Status helpers ─────────────────────────────────────────────────────────

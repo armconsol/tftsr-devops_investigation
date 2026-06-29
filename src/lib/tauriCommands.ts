@@ -1741,7 +1741,7 @@ export interface RemoteConnectionFilter {
 // ─── Remote Connection Commands ──────────────────────────────────────────────
 
 export const addRemoteConnectionCmd = (connection: NewRemoteConnection) =>
-  invoke<RemoteConnection>("create_remote_connection", { newConn: connection });
+  invoke<RemoteConnection>("create_remote_connection", { new_conn: connection });
 
 export const getRemoteConnectionCmd = (connectionId: string) =>
   invoke<RemoteConnection | null>("get_remote_connection", { id: connectionId });
