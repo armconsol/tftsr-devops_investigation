@@ -1,15 +1,14 @@
-// Copyright (c) 2025 Shaun Arman
-// MIT License - see LICENSE file for details
-
-//! Remote Desktop connection management module.
+//! Remote connection management module
 //!
-//! This module provides functionality for managing RDP and VNC remote desktop connections,
-//! including connection storage, retrieval, and management.
+//! Provides functionality for managing RDP, VNC, and SSH connections
+//! with support for SSH tunneling.
 
 pub mod connection;
 pub mod rdp;
+pub mod rdp_client;
+pub mod ssh_tunnel;
 pub mod types;
-pub mod vnc;
+pub mod websocket_server;
 
-pub use connection::*;
+// Re-export types for convenience
 pub use types::*;

@@ -11,5 +11,6 @@ pub mod integrations;
 pub mod kube;
 pub mod metrics;
 pub mod proxmox;
+pub mod remote;
 pub mod shell;
 pub mod system;

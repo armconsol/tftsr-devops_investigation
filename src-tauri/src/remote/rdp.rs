@@ -1,292 +1,466 @@
-//! RDP (Remote Desktop Protocol) client implementation.
+//! RDP Connection Management
 //!
-//! This module provides RDP connection functionality using a stub implementation
-//! that can be extended with actual RDP libraries like freerdp.
+//! Provides RDP connection handling with SSH tunnel support and WebSocket streaming.
+//! Uses IronRDP for the actual RDP protocol implementation.
 
-use anyhow::Context;
-use std::sync::Arc;
-use tokio::sync::Mutex;
+use anyhow::{Context, Result};
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+use tracing::{debug, error, info};
+use uuid::Uuid;
 
-use crate::state::AppState;
+use super::rdp_client::{RdpConfig, RdpConnectionHandler, ResizeRequest};
+use super::ssh_tunnel::SshTunnelConfig;
+use super::websocket_server::{RdpFrame, WebSocketServer};
+use crate::db::models::RemoteConnection;
 
-/// RDP client structure for managing RDP connections.
-pub struct RdpClient {
-    hostname: String,
-    port: u16,
-    username: Option<String>,
-    _domain: Option<String>,
-    _password: String,
-    resolution: String,
-    color_depth: u32,
-    clipboard_sync: bool,
+/// Public RDP session info for API responses (serializable)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RdpSession {
+    pub id: String,
+    pub connection_id: String,
+    pub hostname: String,
+    pub port: u16,
+    pub username: String,
+    pub resolution: String,
+    pub color_depth: u32,
+    pub websocket_port: u16,
+    pub websocket_url: String,
+    pub connected: bool,
+    pub ssh_enabled: bool,
 }
 
-impl RdpClient {
-    /// Create a new RDP client instance.
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        hostname: String,
-        port: u16,
-        username: Option<String>,
-        domain: Option<String>,
-        password: String,
-        resolution: String,
-        color_depth: u32,
-        clipboard_sync: bool,
-    ) -> Self {
-        RdpClient {
-            hostname,
-            port,
-            username,
-            _domain: domain,
-            _password: password,
-            resolution,
-            color_depth,
-            clipboard_sync,
+/// Internal RDP session state
+#[derive(Clone)]
+pub struct RdpSessionInternal {
+    pub id: String,
+    pub connection_id: String,
+    pub hostname: String,
+    pub port: u16,
+    pub username: String,
+    pub resolution: String,
+    pub color_depth: u32,
+    pub websocket_port: u16,
+    pub ssh_config: Option<SshTunnelConfig>,
+    pub connected: bool,
+    /// Sender end of the resize channel; present while the session is running.
+    pub resize_tx: Option<tokio::sync::mpsc::Sender<ResizeRequest>>,
+}
+
+/// RDP manager for handling multiple RDP sessions
+#[derive(Clone)]
+pub struct RdpManager {
+    sessions: Arc<Mutex<HashMap<String, RdpSessionInternal>>>,
+    pub websocket_server: Arc<WebSocketServer>,
+    rdp_handler: Arc<RdpConnectionHandler>,
+}
+
+impl RdpManager {
+    /// Create a new RDP manager
+    pub fn new() -> Self {
+        let websocket_server = Arc::new(WebSocketServer::new());
+        let rdp_handler = RdpConnectionHandler::new(websocket_server.clone());
+
+        RdpManager {
+            sessions: Arc::new(Mutex::new(HashMap::new())),
+            websocket_server,
+            rdp_handler: Arc::new(rdp_handler),
         }
     }
 
-    /// Test an RDP connection to the specified server.
-    pub async fn test_connection(&self) -> anyhow::Result<bool> {
-        // In a real implementation, this would attempt to connect to the RDP server
-        // and verify the connection works. For now, we do a basic TCP connection test.
+    /// Create a new RDP session
+    ///
+    /// `ssh_password`, `ssh_private_key`, and `ssh_key_passphrase` are the
+    /// decrypted SSH credentials fetched from the credentials store before
+    /// calling this method. All three may be `None` when SSH is disabled or
+    /// no SSH credentials have been saved for the connection.
+    pub fn create_session(
+        &self,
+        connection: &RemoteConnection,
+        _password: &str,
+        ssh_password: Option<String>,
+        ssh_private_key: Option<String>,
+        ssh_key_passphrase: Option<String>,
+    ) -> Result<RdpSessionInternal> {
+        let session_id = Uuid::now_v7().to_string();
 
-        let address = format!("{}:{}", self.hostname, self.port);
+        // Create SSH config if needed
+        let ssh_config = if connection.ssh_enabled {
+            Some(SshTunnelConfig {
+                hostname: connection.ssh_hostname.as_ref().unwrap().clone(),
+                port: connection.ssh_port.unwrap_or(22),
+                username: connection.ssh_username.clone().unwrap_or_default(),
+                password: ssh_password,
+                private_key_path: None,
+                private_key_data: ssh_private_key,
+                key_passphrase: ssh_key_passphrase,
+            })
+        } else {
+            None
+        };
 
-        // Try to establish a TCP connection
-        let _stream = tokio::net::TcpStream::connect(&address)
-            .await
-            .context("Failed to connect to RDP server")?;
+        // Get a free port for WebSocket
+        let websocket_port = self.get_free_port()?;
 
-        tracing::info!("RDP connection test successful to {}", address);
-        Ok(true)
+        let session = RdpSessionInternal {
+            id: session_id.clone(),
+            connection_id: connection.id.clone(),
+            hostname: connection.hostname.clone(),
+            port: connection.port,
+            username: connection.username.clone().unwrap_or_default(),
+            resolution: connection.resolution.clone(),
+            color_depth: connection.color_depth,
+            websocket_port,
+            ssh_config,
+            connected: false,
+            resize_tx: None,
+        };
+
+        // Store the session
+        let mut sessions = self.sessions.lock().unwrap();
+        sessions.insert(session_id.clone(), session.clone());
+
+        info!(
+            "Created RDP session: {} for connection: {}",
+            session_id, connection.id
+        );
+        Ok(session)
     }
 
-    /// Connect to an RDP server and return a session handle.
-    pub async fn connect(&self) -> anyhow::Result<RdpSession> {
-        let address = format!("{}:{}", self.hostname, self.port);
+    /// Start the RDP session (async version that actually connects)
+    pub async fn start_session_async(&self, session_id: &str, password: &str) -> Result<String> {
+        let (
+            _connection_id,
+            hostname,
+            port,
+            username,
+            resolution,
+            color_depth,
+            _ssh_enabled,
+            ssh_config,
+        ) = {
+            let sessions = self.sessions.lock().unwrap();
+            let session = sessions
+                .get(session_id)
+                .ok_or_else(|| anyhow::anyhow!("Session not found: {}", session_id))?;
 
-        // In a real implementation, this would:
-        // 1. Establish TCP connection to RDP server
-        // 2. Perform RDP handshake and negotiation
-        // 3. Authenticate with provided credentials
-        // 4. Establish the remote desktop session
-
-        tracing::info!("Connecting to RDP server at {}", address);
+            (
+                session.connection_id.clone(),
+                session.hostname.clone(),
+                session.port,
+                session.username.clone(),
+                session.resolution.clone(),
+                session.color_depth,
+                session.ssh_config.is_some(),
+                session.ssh_config.clone(),
+            )
+        };
 
         // Parse resolution
-        let resolution = parse_resolution(&self.resolution);
+        let (width, height) = Self::parse_resolution(&resolution);
 
-        Ok(RdpSession {
-            hostname: self.hostname.clone(),
-            port: self.port,
-            username: self.username.clone(),
-            resolution,
-            color_depth: self.color_depth,
-            clipboard_sync: self.clipboard_sync,
-            connected: true,
+        let rdp_config = RdpConfig {
+            host: hostname.clone(),
+            port,
+            username,
+            password: password.to_string(),
+            width,
+            height,
+            bit_depth: color_depth,
+            domain: None,
+            ssh_config: ssh_config.clone(),
+        };
+
+        // Build the RdpClientSession so we can harvest its resize_tx before spawning.
+        let rdp_session = self.rdp_handler.create_session(rdp_config.clone())?;
+        let resize_tx = rdp_session.resize_tx.clone();
+
+        // Store resize_tx in the internal session for later use.
+        {
+            let mut sessions = self.sessions.lock().unwrap();
+            if let Some(s) = sessions.get_mut(session_id) {
+                s.resize_tx = Some(resize_tx);
+                s.connected = true;
+            }
+        }
+
+        // Spawn the actual connection task.
+        let session_id_clone = session_id.to_string();
+        tokio::spawn(async move {
+            match rdp_session.connect().await {
+                Ok(_) => info!("RDP session ended cleanly: {}", session_id_clone),
+                Err(e) => error!("RDP session error: {}", e),
+            }
+        });
+
+        // Start the WebSocket listener for this session.
+        let ws_url = format!(
+            "ws://127.0.0.1:{}/rdp/{}",
+            self.websocket_server.start_random_port().await?,
+            session_id
+        );
+
+        info!("RDP session started: {}", session_id);
+        Ok(ws_url)
+    }
+
+    /// Start the RDP session (legacy sync version for compatibility)
+    pub fn start_session(&self, session_id: &str) -> Result<String> {
+        let websocket_port = self.get_free_port()?;
+
+        // Mark as connected
+        {
+            let mut sessions = self.sessions.lock().unwrap();
+            if let Some(session) = sessions.get_mut(session_id) {
+                session.connected = true;
+                session.websocket_port = websocket_port;
+            }
+        }
+
+        // Generate WebSocket URL
+        let ws_url = format!("ws://127.0.0.1:{}/rdp/{}", websocket_port, session_id);
+
+        info!("RDP session started (sync): {}", session_id);
+        Ok(ws_url)
+    }
+
+    /// Stop the RDP session
+    pub fn stop_session(&self, session_id: &str) -> Result<()> {
+        let mut sessions = self.sessions.lock().unwrap();
+
+        if let Some(session) = sessions.get_mut(session_id) {
+            session.connected = false;
+            session.resize_tx = None;
+            info!("RDP session stopped: {}", session_id);
+        }
+
+        Ok(())
+    }
+
+    /// Send a dynamic resize request to a running session.
+    pub async fn resize_session(&self, session_id: &str, width: u32, height: u32) -> Result<()> {
+        let resize_tx = {
+            let sessions = self.sessions.lock().unwrap();
+            sessions
+                .get(session_id)
+                .and_then(|s| s.resize_tx.clone())
+                .ok_or_else(|| {
+                    anyhow::anyhow!("Session not found or not running: {}", session_id)
+                })?
+        };
+        resize_tx
+            .send(ResizeRequest { width, height })
+            .await
+            .context("send resize request")
+    }
+
+    /// Get session by ID and convert to public struct
+    pub fn get_session(&self, session_id: &str) -> Option<RdpSession> {
+        let sessions = self.sessions.lock().unwrap();
+
+        sessions.get(session_id).map(|s| {
+            let ws_url = format!("ws://127.0.0.1:{}/rdp/{}", s.websocket_port, session_id);
+            RdpSession {
+                id: s.id.clone(),
+                connection_id: s.connection_id.clone(),
+                hostname: s.hostname.clone(),
+                port: s.port,
+                username: s.username.clone(),
+                resolution: s.resolution.clone(),
+                color_depth: s.color_depth,
+                websocket_port: s.websocket_port,
+                websocket_url: ws_url,
+                connected: s.connected,
+                ssh_enabled: s.ssh_config.is_some(),
+            }
         })
     }
 
-    /// Disconnect from the RDP server.
-    pub async fn disconnect(&mut self) -> anyhow::Result<()> {
-        tracing::info!("Disconnecting from RDP server: {}", self.hostname);
+    /// Delete session
+    pub fn delete_session(&self, session_id: &str) -> Result<()> {
+        self.stop_session(session_id)?;
+
+        let mut sessions = self.sessions.lock().unwrap();
+        sessions.remove(session_id);
+
+        info!("RDP session deleted: {}", session_id);
+        Ok(())
+    }
+
+    /// Get a free port by binding to port 0.
+    ///
+    /// NOTE: There is an inherent TOCTOU window between dropping the listener
+    /// and the caller binding to the returned port. Use `start_random_port`
+    /// on `WebSocketServer` when possible to avoid this; this helper is
+    /// retained for the sync `start_session` path which cannot await.
+    fn get_free_port(&self) -> Result<u16> {
+        use std::net::TcpListener;
+
+        let listener =
+            TcpListener::bind("127.0.0.1:0").context("Failed to bind to find free port")?;
+
+        let port = listener.local_addr()?.port();
+        drop(listener);
+
+        Ok(port)
+    }
+
+    /// Parse resolution string into width and height
+    fn parse_resolution(resolution: &str) -> (u32, u32) {
+        let parts: Vec<&str> = resolution.split('x').collect();
+        if parts.len() == 2 {
+            (
+                parts[0].parse().unwrap_or(1920),
+                parts[1].parse().unwrap_or(1080),
+            )
+        } else {
+            (1920, 1080) // Default resolution
+        }
+    }
+
+    /// Send a test frame for simulation/testing purposes
+    pub fn send_test_frame(&self, session_id: &str, width: u32, height: u32) -> Result<()> {
+        let ws_session_id = format!("ws-{}", session_id);
+        let frame = RdpFrame {
+            width,
+            height,
+            data: vec![0u8; (width * height * 4) as usize], // RGBA frame
+            timestamp: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as u64,
+            frame_number: 0,
+        };
+
+        let server = self.websocket_server.clone();
+        tokio::spawn(async move {
+            if let Err(e) = server.send_frame(&ws_session_id, frame).await {
+                debug!("Failed to send test frame: {}", e);
+            }
+        });
+
         Ok(())
     }
 }
 
-/// RDP session handle for managing an active connection.
-#[allow(dead_code)]
-pub struct RdpSession {
-    hostname: String,
-    port: u16,
-    username: Option<String>,
-    resolution: (u32, u32),
-    color_depth: u32,
-    clipboard_sync: bool,
-    connected: bool,
-}
-
-impl RdpSession {
-    /// Check if the session is currently connected.
-    pub fn is_connected(&self) -> bool {
-        self.connected
-    }
-
-    /// Get the session resolution.
-    pub fn get_resolution(&self) -> (u32, u32) {
-        self.resolution
-    }
-
-    /// Send keyboard input to the remote session.
-    pub fn send_keyboard_event(&mut self, key_code: u16, pressed: bool) {
-        // In a real implementation, this would send keyboard events to the RDP session
-        tracing::debug!("Keyboard event: key={}, pressed={}", key_code, pressed);
-    }
-
-    /// Send mouse input to the remote session.
-    pub fn send_mouse_event(&mut self, x: i16, y: i16, button_mask: u16) {
-        // In a real implementation, this would send mouse events to the RDP session
-        tracing::debug!("Mouse event: x={}, y={}, mask={}", x, y, button_mask);
-    }
-
-    /// Get clipboard data from the remote session.
-    pub fn get_clipboard_data(&self) -> Option<String> {
-        // In a real implementation, this would retrieve clipboard data from the RDP session
-        None
-    }
-
-    /// Set clipboard data for the remote session.
-    pub fn set_clipboard_data(&mut self, _data: String) {
-        // In a real implementation, this would set clipboard data on the RDP session
+impl Default for RdpManager {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
-/// Parse a resolution string into width and height.
-fn parse_resolution(resolution: &str) -> (u32, u32) {
-    let parts: Vec<&str> = resolution.split('x').collect();
-    if parts.len() == 2 {
-        let width = parts[0].parse::<u32>().unwrap_or(1280);
-        let height = parts[1].parse::<u32>().unwrap_or(800);
-        (width, height)
-    } else {
-        (1280, 800)
+impl RdpManager {
+    /// Start the RDP session asynchronously (public wrapper)
+    pub async fn start_session_with_password(
+        &self,
+        session_id: &str,
+        password: &str,
+    ) -> Result<String> {
+        self.start_session_async(session_id, password).await
     }
-}
-
-/// Test an RDP connection using the provided connection details.
-pub async fn test_rdp_connection(
-    hostname: &str,
-    port: u16,
-    username: Option<&str>,
-    _domain: Option<&str>,
-    _password: &str,
-) -> anyhow::Result<bool> {
-    let client = RdpClient::new(
-        hostname.to_string(),
-        port,
-        username.map(String::from),
-        None,
-        String::new(),
-        "1280x800".to_string(),
-        32,
-        true,
-    );
-
-    client.test_connection().await
-}
-
-/// Connect to an RDP server and return a WebSocket URL for streaming.
-#[allow(clippy::too_many_arguments)]
-pub async fn connect_rdp(
-    hostname: &str,
-    port: u16,
-    username: Option<&str>,
-    domain: Option<&str>,
-    password: &str,
-    resolution: &str,
-    color_depth: u32,
-    clipboard_sync: bool,
-) -> anyhow::Result<String> {
-    let client = RdpClient::new(
-        hostname.to_string(),
-        port,
-        username.map(String::from),
-        domain.map(String::from),
-        password.to_string(),
-        resolution.to_string(),
-        color_depth,
-        clipboard_sync,
-    );
-
-    let _session = client.connect().await?;
-
-    // Generate a WebSocket URL for the connection
-    let session_id = uuid::Uuid::now_v7().to_string();
-    Ok(format!("ws://127.0.0.1:8765/rdp/{}", session_id))
-}
-
-/// Tauri command wrapper for testing RDP connection.
-#[tauri::command]
-pub async fn test_rdp_connection_cmd(
-    _state: tauri::State<'_, Arc<Mutex<AppState>>>,
-    hostname: String,
-    port: u16,
-    username: Option<String>,
-    domain: Option<String>,
-    password: String,
-) -> Result<bool, String> {
-    let client = RdpClient::new(
-        hostname,
-        port,
-        username,
-        domain,
-        password,
-        "1280x800".to_string(),
-        32,
-        true,
-    );
-
-    client.test_connection().await.map_err(|e| e.to_string())
-}
-
-/// Tauri command wrapper for connecting to RDP.
-#[tauri::command]
-#[allow(clippy::too_many_arguments)]
-pub async fn connect_rdp_cmd(
-    _state: tauri::State<'_, Arc<Mutex<AppState>>>,
-    hostname: String,
-    port: u16,
-    username: Option<String>,
-    domain: Option<String>,
-    password: String,
-    resolution: String,
-    color_depth: u32,
-    clipboard_sync: bool,
-) -> Result<String, String> {
-    let client = RdpClient::new(
-        hostname,
-        port,
-        username,
-        domain,
-        password,
-        resolution,
-        color_depth,
-        clipboard_sync,
-    );
-
-    client
-        .connect()
-        .await
-        .map(|_| "connected".to_string())
-        .map_err(|e| e.to_string())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::db::RemoteProtocol;
 
     #[test]
-    fn test_parse_resolution() {
-        assert_eq!(parse_resolution("1920x1080"), (1920, 1080));
-        assert_eq!(parse_resolution("1280x800"), (1280, 800));
-        assert_eq!(parse_resolution("invalid"), (1280, 800));
+    fn test_rdp_manager_creation() {
+        let manager = RdpManager::new();
+        assert!(manager.sessions.lock().unwrap().is_empty());
     }
 
-    #[tokio::test]
-    async fn test_rdp_client_creation() {
-        let client = RdpClient::new(
-            "127.0.0.1".to_string(),
-            3389,
-            Some("test".to_string()),
-            None,
-            "password".to_string(),
-            "1280x800".to_string(),
-            32,
-            true,
-        );
+    #[test]
+    fn test_create_and_get_session() {
+        let manager = RdpManager::new();
 
-        assert_eq!(client.hostname, "127.0.0.1");
-        assert_eq!(client.port, 3389);
+        let connection = RemoteConnection {
+            id: "test-conn-1".to_string(),
+            name: "Test RDP".to_string(),
+            protocol: RemoteProtocol::Rdp,
+            hostname: "192.168.1.100".to_string(),
+            port: 3389,
+            username: Some("admin".to_string()),
+            domain: None,
+            ssh_enabled: false,
+            ssh_hostname: None,
+            ssh_port: None,
+            ssh_username: None,
+            resolution: "1920x1080".to_string(),
+            color_depth: 32,
+            clipboard_sync: true,
+            drive_redirect: false,
+            multi_monitor: false,
+            compression: true,
+            quality: 80,
+            auto_resize: true,
+            stretch_to_fill: false,
+            created_at: "2024-01-01 00:00:00".to_string(),
+            updated_at: "2024-01-01 00:00:00".to_string(),
+            last_connected_at: None,
+        };
+
+        let session = manager
+            .create_session(&connection, "password123", None, None, None)
+            .unwrap();
+        assert_eq!(session.hostname, "192.168.1.100");
+        assert_eq!(session.port, 3389);
+        assert!(!session.connected);
+
+        // Get the session (public API)
+        let retrieved = manager.get_session(&session.id);
+        assert!(retrieved.is_some());
+        assert_eq!(retrieved.unwrap().id, session.id);
+    }
+
+    #[test]
+    fn test_start_and_stop_session() {
+        let manager = RdpManager::new();
+
+        let connection = RemoteConnection {
+            id: "test-conn-2".to_string(),
+            name: "Test RDP 2".to_string(),
+            protocol: RemoteProtocol::Rdp,
+            hostname: "192.168.1.101".to_string(),
+            port: 3389,
+            username: Some("user".to_string()),
+            domain: None,
+            ssh_enabled: false,
+            ssh_hostname: None,
+            ssh_port: None,
+            ssh_username: None,
+            resolution: "1280x720".to_string(),
+            color_depth: 24,
+            clipboard_sync: false,
+            drive_redirect: false,
+            multi_monitor: false,
+            compression: false,
+            quality: 70,
+            auto_resize: false,
+            stretch_to_fill: false,
+            created_at: "2024-01-01 00:00:00".to_string(),
+            updated_at: "2024-01-01 00:00:00".to_string(),
+            last_connected_at: None,
+        };
+
+        let session = manager
+            .create_session(&connection, "password123", None, None, None)
+            .unwrap();
+
+        // Start session
+        let ws_url = manager.start_session(&session.id).unwrap();
+        assert!(ws_url.contains("ws://127.0.0.1:"));
+        assert!(ws_url.contains("/rdp/"));
+
+        let retrieved = manager.get_session(&session.id).unwrap();
+        assert!(retrieved.connected);
+
+        // Stop session
+        manager.stop_session(&session.id).unwrap();
+
+        let final_session = manager.get_session(&session.id).unwrap();
+        assert!(!final_session.connected);
     }
 }

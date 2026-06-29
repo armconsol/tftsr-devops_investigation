@@ -154,6 +154,8 @@ pub struct AppState {
     pub log_streams: Arc<TokioMutex<HashMap<String, tokio::task::AbortHandle>>>,
     /// PTY session manager for interactive shells
     pub pty_sessions: Arc<crate::shell::SessionManager>,
+    /// RDP session manager
+    pub rdp_manager: Arc<std::sync::Mutex<crate::remote::rdp::RdpManager>>,
 }
 
 /// Determine the application data directory.
@@ -198,8 +200,8 @@ pub fn get_app_data_dir() -> Option<PathBuf> {
         }
     }
 
-    // Fallback
-    Some(PathBuf::from("./tftsr-data"))
+    // Fallback: use current working directory joined with tftsr-data
+    std::env::current_dir().ok().map(|p| p.join("tftsr-data"))
 }
 
 #[cfg(test)]
