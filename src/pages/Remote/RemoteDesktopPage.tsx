@@ -94,10 +94,11 @@ interface ConnectionFormProps {
   isEdit?: boolean;
 }
 
-function ConnectionForm({ initial, onSave, onCancel, title, isEdit = false }: ConnectionFormProps) {
+export function ConnectionForm({ initial, onSave, onCancel, title, isEdit = false }: ConnectionFormProps) {
   const [form, setForm] = useState<ConnectionFormData>({ ...defaultForm(), ...initial });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState('connection');
 
   const set = <K extends keyof ConnectionFormData>(key: K, value: ConnectionFormData[K]) =>
     setForm((f) => ({ ...f, [key]: value }));
@@ -131,7 +132,7 @@ function ConnectionForm({ initial, onSave, onCancel, title, isEdit = false }: Co
           </Alert>
         )}
 
-        <Tabs value="connection" onValueChange={() => {}}>
+        <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList>
             <TabsTrigger value="connection">Connection</TabsTrigger>
             <TabsTrigger value="ssh">SSH Tunnel</TabsTrigger>
