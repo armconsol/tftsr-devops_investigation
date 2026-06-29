@@ -197,8 +197,8 @@ pub fn get_app_data_dir() -> Option<PathBuf> {
         }
     }
 
-    // Fallback
-    Some(PathBuf::from("./tftsr-data"))
+    // Fallback: use current working directory joined with tftsr-data
+    std::env::current_dir().ok().map(|p| p.join("tftsr-data"))
 }
 
 #[cfg(test)]
