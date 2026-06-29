@@ -438,6 +438,7 @@ pub async fn initiate_oauth(
         let log_streams = app_state.log_streams.clone();
         let pty_sessions = app_state.pty_sessions.clone();
         let proxmox_clusters = app_state.proxmox_clusters.clone();
+        let rdp_manager = app_state.rdp_manager.clone();
 
         tokio::spawn(async move {
             let app_state_for_callback = AppState {
@@ -454,7 +455,7 @@ pub async fn initiate_oauth(
                 log_streams,
                 pty_sessions,
                 proxmox_clusters,
-                rdp_manager: Arc::new(std::sync::Mutex::new(crate::remote::rdp::RdpManager::new())),
+                rdp_manager,
             };
             while let Some(callback) = callback_rx.recv().await {
                 tracing::info!("Received OAuth callback for state: {}", callback.state);
