@@ -7,6 +7,7 @@ pub mod audit;
 pub mod cli;
 pub mod commands;
 pub mod db;
+pub mod db_drivers;
 pub mod docs;
 pub mod integrations;
 pub mod kube;
@@ -120,6 +121,11 @@ pub fn run() {
     let conn = db::connection::init_db(&data_dir).expect("Failed to initialize database");
     tracing::info!("Database initialized at {data_dir:?}");
 
+    // Initialize database pool manager
+    let db_pool_manager = Arc::new(tokio::sync::Mutex::new(
+        crate::db_drivers::DatabasePoolManager::new(),
+    ));
+
     let app_state = AppState {
         db: Arc::new(Mutex::new(conn)),
         settings: Arc::new(Mutex::new(state::AppSettings::default())),
@@ -135,6 +141,7 @@ pub fn run() {
         log_streams: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
         pty_sessions: Arc::new(crate::shell::SessionManager::new()),
         rdp_manager: Arc::new(std::sync::Mutex::new(crate::remote::rdp::RdpManager::new())),
+        db_pool_manager,
     };
     let stronghold_salt = format!(
         "tftsr-stronghold-salt-v1-{:x}",
@@ -190,6 +197,13 @@ pub fn run() {
             commands::db::get_timeline_events,
             commands::db::load_clusters,
             commands::db::load_port_forwards,
+            // Database Management - Import/Export/Visualization
+            commands::database::import_csv_data,
+            commands::database::import_json_data,
+            commands::database::export_query_results,
+            commands::database::generate_er_diagram,
+            commands::database::preview_csv_file,
+            commands::database::preview_json_file,
             // Analysis / PII
             commands::analysis::upload_log_file,
             commands::analysis::upload_log_file_by_content,
