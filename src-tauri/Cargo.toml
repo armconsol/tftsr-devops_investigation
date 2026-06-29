@@ -71,7 +71,7 @@ russh = "0.50.0-beta.7"
 russh-keys = "0.50.0-beta.7"
 openssh = "0.11.6"
 ssh2 = "0.9"
-ironrdp = { version = "0.16", features = [
+ironrdp = { version = "0.14", features = [
     "svc",
     "cliprdr",
     "graphics",
@@ -80,19 +80,19 @@ ironrdp = { version = "0.16", features = [
     "session",
     "displaycontrol",
 ] }
-ironrdp-async = "0.9"
-ironrdp-tokio = "0.9"
-ironrdp-graphics = "0.8"
-ironrdp-input = "0.6"
-ironrdp-cliprdr = "0.6"
-ironrdp-blocking = "0.9"
-ironrdp-tls = { version = "0.2", features = ["rustls"] }
-ironrdp-pdu = "0.8"
-ironrdp-svc = "0.7"
+ironrdp-async = "0.8"
+ironrdp-tokio = "0.8"
+ironrdp-graphics = "0.7"
+ironrdp-input = "0.5"
+ironrdp-cliprdr = "0.5"
+ironrdp-blocking = "0.8"
+ironrdp-tls = { version = "0.2.0", features = ["rustls"] }
+ironrdp-pdu = "0.7"
+ironrdp-svc = "0.6"
 x509-cert = { version = "0.2", features = ["std"] }
 tokio-rustls = "0.26"
 rustls = { version = "0.23", features = ["aws_lc_rs"] }
-sspi = "0.21"
+sspi = "0.18"
 image = "0.25"
 
 [dev-dependencies]
