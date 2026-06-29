@@ -169,6 +169,56 @@ sudo apt-get install -y libwebkit2gtk-4.1-dev libssl-dev libgtk-3-dev \
 
 ---
 
+### Windows: `no method named userauth_pubkey_memory` on `ssh2::Session`
+
+```text
+error[E0599]: no method named `userauth_pubkey_memory` found for
+mutable reference `&mut ssh2::Session`
+```
+
+In-memory SSH key auth (`authenticate_with_key_data` in `remote/ssh_tunnel.rs`)
+requires libssh2 to be built against OpenSSL. The default Windows crypto backend
+does not expose `userauth_pubkey_memory`.
+
+**Fix:** enable the `vendored-openssl` feature on `ssh2` so OpenSSL is statically
+linked on every platform:
+```toml
+ssh2 = { version = "0.9", features = ["vendored-openssl"] }
+```
+> Trade-off: OpenSSL is pinned to the bundled version and no longer tracks OS
+> security updates — keep `ssh2`/`openssl-src` current (e.g. `cargo audit` in CI).
+
+---
+
+### macOS: `unresolved module or unlinked crate security_framework`
+
+```text
+error[E0433]: failed to resolve: use of unresolved module or unlinked
+crate `security_framework`
+```
+
+`secure_storage.rs` previously hand-rolled a macOS backend against the
+`security_framework` crate, which was never declared in `Cargo.toml`.
+
+**Fix:** use the `keyring` crate for macOS too (mirroring Windows/Linux). Note
+`keyring` 3.x ships **no backend by default** (`default = []`) and silently falls
+back to an in-memory mock, so the native store must be opted in per target:
+```toml
+[target.'cfg(target_os = "macos")'.dependencies]
+keyring = { version = "3.0", features = ["apple-native"] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+keyring = { version = "3.0", features = ["windows-native"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+keyring = { version = "3.0", features = ["sync-secret-service"] }
+```
+Build a fresh `keyring::Entry::new(service_name, account)` **per call** so each
+credential is stored under its own account — a single cached `Entry` collides all
+credentials into one slot.
+
+---
+
 ## Database
 
 ### DB Won't Open in Production
