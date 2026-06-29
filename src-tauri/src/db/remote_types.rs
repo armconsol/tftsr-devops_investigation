@@ -175,19 +175,31 @@ pub struct NewRemoteCredentials {
     pub ssh_key: Option<String>,
 }
 
-impl From<NewRemoteCredentials> for RemoteCredentials {
-    fn from(new: NewRemoteCredentials) -> Self {
-        // This is a simplified version - actual creation should use encrypt_token
+impl TryFrom<NewRemoteCredentials> for RemoteCredentials {
+    type Error = String;
+
+    fn try_from(new: NewRemoteCredentials) -> Result<Self, Self::Error> {
+        use crate::integrations::auth::encrypt_token;
+
         let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
-        RemoteCredentials {
+
+        let password_encrypted = encrypt_token(&new.password)?;
+        let ssh_password_encrypted = new
+            .ssh_password
+            .as_deref()
+            .map(encrypt_token)
+            .transpose()?;
+        let ssh_key_encrypted = new.ssh_key.as_deref().map(encrypt_token).transpose()?;
+
+        Ok(RemoteCredentials {
             id: Uuid::now_v7().to_string(),
             connection_id: new.connection_id,
-            password_encrypted: String::new(), // Should be encrypted before storage
-            ssh_password_encrypted: None,
-            ssh_key_encrypted: None,
+            password_encrypted,
+            ssh_password_encrypted,
+            ssh_key_encrypted,
             created_at: now.clone(),
             updated_at: now,
-        }
+        })
     }
 }
 
