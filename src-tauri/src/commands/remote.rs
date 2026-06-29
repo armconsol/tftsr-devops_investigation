@@ -10,8 +10,9 @@ use crate::db::models::{
 };
 use crate::remote::connection::{
     create_remote_connection as db_create, delete_remote_connection as db_delete,
-    get_remote_connection as db_get, get_remote_connection_full, get_remote_ssh_credentials,
-    list_remote_connections as db_list, update_remote_connection as db_update,
+    get_remote_connection as db_get, get_remote_connection_full, get_remote_rdp_password,
+    get_remote_ssh_credentials, list_remote_connections as db_list,
+    update_remote_connection as db_update,
 };
 use crate::remote::rdp::RdpSession;
 use crate::state::AppState;
@@ -106,33 +107,51 @@ pub fn delete_remote_connection(app_state: State<'_, AppState>, id: String) -> R
     })
 }
 
-/// Start an RDP session
+/// Start an RDP session.
+///
+/// `password` is optional: when omitted or blank, the stored (encrypted) RDP
+/// password for the connection is used. This avoids re-prompting the user when
+/// they already saved a password on the connection entry.
 #[tauri::command]
-pub fn start_rdp_session(
+pub async fn start_rdp_session(
     app_state: State<'_, AppState>,
     connection_id: String,
-    password: String,
+    password: Option<String>,
 ) -> Result<RdpSession, String> {
     info!("Starting RDP session for connection: {}", connection_id);
 
-    // Get the full connection details
-    let (connection, ssh_password, ssh_private_key, ssh_key_passphrase) = {
+    // Get the full connection details, SSH credentials, and stored RDP password.
+    let (connection, ssh_password, ssh_private_key, ssh_key_passphrase, stored_rdp_password) = {
         let conn = app_state.db.lock().unwrap();
         let connection = get_remote_connection_full(&conn, &connection_id)
             .map_err(|e| format!("Failed to get connection: {}", e))?;
         let (ssh_pw, ssh_key, ssh_pass) = get_remote_ssh_credentials(&conn, &connection_id)
             .map_err(|e| format!("Failed to get SSH credentials: {}", e))?;
-        (connection, ssh_pw, ssh_key, ssh_pass)
+        let stored_rdp_pw = get_remote_rdp_password(&conn, &connection_id)
+            .map_err(|e| format!("Failed to get RDP credentials: {}", e))?;
+        (connection, ssh_pw, ssh_key, ssh_pass, stored_rdp_pw)
     };
 
-    // Get the RDP manager
-    let rdp_manager = app_state.rdp_manager.lock().unwrap();
+    // Prefer an explicitly supplied password; otherwise use the stored one.
+    let effective_password = match password {
+        Some(p) if !p.trim().is_empty() => p,
+        _ => stored_rdp_password.ok_or_else(|| {
+            "No password provided and no saved password for this connection".to_string()
+        })?,
+    };
+
+    // Clone the manager so we can hold it across the async connect call without
+    // keeping the std Mutex guard locked over an await point.
+    let rdp_manager = {
+        let guard = app_state.rdp_manager.lock().unwrap();
+        (*guard).clone()
+    };
 
     // Create RDP session
     let internal_session = rdp_manager
         .create_session(
             &connection,
-            &password,
+            &effective_password,
             ssh_password,
             ssh_private_key,
             ssh_key_passphrase,
@@ -141,8 +160,9 @@ pub fn start_rdp_session(
 
     let session_id = internal_session.id.clone();
     let ws_url = rdp_manager
-        .start_session(&internal_session.id)
-        .map_err(|e| format!("Failed to create session: {}", e))?;
+        .start_session_with_password(&session_id, &effective_password)
+        .await
+        .map_err(|e| format!("Failed to start RDP session: {}", e))?;
 
     // Return public session info
     let session = RdpSession {

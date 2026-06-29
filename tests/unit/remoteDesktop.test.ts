@@ -222,6 +222,32 @@ describe("RDP Session Commands", () => {
       });
       expect(result).toEqual(mockSession);
     });
+
+    it("should omit the password so the stored credential is used", async () => {
+      const mockSession: RdpSession = {
+        id: "session-789",
+        connection_id: "conn-456",
+        hostname: "192.168.1.100",
+        port: 3389,
+        username: "admin",
+        resolution: "1920x1080",
+        color_depth: 32,
+        websocket_port: 8765,
+        websocket_url: "ws://127.0.0.1:8765/rdp/session-789",
+        connected: true,
+        ssh_enabled: false,
+      };
+
+      vi.mocked(invoke).mockResolvedValue(mockSession);
+
+      const result = await startRdpSession("conn-456");
+
+      expect(invoke).toHaveBeenCalledWith("start_rdp_session", {
+        connectionId: "conn-456",
+        password: undefined,
+      });
+      expect(result).toEqual(mockSession);
+    });
   });
 
   describe("stopRdpSession", () => {

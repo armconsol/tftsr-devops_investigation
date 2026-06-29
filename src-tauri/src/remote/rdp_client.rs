@@ -95,6 +95,21 @@ pub struct RdpClientSession {
 impl RdpClientSession {
     pub fn new(config: RdpConfig, websocket_server: Arc<WebSocketServer>) -> Result<Self> {
         let session_id = Uuid::now_v7().to_string();
+        Self::new_with_id(session_id, config, websocket_server)
+    }
+
+    /// Create a session bound to a caller-provided `session_id`.
+    ///
+    /// The id is used as the key the frame-forwarding task sends under
+    /// (`WebSocketServer::send_frame`). It MUST match the id registered via
+    /// `WebSocketServer::register_session` and embedded in the `ws://.../rdp/{id}`
+    /// URL handed to the browser, otherwise frames are dropped and the canvas
+    /// stays black.
+    pub fn new_with_id(
+        session_id: String,
+        config: RdpConfig,
+        websocket_server: Arc<WebSocketServer>,
+    ) -> Result<Self> {
         let (frame_tx, mut frame_rx) = mpsc::channel::<RdpFrame>(100);
         let (resize_tx, resize_rx) = mpsc::channel::<ResizeRequest>(8);
         let (input_tx, input_rx) = mpsc::channel::<SmallVec<[FastPathInputEvent; 2]>>(64);
@@ -592,9 +607,21 @@ impl RdpConnectionHandler {
         RdpClientSession::new(config, self.websocket_server.clone())
     }
 
+    /// Create a session bound to a caller-provided `session_id` so frames route
+    /// to the matching WebSocket client (see `RdpClientSession::new_with_id`).
+    pub fn create_session_with_id(
+        &self,
+        session_id: String,
+        config: RdpConfig,
+    ) -> Result<RdpClientSession> {
+        RdpClientSession::new_with_id(session_id, config, self.websocket_server.clone())
+    }
+
     pub async fn start_session(&self, session_id: &str, config: RdpConfig) -> Result<()> {
         info!("Starting RDP session: {}", session_id);
-        let session = RdpClientSession::new(config, self.websocket_server.clone())?;
+        // Bind the client session to the provided id so its frame-forwarding task
+        // sends under the same id used for WebSocket registration/routing.
+        let session = self.create_session_with_id(session_id.to_string(), config)?;
         session.connect().await?;
         info!("RDP session ended: {}", session_id);
         Ok(())

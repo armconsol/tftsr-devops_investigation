@@ -172,40 +172,62 @@ impl RdpManager {
             ssh_config: ssh_config.clone(),
         };
 
-        // Build the RdpClientSession so we can harvest its resize_tx before spawning.
-        let rdp_session = self.rdp_handler.create_session(rdp_config.clone())?;
+        // Start the WebSocket listener for this session and register the canonical
+        // session id so the parked frame receiver is routed to the browser client
+        // that connects to `ws://.../rdp/{session_id}`.
+        let websocket_port = self.websocket_server.start_random_port().await?;
+        self.websocket_server
+            .register_session(session_id, session_id)
+            .await;
+
+        // Build the RdpClientSession bound to the canonical session id so its
+        // frame-forwarding task sends frames keyed by that id.
+        let rdp_session = self
+            .rdp_handler
+            .create_session_with_id(session_id.to_string(), rdp_config.clone())?;
         let resize_tx = rdp_session.resize_tx.clone();
 
-        // Store resize_tx in the internal session for later use.
+        // Store resize_tx + websocket_port in the internal session for later use.
         {
             let mut sessions = self.sessions.lock().unwrap();
             if let Some(s) = sessions.get_mut(session_id) {
                 s.resize_tx = Some(resize_tx);
                 s.connected = true;
+                s.websocket_port = websocket_port;
             }
         }
 
-        // Spawn the actual connection task.
+        // Spawn the actual connection task. `connect()` runs the full session
+        // loop, so once it returns (cleanly or with an error) the session is no
+        // longer live — flip `connected` to false so the UI/state don't report a
+        // dead stream as active.
         let session_id_clone = session_id.to_string();
+        let sessions_for_task = self.sessions.clone();
         tokio::spawn(async move {
             match rdp_session.connect().await {
                 Ok(_) => info!("RDP session ended cleanly: {}", session_id_clone),
                 Err(e) => error!("RDP session error: {}", e),
             }
+            if let Some(s) = sessions_for_task.lock().unwrap().get_mut(&session_id_clone) {
+                s.connected = false;
+                s.resize_tx = None;
+            }
         });
 
-        // Start the WebSocket listener for this session.
-        let ws_url = format!(
-            "ws://127.0.0.1:{}/rdp/{}",
-            self.websocket_server.start_random_port().await?,
-            session_id
-        );
+        let ws_url = format!("ws://127.0.0.1:{}/rdp/{}", websocket_port, session_id);
 
         info!("RDP session started: {}", session_id);
         Ok(ws_url)
     }
 
-    /// Start the RDP session (legacy sync version for compatibility)
+    /// Start the RDP session (legacy sync version, test-only).
+    ///
+    /// This does NOT establish an RDP connection or start a frame stream — it
+    /// only flips local session state and returns a placeholder URL. It is gated
+    /// behind `#[cfg(test)]` so production code cannot create a "ghost" session
+    /// that reports as connected without a live stream; the real path is
+    /// [`start_session_async`].
+    #[cfg(test)]
     pub fn start_session(&self, session_id: &str) -> Result<String> {
         let websocket_port = self.get_free_port()?;
 
@@ -319,9 +341,13 @@ impl RdpManager {
         }
     }
 
-    /// Send a test frame for simulation/testing purposes
+    /// Send a test frame for simulation/testing purposes.
+    ///
+    /// Uses the raw `session_id` as the routing key to match
+    /// [`WebSocketServer::register_session`] (which registers under the canonical
+    /// id), so simulated frames reach the same client a real session would.
     pub fn send_test_frame(&self, session_id: &str, width: u32, height: u32) -> Result<()> {
-        let ws_session_id = format!("ws-{}", session_id);
+        let ws_session_id = session_id.to_string();
         let frame = RdpFrame {
             width,
             height,
