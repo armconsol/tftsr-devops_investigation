@@ -35,6 +35,10 @@ pub struct WebSocketSession {
 pub struct WebSocketServer {
     sessions: Arc<Mutex<HashMap<String, WebSocketSession>>>,
     frame_broadcasters: Arc<Mutex<HashMap<String, mpsc::Sender<RdpFrame>>>>,
+    /// Holds receivers for sessions that have been registered but whose
+    /// WebSocket client has not yet connected.  `handle_client` takes
+    /// ownership of the receiver and removes it from this map.
+    pending_receivers: Arc<Mutex<HashMap<String, mpsc::Receiver<RdpFrame>>>>,
 }
 
 impl WebSocketServer {
@@ -43,6 +47,7 @@ impl WebSocketServer {
         Self {
             sessions: Arc::new(Mutex::new(HashMap::new())),
             frame_broadcasters: Arc::new(Mutex::new(HashMap::new())),
+            pending_receivers: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -56,6 +61,7 @@ impl WebSocketServer {
         info!("WebSocket server listening on {}", addr);
 
         let broadcast_map = self.frame_broadcasters.clone();
+        let pending_receivers = self.pending_receivers.clone();
 
         tokio::spawn(async move {
             loop {
@@ -63,12 +69,17 @@ impl WebSocketServer {
                     Ok((stream, _)) => {
                         let session_id = Uuid::now_v7().to_string();
                         let broadcast_clone = broadcast_map.clone();
+                        let pending_clone = pending_receivers.clone();
                         let session_id_clone = session_id.clone();
 
                         tokio::spawn(async move {
-                            if let Err(e) =
-                                Self::handle_client(stream, &session_id_clone, broadcast_clone)
-                                    .await
+                            if let Err(e) = Self::handle_client(
+                                stream,
+                                &session_id_clone,
+                                broadcast_clone,
+                                pending_clone,
+                            )
+                            .await
                             {
                                 tracing::error!(
                                     "WebSocket error for session {}: {}",
@@ -105,7 +116,7 @@ impl WebSocketServer {
         session_id: &str,
         rdp_session_id: &str,
     ) -> mpsc::Sender<RdpFrame> {
-        let (tx, mut rx) = mpsc::channel::<RdpFrame>(100);
+        let (tx, rx) = mpsc::channel::<RdpFrame>(100);
         let tx_clone = tx.clone();
 
         let session = WebSocketSession {
@@ -117,21 +128,21 @@ impl WebSocketServer {
                 .as_millis() as u64,
         };
 
-        // Store session
+        // Store session metadata
         let mut sessions = self.sessions.lock().await;
         sessions.insert(session.session_id.clone(), session.clone());
         drop(sessions);
 
-        // Store broadcaster and spawn sender task
+        // Park receiver until a WebSocket client connects and takes it
+        let mut pending = self.pending_receivers.lock().await;
+        pending.insert(session_id.to_string(), rx);
+        drop(pending);
+
+        // Pre-register broadcaster; handle_client replaces it with a live channel
+        // when a WebSocket client connects.
         let mut broadcast_map = self.frame_broadcasters.lock().await;
         broadcast_map.insert(session_id.to_string(), tx_clone);
         drop(broadcast_map);
-
-        tokio::spawn(async move {
-            while let Some(_frame) = rx.recv().await {
-                tracing::debug!("Frame queued for session");
-            }
-        });
 
         tx
     }
@@ -154,6 +165,11 @@ impl WebSocketServer {
     pub async fn unregister_session(&self, session_id: &str) {
         let mut broadcast_map = self.frame_broadcasters.lock().await;
         broadcast_map.remove(session_id);
+        drop(broadcast_map);
+
+        let mut pending = self.pending_receivers.lock().await;
+        pending.remove(session_id);
+        drop(pending);
 
         let mut sessions = self.sessions.lock().await;
         sessions.remove(session_id);
@@ -175,8 +191,9 @@ impl WebSocketServer {
 
     async fn handle_client(
         stream: tokio::net::TcpStream,
-        _session_id: &str,
-        _broadcast_map: Arc<Mutex<HashMap<String, mpsc::Sender<RdpFrame>>>>,
+        session_id: &str,
+        broadcast_map: Arc<Mutex<HashMap<String, mpsc::Sender<RdpFrame>>>>,
+        pending_receivers: Arc<Mutex<HashMap<String, mpsc::Receiver<RdpFrame>>>>,
     ) -> Result<()> {
         use tokio_tungstenite::tungstenite::handshake::server::{Request, Response};
         use tokio_tungstenite::tungstenite::http::header;
@@ -188,25 +205,53 @@ impl WebSocketServer {
             Ok(response)
         };
 
-        let mut ws_stream = tokio_tungstenite::accept_hdr_async(stream, callback).await?;
+        let ws_stream = tokio_tungstenite::accept_hdr_async(stream, callback).await?;
+        let (mut ws_sink, mut ws_source) = futures::StreamExt::split(ws_stream);
 
-        // Simple echo server - just keep connection alive
+        // Take the pre-registered receiver if available; otherwise create a fresh channel.
+        let mut frame_rx = {
+            let mut pending = pending_receivers.lock().await;
+            if let Some(rx) = pending.remove(session_id) {
+                rx
+            } else {
+                let (frame_tx, rx) = mpsc::channel::<RdpFrame>(100);
+                let mut map = broadcast_map.lock().await;
+                map.insert(session_id.to_string(), frame_tx);
+                rx
+            }
+        };
+
+        // Forward frames from RDP to WebSocket client.
+        let send_task = tokio::spawn(async move {
+            while let Some(frame) = frame_rx.recv().await {
+                let payload = match serde_json::to_vec(&frame) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        tracing::error!("Frame serialization failed: {}", e);
+                        continue;
+                    }
+                };
+                if let Err(e) = ws_sink
+                    .send(tokio_tungstenite::tungstenite::Message::Binary(payload))
+                    .await
+                {
+                    tracing::error!("WebSocket send failed: {}", e);
+                    break;
+                }
+            }
+        });
+
+        // Drain inbound messages (input events) until the client disconnects.
         loop {
-            match ws_stream.next().await {
+            match ws_source.next().await {
                 Some(Ok(tokio_tungstenite::tungstenite::Message::Close(_))) => {
                     tracing::debug!("Client sent close message");
                     break;
                 }
                 Some(Ok(tokio_tungstenite::tungstenite::Message::Binary(data))) => {
-                    tracing::debug!("Received binary data from client: {} bytes", data.len());
+                    tracing::debug!("Received input from client: {} bytes", data.len());
                 }
-                Some(Ok(msg)) => {
-                    // Echo back non-binary messages
-                    if let Err(e) = ws_stream.send(msg).await {
-                        tracing::error!("Failed to send message: {}", e);
-                        break;
-                    }
-                }
+                Some(Ok(_)) => {}
                 Some(Err(e)) => {
                     tracing::error!("WebSocket error: {}", e);
                     break;
@@ -214,6 +259,12 @@ impl WebSocketServer {
                 None => break,
             }
         }
+
+        send_task.abort();
+
+        // Remove session from broadcast map on disconnect.
+        let mut map = broadcast_map.lock().await;
+        map.remove(session_id);
 
         Ok(())
     }

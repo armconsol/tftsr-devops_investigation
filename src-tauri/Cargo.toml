@@ -52,6 +52,7 @@ warp = "0.3"
 urlencoding = "2"
 infer = "0.15"
 url = "2.5.8"
+smallvec = "1"
 tokio-tungstenite = { version = "0.21", features = ["native-tls"] }
 native-tls = "0.2"
 lopdf = "0.31"
