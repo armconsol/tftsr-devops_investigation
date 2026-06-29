@@ -10,7 +10,7 @@ use crate::db::models::{
 };
 use crate::remote::connection::{
     create_remote_connection as db_create, delete_remote_connection as db_delete,
-    get_remote_connection as db_get, get_remote_connection_full,
+    get_remote_connection as db_get, get_remote_connection_full, get_remote_ssh_credentials,
     list_remote_connections as db_list, update_remote_connection as db_update,
 };
 use crate::remote::rdp::RdpSession;
@@ -116,10 +116,13 @@ pub fn start_rdp_session(
     info!("Starting RDP session for connection: {}", connection_id);
 
     // Get the full connection details
-    let connection = {
+    let (connection, ssh_password, ssh_private_key, ssh_key_passphrase) = {
         let conn = app_state.db.lock().unwrap();
-        get_remote_connection_full(&conn, &connection_id)
-            .map_err(|e| format!("Failed to get connection: {}", e))?
+        let connection = get_remote_connection_full(&conn, &connection_id)
+            .map_err(|e| format!("Failed to get connection: {}", e))?;
+        let (ssh_pw, ssh_key, ssh_pass) = get_remote_ssh_credentials(&conn, &connection_id)
+            .map_err(|e| format!("Failed to get SSH credentials: {}", e))?;
+        (connection, ssh_pw, ssh_key, ssh_pass)
     };
 
     // Get the RDP manager
@@ -127,7 +130,13 @@ pub fn start_rdp_session(
 
     // Create RDP session
     let internal_session = rdp_manager
-        .create_session(&connection, &password)
+        .create_session(
+            &connection,
+            &password,
+            ssh_password,
+            ssh_private_key,
+            ssh_key_passphrase,
+        )
         .map_err(|e| format!("Failed to create RDP session: {}", e))?;
 
     let session_id = internal_session.id.clone();
@@ -188,7 +197,10 @@ pub async fn resize_rdp_session(
     width: u32,
     height: u32,
 ) -> Result<(), String> {
-    let rdp_manager = { app_state.rdp_manager.lock().unwrap().clone() };
+    let rdp_manager = {
+        let guard = app_state.rdp_manager.lock().unwrap();
+        (*guard).clone()
+    };
     rdp_manager
         .resize_session(&session_id, width, height)
         .await

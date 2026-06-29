@@ -13,7 +13,9 @@ use ironrdp::pdu::rdp::client_info::PerformanceFlags;
 use ironrdp::session::image::DecodedImage;
 use ironrdp::session::{ActiveStage, ActiveStageOutput};
 use ironrdp_input::{MouseButton, MousePosition, Scancode};
+use ironrdp_pdu::input::fast_path::FastPathInputEvent;
 use serde::{Deserialize, Serialize};
+use smallvec::SmallVec;
 use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::sync::{Arc, Mutex};
@@ -86,6 +88,8 @@ pub struct RdpClientSession {
     input_state: Arc<Mutex<ironrdp_input::Database>>,
     pub resize_tx: mpsc::Sender<ResizeRequest>,
     resize_rx: Arc<Mutex<mpsc::Receiver<ResizeRequest>>>,
+    input_tx: mpsc::Sender<SmallVec<[FastPathInputEvent; 2]>>,
+    input_rx: Arc<Mutex<mpsc::Receiver<SmallVec<[FastPathInputEvent; 2]>>>>,
 }
 
 impl RdpClientSession {
@@ -93,6 +97,7 @@ impl RdpClientSession {
         let session_id = Uuid::now_v7().to_string();
         let (frame_tx, mut frame_rx) = mpsc::channel::<RdpFrame>(100);
         let (resize_tx, resize_rx) = mpsc::channel::<ResizeRequest>(8);
+        let (input_tx, input_rx) = mpsc::channel::<SmallVec<[FastPathInputEvent; 2]>>(64);
 
         let ws = websocket_server.clone();
         let sid = session_id.clone();
@@ -119,6 +124,8 @@ impl RdpClientSession {
             input_state: Arc::new(Mutex::new(ironrdp_input::Database::new())),
             resize_tx,
             resize_rx: Arc::new(Mutex::new(resize_rx)),
+            input_tx,
+            input_rx: Arc::new(Mutex::new(input_rx)),
         })
     }
 
@@ -178,6 +185,22 @@ impl RdpClientSession {
                     }
                     Some(Err(e)) => warn!("encode_resize error: {:?}", e),
                     None => debug!("Display Control channel not ready yet"),
+                }
+            }
+
+            // Non-blocking drain of pending input events
+            while let Ok(events) = self.input_rx.lock().unwrap().try_recv() {
+                match active_stage.process_fastpath_input(&mut image, &events) {
+                    Ok(outputs) => {
+                        for out in outputs {
+                            if let ActiveStageOutput::ResponseFrame(data) = out {
+                                if let Err(e) = framed.write_all(&data) {
+                                    warn!("Failed to write input PDU: {}", e);
+                                }
+                            }
+                        }
+                    }
+                    Err(e) => warn!("process_fastpath_input error: {:?}", e),
                 }
             }
 
@@ -472,7 +495,10 @@ impl RdpClientSession {
         } else {
             ironrdp_input::Operation::KeyReleased(scancode)
         };
-        let _events = self.input_state.lock().unwrap().apply(std::iter::once(op));
+        let events = self.input_state.lock().unwrap().apply(std::iter::once(op));
+        if !events.is_empty() {
+            self.input_tx.send(events).await.ok();
+        }
         Ok(())
     }
 
@@ -482,7 +508,7 @@ impl RdpClientSession {
             x, y, button, pressed
         );
         let mouse_button = MouseButton::from_native_button(button).unwrap_or(MouseButton::Left);
-        let _position = MousePosition {
+        let position = MousePosition {
             x: x as u16,
             y: y as u16,
         };
@@ -491,7 +517,17 @@ impl RdpClientSession {
         } else {
             ironrdp_input::Operation::MouseButtonReleased(mouse_button)
         };
-        let _events = self.input_state.lock().unwrap().apply(std::iter::once(op));
+        let mut events = self.input_state.lock().unwrap().apply(std::iter::once(op));
+        let move_op = ironrdp_input::Operation::MouseMove(position);
+        events.extend(
+            self.input_state
+                .lock()
+                .unwrap()
+                .apply(std::iter::once(move_op)),
+        );
+        if !events.is_empty() {
+            self.input_tx.send(events).await.ok();
+        }
         Ok(())
     }
 
@@ -656,6 +692,7 @@ mod tests {
             username: "admin".to_string(),
             password: None,
             private_key_path: Some("/home/user/.ssh/id_ed25519".to_string()),
+            private_key_data: None,
             key_passphrase: None,
         };
         let cfg = RdpConfig {

@@ -292,21 +292,47 @@ mod tests {
 /// List remote connections with optional filtering
 pub fn list_remote_connections(
     conn: &rusqlite::Connection,
-    _filter: &RemoteConnectionFilter,
+    filter: &RemoteConnectionFilter,
 ) -> Result<Vec<RemoteConnectionSummary>, String> {
-    let mut stmt = conn
-        .prepare(
-            "SELECT id, name, protocol, hostname, port, username, domain,
+    let mut sql = String::from(
+        "SELECT id, name, protocol, hostname, port, username, domain,
                 ssh_enabled, ssh_hostname, ssh_port, ssh_username,
                 resolution, color_depth, clipboard_sync, drive_redirect,
                 multi_monitor, compression, quality, auto_resize, stretch_to_fill,
                 created_at, updated_at, last_connected_at
-         FROM remote_connections",
-        )
-        .map_err(|e| e.to_string())?;
+         FROM remote_connections WHERE 1=1",
+    );
+    let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+
+    if let Some(ref protocol) = filter.protocol {
+        sql.push_str(" AND protocol = ?");
+        params.push(Box::new(match protocol {
+            RemoteProtocol::Rdp => "rdp".to_string(),
+            RemoteProtocol::Vnc => "vnc".to_string(),
+        }));
+    }
+
+    if let Some(ref name) = filter.name {
+        sql.push_str(" AND name LIKE ?");
+        params.push(Box::new(format!("%{}%", name)));
+    }
+
+    sql.push_str(" ORDER BY name ASC");
+
+    if let Some(limit) = filter.limit {
+        sql.push_str(&format!(" LIMIT {}", limit));
+    }
+
+    if let Some(offset) = filter.offset {
+        sql.push_str(&format!(" OFFSET {}", offset));
+    }
+
+    let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
+
+    let param_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
 
     let rows = stmt
-        .query_map([], |row| {
+        .query_map(param_refs.as_slice(), |row| {
             let protocol_str: String = row.get(2)?;
             Ok(RemoteConnectionSummary {
                 id: row.get(0)?,
@@ -476,4 +502,57 @@ pub fn delete_remote_connection(conn: &rusqlite::Connection, id: &str) -> Result
     conn.execute("DELETE FROM remote_connections WHERE id = ?", [id])
         .map_err(|e| e.to_string())?;
     Ok(())
+}
+
+/// Decrypted SSH credential triple: (ssh_password, ssh_private_key, ssh_key_passphrase)
+type SshCredentials = (Option<String>, Option<String>, Option<String>);
+
+/// Fetch and decrypt credentials for a remote connection.
+///
+/// Returns the decrypted SSH password and private key (if stored), or `None`
+/// values when no SSH credentials are present for this connection.
+pub fn get_remote_ssh_credentials(
+    conn: &rusqlite::Connection,
+    connection_id: &str,
+) -> Result<SshCredentials, String> {
+    use crate::integrations::auth::decrypt_token;
+
+    let result = conn.query_row(
+        "SELECT ssh_password_encrypted, ssh_key_encrypted, ssh_key_passphrase_encrypted
+         FROM remote_credentials
+         WHERE connection_id = ?1",
+        [connection_id],
+        |row| {
+            let ssh_password_enc: Option<String> = row.get(0)?;
+            let ssh_key_enc: Option<String> = row.get(1)?;
+            let ssh_key_passphrase_enc: Option<String> = row.get(2)?;
+            Ok((ssh_password_enc, ssh_key_enc, ssh_key_passphrase_enc))
+        },
+    );
+
+    match result {
+        Ok((pw_enc, key_enc, pass_enc)) => {
+            let ssh_password = pw_enc
+                .as_deref()
+                .map(decrypt_token)
+                .transpose()
+                .map_err(|e| format!("Failed to decrypt SSH password: {e}"))?;
+
+            let ssh_key = key_enc
+                .as_deref()
+                .map(decrypt_token)
+                .transpose()
+                .map_err(|e| format!("Failed to decrypt SSH key: {e}"))?;
+
+            let ssh_key_passphrase = pass_enc
+                .as_deref()
+                .map(decrypt_token)
+                .transpose()
+                .map_err(|e| format!("Failed to decrypt SSH key passphrase: {e}"))?;
+
+            Ok((ssh_password, ssh_key, ssh_key_passphrase))
+        }
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok((None, None, None)),
+        Err(e) => Err(format!("Failed to fetch remote credentials: {e}")),
+    }
 }

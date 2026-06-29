@@ -16,7 +16,14 @@ pub struct SshTunnelConfig {
     pub port: u16,
     pub username: String,
     pub password: Option<String>,
+    /// Path to an SSH private key file on disk (mutually exclusive with
+    /// `private_key_data`; `private_key_data` takes precedence when both
+    /// are present).
     pub private_key_path: Option<String>,
+    /// Raw PEM-encoded private key content loaded from the credentials store.
+    /// When set, key authentication is performed in-memory without touching
+    /// the filesystem.
+    pub private_key_data: Option<String>,
     pub key_passphrase: Option<String>,
 }
 
@@ -75,9 +82,6 @@ impl SshTunnel {
             std::net::TcpStream::connect(format!("{}:{}", self.config.hostname, self.config.port))
                 .context("Failed to connect to SSH server")?;
 
-        // Set non-blocking for async compatibility
-        tcp.set_nonblocking(true).ok();
-
         // Create SSH session
         let mut session = Ssh2Session::new()?;
         session.set_tcp_stream(tcp.try_clone()?);
@@ -100,7 +104,21 @@ impl SshTunnel {
 
         info!("Available SSH auth methods: {}", auth_methods);
 
-        // Try SSH key authentication first if configured
+        // Try in-memory SSH key authentication first (key data from credentials store)
+        if let Some(ref key_data) = self.config.private_key_data {
+            info!("Attempting SSH key authentication with in-memory key data");
+            match self.authenticate_with_key_data(session, key_data) {
+                Ok(_) => {
+                    info!("SSH in-memory key authentication successful");
+                    return Ok(());
+                }
+                Err(e) => {
+                    warn!("SSH in-memory key authentication failed: {}", e);
+                }
+            }
+        }
+
+        // Try SSH key authentication from file path if configured
         if let Some(ref key_path) = self.config.private_key_path {
             info!("Attempting SSH key authentication with: {}", key_path);
 
@@ -160,6 +178,15 @@ impl SshTunnel {
                 .context("Key-based authentication failed")?;
         }
 
+        Ok(())
+    }
+
+    /// Authenticate using in-memory SSH private key data (PEM-encoded)
+    fn authenticate_with_key_data(&self, session: &mut Ssh2Session, key_data: &str) -> Result<()> {
+        let passphrase = self.config.key_passphrase.as_deref();
+        session
+            .userauth_pubkey_memory(&self.config.username, None, key_data, passphrase)
+            .context("In-memory key authentication failed")?;
         Ok(())
     }
 
@@ -242,6 +269,7 @@ mod tests {
             username: "user".to_string(),
             password: Some("password".to_string()),
             private_key_path: None,
+            private_key_data: None,
             key_passphrase: None,
         };
 
@@ -260,6 +288,7 @@ mod tests {
             username: "user".to_string(),
             password: None,
             private_key_path: Some("/home/user/.ssh/id_rsa".to_string()),
+            private_key_data: None,
             key_passphrase: Some("passphrase".to_string()),
         };
 
@@ -278,6 +307,7 @@ mod tests {
             username: "user".to_string(),
             password: Some("password".to_string()),
             private_key_path: None,
+            private_key_data: None,
             key_passphrase: None,
         };
 

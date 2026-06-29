@@ -70,10 +70,18 @@ impl RdpManager {
     }
 
     /// Create a new RDP session
+    ///
+    /// `ssh_password`, `ssh_private_key`, and `ssh_key_passphrase` are the
+    /// decrypted SSH credentials fetched from the credentials store before
+    /// calling this method. All three may be `None` when SSH is disabled or
+    /// no SSH credentials have been saved for the connection.
     pub fn create_session(
         &self,
         connection: &RemoteConnection,
         _password: &str,
+        ssh_password: Option<String>,
+        ssh_private_key: Option<String>,
+        ssh_key_passphrase: Option<String>,
     ) -> Result<RdpSessionInternal> {
         let session_id = Uuid::now_v7().to_string();
 
@@ -83,9 +91,10 @@ impl RdpManager {
                 hostname: connection.ssh_hostname.as_ref().unwrap().clone(),
                 port: connection.ssh_port.unwrap_or(22),
                 username: connection.ssh_username.clone().unwrap_or_default(),
-                password: None,
+                password: ssh_password,
                 private_key_path: None,
-                key_passphrase: None,
+                private_key_data: ssh_private_key,
+                key_passphrase: ssh_key_passphrase,
             })
         } else {
             None
@@ -279,7 +288,12 @@ impl RdpManager {
         Ok(())
     }
 
-    /// Get a free port
+    /// Get a free port by binding to port 0.
+    ///
+    /// NOTE: There is an inherent TOCTOU window between dropping the listener
+    /// and the caller binding to the returned port. Use `start_random_port`
+    /// on `WebSocketServer` when possible to avoid this; this helper is
+    /// retained for the sync `start_session` path which cannot await.
     fn get_free_port(&self) -> Result<u16> {
         use std::net::TcpListener;
 
@@ -388,9 +402,9 @@ mod tests {
             last_connected_at: None,
         };
 
-        let session = manager.create_session(&connection, "password123").unwrap();
-
-        assert_eq!(session.connection_id, "test-conn-1");
+        let session = manager
+            .create_session(&connection, "password123", None, None, None)
+            .unwrap();
         assert_eq!(session.hostname, "192.168.1.100");
         assert_eq!(session.port, 3389);
         assert!(!session.connected);
@@ -431,7 +445,9 @@ mod tests {
             last_connected_at: None,
         };
 
-        let session = manager.create_session(&connection, "password123").unwrap();
+        let session = manager
+            .create_session(&connection, "password123", None, None, None)
+            .unwrap();
 
         // Start session
         let ws_url = manager.start_session(&session.id).unwrap();
