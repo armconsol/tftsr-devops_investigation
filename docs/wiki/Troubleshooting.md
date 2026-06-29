@@ -377,3 +377,34 @@ Database is named `gogsdb`. The PostgreSQL instance uses SCRAM-SHA-256 auth (MD5
 2. Even on the async path, the session id used by the frame sender, `register_session`, the `ws://.../rdp/{id}` URL, and `handle_client` did not match (each generated its own UUID), so frames could not be routed to the client.
 
 **Fix:** The command now drives the real async connect path (`start_session_with_password`). A single canonical session id is used across `RdpClientSession` (`new_with_id` / `create_session_with_id`), `WebSocketServer::register_session`, the returned URL, and `handle_client`, which now parses the id from the `/rdp/{id}` request path (`session_id_from_path`) instead of generating a new one. `handle_client` rejects connections for unregistered session ids.
+
+### Black Screen Persisted After Connecting (Frames Produced but Never Delivered)
+
+**Symptom:** Backend logs show `connected=true` and frames being produced
+(`frames_sent` > 0), yet the canvas stays black — the WebSocket client receives
+no frames.
+
+**Cause:** The frame-forwarding task awaited `frame_rx.recv()`. Frames are
+produced by the blocking IronRDP `connect()` loop running on a tokio worker.
+Channel `try_send` wakeups are enqueued on that worker's **local** run-queue,
+which it never drains while parked in a blocking socket read; work-stealing did
+not reliably pick the wakeup up, so `recv().await` never woke despite buffered
+frames. (Timer wakeups such as the heartbeat use a different path and worked,
+which confirmed the runtime itself was healthy.)
+
+**Fix:** The forwarder polls `try_recv()` with a 5 ms async sleep instead of
+awaiting `recv()`, decoupling frame delivery from the starved channel waker. See
+`remote/rdp_client.rs` (`new_with_id`).
+
+### Mouse/Keyboard Do Nothing in the RDP Session
+
+**Cause:** Input was never wired from the webview to the session — `handle_client`
+only logged inbound WebSocket messages.
+
+**Fix:** The frontend sends `RawInputEvent` JSON over the same WebSocket; the
+server decodes it (`remote/input.rs`), routes it through a per-session channel to
+a dispatch task, and `RdpClientSession::handle_input` emits IronRDP fastpath
+input. Mouse moves are sent before button state changes, coordinates are scaled
+from CSS pixels to the RDP resolution on the frontend and clamped on the backend,
+and JS `KeyboardEvent.code` values map to RDP scancode set 1 (extended keys carry
+`0xE000`).

@@ -391,7 +391,7 @@ jobs:
     needs: autotag
     runs-on: linux-amd64
     container:
-      image: 172.0.0.29:3000/sarman/tftsr-linux-amd64:rust1.88-node22
+      image: 172.0.0.29:3000/sarman/tftsr-linux-amd64:rust1.89-node22
     env:
       RELEASE_TAG: ${{ needs.autotag.outputs.release_tag }}
     steps:
@@ -488,7 +488,7 @@ jobs:
     needs: autotag
     runs-on: linux-amd64
     container:
-      image: 172.0.0.29:3000/sarman/tftsr-windows-cross:rust1.88-node22
+      image: 172.0.0.29:3000/sarman/tftsr-windows-cross:rust1.89-node22
     env:
       RELEASE_TAG: ${{ needs.autotag.outputs.release_tag }}
     steps:
@@ -673,7 +673,7 @@ jobs:
     needs: autotag
     runs-on: linux-amd64
     container:
-      image: 172.0.0.29:3000/sarman/tftsr-linux-arm64:rust1.88-node22
+      image: 172.0.0.29:3000/sarman/tftsr-linux-arm64:rust1.89-node22
     env:
       RELEASE_TAG: ${{ needs.autotag.outputs.release_tag }}
     steps:
