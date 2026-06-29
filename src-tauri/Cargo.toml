@@ -67,7 +67,7 @@ http = "1.4"
 flate2 = { version = "1", features = ["rust_backend"] }
 serde_yaml = "0.9"
 portable-pty = "0.8"
-ssh2 = "0.9"
+ssh2 = { version = "0.9", features = ["vendored-openssl"] }
 ironrdp = { version = "0.14", features = [
     "svc",
     "cliprdr",
@@ -96,6 +96,16 @@ image = "0.25"
 tokio-test = "0.4"
 mockito = "1.2"
 rustls = { version = "0.23", features = ["aws_lc_rs"] }
+
+# Native OS keychain backends (keyring defaults to an in-memory mock store).
+[target.'cfg(target_os = "macos")'.dependencies]
+keyring = { version = "3.0", features = ["apple-native"] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+keyring = { version = "3.0", features = ["windows-native"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+keyring = { version = "3.0", features = ["sync-secret-service"] }
 
 [profile.release]
 opt-level = "s"

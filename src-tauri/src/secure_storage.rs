@@ -51,12 +51,11 @@ pub struct KeychainService {
 /// Platform-specific keychain backends
 #[derive(Debug)]
 enum KeychainBackend {
-    #[cfg(target_os = "macos")]
-    macOS,
-    #[cfg(target_os = "windows")]
-    Windows(keyring::Entry),
-    #[cfg(target_os = "linux")]
-    Linux(keyring::Entry),
+    /// Native OS keychain via the `keyring` crate (macOS Keychain,
+    /// Windows Credential Manager, Linux Secret Service). Entries are
+    /// constructed per-account so each credential is stored separately.
+    #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+    Keyring,
     Fallback,
 }
 
@@ -85,36 +84,18 @@ impl KeychainService {
 
     /// Initialize the platform-specific backend
     fn init_backend(service_name: &str) -> KeychainBackend {
-        #[cfg(target_os = "macos")]
+        #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
         {
-            tracing::info!("macOS Security.framework backend selected");
-            KeychainBackend::macOS
-        }
-
-        #[cfg(target_os = "windows")]
-        {
-            match keyring::Entry::new(service_name, "tftsr_ssh_account") {
-                Ok(entry) => {
-                    tracing::info!("Windows Credential Manager initialized successfully");
-                    KeychainBackend::Windows(entry)
+            // Probe availability by constructing an entry against the platform
+            // credential store. Actual credential entries are built per-account
+            // at call time so each key is stored under its own identifier.
+            match keyring::Entry::new(service_name, "tftsr_ssh_probe") {
+                Ok(_) => {
+                    tracing::info!("Platform keychain backend initialized successfully");
+                    KeychainBackend::Keyring
                 }
                 Err(e) => {
-                    tracing::warn!("Failed to initialize Windows Credential Manager: {e}");
-                    tracing::warn!("Falling back to encrypted database storage");
-                    KeychainBackend::Fallback
-                }
-            }
-        }
-
-        #[cfg(target_os = "linux")]
-        {
-            match keyring::Entry::new(service_name, "tftsr_ssh_account") {
-                Ok(entry) => {
-                    tracing::info!("Linux Secret Service initialized successfully");
-                    KeychainBackend::Linux(entry)
-                }
-                Err(e) => {
-                    tracing::warn!("Failed to initialize Linux Secret Service: {e}");
+                    tracing::warn!("Failed to initialize platform keychain: {e}");
                     tracing::warn!("Falling back to encrypted database storage");
                     KeychainBackend::Fallback
                 }
@@ -123,9 +104,19 @@ impl KeychainService {
 
         #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
         {
+            let _ = service_name;
             tracing::warn!("Unsupported platform for keychain access");
             KeychainBackend::Fallback
         }
+    }
+
+    /// Build a per-account keyring entry under this service's namespace.
+    #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+    fn entry(&self, account: &str) -> KeychainResult<keyring::Entry> {
+        keyring::Entry::new(&self.service_name, account).map_err(|e| {
+            tracing::error!("Failed to build keychain entry: {e}");
+            KeychainError::OperationFailed(e.to_string())
+        })
     }
 
     /// Store a password in the keychain
@@ -137,32 +128,22 @@ impl KeychainService {
     /// # Returns
     /// * `Ok(())` if successful
     /// * `Err(KeychainError)` if storage failed
-    pub fn store_password(&self, _account: &str, password: &str) -> KeychainResult<()> {
+    pub fn store_password(&self, account: &str, password: &str) -> KeychainResult<()> {
         match &self.backend {
-            #[cfg(target_os = "macos")]
-            KeychainBackend::macOS => self.store_macos_password(account, password),
-            #[cfg(target_os = "windows")]
-            KeychainBackend::Windows(entry) => match entry.set_password(password) {
-                Ok(()) => {
-                    tracing::debug!("Password stored successfully in Windows Credential Manager");
-                    Ok(())
+            #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+            KeychainBackend::Keyring => {
+                let entry = self.entry(account)?;
+                match entry.set_password(password) {
+                    Ok(()) => {
+                        tracing::debug!("Password stored successfully in platform keychain");
+                        Ok(())
+                    }
+                    Err(e) => {
+                        tracing::error!("Failed to store password in platform keychain: {e}");
+                        Err(KeychainError::OperationFailed(e.to_string()))
+                    }
                 }
-                Err(e) => {
-                    tracing::error!("Failed to store password in Windows Credential Manager: {e}");
-                    Err(KeychainError::OperationFailed(e.to_string()))
-                }
-            },
-            #[cfg(target_os = "linux")]
-            KeychainBackend::Linux(entry) => match entry.set_password(password) {
-                Ok(()) => {
-                    tracing::debug!("Password stored successfully in GNOME Keyring");
-                    Ok(())
-                }
-                Err(e) => {
-                    tracing::error!("Failed to store password in GNOME Keyring: {e}");
-                    Err(KeychainError::OperationFailed(e.to_string()))
-                }
-            },
+            }
             KeychainBackend::Fallback => {
                 tracing::warn!("Keychain not available, password storage skipped");
                 Err(KeychainError::NotAvailable(
@@ -181,44 +162,26 @@ impl KeychainService {
     /// * `Ok(Some(password))` if found
     /// * `Ok(None)` if not found
     /// * `Err(KeychainError)` if retrieval failed
-    pub fn get_password(&self, _account: &str) -> KeychainResult<Option<String>> {
+    pub fn get_password(&self, account: &str) -> KeychainResult<Option<String>> {
         match &self.backend {
-            #[cfg(target_os = "macos")]
-            KeychainBackend::macOS => self.get_macos_password(account),
-            #[cfg(target_os = "windows")]
-            KeychainBackend::Windows(entry) => match entry.get_password() {
-                Ok(password) => {
-                    tracing::debug!(
-                        "Password retrieved successfully from Windows Credential Manager"
-                    );
-                    Ok(Some(password))
+            #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+            KeychainBackend::Keyring => {
+                let entry = self.entry(account)?;
+                match entry.get_password() {
+                    Ok(password) => {
+                        tracing::debug!("Password retrieved successfully from platform keychain");
+                        Ok(Some(password))
+                    }
+                    Err(keyring::error::Error::NoEntry) => {
+                        tracing::debug!("No password found in platform keychain");
+                        Ok(None)
+                    }
+                    Err(e) => {
+                        tracing::error!("Failed to retrieve password from platform keychain: {e}");
+                        Err(KeychainError::OperationFailed(e.to_string()))
+                    }
                 }
-                Err(keyring::error::Error::NoEntry) => {
-                    tracing::debug!("No password found in Windows Credential Manager");
-                    Ok(None)
-                }
-                Err(e) => {
-                    tracing::error!(
-                        "Failed to retrieve password from Windows Credential Manager: {e}"
-                    );
-                    Err(KeychainError::OperationFailed(e.to_string()))
-                }
-            },
-            #[cfg(target_os = "linux")]
-            KeychainBackend::Linux(entry) => match entry.get_password() {
-                Ok(password) => {
-                    tracing::debug!("Password retrieved successfully from GNOME Keyring");
-                    Ok(Some(password))
-                }
-                Err(keyring::error::Error::NoEntry) => {
-                    tracing::debug!("No password found in GNOME Keyring");
-                    Ok(None)
-                }
-                Err(e) => {
-                    tracing::error!("Failed to retrieve password from GNOME Keyring: {e}");
-                    Err(KeychainError::OperationFailed(e.to_string()))
-                }
-            },
+            }
             KeychainBackend::Fallback => {
                 tracing::warn!("Keychain not available for password retrieval");
                 Err(KeychainError::NotAvailable(
@@ -236,44 +199,26 @@ impl KeychainService {
     /// # Returns
     /// * `Ok(())` if successful or if item doesn't exist
     /// * `Err(KeychainError)` if deletion failed
-    pub fn delete_password(&self, _account: &str) -> KeychainResult<()> {
+    pub fn delete_password(&self, account: &str) -> KeychainResult<()> {
         match &self.backend {
-            #[cfg(target_os = "macos")]
-            KeychainBackend::macOS => self.delete_macos_password(account),
-            #[cfg(target_os = "windows")]
-            KeychainBackend::Windows(entry) => match entry.delete_credential() {
-                Ok(()) => {
-                    tracing::debug!(
-                        "Password deleted successfully from Windows Credential Manager"
-                    );
-                    Ok(())
+            #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+            KeychainBackend::Keyring => {
+                let entry = self.entry(account)?;
+                match entry.delete_credential() {
+                    Ok(()) => {
+                        tracing::debug!("Password deleted successfully from platform keychain");
+                        Ok(())
+                    }
+                    Err(keyring::error::Error::NoEntry) => {
+                        tracing::debug!("No password to delete in platform keychain");
+                        Ok(())
+                    }
+                    Err(e) => {
+                        tracing::error!("Failed to delete password from platform keychain: {e}");
+                        Err(KeychainError::OperationFailed(e.to_string()))
+                    }
                 }
-                Err(keyring::error::Error::NoEntry) => {
-                    tracing::debug!("No password to delete in Windows Credential Manager");
-                    Ok(())
-                }
-                Err(e) => {
-                    tracing::error!(
-                        "Failed to delete password from Windows Credential Manager: {e}"
-                    );
-                    Err(KeychainError::OperationFailed(e.to_string()))
-                }
-            },
-            #[cfg(target_os = "linux")]
-            KeychainBackend::Linux(entry) => match entry.delete_credential() {
-                Ok(()) => {
-                    tracing::debug!("Password deleted successfully from GNOME Keyring");
-                    Ok(())
-                }
-                Err(keyring::error::Error::NoEntry) => {
-                    tracing::debug!("No password to delete in GNOME Keyring");
-                    Ok(())
-                }
-                Err(e) => {
-                    tracing::error!("Failed to delete password from GNOME Keyring: {e}");
-                    Err(KeychainError::OperationFailed(e.to_string()))
-                }
-            },
+            }
             KeychainBackend::Fallback => {
                 tracing::warn!("Keychain not available for password deletion");
                 Ok(()) // No-op in fallback mode
@@ -338,121 +283,6 @@ impl KeychainService {
     /// Get the service name being used
     pub fn service_name(&self) -> &str {
         &self.service_name
-    }
-}
-
-#[cfg(target_os = "macos")]
-impl KeychainService {
-    /// macOS-specific password storage using Security.framework
-    fn store_macos_password(&self, account: &str, password: &str) -> KeychainResult<()> {
-        use security_framework::item::{SecItemAddArguments, SecItemUpdateArguments};
-        use security_framework::secitem::{SecClass, SecItemQuery};
-
-        let mut query = SecItemQuery::default();
-        query.sec_class = SecClass::GenericPassword;
-        query.account = Some(account);
-        query.service = Some(&self.service_name);
-
-        let mut attributes = SecItemAddArguments::default();
-        attributes.sec_class = SecClass::GenericPassword;
-        attributes.account = Some(account);
-        attributes.service = Some(&self.service_name);
-        attributes.value_data = Some(password.as_bytes());
-
-        // Try to update existing item first
-        let update_result = security_framework::secitem::update_item(
-            &query,
-            &SecItemUpdateArguments {
-                value_data: Some(password.as_bytes()),
-                ..Default::default()
-            },
-        );
-
-        if update_result.is_ok() {
-            tracing::debug!("Password updated in macOS Keychain for account: {account}");
-            return Ok(());
-        }
-
-        // If update fails, try to add new item
-        match security_framework::secitem::add_item(&attributes) {
-            Ok(_) => {
-                tracing::debug!("Password added to macOS Keychain for account: {account}");
-                Ok(())
-            }
-            Err(e) => {
-                tracing::error!("Failed to add password to macOS Keychain: {e}");
-                Err(KeychainError::OperationFailed(e.to_string()))
-            }
-        }
-    }
-
-    /// macOS-specific password retrieval using Security.framework
-    fn get_macos_password(&self, account: &str) -> KeychainResult<Option<String>> {
-        use security_framework::item::{SecItemCopyMatching, SecItemQuery};
-        use security_framework::secitem::SecClass;
-
-        let mut query = SecItemQuery::default();
-        query.sec_class = SecClass::GenericPassword;
-        query.account = Some(account);
-        query.service = Some(&self.service_name);
-        query.return_data = true;
-
-        match security_framework::secitem::copy_item(&query) {
-            Ok(result) => {
-                if let Some(data) = result.data {
-                    match String::from_utf8(data) {
-                        Ok(password) => {
-                            tracing::debug!(
-                                "Password retrieved from macOS Keychain for account: {account}"
-                            );
-                            Ok(Some(password))
-                        }
-                        Err(e) => {
-                            tracing::error!("Failed to convert macOS Keychain data to string: {e}");
-                            Err(KeychainError::OperationFailed(
-                                "Invalid UTF-8 data".to_string(),
-                            ))
-                        }
-                    }
-                } else {
-                    Ok(None)
-                }
-            }
-            Err(security_framework::error::Error::ItemNotFound) => {
-                tracing::debug!("No password found in macOS Keychain for account: {account}");
-                Ok(None)
-            }
-            Err(e) => {
-                tracing::error!("Failed to retrieve password from macOS Keychain: {e}");
-                Err(KeychainError::OperationFailed(e.to_string()))
-            }
-        }
-    }
-
-    /// macOS-specific password deletion using Security.framework
-    fn delete_macos_password(&self, account: &str) -> KeychainResult<()> {
-        use security_framework::item::SecItemQuery;
-        use security_framework::secitem::SecClass;
-
-        let mut query = SecItemQuery::default();
-        query.sec_class = SecClass::GenericPassword;
-        query.account = Some(account);
-        query.service = Some(&self.service_name);
-
-        match security_framework::secitem::delete_item(&query) {
-            Ok(_) => {
-                tracing::debug!("Password deleted from macOS Keychain for account: {account}");
-                Ok(())
-            }
-            Err(security_framework::error::Error::ItemNotFound) => {
-                tracing::debug!("No password to delete in macOS Keychain for account: {account}");
-                Ok(())
-            }
-            Err(e) => {
-                tracing::error!("Failed to delete password from macOS Keychain: {e}");
-                Err(KeychainError::OperationFailed(e.to_string()))
-            }
-        }
     }
 }
 
@@ -830,6 +660,54 @@ mod tests {
                 tracing::info!("Credential storage skipped (keychain unavailable): {e}");
             }
         }
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn test_macos_keychain_roundtrip() {
+        let service = KeychainService::new();
+
+        // Skip if the macOS keychain backend is unavailable (e.g. headless CI).
+        if !service.is_available() {
+            tracing::info!("macOS keychain unavailable, skipping roundtrip test");
+            return;
+        }
+
+        // Two distinct accounts to prove per-account isolation (no collision).
+        let account_a = "test:macos:roundtrip:a";
+        let account_b = "test:macos:roundtrip:b";
+        let password_a = "s3cret-roundtrip-a";
+        let password_b = "s3cret-roundtrip-b";
+
+        // Ensure a clean slate.
+        let _ = service.delete_password(account_a);
+        let _ = service.delete_password(account_b);
+
+        // Store distinct values under distinct accounts.
+        service.store_password(account_a, password_a).unwrap();
+        service.store_password(account_b, password_b).unwrap();
+
+        // Each account must return its own value (entries do not collide).
+        assert_eq!(
+            service.get_password(account_a).unwrap(),
+            Some(password_a.to_string())
+        );
+        assert_eq!(
+            service.get_password(account_b).unwrap(),
+            Some(password_b.to_string())
+        );
+
+        // Deleting one must not affect the other.
+        service.delete_password(account_a).unwrap();
+        assert_eq!(service.get_password(account_a).unwrap(), None);
+        assert_eq!(
+            service.get_password(account_b).unwrap(),
+            Some(password_b.to_string())
+        );
+
+        // Clean up.
+        service.delete_password(account_b).unwrap();
+        assert_eq!(service.get_password(account_b).unwrap(), None);
     }
 }
 

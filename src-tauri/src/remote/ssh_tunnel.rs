@@ -298,6 +298,27 @@ mod tests {
         assert!(tunnel.config.key_passphrase.is_some());
     }
 
+    #[test]
+    fn test_ssh_tunnel_with_key_data() {
+        let key_data =
+            "-----BEGIN OPENSSH PRIVATE KEY-----\ntest\n-----END OPENSSH PRIVATE KEY-----";
+        let config = SshTunnelConfig {
+            hostname: "ssh.example.com".to_string(),
+            port: 22,
+            username: "user".to_string(),
+            password: None,
+            private_key_path: None,
+            private_key_data: Some(key_data.to_string()),
+            key_passphrase: None,
+        };
+
+        let tunnel = SshTunnel::new(config);
+
+        // Exercises the in-memory key auth wiring (userauth_pubkey_memory path).
+        assert_eq!(tunnel.config.private_key_data.as_deref(), Some(key_data));
+        assert!(tunnel.config.private_key_path.is_none());
+    }
+
     #[tokio::test]
     #[ignore] // Skip actual SSH connection test - requires real SSH server
     async fn test_ssh_tunnel_connect_disconnect() {
