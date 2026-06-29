@@ -10,7 +10,12 @@ use std::path::Path;
 use tracing::{info, warn};
 
 /// SSH tunnel configuration
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+///
+/// `Debug` is implemented manually to redact secret material (`password`,
+/// `key_passphrase`, `private_key_data`) so credentials are never exposed via
+/// `{:?}` logging. `Serialize`/`Deserialize` are retained because this type is
+/// embedded in IPC config payloads (e.g. `RdpConfig`).
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct SshTunnelConfig {
     pub hostname: String,
     pub port: u16,
@@ -25,6 +30,25 @@ pub struct SshTunnelConfig {
     /// the filesystem.
     pub private_key_data: Option<String>,
     pub key_passphrase: Option<String>,
+}
+
+impl std::fmt::Debug for SshTunnelConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Show only whether a secret is present, never its value.
+        let redacted = |opt: &Option<String>| match opt {
+            Some(_) => "Some(<redacted>)",
+            None => "None",
+        };
+        f.debug_struct("SshTunnelConfig")
+            .field("hostname", &self.hostname)
+            .field("port", &self.port)
+            .field("username", &self.username)
+            .field("password", &redacted(&self.password))
+            .field("private_key_path", &self.private_key_path)
+            .field("private_key_data", &redacted(&self.private_key_data))
+            .field("key_passphrase", &redacted(&self.key_passphrase))
+            .finish()
+    }
 }
 
 /// A TCP stream through SSH tunnel
@@ -317,6 +341,35 @@ mod tests {
         // Exercises the in-memory key auth wiring (userauth_pubkey_memory path).
         assert_eq!(tunnel.config.private_key_data.as_deref(), Some(key_data));
         assert!(tunnel.config.private_key_path.is_none());
+    }
+
+    #[test]
+    fn test_ssh_tunnel_config_debug_redacts_secrets() {
+        let config = SshTunnelConfig {
+            hostname: "ssh.example.com".to_string(),
+            port: 22,
+            username: "user".to_string(),
+            password: Some("super-secret-pw".to_string()),
+            private_key_path: Some("/home/user/.ssh/id_rsa".to_string()),
+            private_key_data: Some(
+                "-----BEGIN OPENSSH PRIVATE KEY-----\nMIIabc\n-----END OPENSSH PRIVATE KEY-----"
+                    .to_string(),
+            ),
+            key_passphrase: Some("passphrase-secret".to_string()),
+        };
+
+        let rendered = format!("{config:?}");
+
+        // Secret values must never appear in Debug output.
+        assert!(!rendered.contains("super-secret-pw"));
+        assert!(!rendered.contains("passphrase-secret"));
+        assert!(!rendered.contains("BEGIN OPENSSH PRIVATE KEY"));
+        assert!(rendered.contains("<redacted>"));
+
+        // Non-sensitive fields are still visible for diagnostics.
+        assert!(rendered.contains("ssh.example.com"));
+        assert!(rendered.contains("user"));
+        assert!(rendered.contains("/home/user/.ssh/id_rsa"));
     }
 
     #[tokio::test]
