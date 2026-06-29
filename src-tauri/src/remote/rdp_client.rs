@@ -619,7 +619,9 @@ impl RdpConnectionHandler {
 
     pub async fn start_session(&self, session_id: &str, config: RdpConfig) -> Result<()> {
         info!("Starting RDP session: {}", session_id);
-        let session = RdpClientSession::new(config, self.websocket_server.clone())?;
+        // Bind the client session to the provided id so its frame-forwarding task
+        // sends under the same id used for WebSocket registration/routing.
+        let session = self.create_session_with_id(session_id.to_string(), config)?;
         session.connect().await?;
         info!("RDP session ended: {}", session_id);
         Ok(())

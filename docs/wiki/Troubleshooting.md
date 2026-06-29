@@ -360,6 +360,16 @@ Database is named `gogsdb`. The PostgreSQL instance uses SCRAM-SHA-256 auth (MD5
 
 **Fix:** `get_remote_rdp_password()` (`src-tauri/src/remote/connection.rs`) decrypts the stored password, and `start_rdp_session` now takes `password: Option<String>`. When the argument is omitted/blank, the stored password is used. The frontend (`src/pages/Remote/RemoteDesktopPage.tsx`) connects with stored credentials immediately and only shows the password dialog as a fallback if that fails.
 
+> **Security note — stored RDP credentials.** RDP passwords are encrypted at rest
+> (AES-256-GCM via `integrations::auth`) in `remote_credentials.rdp_password_encrypted`,
+> keyed by `TRCAA_ENCRYPTION_KEY` (or an auto-generated `.enckey`, mode `0600`).
+> The protection is therefore only as strong as that key: anyone who can read the
+> key file and the database can recover the passwords. Prefer the SSH-tunnel path
+> for untrusted networks, keep the encryption key off the database host where
+> possible, and treat the auto-generated `.enckey` as a secret (back it up
+> securely, never commit it). Decrypted passwords are only held in memory for the
+> duration of a connect call and are never logged or returned to the frontend.
+
 ### Connecting Shows Only a Black Screen (No Desktop)
 
 **Cause (two parts):**

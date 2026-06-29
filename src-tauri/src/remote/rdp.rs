@@ -197,12 +197,20 @@ impl RdpManager {
             }
         }
 
-        // Spawn the actual connection task.
+        // Spawn the actual connection task. `connect()` runs the full session
+        // loop, so once it returns (cleanly or with an error) the session is no
+        // longer live — flip `connected` to false so the UI/state don't report a
+        // dead stream as active.
         let session_id_clone = session_id.to_string();
+        let sessions_for_task = self.sessions.clone();
         tokio::spawn(async move {
             match rdp_session.connect().await {
                 Ok(_) => info!("RDP session ended cleanly: {}", session_id_clone),
                 Err(e) => error!("RDP session error: {}", e),
+            }
+            if let Some(s) = sessions_for_task.lock().unwrap().get_mut(&session_id_clone) {
+                s.connected = false;
+                s.resize_tx = None;
             }
         });
 
@@ -212,7 +220,14 @@ impl RdpManager {
         Ok(ws_url)
     }
 
-    /// Start the RDP session (legacy sync version for compatibility)
+    /// Start the RDP session (legacy sync version, test-only).
+    ///
+    /// This does NOT establish an RDP connection or start a frame stream — it
+    /// only flips local session state and returns a placeholder URL. It is gated
+    /// behind `#[cfg(test)]` so production code cannot create a "ghost" session
+    /// that reports as connected without a live stream; the real path is
+    /// [`start_session_async`].
+    #[cfg(test)]
     pub fn start_session(&self, session_id: &str) -> Result<String> {
         let websocket_port = self.get_free_port()?;
 
@@ -326,9 +341,13 @@ impl RdpManager {
         }
     }
 
-    /// Send a test frame for simulation/testing purposes
+    /// Send a test frame for simulation/testing purposes.
+    ///
+    /// Uses the raw `session_id` as the routing key to match
+    /// [`WebSocketServer::register_session`] (which registers under the canonical
+    /// id), so simulated frames reach the same client a real session would.
     pub fn send_test_frame(&self, session_id: &str, width: u32, height: u32) -> Result<()> {
-        let ws_session_id = format!("ws-{}", session_id);
+        let ws_session_id = session_id.to_string();
         let frame = RdpFrame {
             width,
             height,
