@@ -44,7 +44,6 @@ async-trait = "0.1"
 base64 = "0.22"
 dirs = "5"
 aes-gcm = "0.10"
-keyring = "3.0"
 zeroize = "1.7"
 rand = "0.9"
 lazy_static = "1.4"
@@ -83,6 +82,9 @@ ironrdp-graphics = "0.7"
 ironrdp-input = "0.5"
 ironrdp-cliprdr = "0.5"
 ironrdp-blocking = "0.8"
+# Pinned to =0.2.0: newer ironrdp-tls releases raise the MSRV above the
+# toolchain (Rust 1.88) used by the CI builder images. Revisit when the
+# builder Rust version is bumped so this can track security updates again.
 ironrdp-tls = { version = "=0.2.0", features = ["rustls"] }
 ironrdp-pdu = "0.7"
 ironrdp-svc = "0.6"

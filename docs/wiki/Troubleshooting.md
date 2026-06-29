@@ -171,7 +171,7 @@ sudo apt-get install -y libwebkit2gtk-4.1-dev libssl-dev libgtk-3-dev \
 
 ### Windows: `no method named userauth_pubkey_memory` on `ssh2::Session`
 
-```
+```text
 error[E0599]: no method named `userauth_pubkey_memory` found for
 mutable reference `&mut ssh2::Session`
 ```
@@ -192,7 +192,7 @@ ssh2 = { version = "0.9", features = ["vendored-openssl"] }
 
 ### macOS: `unresolved module or unlinked crate security_framework`
 
-```
+```text
 error[E0433]: failed to resolve: use of unresolved module or unlinked
 crate `security_framework`
 ```
