@@ -23,6 +23,20 @@ pub struct RdpFrame {
     pub frame_number: u64,
 }
 
+/// Encode a frame into the binary wire format the browser client expects:
+/// `[u32 LE width][u32 LE height][RGBA pixel bytes...]`.
+///
+/// The frontend decodes this layout directly (width at byte 0, height at byte 4,
+/// pixels from byte 8). Sending any other representation (e.g. JSON) results in a
+/// blank/black canvas because `putImageData` receives mismatched dimensions.
+pub fn encode_frame(frame: &RdpFrame) -> Vec<u8> {
+    let mut payload = Vec::with_capacity(8 + frame.data.len());
+    payload.extend_from_slice(&frame.width.to_le_bytes());
+    payload.extend_from_slice(&frame.height.to_le_bytes());
+    payload.extend_from_slice(&frame.data);
+    payload
+}
+
 /// WebSocket session for a single client
 #[derive(Debug, Clone)]
 pub struct WebSocketSession {
@@ -224,13 +238,7 @@ impl WebSocketServer {
         // Forward frames from RDP to WebSocket client.
         let send_task = tokio::spawn(async move {
             while let Some(frame) = frame_rx.recv().await {
-                let payload = match serde_json::to_vec(&frame) {
-                    Ok(v) => v,
-                    Err(e) => {
-                        tracing::error!("Frame serialization failed: {}", e);
-                        continue;
-                    }
-                };
+                let payload = encode_frame(&frame);
                 if let Err(e) = ws_sink
                     .send(tokio_tungstenite::tungstenite::Message::Binary(payload))
                     .await
@@ -346,5 +354,26 @@ mod tests {
 
         let sessions = server.list_sessions().await;
         assert_eq!(sessions.len(), 2);
+    }
+
+    #[test]
+    fn test_encode_frame_binary_layout() {
+        // 2x1 image: two RGBA pixels.
+        let data = vec![1u8, 2, 3, 4, 5, 6, 7, 8];
+        let frame = RdpFrame {
+            width: 2,
+            height: 1,
+            data: data.clone(),
+            timestamp: 123,
+            frame_number: 7,
+        };
+
+        let payload = encode_frame(&frame);
+
+        // Layout: [u32 LE width][u32 LE height][RGBA...]
+        assert_eq!(payload.len(), 8 + data.len());
+        assert_eq!(u32::from_le_bytes(payload[0..4].try_into().unwrap()), 2);
+        assert_eq!(u32::from_le_bytes(payload[4..8].try_into().unwrap()), 1);
+        assert_eq!(&payload[8..], &data[..]);
     }
 }
