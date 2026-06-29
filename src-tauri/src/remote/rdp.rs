@@ -172,16 +172,28 @@ impl RdpManager {
             ssh_config: ssh_config.clone(),
         };
 
-        // Build the RdpClientSession so we can harvest its resize_tx before spawning.
-        let rdp_session = self.rdp_handler.create_session(rdp_config.clone())?;
+        // Start the WebSocket listener for this session and register the canonical
+        // session id so the parked frame receiver is routed to the browser client
+        // that connects to `ws://.../rdp/{session_id}`.
+        let websocket_port = self.websocket_server.start_random_port().await?;
+        self.websocket_server
+            .register_session(session_id, session_id)
+            .await;
+
+        // Build the RdpClientSession bound to the canonical session id so its
+        // frame-forwarding task sends frames keyed by that id.
+        let rdp_session = self
+            .rdp_handler
+            .create_session_with_id(session_id.to_string(), rdp_config.clone())?;
         let resize_tx = rdp_session.resize_tx.clone();
 
-        // Store resize_tx in the internal session for later use.
+        // Store resize_tx + websocket_port in the internal session for later use.
         {
             let mut sessions = self.sessions.lock().unwrap();
             if let Some(s) = sessions.get_mut(session_id) {
                 s.resize_tx = Some(resize_tx);
                 s.connected = true;
+                s.websocket_port = websocket_port;
             }
         }
 
@@ -194,12 +206,7 @@ impl RdpManager {
             }
         });
 
-        // Start the WebSocket listener for this session.
-        let ws_url = format!(
-            "ws://127.0.0.1:{}/rdp/{}",
-            self.websocket_server.start_random_port().await?,
-            session_id
-        );
+        let ws_url = format!("ws://127.0.0.1:{}/rdp/{}", websocket_port, session_id);
 
         info!("RDP session started: {}", session_id);
         Ok(ws_url)

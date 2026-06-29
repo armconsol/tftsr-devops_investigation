@@ -588,6 +588,23 @@ export const RemoteDesktopPage: React.FC = () => {
     setConnectError(null);
   };
 
+  // Attempt to connect using the password saved on the connection entry, without
+  // prompting. Only if that fails (no stored password, or auth error) do we fall
+  // back to the password dialog.
+  const handleConnectStored = async (id: string) => {
+    setIsLoading(true);
+    setPageError(null);
+    try {
+      const session = await startRdpSession(id);
+      setActiveSession(session);
+    } catch (err) {
+      openConnectDialog(id);
+      setConnectError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const handleConnect = async () => {
     if (!connectTargetId) return;
     setIsLoading(true);
@@ -650,7 +667,7 @@ export const RemoteDesktopPage: React.FC = () => {
       ) : (
         <ConnectionList
           connections={connections}
-          onConnect={openConnectDialog}
+          onConnect={handleConnectStored}
           onEdit={openEditDialog}
           onDelete={setDeleteTargetId}
           onAdd={() => setShowAddDialog(true)}

@@ -11,7 +11,6 @@ use tokio::net::TcpListener;
 use tokio::sync::{mpsc, Mutex};
 use tokio_stream::StreamExt;
 use tracing::info;
-use uuid::Uuid;
 
 /// RDP Frame for WebSocket streaming
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -35,6 +34,17 @@ pub fn encode_frame(frame: &RdpFrame) -> Vec<u8> {
     payload.extend_from_slice(&frame.height.to_le_bytes());
     payload.extend_from_slice(&frame.data);
     payload
+}
+
+/// Extract the RDP session id from a WebSocket request path of the form
+/// `/rdp/{session_id}`. Returns an empty string when the path has no segment.
+///
+/// The session id must match the id used by `register_session` (and embedded in
+/// the `ws://.../rdp/{id}` URL handed to the browser) so the parked frame
+/// receiver can be routed to the connecting client. Using a freshly generated
+/// id here instead silently breaks frame delivery, producing a black canvas.
+pub fn session_id_from_path(path: &str) -> &str {
+    path.trim_end_matches('/').rsplit('/').next().unwrap_or("")
 }
 
 /// WebSocket session for a single client
@@ -81,25 +91,14 @@ impl WebSocketServer {
             loop {
                 match listener.accept().await {
                     Ok((stream, _)) => {
-                        let session_id = Uuid::now_v7().to_string();
                         let broadcast_clone = broadcast_map.clone();
                         let pending_clone = pending_receivers.clone();
-                        let session_id_clone = session_id.clone();
 
                         tokio::spawn(async move {
-                            if let Err(e) = Self::handle_client(
-                                stream,
-                                &session_id_clone,
-                                broadcast_clone,
-                                pending_clone,
-                            )
-                            .await
+                            if let Err(e) =
+                                Self::handle_client(stream, broadcast_clone, pending_clone).await
                             {
-                                tracing::error!(
-                                    "WebSocket error for session {}: {}",
-                                    session_id_clone,
-                                    e
-                                );
+                                tracing::error!("WebSocket client error: {}", e);
                             }
                         });
                     }
@@ -205,33 +204,58 @@ impl WebSocketServer {
 
     async fn handle_client(
         stream: tokio::net::TcpStream,
-        session_id: &str,
         broadcast_map: Arc<Mutex<HashMap<String, mpsc::Sender<RdpFrame>>>>,
         pending_receivers: Arc<Mutex<HashMap<String, mpsc::Receiver<RdpFrame>>>>,
     ) -> Result<()> {
+        use std::sync::Mutex as StdMutex;
         use tokio_tungstenite::tungstenite::handshake::server::{Request, Response};
         use tokio_tungstenite::tungstenite::http::header;
 
+        // Capture the request path during the handshake so we can route frames
+        // for the session id embedded in `/rdp/{session_id}`.
+        let captured_path = Arc::new(StdMutex::new(String::new()));
+        let path_for_cb = captured_path.clone();
+
         #[allow(clippy::result_large_err)]
-        let callback = |_req: &Request, mut response: Response| {
+        let callback = move |req: &Request, mut response: Response| {
+            if let Ok(mut p) = path_for_cb.lock() {
+                *p = req.uri().path().to_string();
+            }
             let headers = response.headers_mut();
             headers.insert(header::SEC_WEBSOCKET_PROTOCOL, "binary".parse().unwrap());
             Ok(response)
         };
 
         let ws_stream = tokio_tungstenite::accept_hdr_async(stream, callback).await?;
+
+        let session_id = {
+            let path = captured_path.lock().unwrap();
+            session_id_from_path(&path).to_string()
+        };
+
+        if session_id.is_empty() {
+            return Err(anyhow::anyhow!(
+                "WebSocket request missing session id in path"
+            ));
+        }
+
+        info!("WebSocket client connected for session: {}", session_id);
+
         let (mut ws_sink, mut ws_source) = futures::StreamExt::split(ws_stream);
 
-        // Take the pre-registered receiver if available; otherwise create a fresh channel.
+        // Only accept connections for a pre-registered session. The id is
+        // client-controlled (URL path), so refuse unknown ids rather than
+        // creating a dangling broadcaster entry for an arbitrary session.
         let mut frame_rx = {
             let mut pending = pending_receivers.lock().await;
-            if let Some(rx) = pending.remove(session_id) {
-                rx
-            } else {
-                let (frame_tx, rx) = mpsc::channel::<RdpFrame>(100);
-                let mut map = broadcast_map.lock().await;
-                map.insert(session_id.to_string(), frame_tx);
-                rx
+            match pending.remove(&session_id) {
+                Some(rx) => rx,
+                None => {
+                    return Err(anyhow::anyhow!(
+                        "WebSocket connection for unregistered session: {}",
+                        session_id
+                    ));
+                }
             }
         };
 
@@ -272,7 +296,7 @@ impl WebSocketServer {
 
         // Remove session from broadcast map on disconnect.
         let mut map = broadcast_map.lock().await;
-        map.remove(session_id);
+        map.remove(&session_id);
 
         Ok(())
     }
@@ -375,5 +399,22 @@ mod tests {
         assert_eq!(u32::from_le_bytes(payload[0..4].try_into().unwrap()), 2);
         assert_eq!(u32::from_le_bytes(payload[4..8].try_into().unwrap()), 1);
         assert_eq!(&payload[8..], &data[..]);
+    }
+
+    #[test]
+    fn test_session_id_from_path() {
+        assert_eq!(
+            session_id_from_path("/rdp/abc-123"),
+            "abc-123",
+            "extracts id from /rdp/{{id}}"
+        );
+        assert_eq!(
+            session_id_from_path("/rdp/abc-123/"),
+            "abc-123",
+            "tolerates trailing slash"
+        );
+        assert_eq!(session_id_from_path("abc-123"), "abc-123");
+        assert_eq!(session_id_from_path("/"), "");
+        assert_eq!(session_id_from_path(""), "");
     }
 }

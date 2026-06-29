@@ -1771,7 +1771,7 @@ export interface RdpSession {
   ssh_enabled: boolean;
 }
 
-export const startRdpSession = (connectionId: string, password: string) =>
+export const startRdpSession = (connectionId: string, password?: string) =>
   invoke<RdpSession>("start_rdp_session", { connectionId, password });
 
 export const stopRdpSession = (sessionId: string) =>
