@@ -1,3 +1,6 @@
+// Copyright (c) 2025 Shaun Arman
+// MIT License - see LICENSE file for details
+
 import React, { useState, useEffect, useRef } from "react";
 import { Routes, Route, NavLink, useLocation } from "react-router-dom";
 import {
@@ -33,6 +36,8 @@ import Resolution from "@/pages/Resolution";
 import RCA from "@/pages/RCA";
 import Postmortem from "@/pages/Postmortem";
 import History from "@/pages/History";
+import RemoteDesktopPage from "@/pages/Remote/RemoteDesktopPage";
+import { RemoteDesktopPage as RemoteDesktopPageAlt } from "@/pages/RemoteDesktop/RemoteDesktopPage";
 import AIProviders from "@/pages/Settings/AIProviders";
 import Ollama from "@/pages/Settings/Ollama";
 import Integrations from "@/pages/Settings/Integrations";
@@ -48,7 +53,6 @@ import { ProxmoxContainersPage } from "@/pages/Proxmox/ContainersPage";
 import { ProxmoxStoragePage } from "@/pages/Proxmox/StoragePage";
 import { ProxmoxNetworkPage } from "@/pages/Proxmox/NetworkPage";
 import { ProxmoxFirewallPage } from "@/pages/Proxmox/FirewallPage";
-import { RemoteDesktopPage } from "@/pages/RemoteDesktop/RemoteDesktopPage";
 import { ProxmoxACLPage } from "@/pages/Proxmox/ACLPage";
 import { ProxmoxBackupPage } from "@/pages/Proxmox/BackupPage";
 import { ProxmoxCephPage } from "@/pages/Proxmox/CephPage";
@@ -317,6 +321,7 @@ export default function App() {
             <Route path="/issue/:id/rca" element={<RCA />} />
             <Route path="/issue/:id/postmortem" element={<Postmortem />} />
             <Route path="/history" element={<History />} />
+            <Route path="/remote" element={<RemoteDesktopPageAlt />} />
             <Route path="/settings/providers" element={<AIProviders />} />
             <Route path="/settings/ollama" element={<Ollama />} />
             <Route path="/settings/shell" element={<ShellExecution />} />
