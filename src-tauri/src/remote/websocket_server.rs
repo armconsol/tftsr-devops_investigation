@@ -300,9 +300,25 @@ impl WebSocketServer {
         };
 
         // Forward frames from RDP to WebSocket client.
+        let session_id_for_logging = session_id.clone();
         let send_task = tokio::spawn(async move {
+            let mut frame_count = 0u64;
             while let Some(frame) = frame_rx.recv().await {
+                frame_count += 1;
                 let payload = encode_frame(&frame);
+
+                // Log first frame and every 100th frame
+                if frame_count == 1 || frame_count.is_multiple_of(100) {
+                    info!(
+                        "WebSocket sending frame #{} for session {}: {}x{}, {} bytes",
+                        frame_count,
+                        session_id_for_logging,
+                        frame.width,
+                        frame.height,
+                        payload.len()
+                    );
+                }
+
                 if let Err(e) = ws_sink
                     .send(tokio_tungstenite::tungstenite::Message::Binary(payload))
                     .await

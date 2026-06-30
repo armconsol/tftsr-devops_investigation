@@ -521,6 +521,18 @@ impl RdpClientSession {
             frame_number,
         };
 
+        // Log first frame and every 100th frame for diagnostics
+        if frame_number == 1 || frame_number % 100 == 0 {
+            info!(
+                "RDP session {} sent frame #{}: {}x{}, {} bytes",
+                self.session_id,
+                frame_number,
+                frame.width,
+                frame.height,
+                frame.data.len()
+            );
+        }
+
         if broadcaster.try_send(frame).is_err() {
             debug!("Frame queue full, dropping frame");
         }

@@ -1783,5 +1783,29 @@ export const getRdpSession = (sessionId: string) =>
 export const resizeRdpSession = (sessionId: string, width: number, height: number) =>
   invoke<void>("resize_rdp_session", { sessionId, width, height });
 
+export interface RdpDiagnostics {
+  session_id: string;
+  connection_state: 'disconnected' | 'connecting' | 'connected' | 'failed';
+  frame_stats: {
+    frames_sent: number;
+    frames_received: number;
+    last_frame_timestamp: number;
+    last_frame_width: number;
+    last_frame_height: number;
+    total_bytes_sent: number;
+    frame_stall_detected: boolean;
+  };
+  websocket_state: {
+    connected: boolean;
+    session_registered: boolean;
+    last_message_timestamp: number;
+  };
+  health: 'healthy' | 'degraded' | 'stalled' | 'failed';
+  timestamp: number;
+}
+
+export const getRdpDiagnostics = (sessionId: string) =>
+  invoke<RdpDiagnostics>("get_rdp_diagnostics", { sessionId });
+
 export const getRemoteConnections = (filter?: RemoteConnectionFilter) =>
   listRemoteConnectionsCmd(filter);

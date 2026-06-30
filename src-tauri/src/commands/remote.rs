@@ -14,6 +14,7 @@ use crate::remote::connection::{
     get_remote_ssh_credentials, list_remote_connections as db_list,
     update_remote_connection as db_update,
 };
+use crate::remote::diagnostics::RdpDiagnostics;
 use crate::remote::rdp::RdpSession;
 use crate::state::AppState;
 
@@ -225,4 +226,21 @@ pub async fn resize_rdp_session(
         .resize_session(&session_id, width, height)
         .await
         .map_err(|e| e.to_string())
+}
+
+/// Get diagnostic information for an RDP session.
+///
+/// Returns comprehensive diagnostics including connection state, frame statistics,
+/// WebSocket state, and overall health assessment. Useful for troubleshooting
+/// blank screens and connection issues.
+#[tauri::command]
+pub fn get_rdp_diagnostics(
+    app_state: State<'_, AppState>,
+    session_id: String,
+) -> Result<RdpDiagnostics, String> {
+    let rdp_manager = app_state.rdp_manager.lock().unwrap();
+
+    rdp_manager
+        .get_diagnostics(&session_id)
+        .ok_or_else(|| format!("No diagnostics available for session {}", session_id))
 }
