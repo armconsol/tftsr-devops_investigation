@@ -21,6 +21,7 @@ on:
   push:
     branches:
       - master
+      - fix/libsodium-amd64-make
     paths:
       - '.docker/**'
   workflow_dispatch:
