@@ -29,8 +29,8 @@ RUN apt-get update -qq \
 # libsodium-sys-stable respects SODIUM_LIB_DIR to use a pre-installed static
 # library instead of downloading and compiling from source at cargo build time.
 # libsodium-dev already provides /usr/lib/x86_64-linux-gnu/libsodium.a.
-ENV SODIUM_LIB_DIR=/usr/lib/x86_64-linux-gnu \
-    SODIUM_INCLUDE_DIR=/usr/include
+ENV SODIUM_LIB_DIR=/usr/lib/x86_64-linux-gnu
+ENV SODIUM_INCLUDE_DIR=/usr/include
 
 # tea (Gitea CLI) can be installed if needed:
 # RUN curl -sL https://dl.gitea.com/tea/master/tea-master-linux-amd64 -o /usr/local/bin/tea \
