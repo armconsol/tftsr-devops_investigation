@@ -46,7 +46,7 @@ jobs:
           git remote add origin http://172.0.0.29:3000/sarman/tftsr-devops_investigation.git
           git fetch --depth=1 origin "$GITHUB_SHA"
           git checkout FETCH_HEAD
-      - name: Build and push linux-amd64 builder
+      - name: Build linux-amd64 builder
         env:
           RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
         run: |
@@ -54,6 +54,22 @@ jobs:
           docker build \
             -t $REGISTRY/$REGISTRY_USER/tftsr-linux-amd64:rust1.89-node22 \
             -f .docker/Dockerfile.linux-amd64 .
+      - name: Validate linux-amd64 image
+        run: |
+          docker run --rm \
+            $REGISTRY/$REGISTRY_USER/tftsr-linux-amd64:rust1.89-node22 \
+            sh -c "
+              set -e
+              make --version > /dev/null && echo '✓ make available'
+              pkg-config --libs libsodium > /dev/null && echo '✓ libsodium pkg-config OK'
+              test -f /usr/lib/x86_64-linux-gnu/libsodium.a && echo '✓ static libsodium present'
+              test -n \"\$SODIUM_LIB_DIR\" && echo \"✓ SODIUM_LIB_DIR=\$SODIUM_LIB_DIR\"
+            "
+      - name: Push linux-amd64 builder
+        env:
+          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        run: |
+          echo "$RELEASE_TOKEN" | docker login $REGISTRY -u $REGISTRY_USER --password-stdin
           docker push $REGISTRY/$REGISTRY_USER/tftsr-linux-amd64:rust1.89-node22
           echo "✓ Pushed $REGISTRY/$REGISTRY_USER/tftsr-linux-amd64:rust1.89-node22"
 

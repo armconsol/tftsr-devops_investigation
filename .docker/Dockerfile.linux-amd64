@@ -15,6 +15,7 @@ RUN apt-get update -qq \
        libayatana-appindicator3-dev \
        librsvg2-dev \
        libsodium-dev \
+       make \
        patchelf \
        pkg-config \
        curl \
@@ -24,6 +25,12 @@ RUN apt-get update -qq \
     && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/*
+
+# libsodium-sys-stable respects SODIUM_LIB_DIR to use a pre-installed static
+# library instead of downloading and compiling from source at cargo build time.
+# libsodium-dev already provides /usr/lib/x86_64-linux-gnu/libsodium.a.
+ENV SODIUM_LIB_DIR=/usr/lib/x86_64-linux-gnu \
+    SODIUM_INCLUDE_DIR=/usr/include
 
 # tea (Gitea CLI) can be installed if needed:
 # RUN curl -sL https://dl.gitea.com/tea/master/tea-master-linux-amd64 -o /usr/local/bin/tea \

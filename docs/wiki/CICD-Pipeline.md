@@ -43,6 +43,8 @@ is configured in the act_runner environment.
 
 **Rebuild triggers:** Rust toolchain version bump, webkit2gtk/gtk major version change, Node.js major version change.
 
+**linux-amd64 libsodium:** `Dockerfile.linux-amd64` sets `SODIUM_LIB_DIR=/usr/lib/x86_64-linux-gnu` so that `libsodium-sys-stable` (pulled in via `tauri-plugin-stronghold`) links against the pre-installed `libsodium-dev` static library instead of downloading and compiling libsodium from source at cargo build time. `make` is also installed as a fallback for any future C build deps.
+
 **How to rebuild images:**
 1. Trigger `build-images.yml` via `workflow_dispatch` in the Gitea Actions UI
 2. Confirm all 3 images appear in the Gitea container registry
@@ -327,6 +329,23 @@ Subsequent runs are fully automated by CI.
 ---
 
 ## Known Issues & Fixes
+
+### linux-amd64: `libsodium-sys-stable` fails with `make install: No such file or directory`
+
+`libsodium-sys-stable` (transitive dep via `tauri-plugin-stronghold`) attempts to download
+and compile libsodium from source when `SODIUM_STATIC=1` is set and `SODIUM_LIB_DIR` is not
+provided. `rust:1.89-slim` does not include `make`, causing the compilation to fail with
+`os error 2` (executable not found).
+
+**Fix**: `Dockerfile.linux-amd64` now installs `make` and sets:
+```dockerfile
+ENV SODIUM_LIB_DIR=/usr/lib/x86_64-linux-gnu \
+    SODIUM_INCLUDE_DIR=/usr/include
+```
+`libsodium-dev` (already in the image) provides `/usr/lib/x86_64-linux-gnu/libsodium.a`.
+`SODIUM_LIB_DIR` tells the crate to use that library directly, bypassing the
+download-and-compile path. The `build-images.yml` linux-amd64 job validates the image
+asserts all four conditions before pushing to the registry.
 
 ### Debian Multiarch Breaks arm64 Cross-Compile (`held broken packages`)
 When using `rust:1.88-slim` (Debian Bookworm) with `dpkg --add-architecture arm64`, apt
