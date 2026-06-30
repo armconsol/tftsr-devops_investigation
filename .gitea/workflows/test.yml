@@ -244,6 +244,11 @@ jobs:
       - name: Install git
         run: apk add --no-cache git
       - name: Checkout
+        # Gitea Actions (act_runner) is GitHub Actions-compatible and exposes the same
+        # environment variables: GITHUB_SHA, GITHUB_REF_NAME, GITHUB_REF. This is
+        # intentional — see https://docs.gitea.com/usage/actions/act-runner.
+        # actions/checkout@v4 is not used because it requires Docker-layer access that
+        # is unreliable on this self-hosted Gitea setup; all other jobs use this pattern.
         run: |
           set -eux
           git init
