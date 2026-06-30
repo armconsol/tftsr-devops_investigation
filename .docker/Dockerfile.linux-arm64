@@ -46,9 +46,9 @@ RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
 # RUN curl -sL https://dl.gitea.com/tea/master/tea-master-linux-arm64 -o /usr/local/bin/tea \
 #     && chmod +x /usr/local/bin/tea
 
-# Step 5: Rust 1.88 with arm64 cross-compilation target
+# Step 5: Rust 1.89 with arm64 cross-compilation target
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y \
-    --default-toolchain 1.88.0 --profile minimal --no-modify-path \
+    --default-toolchain 1.89.0 --profile minimal --no-modify-path \
     && /root/.cargo/bin/rustup target add aarch64-unknown-linux-gnu \
     && /root/.cargo/bin/rustup component add rustfmt clippy
 

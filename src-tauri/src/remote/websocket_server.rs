@@ -2,6 +2,7 @@
 //!
 //! Provides WebSocket server functionality for streaming RDP frames to clients.
 
+use crate::remote::input::RawInputEvent;
 use anyhow::{Context, Result};
 use futures::SinkExt;
 use serde::{Deserialize, Serialize};
@@ -63,6 +64,10 @@ pub struct WebSocketServer {
     /// WebSocket client has not yet connected.  `handle_client` takes
     /// ownership of the receiver and removes it from this map.
     pending_receivers: Arc<Mutex<HashMap<String, mpsc::Receiver<RdpFrame>>>>,
+    /// Per-session sink for decoded inbound input events. `handle_client`
+    /// forwards each parsed `RawInputEvent` here; the RDP manager drains it and
+    /// drives the session's input methods.
+    input_senders: Arc<Mutex<HashMap<String, mpsc::Sender<RawInputEvent>>>>,
 }
 
 impl WebSocketServer {
@@ -72,6 +77,7 @@ impl WebSocketServer {
             sessions: Arc::new(Mutex::new(HashMap::new())),
             frame_broadcasters: Arc::new(Mutex::new(HashMap::new())),
             pending_receivers: Arc::new(Mutex::new(HashMap::new())),
+            input_senders: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -86,6 +92,7 @@ impl WebSocketServer {
 
         let broadcast_map = self.frame_broadcasters.clone();
         let pending_receivers = self.pending_receivers.clone();
+        let input_senders = self.input_senders.clone();
 
         tokio::spawn(async move {
             loop {
@@ -93,10 +100,16 @@ impl WebSocketServer {
                     Ok((stream, _)) => {
                         let broadcast_clone = broadcast_map.clone();
                         let pending_clone = pending_receivers.clone();
+                        let input_clone = input_senders.clone();
 
                         tokio::spawn(async move {
-                            if let Err(e) =
-                                Self::handle_client(stream, broadcast_clone, pending_clone).await
+                            if let Err(e) = Self::handle_client(
+                                stream,
+                                broadcast_clone,
+                                pending_clone,
+                                input_clone,
+                            )
+                            .await
                             {
                                 tracing::error!("WebSocket client error: {}", e);
                             }
@@ -160,6 +173,18 @@ impl WebSocketServer {
         tx
     }
 
+    /// Register the sink that decoded inbound input events for `session_id`
+    /// should be forwarded to. Must be called before the browser connects so
+    /// `handle_client` can route keystrokes and pointer events to the session.
+    pub async fn register_input_sender(
+        &self,
+        session_id: &str,
+        sender: mpsc::Sender<RawInputEvent>,
+    ) {
+        let mut senders = self.input_senders.lock().await;
+        senders.insert(session_id.to_string(), sender);
+    }
+
     /// Send a frame to a specific session
     pub async fn send_frame(&self, session_id: &str, frame: RdpFrame) -> Result<()> {
         let broadcast_map = self.frame_broadcasters.lock().await;
@@ -184,6 +209,10 @@ impl WebSocketServer {
         pending.remove(session_id);
         drop(pending);
 
+        let mut input_senders = self.input_senders.lock().await;
+        input_senders.remove(session_id);
+        drop(input_senders);
+
         let mut sessions = self.sessions.lock().await;
         sessions.remove(session_id);
 
@@ -206,6 +235,7 @@ impl WebSocketServer {
         stream: tokio::net::TcpStream,
         broadcast_map: Arc<Mutex<HashMap<String, mpsc::Sender<RdpFrame>>>>,
         pending_receivers: Arc<Mutex<HashMap<String, mpsc::Receiver<RdpFrame>>>>,
+        input_senders: Arc<Mutex<HashMap<String, mpsc::Sender<RawInputEvent>>>>,
     ) -> Result<()> {
         use std::sync::Mutex as StdMutex;
         use tokio_tungstenite::tungstenite::handshake::server::{Request, Response};
@@ -226,7 +256,17 @@ impl WebSocketServer {
             Ok(response)
         };
 
-        let ws_stream = tokio_tungstenite::accept_hdr_async(stream, callback).await?;
+        // Cap message/frame sizes. Input events are tiny JSON; a 4 KiB ceiling
+        // prevents a malicious local client from forcing large heap allocations
+        // (the tungstenite default allows 64 MiB messages).
+        let ws_config = tokio_tungstenite::tungstenite::protocol::WebSocketConfig {
+            max_message_size: Some(4096),
+            max_frame_size: Some(4096),
+            ..Default::default()
+        };
+        let ws_stream =
+            tokio_tungstenite::accept_hdr_async_with_config(stream, callback, Some(ws_config))
+                .await?;
 
         let session_id = {
             let path = captured_path.lock().unwrap();
@@ -273,15 +313,35 @@ impl WebSocketServer {
             }
         });
 
+        // Look up the input sink for this session (registered by the RDP
+        // manager). Absent for view-only sessions, in which case inbound input
+        // is simply ignored.
+        let input_sender = {
+            let senders = input_senders.lock().await;
+            senders.get(&session_id).cloned()
+        };
+
         // Drain inbound messages (input events) until the client disconnects.
+        // The browser sends input as JSON text frames (see RemoteDesktopPage).
         loop {
             match ws_source.next().await {
                 Some(Ok(tokio_tungstenite::tungstenite::Message::Close(_))) => {
                     tracing::debug!("Client sent close message");
                     break;
                 }
+                Some(Ok(tokio_tungstenite::tungstenite::Message::Text(text))) => {
+                    if let (Some(sender), Some(event)) =
+                        (input_sender.as_ref(), RawInputEvent::from_json(&text))
+                    {
+                        // Drop the event rather than block the read loop if the
+                        // input channel is saturated.
+                        let _ = sender.try_send(event);
+                    } else {
+                        tracing::trace!("Ignoring unparseable input frame");
+                    }
+                }
                 Some(Ok(tokio_tungstenite::tungstenite::Message::Binary(data))) => {
-                    tracing::debug!("Received input from client: {} bytes", data.len());
+                    tracing::debug!("Ignoring {} bytes of binary input", data.len());
                 }
                 Some(Ok(_)) => {}
                 Some(Err(e)) => {

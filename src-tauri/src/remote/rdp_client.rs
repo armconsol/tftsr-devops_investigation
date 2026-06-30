@@ -3,6 +3,7 @@
 //! Full RDP protocol connection with TLS, SSH tunnel support, frame capture,
 //! input handling, and dynamic resolution via Display Control Virtual Channel.
 
+use super::input::{clamp_coord, scancode_for_code, RawInputEvent};
 use super::ssh_tunnel::{SshTunnel, SshTunnelConfig};
 use super::websocket_server::{RdpFrame, WebSocketServer};
 use anyhow::{Context, Result};
@@ -12,7 +13,7 @@ use ironrdp::pdu::rdp::capability_sets::MajorPlatformType;
 use ironrdp::pdu::rdp::client_info::PerformanceFlags;
 use ironrdp::session::image::DecodedImage;
 use ironrdp::session::{ActiveStage, ActiveStageOutput};
-use ironrdp_input::{MouseButton, MousePosition, Scancode};
+use ironrdp_input::{MouseButton, MousePosition, Scancode, WheelRotations};
 use ironrdp_pdu::input::fast_path::FastPathInputEvent;
 use serde::{Deserialize, Serialize};
 use smallvec::SmallVec;
@@ -78,6 +79,21 @@ pub struct ResizeRequest {
 
 type FrameBroadcaster = mpsc::Sender<RdpFrame>;
 
+/// Install the process-wide rustls `CryptoProvider` exactly once.
+///
+/// rustls 0.23 refuses to pick a provider automatically when more than one
+/// (`ring` and `aws-lc-rs`) is present in the dependency tree, panicking inside
+/// the TLS handshake. That panic kills the RDP connect task and leaves the
+/// canvas black. We pin `aws-lc-rs` (the feature this crate enables) and ignore
+/// the error returned when a provider is already installed.
+fn ensure_crypto_provider() {
+    use std::sync::Once;
+    static INIT: Once = Once::new();
+    INIT.call_once(|| {
+        let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
+    });
+}
+
 // ─── RdpClientSession ─────────────────────────────────────────────────────────
 
 pub struct RdpClientSession {
@@ -116,10 +132,29 @@ impl RdpClientSession {
 
         let ws = websocket_server.clone();
         let sid = session_id.clone();
+        // Forward captured frames to the WebSocket layer.
+        //
+        // This intentionally polls with `try_recv` rather than awaiting
+        // `recv().await`. The RDP session loop in `connect()` performs *blocking*
+        // socket reads directly on its tokio worker and never yields while a
+        // burst of frames is decoded. A channel `recv()` wakeup raised from that
+        // blocked worker is enqueued on its local run-queue, which it cannot
+        // drain until the blocking read returns (up to the socket read timeout),
+        // and work-stealing does not reliably pick it up in the meantime — so the
+        // forwarder would stall and the client would only ever see a black
+        // canvas. Polling decouples frame delivery from that starved waker.
         tokio::spawn(async move {
-            while let Some(frame) = frame_rx.recv().await {
-                if let Err(e) = ws.send_frame(&sid, frame).await {
-                    warn!("Failed to send frame: {}", e);
+            loop {
+                match frame_rx.try_recv() {
+                    Ok(frame) => {
+                        if let Err(e) = ws.send_frame(&sid, frame).await {
+                            warn!("Failed to send frame: {}", e);
+                        }
+                    }
+                    Err(mpsc::error::TryRecvError::Empty) => {
+                        tokio::time::sleep(Duration::from_millis(5)).await;
+                    }
+                    Err(mpsc::error::TryRecvError::Disconnected) => break,
                 }
             }
         });
@@ -147,6 +182,7 @@ impl RdpClientSession {
     // ── Entry point ───────────────────────────────────────────────────────────
 
     pub async fn connect(&self) -> Result<()> {
+        ensure_crypto_provider();
         let addr = format!("{}:{}", self.config.host, self.config.port);
         info!("Connecting to RDP server at {}", addr);
 
@@ -268,11 +304,22 @@ impl RdpClientSession {
         ConnectionResult,
         ironrdp_blocking::Framed<Box<dyn RdpStream>>,
     )> {
-        // Phase 1 — open raw TCP and run connect_begin (pre-upgrade steps)
+        // Phase 1 — open raw TCP and run connect_begin (pre-upgrade steps).
+        //
+        // A long read timeout is required for the *blocking* negotiation and
+        // CredSSP/TLS handshake reads — `connect_begin`/`connect_finalize` do not
+        // tolerate spurious `WouldBlock`/`TimedOut` errors the way the active
+        // loop does. Once the session is established we shorten it (see below) so
+        // the input/resize loop stays responsive while no graphics are arriving.
         let std_tcp = TcpStream::connect(addr).context(format!("TCP connect to {}", addr))?;
         std_tcp
             .set_read_timeout(Some(Duration::from_secs(30)))
             .context("set_read_timeout")?;
+
+        // Keep a handle to the raw socket so we can retune its read timeout after
+        // the handshake completes (the socket is otherwise owned by the TLS
+        // stream inside `framed`).
+        let timeout_socket = std_tcp.try_clone().context("clone TcpStream")?;
 
         let client_addr = std_tcp.local_addr().context("get local addr")?;
         let mut connector =
@@ -282,64 +329,40 @@ impl RdpClientSession {
         let boxed_pre: Box<dyn RdpStream> = Box::new(tcp_clone);
         let mut pre_framed = ironrdp_blocking::Framed::new(boxed_pre);
 
-        ironrdp_blocking::connect_begin(&mut pre_framed, &mut connector)
+        // `connect_begin` drives the X.224/negotiation exchange and only returns
+        // once the server has requested the security (TLS) upgrade, handing back
+        // a `ShouldUpgrade` token. We MUST thread that token into
+        // `mark_as_upgraded` after the TLS handshake — calling
+        // `mark_security_upgrade_as_done()` ourselves and then
+        // `skip_connect_begin()` trips an assertion (the upgrade already looks
+        // done) and panics the connect task, leaving a black canvas.
+        let should_upgrade = ironrdp_blocking::connect_begin(&mut pre_framed, &mut connector)
             .context("connect_begin")?;
 
-        // Phase 2 — TLS upgrade if the server asked for it
-        if connector.should_perform_security_upgrade() {
-            info!("Upgrading RDP transport to TLS for {}", self.config.host);
+        // The pre-upgrade framed reader owns a clone of the socket; drop it so
+        // the TLS stream is the sole owner before we take `std_tcp` by value.
+        drop(pre_framed);
 
-            // Convert to tokio stream for the async TLS handshake
-            let tokio_tcp =
-                tokio::net::TcpStream::from_std(std_tcp).context("std → tokio TcpStream")?;
+        // Phase 2 — TLS upgrade (RDP enhanced security is mandatory on modern
+        // servers, and `connect_begin` only returns once it is requested).
+        //
+        // IronRDP's blocking connector wants a *synchronous* Read+Write stream.
+        // We therefore perform the rustls handshake on the blocking socket
+        // directly. The previous implementation upgraded with the async
+        // `ironrdp_tls::upgrade` and wrapped the result in a stream that called
+        // `Handle::block_on` for every read/write — but that runs inside the
+        // tokio worker driving `connect()`, so it panicked ("Cannot start a
+        // runtime from within a runtime") and left the canvas black.
+        info!("Upgrading RDP transport to TLS for {}", self.config.host);
 
-            match ironrdp_tls::upgrade(tokio_tcp, &self.config.host).await {
-                Ok((tls_stream, cert)) => {
-                    let server_pub_key = ironrdp_tls::extract_tls_server_public_key(&cert)
-                        .map(|k| k.to_vec())
-                        .unwrap_or_default();
-                    info!("TLS handshake OK, public key {} B", server_pub_key.len());
+        let (tls_stream, server_pub_key) = blocking_tls_upgrade(std_tcp, &self.config.host)?;
+        info!("TLS handshake OK, public key {} B", server_pub_key.len());
 
-                    connector.mark_security_upgrade_as_done();
-                    let upgraded = ironrdp_blocking::mark_as_upgraded(
-                        ironrdp_blocking::skip_connect_begin(&mut connector),
-                        &mut connector,
-                    );
+        let upgraded = ironrdp_blocking::mark_as_upgraded(should_upgrade, &mut connector);
 
-                    let sync_tls = SyncTlsStream::new(tls_stream);
-                    let boxed: Box<dyn RdpStream> = Box::new(sync_tls);
-                    let mut framed = ironrdp_blocking::Framed::new(boxed);
+        let boxed: Box<dyn RdpStream> = Box::new(tls_stream);
+        let mut framed = ironrdp_blocking::Framed::new(boxed);
 
-                    let conn = {
-                        let mut nc = SimpleNetworkClient;
-                        ironrdp_blocking::connect_finalize(
-                            upgraded,
-                            connector,
-                            &mut framed,
-                            &mut nc,
-                            self.config.host.clone().into(),
-                            server_pub_key,
-                            None,
-                        )
-                        .context("connect_finalize (TLS)")?
-                    };
-                    return Ok((conn, framed));
-                }
-                Err(e) => {
-                    warn!("TLS handshake failed ({}); falling back to plain", e);
-                    // can't reuse the moved tokio_tcp — fall through to plain below
-                }
-            }
-        }
-
-        // Phase 3 — plain (no TLS, or TLS failed)
-        connector.mark_security_upgrade_as_done();
-        let upgraded = ironrdp_blocking::mark_as_upgraded(
-            ironrdp_blocking::skip_connect_begin(&mut connector),
-            &mut connector,
-        );
-        let stream = pre_framed.into_inner_no_leftover();
-        let mut framed = ironrdp_blocking::Framed::new(stream);
         let conn = {
             let mut nc = SimpleNetworkClient;
             ironrdp_blocking::connect_finalize(
@@ -348,11 +371,21 @@ impl RdpClientSession {
                 &mut framed,
                 &mut nc,
                 self.config.host.clone().into(),
-                vec![],
+                server_pub_key,
                 None,
             )
-            .context("connect_finalize (plain)")?
+            .context("connect_finalize (TLS)")?
         };
+
+        // Handshake done: shorten the read timeout so the active loop wakes
+        // frequently to drain queued input/resize events even when the server is
+        // sending no graphics updates (otherwise input could stall for up to the
+        // full timeout). Buffered partial PDUs are preserved across these short
+        // timeouts by `ironrdp_blocking::Framed`, so this is safe.
+        if let Err(e) = timeout_socket.set_read_timeout(Some(Duration::from_millis(50))) {
+            warn!("Could not shorten read timeout for input loop: {}", e);
+        }
+
         Ok((conn, framed))
     }
 
@@ -397,12 +430,9 @@ impl RdpClientSession {
         let boxed: Box<dyn RdpStream> = Box::new(ssh_stream);
         let mut framed = ironrdp_blocking::Framed::new(boxed);
 
-        ironrdp_blocking::connect_begin(&mut framed, &mut connector).context("connect_begin")?;
-        connector.mark_security_upgrade_as_done();
-        let upgraded = ironrdp_blocking::mark_as_upgraded(
-            ironrdp_blocking::skip_connect_begin(&mut connector),
-            &mut connector,
-        );
+        let should_upgrade = ironrdp_blocking::connect_begin(&mut framed, &mut connector)
+            .context("connect_begin")?;
+        let upgraded = ironrdp_blocking::mark_as_upgraded(should_upgrade, &mut connector);
 
         let conn = {
             let mut nc = SimpleNetworkClient;
@@ -445,6 +475,8 @@ impl RdpClientSession {
             client_build: 0,
             client_name: "tftsr-rdp-client".to_owned(),
             client_dir: "C:\\Windows\\System32\\mstscax.dll".to_owned(),
+            alternate_shell: String::new(),
+            work_dir: String::new(),
             platform: MajorPlatformType::UNIX,
             enable_server_pointer: true,
             request_data: None,
@@ -455,6 +487,8 @@ impl RdpClientSession {
             desktop_scale_factor: 0,
             hardware_id: None,
             license_cache: None,
+            compression_type: None,
+            multitransport_flags: None,
             timezone_info: ironrdp_pdu::rdp::client_info::TimezoneInfo::default(),
         }
     }
@@ -495,8 +529,39 @@ impl RdpClientSession {
 
     // ── Input ─────────────────────────────────────────────────────────────────
 
+    /// Translate a decoded browser input event and queue it for the session
+    /// loop. This is the single entry point used by the WebSocket input bridge.
+    pub async fn handle_input(&self, event: RawInputEvent) -> Result<()> {
+        match event {
+            RawInputEvent::Keyboard { code, pressed } => {
+                if let Some(scancode) = scancode_for_code(&code) {
+                    self.send_keyboard_input(scancode, pressed).await?;
+                } else {
+                    debug!("Ignoring unmapped key code: {}", code);
+                }
+            }
+            RawInputEvent::MouseMove { x, y } => {
+                self.send_mouse_move(clamp_coord(x), clamp_coord(y)).await?;
+            }
+            RawInputEvent::Mouse {
+                x,
+                y,
+                button,
+                pressed,
+            } => {
+                self.send_mouse_input(clamp_coord(x), clamp_coord(y), button, pressed)
+                    .await?;
+            }
+            RawInputEvent::Wheel { x, y, delta } => {
+                self.send_mouse_wheel(clamp_coord(x), clamp_coord(y), delta)
+                    .await?;
+            }
+        }
+        Ok(())
+    }
+
     pub async fn send_keyboard_input(&self, keycode: u16, pressed: bool) -> Result<()> {
-        debug!("Keyboard: keycode={}, pressed={}", keycode, pressed);
+        debug!("Keyboard: keycode={:#06x}, pressed={}", keycode, pressed);
         let scancode = Scancode::from_u16(keycode);
         let op = if pressed {
             ironrdp_input::Operation::KeyPressed(scancode)
@@ -510,29 +575,58 @@ impl RdpClientSession {
         Ok(())
     }
 
-    pub async fn send_mouse_input(&self, x: i16, y: i16, button: u16, pressed: bool) -> Result<()> {
+    /// Move the pointer without changing button state.
+    pub async fn send_mouse_move(&self, x: u16, y: u16) -> Result<()> {
+        let op = ironrdp_input::Operation::MouseMove(MousePosition { x, y });
+        let events = self.input_state.lock().unwrap().apply(std::iter::once(op));
+        if !events.is_empty() {
+            self.input_tx.send(events).await.ok();
+        }
+        Ok(())
+    }
+
+    pub async fn send_mouse_input(&self, x: u16, y: u16, button: u16, pressed: bool) -> Result<()> {
         debug!(
             "Mouse: x={}, y={}, button={}, pressed={}",
             x, y, button, pressed
         );
-        let mouse_button = MouseButton::from_native_button(button).unwrap_or(MouseButton::Left);
-        let position = MousePosition {
-            x: x as u16,
-            y: y as u16,
-        };
-        let op = if pressed {
+        let mouse_button = MouseButton::from_web_button(button as u8).unwrap_or(MouseButton::Left);
+        // Position first so the button transition is applied at the cursor's
+        // current location, then the press/release itself.
+        let move_op = ironrdp_input::Operation::MouseMove(MousePosition { x, y });
+        let button_op = if pressed {
             ironrdp_input::Operation::MouseButtonPressed(mouse_button)
         } else {
             ironrdp_input::Operation::MouseButtonReleased(mouse_button)
         };
-        let mut events = self.input_state.lock().unwrap().apply(std::iter::once(op));
-        let move_op = ironrdp_input::Operation::MouseMove(position);
-        events.extend(
-            self.input_state
-                .lock()
-                .unwrap()
-                .apply(std::iter::once(move_op)),
-        );
+        let events = {
+            let mut db = self.input_state.lock().unwrap();
+            db.apply([move_op, button_op])
+        };
+        if !events.is_empty() {
+            self.input_tx.send(events).await.ok();
+        }
+        Ok(())
+    }
+
+    /// Vertical mouse wheel. `delta` follows the DOM sign convention
+    /// (positive = scroll towards the user); RDP expects the opposite sign.
+    pub async fn send_mouse_wheel(&self, x: u16, y: u16, delta: i32) -> Result<()> {
+        // RDP wheel rotation sign is opposite the DOM deltaY. Use saturating_neg
+        // so an attacker-controlled delta of i32::MIN cannot trigger an overflow
+        // panic in debug builds.
+        let rotation_units = delta
+            .saturating_neg()
+            .clamp(i16::MIN as i32, i16::MAX as i32) as i16;
+        let move_op = ironrdp_input::Operation::MouseMove(MousePosition { x, y });
+        let wheel_op = ironrdp_input::Operation::WheelRotations(WheelRotations {
+            is_vertical: true,
+            rotation_units,
+        });
+        let events = {
+            let mut db = self.input_state.lock().unwrap();
+            db.apply([move_op, wheel_op])
+        };
         if !events.is_empty() {
             self.input_tx.send(events).await.ok();
         }
@@ -552,43 +646,112 @@ impl RdpClientSession {
     }
 }
 
-// ─── SyncTlsStream ────────────────────────────────────────────────────────────
+// ─── Blocking TLS upgrade ─────────────────────────────────────────────────────
 
-/// Wraps an async TLS stream and presents it as sync `Read + Write`
-/// by driving the current Tokio runtime handle with `block_on`.
-struct SyncTlsStream {
-    inner: tokio_rustls::client::TlsStream<tokio::net::TcpStream>,
-    rt: tokio::runtime::Handle,
-}
+/// Perform a synchronous rustls TLS handshake over a blocking `TcpStream` and
+/// return the resulting blocking stream plus the server's TLS public key.
+///
+/// IronRDP's `ironrdp_blocking` connector reads/writes synchronously, so the
+/// transport must be a real blocking stream — not an async stream pumped via
+/// `block_on` (which panics inside the tokio worker running the session).
+///
+/// The certificate is intentionally **not** validated: RDP servers routinely
+/// present self-signed certificates, and IronRDP binds the channel to the
+/// server's public key during CredSSP instead of relying on PKI trust.
+fn blocking_tls_upgrade(
+    tcp: TcpStream,
+    server_name: &str,
+) -> Result<(
+    rustls::StreamOwned<rustls::ClientConnection, TcpStream>,
+    Vec<u8>,
+)> {
+    let mut config = rustls::ClientConfig::builder()
+        .dangerous()
+        .with_custom_certificate_verifier(Arc::new(NoCertificateVerification))
+        .with_no_client_auth();
 
-impl SyncTlsStream {
-    fn new(inner: tokio_rustls::client::TlsStream<tokio::net::TcpStream>) -> Self {
-        Self {
-            inner,
-            rt: tokio::runtime::Handle::current(),
+    // CredSSP does not support TLS session resumption.
+    config.resumption = rustls::client::Resumption::disabled();
+
+    let domain = rustls::pki_types::ServerName::try_from(server_name.to_owned())
+        .map_err(|e| anyhow::anyhow!("invalid TLS server name '{server_name}': {e}"))?;
+
+    let mut conn = rustls::ClientConnection::new(Arc::new(config), domain)
+        .context("create rustls client connection")?;
+
+    let mut tcp = tcp;
+    // Drive the handshake to completion synchronously so peer certificates are
+    // available before we hand the stream to IronRDP.
+    conn.complete_io(&mut tcp).context("TLS handshake")?;
+
+    let server_pub_key = {
+        use x509_cert::der::Decode as _;
+        match conn.peer_certificates().and_then(|certs| certs.first()) {
+            Some(cert_der) => {
+                let cert =
+                    x509_cert::Certificate::from_der(cert_der).context("parse peer certificate")?;
+                ironrdp_tls::extract_tls_server_public_key(&cert)
+                    .map(|k| k.to_vec())
+                    .unwrap_or_default()
+            }
+            None => Vec::new(),
         }
-    }
+    };
+
+    Ok((rustls::StreamOwned::new(conn, tcp), server_pub_key))
 }
 
-impl Read for SyncTlsStream {
-    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        use tokio::io::AsyncReadExt;
-        let inner = &mut self.inner;
-        self.rt.block_on(async { inner.read(buf).await })
-    }
-}
+/// rustls verifier that accepts any server certificate (see `blocking_tls_upgrade`).
+#[derive(Debug)]
+struct NoCertificateVerification;
 
-impl Write for SyncTlsStream {
-    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        use tokio::io::AsyncWriteExt;
-        let inner = &mut self.inner;
-        self.rt.block_on(async { inner.write(buf).await })
+impl rustls::client::danger::ServerCertVerifier for NoCertificateVerification {
+    fn verify_server_cert(
+        &self,
+        _end_entity: &rustls::pki_types::CertificateDer<'_>,
+        _intermediates: &[rustls::pki_types::CertificateDer<'_>],
+        _server_name: &rustls::pki_types::ServerName<'_>,
+        _ocsp_response: &[u8],
+        _now: rustls::pki_types::UnixTime,
+    ) -> std::result::Result<rustls::client::danger::ServerCertVerified, rustls::Error> {
+        Ok(rustls::client::danger::ServerCertVerified::assertion())
     }
 
-    fn flush(&mut self) -> std::io::Result<()> {
-        use tokio::io::AsyncWriteExt;
-        let inner = &mut self.inner;
-        self.rt.block_on(async { inner.flush().await })
+    fn verify_tls12_signature(
+        &self,
+        _message: &[u8],
+        _cert: &rustls::pki_types::CertificateDer<'_>,
+        _dss: &rustls::DigitallySignedStruct,
+    ) -> std::result::Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
+        Ok(rustls::client::danger::HandshakeSignatureValid::assertion())
+    }
+
+    fn verify_tls13_signature(
+        &self,
+        _message: &[u8],
+        _cert: &rustls::pki_types::CertificateDer<'_>,
+        _dss: &rustls::DigitallySignedStruct,
+    ) -> std::result::Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
+        Ok(rustls::client::danger::HandshakeSignatureValid::assertion())
+    }
+
+    fn supported_verify_schemes(&self) -> Vec<rustls::SignatureScheme> {
+        use rustls::SignatureScheme;
+        vec![
+            SignatureScheme::RSA_PKCS1_SHA1,
+            SignatureScheme::ECDSA_SHA1_Legacy,
+            SignatureScheme::RSA_PKCS1_SHA256,
+            SignatureScheme::ECDSA_NISTP256_SHA256,
+            SignatureScheme::RSA_PKCS1_SHA384,
+            SignatureScheme::ECDSA_NISTP384_SHA384,
+            SignatureScheme::RSA_PKCS1_SHA512,
+            SignatureScheme::ECDSA_NISTP521_SHA512,
+            SignatureScheme::RSA_PSS_SHA256,
+            SignatureScheme::RSA_PSS_SHA384,
+            SignatureScheme::RSA_PSS_SHA512,
+            SignatureScheme::ED25519,
+            SignatureScheme::ED448,
+        ]
     }
 }
 

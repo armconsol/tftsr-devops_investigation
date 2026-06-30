@@ -4,6 +4,7 @@
 //! with support for SSH tunneling.
 
 pub mod connection;
+pub mod input;
 pub mod rdp;
 pub mod rdp_client;
 pub mod ssh_tunnel;
