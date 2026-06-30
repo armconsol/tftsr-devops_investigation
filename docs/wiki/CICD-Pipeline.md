@@ -35,9 +35,9 @@ Rust toolchain, cross-compilers) so that CI jobs skip package installation entir
 
 | Image | Used by jobs | Contents |
 |-------|-------------|----------|
-| `172.0.0.29:3000/sarman/tftsr-linux-amd64:rust1.88-node22` | `rust-fmt-check`, `rust-clippy`, `rust-tests`, `build-linux-amd64` | Rust 1.88 + rustfmt + clippy + Tauri amd64 libs + Node.js 22 |
-| `172.0.0.29:3000/sarman/tftsr-windows-cross:rust1.88-node22` | `build-windows-amd64` | Rust 1.88 + mingw-w64 + NSIS + Node.js 22 |
-| `172.0.0.29:3000/sarman/tftsr-linux-arm64:rust1.88-node22` | `build-linux-arm64` | Rust 1.88 + aarch64 cross-toolchain + arm64 multiarch libs + Node.js 22 |
+| `172.0.0.29:3000/sarman/tftsr-linux-amd64:rust1.89-node22` | `rust-fmt-check`, `rust-clippy`, `rust-tests`, `build-linux-amd64` | Rust 1.88 + rustfmt + clippy + Tauri amd64 libs + Node.js 22 |
+| `172.0.0.29:3000/sarman/tftsr-windows-cross:rust1.89-node22` | `build-windows-amd64` | Rust 1.88 + mingw-w64 + NSIS + Node.js 22 |
+| `172.0.0.29:3000/sarman/tftsr-linux-arm64:rust1.89-node22` | `build-linux-arm64` | Rust 1.88 + aarch64 cross-toolchain + arm64 multiarch libs + Node.js 22 |
 
 **Rebuild triggers:** Rust toolchain version bump, webkit2gtk/gtk major version change, Node.js major version change.
 
@@ -45,6 +45,34 @@ Rust toolchain, cross-compilers) so that CI jobs skip package installation entir
 1. Trigger `build-images.yml` via `workflow_dispatch` in the Gitea Actions UI
 2. Confirm all 3 images appear in the Gitea package/container registry at `172.0.0.29:3000`
 3. Only then merge workflow changes that depend on the new image contents
+
+### Bumping the Rust toolchain version
+
+When upgrading the Rust version used in CI (e.g. 1.89 → 1.90), all of the following must
+be updated in a single PR and the images **must be built before** the PR is merged:
+
+1. `.docker/Dockerfile.linux-amd64` — `FROM rust:<VER>-slim`
+2. `.docker/Dockerfile.windows-cross` — `FROM rust:<VER>-slim`
+3. `.docker/Dockerfile.linux-arm64` — `--default-toolchain <VER>.0`
+4. `.gitea/workflows/build-images.yml` — `docker build -t` and `docker push` tag lines
+5. `.gitea/workflows/release-beta.yml` — `container: image:` lines
+6. `.gitea/workflows/auto-tag.yml` — `container: image:` lines
+
+**Before merging the PR:**
+- Manually dispatch `build-images.yml` on the `beta` branch via the Gitea Actions UI:
+  `http://172.0.0.29:3000/sarman/tftsr-devops_investigation/actions/workflows/build-images.yml`
+  → "Run workflow" → select branch `beta` → click Run.
+- Wait for the run to finish and confirm the three new images appear in the registry.
+- Only then merge the PR.
+
+> **Why manual dispatch?** `build-images.yml` only auto-triggers on `master` pushes (stable
+> releases). `beta` is the primary development branch and uses `workflow_dispatch` for
+> on-demand image rebuilds. Gitea 1.22 does not expose the workflow dispatch API endpoint,
+> so this step must be performed through the web UI.
+
+`scripts/validate-ci-images.sh` (run in CI by `test.yml`) catches version drift between
+Dockerfiles and workflow files — but it cannot verify that the images have actually been
+pushed to the registry.
 
 **Server prerequisite — insecure registry** (one-time, on gitea.tftsr.com):
 ```sh
@@ -106,7 +134,7 @@ Pipeline jobs (run in parallel):
 ```
 
 **Docker images used:**
-- `172.0.0.29:3000/sarman/tftsr-linux-amd64:rust1.88-node22` — Rust steps (replaces `rust:1.88-slim`)
+- `172.0.0.29:3000/sarman/tftsr-linux-amd64:rust1.89-node22` — Rust steps (replaces `rust:1.88-slim`)
 - `node:22-alpine` — Frontend steps
 
 ---
@@ -120,15 +148,15 @@ Release jobs are executed in the same workflow and depend on `autotag` completio
 
 ```
 Jobs (run in parallel after autotag):
-  build-linux-amd64   → image: tftsr-linux-amd64:rust1.88-node22
+  build-linux-amd64   → image: tftsr-linux-amd64:rust1.89-node22
                          → cargo tauri build (x86_64-unknown-linux-gnu)
                          → {.deb, .rpm, .AppImage} uploaded to Gitea release
                          → fails fast if no Linux artifacts are produced
-  build-windows-amd64 → image: tftsr-windows-cross:rust1.88-node22
+  build-windows-amd64 → image: tftsr-windows-cross:rust1.89-node22
                          → cargo tauri build (x86_64-pc-windows-gnu) via mingw-w64
                          → {.exe, .msi} uploaded to Gitea release
                          → fails fast if no Windows artifacts are produced
-  build-linux-arm64   → image: tftsr-linux-arm64:rust1.88-node22 (ubuntu:22.04-based)
+  build-linux-arm64   → image: tftsr-linux-arm64:rust1.89-node22 (ubuntu:22.04-based)
                          → cargo tauri build (aarch64-unknown-linux-gnu)
                          → {.deb, .rpm, .AppImage} uploaded to Gitea release
                          → fails fast if no Linux artifacts are produced
