@@ -440,6 +440,20 @@ function SessionView({ session, onDisconnect }: SessionViewProps) {
     }
   };
 
+  // Map a pointer event from on-screen canvas pixels to the RDP framebuffer's
+  // native resolution. The canvas is stretched by CSS (`w-full h-full`) while its
+  // backing store stays at the RDP width/height, so coordinates must be scaled or
+  // clicks land in the wrong place.
+  const toRemoteCoords = (e: React.MouseEvent) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return null;
+    const r = canvas.getBoundingClientRect();
+    if (r.width === 0 || r.height === 0) return null;
+    const x = Math.round((e.clientX - r.left) * (canvas.width / r.width));
+    const y = Math.round((e.clientY - r.top) * (canvas.height / r.height));
+    return { x, y };
+  };
+
   const statusColor = { connected: '#22c55e', connecting: '#eab308', error: '#ef4444', disconnected: '#6b7280' }[wsStatus];
   const statusLabel = { connected: 'Connected', connecting: 'Connecting…', error: 'Error', disconnected: 'Disconnected' }[wsStatus];
 
@@ -466,22 +480,25 @@ function SessionView({ session, onDisconnect }: SessionViewProps) {
           className="w-full h-full"
           tabIndex={0}
           onMouseDown={(e) => {
-            if (!canvasRef.current) return;
-            const r = canvasRef.current.getBoundingClientRect();
-            sendInput({ type: 'mouse', x: Math.floor(e.clientX - r.left), y: Math.floor(e.clientY - r.top), button: e.button, pressed: true });
+            canvasRef.current?.focus();
+            const c = toRemoteCoords(e);
+            if (c) sendInput({ type: 'mouse', x: c.x, y: c.y, button: e.button, pressed: true });
           }}
           onMouseUp={(e) => {
-            if (!canvasRef.current) return;
-            const r = canvasRef.current.getBoundingClientRect();
-            sendInput({ type: 'mouse', x: Math.floor(e.clientX - r.left), y: Math.floor(e.clientY - r.top), button: e.button, pressed: false });
+            const c = toRemoteCoords(e);
+            if (c) sendInput({ type: 'mouse', x: c.x, y: c.y, button: e.button, pressed: false });
           }}
           onMouseMove={(e) => {
-            if (!e.buttons || !canvasRef.current) return;
-            const r = canvasRef.current.getBoundingClientRect();
-            sendInput({ type: 'mouse_move', x: Math.floor(e.clientX - r.left), y: Math.floor(e.clientY - r.top) });
+            const c = toRemoteCoords(e);
+            if (c) sendInput({ type: 'mouse_move', x: c.x, y: c.y });
           }}
+          onWheel={(e) => {
+            const c = toRemoteCoords(e);
+            if (c) sendInput({ type: 'wheel', x: c.x, y: c.y, delta: e.deltaY });
+          }}
+          onContextMenu={(e) => e.preventDefault()}
           onKeyDown={(e) => { e.preventDefault(); sendInput({ type: 'keyboard', code: e.code, pressed: true }); }}
-          onKeyUp={(e) => { sendInput({ type: 'keyboard', code: e.code, pressed: false }); }}
+          onKeyUp={(e) => { e.preventDefault(); sendInput({ type: 'keyboard', code: e.code, pressed: false }); }}
         />
       </div>
     </div>

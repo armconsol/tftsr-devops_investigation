@@ -7,9 +7,11 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use tracing::{debug, error, info};
+use tokio::sync::mpsc;
+use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
+use super::input::RawInputEvent;
 use super::rdp_client::{RdpConfig, RdpConnectionHandler, ResizeRequest};
 use super::ssh_tunnel::SshTunnelConfig;
 use super::websocket_server::{RdpFrame, WebSocketServer};
@@ -182,10 +184,28 @@ impl RdpManager {
 
         // Build the RdpClientSession bound to the canonical session id so its
         // frame-forwarding task sends frames keyed by that id.
-        let rdp_session = self
-            .rdp_handler
-            .create_session_with_id(session_id.to_string(), rdp_config.clone())?;
+        let rdp_session = Arc::new(
+            self.rdp_handler
+                .create_session_with_id(session_id.to_string(), rdp_config.clone())?,
+        );
         let resize_tx = rdp_session.resize_tx.clone();
+
+        // Wire inbound input: register a per-session channel with the WebSocket
+        // server and spawn a task that drives the session's input methods. This
+        // task runs on a normal async worker (its wakeups do not depend on the
+        // blocking connect loop), so awaiting `recv()` here is correct.
+        let (input_tx, mut input_rx) = mpsc::channel::<RawInputEvent>(256);
+        self.websocket_server
+            .register_input_sender(session_id, input_tx)
+            .await;
+        let input_session = rdp_session.clone();
+        tokio::spawn(async move {
+            while let Some(event) = input_rx.recv().await {
+                if let Err(e) = input_session.handle_input(event).await {
+                    warn!("Failed to apply input event: {}", e);
+                }
+            }
+        });
 
         // Store resize_tx + websocket_port in the internal session for later use.
         {
@@ -203,8 +223,9 @@ impl RdpManager {
         // dead stream as active.
         let session_id_clone = session_id.to_string();
         let sessions_for_task = self.sessions.clone();
+        let connect_session = rdp_session.clone();
         tokio::spawn(async move {
-            match rdp_session.connect().await {
+            match connect_session.connect().await {
                 Ok(_) => info!("RDP session ended cleanly: {}", session_id_clone),
                 Err(e) => error!("RDP session error: {}", e),
             }
