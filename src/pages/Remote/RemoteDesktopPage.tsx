@@ -432,7 +432,7 @@ function SessionView({ session, onDisconnect }: SessionViewProps) {
     };
 
     return () => { ws.close(); };
-  }, [session.websocket_url, sendResize]);
+  }, [session.websocket_url]);
 
   const sendInput = (payload: Record<string, unknown>) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
