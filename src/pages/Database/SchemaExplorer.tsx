@@ -1,6 +1,7 @@
 // Schema Explorer Page with Tree View
 
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui';
 import { RefreshCw, Table, Eye } from 'lucide-react';
 import { SchemaTree, type TreeNode } from '@/components/Database/SchemaTree';
@@ -9,7 +10,8 @@ import { getDatabasesCmd, getTablesCmd, getTableSchemaCmd } from '@/lib/tauriCom
 import { toast } from 'sonner';
 
 export function SchemaExplorer() {
-  const { activeConnectionId, setSelectedDatabase, setSelectedTable } = useDatabaseStore();
+  const navigate = useNavigate();
+  const { activeConnectionId, setSelectedDatabase, setSelectedTable, updateTabQuery, getActiveTab } = useDatabaseStore();
   const [treeNodes, setTreeNodes] = useState<TreeNode[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedNode, setSelectedNode] = useState<TreeNode | null>(null);
@@ -103,9 +105,16 @@ export function SchemaExplorer() {
 
     const parts = selectedNode.id.split('-');
     const tableName = parts.slice(2).join('-');
+    const query = `SELECT * FROM ${tableName} LIMIT 100;`;
 
-    // TODO: Navigate to SQL Editor with SELECT query
-    toast.info(`View data for ${tableName} - opening SQL editor`);
+    const activeTab = getActiveTab();
+    if (activeTab) {
+      updateTabQuery(activeTab.id, query);
+      navigate('/database/editor');
+      toast.success(`Query loaded: ${tableName}`);
+    } else {
+      toast.error('No active editor tab');
+    }
   };
 
   return (

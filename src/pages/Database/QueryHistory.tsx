@@ -1,6 +1,7 @@
 // Query History Page
 
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Button, Input } from '@/components/ui';
 import { RefreshCw, Search, Play, Trash2 } from 'lucide-react';
 import { useDatabaseStore } from '@/stores/databaseStore';
@@ -9,7 +10,8 @@ import { toast } from 'sonner';
 import type { QueryHistory } from '@/stores/databaseStore';
 
 export function QueryHistoryPage() {
-  const { activeConnectionId, setQueryText } = useDatabaseStore();
+  const navigate = useNavigate();
+  const { activeConnectionId, updateTabQuery, getActiveTab } = useDatabaseStore();
   const [history, setHistory] = useState<QueryHistory[]>([]);
   const [filteredHistory, setFilteredHistory] = useState<QueryHistory[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -65,9 +67,14 @@ export function QueryHistoryPage() {
   };
 
   const handleReExecute = (item: QueryHistory) => {
-    setQueryText(item.query_text);
-    toast.success('Query copied to editor');
-    // TODO: Navigate to SQL Editor
+    const activeTab = getActiveTab();
+    if (activeTab) {
+      updateTabQuery(activeTab.id, item.query_text);
+      navigate('/database/editor');
+      toast.success('Query loaded in editor');
+    } else {
+      toast.error('No active editor tab');
+    }
   };
 
   const formatDuration = (ms: number | null) => {

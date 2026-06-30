@@ -1,6 +1,6 @@
 // ER Diagram Page with React Flow
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import ReactFlow, {
   Background,
   Controls,
@@ -8,11 +8,15 @@ import ReactFlow, {
   addEdge,
   useNodesState,
   useEdgesState,
+  useReactFlow,
+  getRectOfNodes,
+  getTransformForBounds,
   type Node,
   type Edge,
   type Connection,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
+import { toPng } from 'html-to-image';
 import { Button, Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui';
 import { RefreshCw, Download } from 'lucide-react';
 import { TableNode, type TableNodeData } from '@/components/Database/TableNode';
@@ -26,6 +30,8 @@ const nodeTypes = {
 
 export function ERDiagram() {
   const { activeConnectionId } = useDatabaseStore();
+  const { getNodes } = useReactFlow();
+  const diagramRef = useRef<HTMLDivElement>(null);
   const [databases, setDatabases] = useState<string[]>([]);
   const [selectedDatabase, setSelectedDatabase] = useState<string>('');
   const [loading, setLoading] = useState(false);
@@ -99,9 +105,42 @@ export function ERDiagram() {
     [setEdges]
   );
 
-  const handleExport = () => {
-    // TODO: Export diagram as PNG/SVG
-    toast.info('Export functionality coming soon');
+  const handleExport = async () => {
+    if (!diagramRef.current || nodes.length === 0) {
+      toast.error('No diagram to export');
+      return;
+    }
+
+    try {
+      const nodesBounds = getRectOfNodes(getNodes());
+      const transform = getTransformForBounds(
+        nodesBounds,
+        nodesBounds.width,
+        nodesBounds.height,
+        0.5,
+        2
+      );
+
+      const dataUrl = await toPng(diagramRef.current, {
+        backgroundColor: '#ffffff',
+        width: nodesBounds.width,
+        height: nodesBounds.height,
+        style: {
+          width: String(nodesBounds.width),
+          height: String(nodesBounds.height),
+          transform: `translate(${transform[0]}px, ${transform[1]}px) scale(${transform[2]})`,
+        },
+      });
+
+      const link = document.createElement('a');
+      link.download = `er-diagram-${selectedDatabase || 'database'}.png`;
+      link.href = dataUrl;
+      link.click();
+
+      toast.success('Diagram exported as PNG');
+    } catch (error) {
+      toast.error('Export failed: ' + String(error));
+    }
   };
 
   return (
@@ -135,7 +174,7 @@ export function ERDiagram() {
         </div>
       </div>
 
-      <div className="flex-1">
+      <div className="flex-1" ref={diagramRef}>
         {nodes.length === 0 ? (
           <div className="h-full flex items-center justify-center text-muted-foreground">
             <div className="text-center">
