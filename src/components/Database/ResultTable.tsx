@@ -2,7 +2,7 @@
 
 import { useMemo } from 'react';
 import { FixedSizeList as List } from 'react-window';
-import type { QueryResult } from '@/stores/databaseStore';
+import type { QueryResult } from '@/lib/tauriCommands';
 
 interface ResultTableProps {
   result: QueryResult;

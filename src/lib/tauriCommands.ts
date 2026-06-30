@@ -2079,3 +2079,57 @@ export const previewJsonFileCmd = (file_path: string, limit: number) =>
 // ER Diagram
 export const generateErDiagramCmd = (connection_id: string, database: string) =>
   invoke<ERDiagram>("generate_er_diagram", { connection_id, database });
+
+// ─── Table Row Updates (Inline CRUD) ────────────────────────────────────────
+
+export interface UpdateResult {
+  rows_updated: number;
+  rows_failed: number;
+  errors: string[];
+}
+
+export interface RowUpdate {
+  primary_keys: Record<string, unknown>;
+  column_updates: Record<string, unknown>;
+}
+
+/**
+ * Update rows in a database table.
+ * `updates` is an array of objects with `primary_keys` and `column_updates`.
+ */
+export const updateTableRowsCmd = (
+  connection_id: string,
+  database: string,
+  table_name: string,
+  updates: RowUpdate[]
+) =>
+  invoke<UpdateResult>("update_table_rows", {
+    connectionId: connection_id,
+    database,
+    tableName: table_name,
+    updates,
+  });
+
+// ─── Query Execution Plan (EXPLAIN) ─────────────────────────────────────────
+
+export interface ExplainNode {
+  node_type: string;
+  relation_name?: string | null;
+  index_name?: string | null;
+  cost?: number | null;
+  rows?: number | null;
+  actual_time_ms?: number | null;
+  extra?: string | null;
+  children: ExplainNode[];
+}
+
+export interface ExplainResult {
+  database_type: string;
+  plan: ExplainNode | null;
+  total_cost?: number | null;
+  execution_time_ms?: number | null;
+  raw_output: string;
+}
+
+export const explainQueryCmd = (connection_id: string, query: string) =>
+  invoke<ExplainResult>("explain_query", { connectionId: connection_id, query });

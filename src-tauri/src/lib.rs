@@ -223,6 +223,9 @@ pub fn run() {
             commands::database::generate_er_diagram,
             commands::database::preview_csv_file,
             commands::database::preview_json_file,
+            // Database Management - Inline CRUD & Query Plans
+            commands::database::update_table_rows,
+            commands::database::explain_query,
             // Analysis / PII
             commands::analysis::upload_log_file,
             commands::analysis::upload_log_file_by_content,

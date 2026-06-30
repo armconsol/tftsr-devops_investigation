@@ -86,6 +86,7 @@ import { SchemaExplorer } from "@/pages/Database/SchemaExplorer";
 import { QueryHistoryPage } from "@/pages/Database/QueryHistory";
 import { ImportExport } from "@/pages/Database/ImportExport";
 import { ERDiagram } from "@/pages/Database/ERDiagram";
+import { QueryBuilder } from "@/pages/Database/QueryBuilder";
 
 const navItems = [
   { to: "/", icon: Home, label: "Dashboard" },
@@ -124,6 +125,7 @@ const navItems = [
     children: [
       { to: "/database/connections", label: "Connections" },
       { to: "/database/editor", label: "SQL Editor" },
+      { to: "/database/query-builder", label: "Query Builder" },
       { to: "/database/schema", label: "Schema Explorer" },
       { to: "/database/history", label: "Query History" },
       { to: "/database/import-export", label: "Import/Export" },
@@ -391,6 +393,7 @@ export default function App() {
             {/* Database Management Routes */}
             <Route path="/database/connections" element={<ConnectionManager />} />
             <Route path="/database/editor" element={<SQLEditor />} />
+            <Route path="/database/query-builder" element={<QueryBuilder />} />
             <Route path="/database/schema" element={<SchemaExplorer />} />
             <Route path="/database/history" element={<QueryHistoryPage />} />
             <Route path="/database/import-export" element={<ImportExport />} />

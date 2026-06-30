@@ -5,7 +5,7 @@ use crate::db::models::{
 };
 use crate::db_drivers::{
     import_export::{csv, json, sql, ImportOptions, ImportStats},
-    types::{ConnectionConfig, DatabaseType, QueryResult, SslConfig},
+    types::{ConnectionConfig, DataValue, DatabaseType, QueryResult, SslConfig},
     visualization,
 };
 use crate::state::AppState;
@@ -1234,3 +1234,831 @@ async fn save_query_history(
 
     Ok(())
 }
+
+// ─── Table Data Editing (CRUD) ──────────────────────────────────────────────
+
+/// Represents a single row update operation
+///
+/// Values are received as untyped JSON from the frontend and converted to
+/// `DataValue` based on the target column's data type.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RowUpdate {
+    /// Primary key values to identify the row (column_name -> value)
+    pub primary_keys: HashMap<String, serde_json::Value>,
+    /// Column updates (column_name -> new_value)
+    pub column_updates: HashMap<String, serde_json::Value>,
+}
+
+/// Convert a JSON value into a `DataValue` based on the expected column type.
+fn json_to_data_value(value: &serde_json::Value, expected_type: &str) -> DataValue {
+    if value.is_null() {
+        return DataValue::Null;
+    }
+
+    let expected_lower = expected_type.to_lowercase();
+
+    // Try to match expected type first
+    if expected_lower.contains("bool") || expected_lower.contains("bit") {
+        if let Some(b) = value.as_bool() {
+            return DataValue::Boolean(b);
+        }
+        if let Some(s) = value.as_str() {
+            let lower = s.to_lowercase();
+            if lower == "true" || lower == "t" || lower == "1" {
+                return DataValue::Boolean(true);
+            }
+            if lower == "false" || lower == "f" || lower == "0" {
+                return DataValue::Boolean(false);
+            }
+        }
+    }
+
+    if expected_lower.contains("int")
+        || expected_lower.contains("serial")
+        || expected_lower.contains("number")
+    {
+        if let Some(n) = value.as_i64() {
+            return DataValue::Integer(n);
+        }
+        if let Some(s) = value.as_str() {
+            if let Ok(n) = s.parse::<i64>() {
+                return DataValue::Integer(n);
+            }
+        }
+    }
+
+    if expected_lower.contains("float")
+        || expected_lower.contains("double")
+        || expected_lower.contains("numeric")
+        || expected_lower.contains("decimal")
+        || expected_lower.contains("real")
+    {
+        if let Some(f) = value.as_f64() {
+            return DataValue::Float(f);
+        }
+        if let Some(s) = value.as_str() {
+            if let Ok(f) = s.parse::<f64>() {
+                return DataValue::Float(f);
+            }
+        }
+    }
+
+    if expected_lower.contains("json") || expected_lower.contains("jsonb") {
+        if value.is_object() || value.is_array() {
+            return DataValue::Json(value.clone());
+        }
+    }
+
+    // Fallback to native JSON types
+    if let Some(b) = value.as_bool() {
+        return DataValue::Boolean(b);
+    }
+    if let Some(n) = value.as_i64() {
+        return DataValue::Integer(n);
+    }
+    if let Some(f) = value.as_f64() {
+        return DataValue::Float(f);
+    }
+    if let Some(s) = value.as_str() {
+        return DataValue::String(s.to_string());
+    }
+    if value.is_array() {
+        return DataValue::Json(value.clone());
+    }
+    if value.is_object() {
+        return DataValue::Json(value.clone());
+    }
+
+    DataValue::String(value.to_string())
+}
+
+/// Result of update operation
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateResult {
+    pub rows_updated: usize,
+    pub rows_failed: usize,
+    pub errors: Vec<String>,
+}
+
+/// Update rows in a table
+///
+/// # Arguments
+/// * `connection_id` - Database connection ID
+/// * `database` - Database name
+/// * `table_name` - Table name
+/// * `updates` - Vector of row updates with primary keys and new values
+#[tauri::command]
+pub async fn update_table_rows(
+    connection_id: String,
+    database: String,
+    table_name: String,
+    updates: Vec<RowUpdate>,
+    state: State<'_, AppState>,
+) -> Result<UpdateResult, String> {
+    if updates.is_empty() {
+        return Ok(UpdateResult {
+            rows_updated: 0,
+            rows_failed: 0,
+            errors: vec![],
+        });
+    }
+
+    // Load connection config
+    let config = load_connection_config(&connection_id, &state).await?;
+    let pool = state.db_pool_manager.lock().await;
+    let driver_arc = pool
+        .get_or_create_driver(&connection_id, &config)
+        .await
+        .map_err(|e| format!("Failed to get driver: {}", e))?;
+
+    // Get table schema to validate primary keys and column types
+    let driver = driver_arc.read().await;
+    let schema = driver
+        .get_schema(&database)
+        .await
+        .map_err(|e| format!("Failed to get schema: {}", e))?;
+
+    let table = schema
+        .tables
+        .iter()
+        .find(|t| t.name == table_name)
+        .ok_or_else(|| format!("Table {} not found in schema", table_name))?;
+
+    // Extract primary key columns
+    let pk_columns: Vec<String> = table
+        .columns
+        .iter()
+        .filter(|c| c.primary_key)
+        .map(|c| c.name.clone())
+        .collect();
+
+    if pk_columns.is_empty() {
+        return Err(format!(
+            "Table {} has no primary key - cannot perform updates",
+            table_name
+        ));
+    }
+
+    // Build column type map for validation
+    let column_types: HashMap<String, String> = table
+        .columns
+        .iter()
+        .map(|c| (c.name.clone(), c.data_type.clone()))
+        .collect();
+
+    // Begin transaction
+    drop(driver); // Drop read lock before acquiring write lock
+    let mut driver = driver_arc.write().await;
+    let tx_handle = driver
+        .begin_transaction()
+        .await
+        .map_err(|e| format!("Failed to begin transaction: {}", e))?;
+
+    let mut rows_updated = 0;
+    let mut rows_failed = 0;
+    let mut errors = Vec::new();
+
+    // Process each update
+    for (idx, update) in updates.iter().enumerate() {
+        let mut update_invalid = false;
+
+        // Validate primary keys are present
+        for pk_col in &pk_columns {
+            if !update.primary_keys.contains_key(pk_col) {
+                let err = format!(
+                    "Update {} missing primary key column: {}",
+                    idx + 1,
+                    pk_col
+                );
+                errors.push(err);
+                update_invalid = true;
+            }
+        }
+
+        // Validate column updates exist in schema
+        for (col_name, _) in &update.column_updates {
+            if !column_types.contains_key(col_name) {
+                let err = format!(
+                    "Update {} references non-existent column: {}",
+                    idx + 1,
+                    col_name
+                );
+                errors.push(err);
+                update_invalid = true;
+            }
+        }
+
+        if update_invalid {
+            rows_failed += 1;
+            continue;
+        }
+
+        // Convert JSON values to typed DataValues
+        let pk_typed: HashMap<String, DataValue> = update
+            .primary_keys
+            .iter()
+            .map(|(k, v)| {
+                let expected_type = column_types.get(k).cloned().unwrap_or_else(|| "TEXT".to_string());
+                (k.clone(), json_to_data_value(v, &expected_type))
+            })
+            .collect();
+
+        let cols_typed: HashMap<String, DataValue> = update
+            .column_updates
+            .iter()
+            .map(|(k, v)| {
+                let expected_type = column_types.get(k).cloned().unwrap_or_else(|| "TEXT".to_string());
+                (k.clone(), json_to_data_value(v, &expected_type))
+            })
+            .collect();
+
+        let typed_update = TypedRowUpdate {
+            primary_keys: pk_typed,
+            column_updates: cols_typed,
+        };
+
+        // Build UPDATE statement
+        match build_update_statement(&table_name, &pk_columns, &typed_update, &config.database_type) {
+            Ok((sql, params)) => {
+                // Execute update
+                match driver.execute_query(&sql, params).await {
+                    Ok(result) => {
+                        if result.row_count > 0 {
+                            rows_updated += 1;
+                        } else {
+                            let err = format!(
+                                "Update {} matched no rows (primary key may not exist)",
+                                idx + 1
+                            );
+                            errors.push(err);
+                            rows_failed += 1;
+                        }
+                    }
+                    Err(e) => {
+                        let err = format!("Update {} failed: {}", idx + 1, e);
+                        errors.push(err);
+                        rows_failed += 1;
+                    }
+                }
+            }
+            Err(e) => {
+                errors.push(format!("Update {} SQL generation failed: {}", idx + 1, e));
+                rows_failed += 1;
+            }
+        }
+    }
+
+    // Commit or rollback transaction
+    if rows_failed > 0 {
+        driver
+            .rollback_transaction(&tx_handle)
+            .await
+            .map_err(|e| format!("Failed to rollback transaction: {}", e))?;
+        Err(format!(
+            "Transaction rolled back due to errors: {}",
+            errors.join("; ")
+        ))
+    } else {
+        driver
+            .commit_transaction(&tx_handle)
+            .await
+            .map_err(|e| format!("Failed to commit transaction: {}", e))?;
+
+        // Audit log
+        {
+            let db = state
+                .db
+                .lock()
+                .map_err(|e| format!("Failed to lock database: {}", e))?;
+
+            let details = serde_json::json!({
+                "connection_id": connection_id,
+                "database": database,
+                "table": table_name,
+                "rows_updated": rows_updated,
+            })
+            .to_string();
+
+            crate::audit::log::write_audit_event(
+                &db,
+                "table_rows_updated",
+                "database_table",
+                &format!("{}.{}", database, table_name),
+                &details,
+            )
+            .map_err(|e| format!("Failed to write audit log: {}", e))?;
+        }
+
+        Ok(UpdateResult {
+            rows_updated,
+            rows_failed,
+            errors,
+        })
+    }
+}
+
+/// Internal typed representation after JSON→DataValue conversion.
+#[derive(Debug, Clone)]
+struct TypedRowUpdate {
+    primary_keys: HashMap<String, DataValue>,
+    column_updates: HashMap<String, DataValue>,
+}
+
+/// Build UPDATE SQL statement with WHERE clause
+fn build_update_statement(
+    table_name: &str,
+    pk_columns: &[String],
+    update: &TypedRowUpdate,
+    db_type: &DatabaseType,
+) -> Result<(String, Vec<DataValue>), String> {
+    if update.column_updates.is_empty() {
+        return Err("No columns to update".to_string());
+    }
+
+    let mut params = Vec::new();
+    let mut set_clauses = Vec::new();
+    let mut param_idx = 1;
+
+    // Build SET clause
+    for (col_name, value) in &update.column_updates {
+        set_clauses.push(format!("{} = {}", col_name, param_placeholder(param_idx, db_type)));
+        params.push(value.clone());
+        param_idx += 1;
+    }
+
+    // Build WHERE clause using primary keys
+    let mut where_clauses = Vec::new();
+    for pk_col in pk_columns {
+        let pk_value = update
+            .primary_keys
+            .get(pk_col)
+            .ok_or_else(|| format!("Missing primary key: {}", pk_col))?;
+        where_clauses.push(format!("{} = {}", pk_col, param_placeholder(param_idx, db_type)));
+        params.push(pk_value.clone());
+        param_idx += 1;
+    }
+
+    let sql = format!(
+        "UPDATE {} SET {} WHERE {}",
+        table_name,
+        set_clauses.join(", "),
+        where_clauses.join(" AND ")
+    );
+
+    Ok((sql, params))
+}
+
+/// Generate parameterized query placeholder for database type
+fn param_placeholder(index: usize, db_type: &DatabaseType) -> String {
+    match db_type {
+        DatabaseType::PostgreSQL => format!("${}", index),
+        DatabaseType::MySQL => "?".to_string(),
+        DatabaseType::MongoDB => {
+            // MongoDB uses native query format, not SQL
+            format!("${}", index)
+        }
+        DatabaseType::Cassandra => "?".to_string(),
+        DatabaseType::Redis => {
+            // Redis doesn't support traditional SQL updates
+            format!("${}", index)
+        }
+    }
+}
+
+/// Validate that a DataValue matches expected column type
+#[allow(dead_code)]
+fn validate_data_type(value: &DataValue, expected_type: &str) -> bool {
+    use crate::db_drivers::types::DataValue;
+
+    // Allow NULL for any type
+    if matches!(value, DataValue::Null) {
+        return true;
+    }
+
+    let expected_lower = expected_type.to_lowercase();
+
+    match value {
+        DataValue::Integer(_) => {
+            expected_lower.contains("int")
+                || expected_lower.contains("serial")
+                || expected_lower.contains("bigserial")
+                || expected_lower.contains("smallserial")
+                || expected_lower.contains("number")
+        }
+        DataValue::Float(_) => {
+            expected_lower.contains("float")
+                || expected_lower.contains("double")
+                || expected_lower.contains("real")
+                || expected_lower.contains("numeric")
+                || expected_lower.contains("decimal")
+        }
+        DataValue::Boolean(_) => {
+            expected_lower.contains("bool") || expected_lower.contains("bit")
+        }
+        DataValue::String(_) => {
+            expected_lower.contains("char")
+                || expected_lower.contains("varchar")
+                || expected_lower.contains("text")
+                || expected_lower.contains("string")
+                || expected_lower.contains("clob")
+        }
+        DataValue::Date(_) => expected_lower.contains("date"),
+        DataValue::DateTime(_) => {
+            expected_lower.contains("timestamp") || expected_lower.contains("datetime")
+        }
+        DataValue::Bytes(_) => {
+            expected_lower.contains("blob")
+                || expected_lower.contains("bytea")
+                || expected_lower.contains("binary")
+        }
+        DataValue::Json(_) => {
+            expected_lower.contains("json") || expected_lower.contains("jsonb")
+        }
+        DataValue::Array(_) => expected_lower.contains("array"),
+        DataValue::Null => true,
+    }
+}
+
+#[cfg(test)]
+mod update_tests {
+    use super::*;
+    use crate::db_drivers::types::DataValue;
+
+    #[test]
+    fn test_validate_data_type() {
+        assert!(validate_data_type(&DataValue::Integer(42), "INTEGER"));
+        assert!(validate_data_type(&DataValue::Integer(42), "BIGINT"));
+        assert!(validate_data_type(&DataValue::Float(3.14), "FLOAT"));
+        assert!(validate_data_type(&DataValue::Float(3.14), "DOUBLE"));
+        assert!(validate_data_type(&DataValue::String("test".into()), "VARCHAR"));
+        assert!(validate_data_type(&DataValue::String("test".into()), "TEXT"));
+        assert!(validate_data_type(&DataValue::Boolean(true), "BOOLEAN"));
+        assert!(validate_data_type(&DataValue::Null, "INTEGER"));
+        assert!(validate_data_type(&DataValue::Null, "VARCHAR"));
+
+        // Type mismatches
+        assert!(!validate_data_type(&DataValue::String("test".into()), "INTEGER"));
+        assert!(!validate_data_type(&DataValue::Integer(42), "VARCHAR"));
+    }
+
+    #[test]
+    fn test_param_placeholder() {
+        assert_eq!(
+            param_placeholder(1, &DatabaseType::PostgreSQL),
+            "$1"
+        );
+        assert_eq!(param_placeholder(1, &DatabaseType::MySQL), "?");
+        assert_eq!(param_placeholder(2, &DatabaseType::PostgreSQL), "$2");
+    }
+
+    #[test]
+    fn test_build_update_statement() {
+        let mut primary_keys = HashMap::new();
+        primary_keys.insert("id".to_string(), DataValue::Integer(1));
+
+        let mut column_updates = HashMap::new();
+        column_updates.insert("name".to_string(), DataValue::String("John".into()));
+        column_updates.insert("age".to_string(), DataValue::Integer(30));
+
+        let update = TypedRowUpdate {
+            primary_keys,
+            column_updates,
+        };
+
+        let (sql, params) =
+            build_update_statement("users", &["id".to_string()], &update, &DatabaseType::PostgreSQL)
+                .unwrap();
+
+        assert!(sql.contains("UPDATE users"));
+        assert!(sql.contains("SET"));
+        assert!(sql.contains("WHERE id = $3"));
+        assert_eq!(params.len(), 3);
+    }
+
+    #[test]
+    fn test_build_update_statement_composite_key() {
+        let mut primary_keys = HashMap::new();
+        primary_keys.insert("user_id".to_string(), DataValue::Integer(1));
+        primary_keys.insert("org_id".to_string(), DataValue::Integer(100));
+
+        let mut column_updates = HashMap::new();
+        column_updates.insert("status".to_string(), DataValue::String("active".into()));
+
+        let update = TypedRowUpdate {
+            primary_keys,
+            column_updates,
+        };
+
+        let (sql, params) = build_update_statement(
+            "memberships",
+            &["user_id".to_string(), "org_id".to_string()],
+            &update,
+            &DatabaseType::MySQL,
+        )
+        .unwrap();
+
+        assert!(sql.contains("UPDATE memberships"));
+        assert!(sql.contains("SET status = ?"));
+        assert!(sql.contains("WHERE"));
+        assert!(sql.contains("user_id = ?"));
+        assert!(sql.contains("org_id = ?"));
+        assert_eq!(params.len(), 3);
+    }
+
+    #[test]
+    fn test_json_to_data_value_int() {
+        let v = serde_json::json!(42);
+        let dv = json_to_data_value(&v, "INTEGER");
+        assert!(matches!(dv, DataValue::Integer(42)));
+    }
+
+    #[test]
+    fn test_json_to_data_value_string_to_int() {
+        let v = serde_json::json!("42");
+        let dv = json_to_data_value(&v, "INTEGER");
+        assert!(matches!(dv, DataValue::Integer(42)));
+    }
+
+    #[test]
+    fn test_json_to_data_value_null() {
+        let v = serde_json::json!(null);
+        let dv = json_to_data_value(&v, "VARCHAR");
+        assert!(matches!(dv, DataValue::Null));
+    }
+}
+
+// ─── Query Execution Plans (EXPLAIN) ────────────────────────────────────────
+
+/// A single node in a query execution plan tree.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExplainNode {
+    pub node_type: String,
+    pub relation_name: Option<String>,
+    pub index_name: Option<String>,
+    pub cost: Option<f64>,
+    pub rows: Option<i64>,
+    pub actual_time_ms: Option<f64>,
+    pub extra: Option<String>,
+    pub children: Vec<ExplainNode>,
+}
+
+/// Structured EXPLAIN result returned to the frontend.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExplainResult {
+    pub database_type: String,
+    pub plan: Option<ExplainNode>,
+    pub total_cost: Option<f64>,
+    pub execution_time_ms: Option<f64>,
+    pub raw_output: String,
+}
+
+/// Run EXPLAIN on a query and return a structured plan.
+#[tauri::command]
+pub async fn explain_query(
+    connection_id: String,
+    query: String,
+    state: State<'_, AppState>,
+) -> Result<ExplainResult, String> {
+    let config = load_connection_config(&connection_id, &state).await?;
+
+    let explain_sql = build_explain_sql(&query, &config.database_type)?;
+
+    let pool = state.db_pool_manager.lock().await;
+    let driver_arc = pool
+        .get_or_create_driver(&connection_id, &config)
+        .await
+        .map_err(|e| format!("Failed to get driver: {}", e))?;
+
+    let driver = driver_arc.read().await;
+    let result = driver
+        .execute_query(&explain_sql, Vec::new())
+        .await
+        .map_err(|e| format!("EXPLAIN failed: {}", e))?;
+
+    let raw_output = render_explain_rows(&result);
+
+    let database_type_str = match config.database_type {
+        DatabaseType::PostgreSQL => "postgresql",
+        DatabaseType::MySQL => "mysql",
+        DatabaseType::MongoDB => "mongodb",
+        DatabaseType::Cassandra => "cassandra",
+        DatabaseType::Redis => "redis",
+    }
+    .to_string();
+
+    let plan = match config.database_type {
+        DatabaseType::PostgreSQL => parse_postgres_explain(&raw_output),
+        DatabaseType::MySQL => parse_mysql_explain(&result),
+        _ => None,
+    };
+
+    let (total_cost, execution_time_ms) = plan
+        .as_ref()
+        .map(|p| (p.cost, p.actual_time_ms))
+        .unwrap_or((None, None));
+
+    Ok(ExplainResult {
+        database_type: database_type_str,
+        plan,
+        total_cost,
+        execution_time_ms,
+        raw_output,
+    })
+}
+
+fn build_explain_sql(query: &str, db_type: &DatabaseType) -> Result<String, String> {
+    let trimmed = query.trim().trim_end_matches(';');
+    match db_type {
+        DatabaseType::PostgreSQL => Ok(format!("EXPLAIN (FORMAT JSON) {}", trimmed)),
+        DatabaseType::MySQL => Ok(format!("EXPLAIN {}", trimmed)),
+        DatabaseType::Cassandra => Ok(format!("TRACING ON; {}", trimmed)),
+        DatabaseType::MongoDB => Err("EXPLAIN is not supported for MongoDB through SQL".to_string()),
+        DatabaseType::Redis => Err("EXPLAIN is not supported for Redis".to_string()),
+    }
+}
+
+fn render_explain_rows(result: &QueryResult) -> String {
+    let mut buf = String::new();
+    for row in &result.rows {
+        for cell in row {
+            match cell {
+                DataValue::String(s) => buf.push_str(s),
+                DataValue::Json(j) => buf.push_str(&j.to_string()),
+                other => buf.push_str(&other.to_string()),
+            }
+            buf.push('\n');
+        }
+    }
+    buf
+}
+
+fn parse_postgres_explain(raw: &str) -> Option<ExplainNode> {
+    let trimmed = raw.trim();
+    let parsed: serde_json::Value = serde_json::from_str(trimmed).ok()?;
+    let arr = parsed.as_array()?;
+    let first = arr.first()?;
+    let plan = first.get("Plan")?;
+    Some(pg_node_from_json(plan))
+}
+
+fn pg_node_from_json(value: &serde_json::Value) -> ExplainNode {
+    let node_type = value
+        .get("Node Type")
+        .and_then(|v| v.as_str())
+        .unwrap_or("Unknown")
+        .to_string();
+
+    let relation_name = value
+        .get("Relation Name")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+
+    let index_name = value
+        .get("Index Name")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+
+    let cost = value.get("Total Cost").and_then(|v| v.as_f64());
+    let rows = value.get("Plan Rows").and_then(|v| v.as_i64());
+    let actual_time_ms = value.get("Actual Total Time").and_then(|v| v.as_f64());
+
+    let mut extras = Vec::new();
+    if let Some(strategy) = value.get("Strategy").and_then(|v| v.as_str()) {
+        extras.push(format!("strategy: {}", strategy));
+    }
+    if let Some(filter) = value.get("Filter").and_then(|v| v.as_str()) {
+        extras.push(format!("filter: {}", filter));
+    }
+    if let Some(cond) = value.get("Hash Cond").and_then(|v| v.as_str()) {
+        extras.push(format!("hash_cond: {}", cond));
+    }
+    if let Some(cond) = value.get("Index Cond").and_then(|v| v.as_str()) {
+        extras.push(format!("index_cond: {}", cond));
+    }
+    let extra = if extras.is_empty() {
+        None
+    } else {
+        Some(extras.join(" | "))
+    };
+
+    let children = value
+        .get("Plans")
+        .and_then(|v| v.as_array())
+        .map(|arr| arr.iter().map(pg_node_from_json).collect())
+        .unwrap_or_default();
+
+    ExplainNode {
+        node_type,
+        relation_name,
+        index_name,
+        cost,
+        rows,
+        actual_time_ms,
+        extra,
+        children,
+    }
+}
+
+fn parse_mysql_explain(result: &QueryResult) -> Option<ExplainNode> {
+    if result.rows.is_empty() {
+        return None;
+    }
+
+    let col_idx = |name: &str| -> Option<usize> {
+        result
+            .columns
+            .iter()
+            .position(|c| c.name.eq_ignore_ascii_case(name))
+    };
+
+    let table_idx = col_idx("table");
+    let type_idx = col_idx("type");
+    let key_idx = col_idx("key");
+    let rows_idx = col_idx("rows");
+    let extra_idx = col_idx("Extra");
+
+    let mut nodes: Vec<ExplainNode> = Vec::new();
+    for row in &result.rows {
+        let get = |idx: Option<usize>| -> Option<String> {
+            idx.and_then(|i| row.get(i)).and_then(|v| match v {
+                DataValue::Null => None,
+                DataValue::String(s) => Some(s.clone()),
+                other => Some(other.to_string()),
+            })
+        };
+
+        let table_name = get(table_idx);
+        let scan_type = get(type_idx).unwrap_or_else(|| "Unknown".to_string());
+        let key = get(key_idx);
+        let rows = rows_idx
+            .and_then(|i| row.get(i))
+            .and_then(|v| match v {
+                DataValue::Integer(n) => Some(*n),
+                DataValue::String(s) => s.parse::<i64>().ok(),
+                _ => None,
+            });
+        let extra = get(extra_idx);
+
+        nodes.push(ExplainNode {
+            node_type: format!("MySQL {}", scan_type),
+            relation_name: table_name,
+            index_name: key,
+            cost: None,
+            rows,
+            actual_time_ms: None,
+            extra,
+            children: vec![],
+        });
+    }
+
+    // Chain: pop the tail, attach as child of new tail, repeat until single root remains
+    while nodes.len() > 1 {
+        let child = nodes.pop().unwrap();
+        if let Some(parent) = nodes.last_mut() {
+            parent.children.push(child);
+        }
+    }
+
+    nodes.pop()
+}
+
+#[cfg(test)]
+mod explain_tests {
+    use super::*;
+
+    #[test]
+    fn test_build_explain_sql_postgres() {
+        let sql = build_explain_sql("SELECT * FROM t;", &DatabaseType::PostgreSQL).unwrap();
+        assert_eq!(sql, "EXPLAIN (FORMAT JSON) SELECT * FROM t");
+    }
+
+    #[test]
+    fn test_build_explain_sql_mysql() {
+        let sql = build_explain_sql("SELECT 1", &DatabaseType::MySQL).unwrap();
+        assert_eq!(sql, "EXPLAIN SELECT 1");
+    }
+
+    #[test]
+    fn test_build_explain_sql_unsupported() {
+        assert!(build_explain_sql("get x", &DatabaseType::Redis).is_err());
+    }
+
+    #[test]
+    fn test_parse_postgres_explain_simple() {
+        let raw = r#"[{"Plan":{"Node Type":"Seq Scan","Relation Name":"users","Total Cost":15.5,"Plan Rows":100,"Plans":[]}}]"#;
+        let plan = parse_postgres_explain(raw).unwrap();
+        assert_eq!(plan.node_type, "Seq Scan");
+        assert_eq!(plan.relation_name.as_deref(), Some("users"));
+        assert_eq!(plan.cost, Some(15.5));
+        assert_eq!(plan.rows, Some(100));
+    }
+
+    #[test]
+    fn test_parse_postgres_explain_nested() {
+        let raw = r#"[{"Plan":{"Node Type":"Hash Join","Total Cost":50.0,"Plans":[{"Node Type":"Seq Scan","Relation Name":"a","Total Cost":10.0},{"Node Type":"Seq Scan","Relation Name":"b","Total Cost":15.0}]}}]"#;
+        let plan = parse_postgres_explain(raw).unwrap();
+        assert_eq!(plan.node_type, "Hash Join");
+        assert_eq!(plan.children.len(), 2);
+    }
+}
+
