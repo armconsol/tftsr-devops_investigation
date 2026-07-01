@@ -67,7 +67,11 @@ flate2 = { version = "1", features = ["rust_backend"] }
 serde_yaml = "0.9"
 portable-pty = "0.8"
 ssh2 = { version = "0.9", features = ["vendored-openssl"] }
-ironrdp = { version = "0.16", features = [
+# Using patched IronRDP with local path dependencies until PR #1398 is merged upstream
+# Patch fixes RDP6 bitmap stride mismatch causing horizontal striping on DGX
+# https://github.com/Devolutions/IronRDP/pull/1398
+# CI/CD: Set IRON_RDP_PATCH_PATH env var to the patch location on build machine
+ironrdp = { path = "/tmp/ironrdp-patch/crates/ironrdp", features = [
     "svc",
     "cliprdr",
     "graphics",
@@ -76,20 +80,20 @@ ironrdp = { version = "0.16", features = [
     "session",
     "displaycontrol",
 ] }
-ironrdp-async = "0.9"
-ironrdp-tokio = "0.9"
-ironrdp-graphics = "0.8"
-ironrdp-input = "0.6"
-ironrdp-cliprdr = "0.6"
-ironrdp-blocking = "0.9"
+ironrdp-async = { path = "/tmp/ironrdp-patch/crates/ironrdp-async" }
+ironrdp-tokio = { path = "/tmp/ironrdp-patch/crates/ironrdp-tokio" }
+ironrdp-graphics = { path = "/tmp/ironrdp-patch/crates/ironrdp-graphics" }
+ironrdp-input = { path = "/tmp/ironrdp-patch/crates/ironrdp-input" }
+ironrdp-cliprdr = { path = "/tmp/ironrdp-patch/crates/ironrdp-cliprdr" }
+ironrdp-blocking = { path = "/tmp/ironrdp-patch/crates/ironrdp-blocking" }
 # ironrdp-session 0.10 (bundled by ironrdp 0.16) is required to render slow-path
 # graphics/pointer updates that xrdp-style servers send — older releases abort
 # the session with "unhandled PDU: Update PDU", leaving a black screen. This
 # generation raises the MSRV to 1.89; the PR test gate runs on nightly and the
 # release builder images are pinned to a matching Rust in .docker/.
-ironrdp-tls = { version = "0.2.1", features = ["rustls"] }
-ironrdp-pdu = "0.8"
-ironrdp-svc = "0.7"
+ironrdp-tls = { path = "/tmp/ironrdp-patch/crates/ironrdp-tls", features = ["rustls"] }
+ironrdp-pdu = { path = "/tmp/ironrdp-patch/crates/ironrdp-pdu" }
+ironrdp-svc = { path = "/tmp/ironrdp-patch/crates/ironrdp-svc" }
 x509-cert = { version = "0.2", features = ["std"] }
 tokio-rustls = "0.26"
 rustls = { version = "0.23", features = ["aws_lc_rs"] }
