@@ -226,8 +226,12 @@ jobs:
           apt-get update && apt-get install -y libsodium-dev pkg-config
       - name: Clone IronRDP patch
         run: |
-          git clone --depth=1 --branch=master https://github.com/Devolutions/IronRDP.git /tmp/ironrdp-patch
-          echo "IronRDP patch cloned to /tmp/ironrdp-patch"
+          # Clone from our fork until upstream PR #1398 merges
+          # https://github.com/Devolutions/IronRDP/pull/1398
+          # Using branch ref (not commit hash) to get latest Copilot review fixes
+          # TODO: Revert to upstream crates.io version once PR merges
+          git clone --depth=1 --branch=fix/rdp6-bitmap-stride-mismatch https://github.com/armconsol/IronRDP.git /tmp/ironrdp-patch
+          echo "IronRDP patch cloned from armconsol/IronRDP fix branch"
       - name: Build
         env:
           APPIMAGE_EXTRACT_AND_RUN: "1"
@@ -321,8 +325,12 @@ jobs:
           apt-get update && apt-get install -y libsodium-dev pkg-config
       - name: Clone IronRDP patch
         run: |
-          git clone --depth=1 --branch=master https://github.com/Devolutions/IronRDP.git /tmp/ironrdp-patch
-          echo "IronRDP patch cloned to /tmp/ironrdp-patch"
+          # Clone from our fork until upstream PR #1398 merges
+          # https://github.com/Devolutions/IronRDP/pull/1398
+          # Using branch ref (not commit hash) to get latest Copilot review fixes
+          # TODO: Revert to upstream crates.io version once PR merges
+          git clone --depth=1 --branch=fix/rdp6-bitmap-stride-mismatch https://github.com/armconsol/IronRDP.git /tmp/ironrdp-patch
+          echo "IronRDP patch cloned from armconsol/IronRDP fix branch"
       - name: Build
         env:
           CC_x86_64_pc_windows_gnu: x86_64-w64-mingw32-gcc
@@ -398,8 +406,12 @@ jobs:
           git checkout FETCH_HEAD
       - name: Clone IronRDP patch
         run: |
-          git clone --depth=1 --branch=master https://github.com/Devolutions/IronRDP.git /tmp/ironrdp-patch
-          echo "IronRDP patch cloned to /tmp/ironrdp-patch"
+          # Clone from our fork until upstream PR #1398 merges
+          # https://github.com/Devolutions/IronRDP/pull/1398
+          # Using branch ref (not commit hash) to get latest Copilot review fixes
+          # TODO: Revert to upstream crates.io version once PR merges
+          git clone --depth=1 --branch=fix/rdp6-bitmap-stride-mismatch https://github.com/armconsol/IronRDP.git /tmp/ironrdp-patch
+          echo "IronRDP patch cloned from armconsol/IronRDP fix branch"
       - name: Build
         env:
           MACOSX_DEPLOYMENT_TARGET: "11.0"
@@ -502,8 +514,12 @@ jobs:
           apt-get update && apt-get install -y libsodium-dev pkg-config libssl-dev
       - name: Clone IronRDP patch
         run: |
-          git clone --depth=1 --branch=master https://github.com/Devolutions/IronRDP.git /tmp/ironrdp-patch
-          echo "IronRDP patch cloned to /tmp/ironrdp-patch"
+          # Clone from our fork until upstream PR #1398 merges
+          # https://github.com/Devolutions/IronRDP/pull/1398
+          # Using branch ref (not commit hash) to get latest Copilot review fixes
+          # TODO: Revert to upstream crates.io version once PR merges
+          git clone --depth=1 --branch=fix/rdp6-bitmap-stride-mismatch https://github.com/armconsol/IronRDP.git /tmp/ironrdp-patch
+          echo "IronRDP patch cloned from armconsol/IronRDP fix branch"
       - name: Build
         env:
           CC_aarch64_unknown_linux_gnu: aarch64-linux-gnu-gcc
