@@ -84,3 +84,13 @@ If updating IronRDP version:
 2. Re-apply the fix to `image.rs` and `fast_path.rs`
 3. Test against DGX server
 4. Update `Cargo.toml` dependencies
+
+## Copilot Review (2026-07-01)
+
+Addressed three findings from Copilot AI code review on PR #1398:
+
+1. **Box<dyn Iterator> performance issue** - Removed unnecessary heap allocation and dynamic dispatch
+2. **Bounds checking for source > rectangle** - Added clamping to prevent OOB writes
+3. **Structured logging** - Converted to tracing fields per STYLE.md
+
+All fixes committed and pushed. PR updated with detailed response.
