@@ -168,6 +168,11 @@ impl WebSocketServer {
         // when a WebSocket client connects.
         let mut broadcast_map = self.frame_broadcasters.lock().await;
         broadcast_map.insert(session_id.to_string(), tx_clone);
+        info!(
+            "Registered session in frame_broadcasters: '{}', total sessions: {}",
+            session_id,
+            broadcast_map.len()
+        );
         drop(broadcast_map);
 
         tx
@@ -192,10 +197,16 @@ impl WebSocketServer {
         if let Some(tx) = broadcast_map.get(session_id) {
             tx.send(frame)
                 .await
-                .map_err(|e| anyhow::anyhow!("Failed to send frame: {}", e))?;
+                .map_err(|e| antml::<parameter name="anyhow!("Failed to send frame: {}", e))?;
             Ok(())
         } else {
-            Err(anyhow::anyhow!("Session not found: {}", session_id))
+            // Debug: log what sessions are actually registered
+            let registered_sessions: Vec<String> = broadcast_map.keys().cloned().collect();
+            warn!(
+                "Session not found in frame_broadcasters: '{}'. Registered sessions: {:?}",
+                session_id, registered_sessions
+            );
+            Err(antml::anyhow!("Session not found: {}", session_id))
         }
     }
 
