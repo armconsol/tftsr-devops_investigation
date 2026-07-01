@@ -432,8 +432,9 @@ function SessionView({ session, onDisconnect }: SessionViewProps) {
 
     return () => {
       ws.close();
-      // Stop the RDP session when WebSocket is cleaned up
-      stopRdpSession(sessionRef.current.id).catch(() => {});
+      // Do NOT stop the RDP session here - it should only be stopped when
+      // the user explicitly disconnects. The WebSocket might reconnect,
+      // and stopping the session prematurely causes the black screen issue.
     };
   }, [session.websocket_url]);
 

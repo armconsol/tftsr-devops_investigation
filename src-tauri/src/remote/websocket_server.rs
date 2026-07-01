@@ -197,16 +197,17 @@ impl WebSocketServer {
         if let Some(tx) = broadcast_map.get(session_id) {
             tx.send(frame)
                 .await
-                .map_err(|e| antml::<parameter name="anyhow!("Failed to send frame: {}", e))?;
+                .map_err(|e| anyhow::anyhow!("Failed to send frame: {}", e))?;
             Ok(())
         } else {
             // Debug: log what sessions are actually registered
             let registered_sessions: Vec<String> = broadcast_map.keys().cloned().collect();
-            warn!(
+            tracing::warn!(
                 "Session not found in frame_broadcasters: '{}'. Registered sessions: {:?}",
-                session_id, registered_sessions
+                session_id,
+                registered_sessions
             );
-            Err(antml::anyhow!("Session not found: {}", session_id))
+            Err(anyhow::anyhow!("Session not found: {}", session_id))
         }
     }
 
@@ -263,6 +264,10 @@ impl WebSocketServer {
                 *p = req.uri().path().to_string();
             }
             let headers = response.headers_mut();
+            info!(
+                "WebSocket handshake for path: {}, setting protocol: binary",
+                req.uri().path()
+            );
             headers.insert(header::SEC_WEBSOCKET_PROTOCOL, "binary".parse().unwrap());
             Ok(response)
         };
@@ -503,5 +508,49 @@ mod tests {
         assert_eq!(session_id_from_path("abc-123"), "abc-123");
         assert_eq!(session_id_from_path("/"), "");
         assert_eq!(session_id_from_path(""), "");
+    }
+
+    #[tokio::test]
+    async fn test_frame_broadcast_after_registration() {
+        // Regression test for black screen issue: frames must be sendable after
+        // registration and before unregistration.
+        let server = WebSocketServer::new();
+        let session_id = "test-broadcast-123";
+
+        // Register the session
+        server.register_session(session_id, "rdp-session").await;
+
+        // Verify session is registered
+        let sessions = server.list_sessions().await;
+        assert_eq!(sessions.len(), 1);
+
+        // Send a frame - this should succeed
+        let frame = RdpFrame {
+            width: 1920,
+            height: 1080,
+            data: vec![0u8; 100],
+            timestamp: 0,
+            frame_number: 0,
+        };
+
+        let result = server.send_frame(session_id, frame).await;
+        assert!(
+            result.is_ok(),
+            "Frame should be sendable after registration"
+        );
+
+        // Now unregister and verify frames fail
+        server.unregister_session(session_id).await;
+
+        let frame2 = RdpFrame {
+            width: 1920,
+            height: 1080,
+            data: vec![0u8; 100],
+            timestamp: 0,
+            frame_number: 1,
+        };
+
+        let result2 = server.send_frame(session_id, frame2).await;
+        assert!(result2.is_err(), "Frame should fail after unregistration");
     }
 }
