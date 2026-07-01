@@ -169,6 +169,7 @@ pub fn run() {
             commands::remote::stop_rdp_session,
             commands::remote::get_rdp_session,
             commands::remote::resize_rdp_session,
+            commands::remote::get_rdp_diagnostics,
             // Proxmox - Core Management (Phase 1)
             commands::proxmox::list_auth_realms,
             commands::proxmox::add_ldap_realm,
