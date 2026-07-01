@@ -40,6 +40,7 @@ git log --oneline
 
 ## Upstream Status
 
+**Issue:** https://github.com/Devolutions/IronRDP/issues/1399  
 **Pull Request:** https://github.com/Devolutions/IronRDP/pull/1398
 
 Submitted to IronRDP upstream on 2026-07-01 by @armconsol.
