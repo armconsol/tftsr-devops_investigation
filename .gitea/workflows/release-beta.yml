@@ -404,6 +404,11 @@ jobs:
           git remote add origin http://172.0.0.29:3000/sarman/tftsr-devops_investigation.git
           git fetch --depth=1 origin "$GITHUB_SHA"
           git checkout FETCH_HEAD
+      - name: Clean up previous IronRDP patch
+        run: |
+          # macOS runners are persistent, so clean up from previous builds
+          rm -rf /tmp/ironrdp-patch
+          echo "Cleaned up /tmp/ironrdp-patch"
       - name: Clone IronRDP patch
         run: |
           # Clone from our fork until upstream PR #1398 merges
