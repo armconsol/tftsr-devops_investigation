@@ -66,6 +66,10 @@ jobs:
         run: node scripts/update-version.mjs
       - name: Clone IronRDP patch
         run: |
+          # Clone from our fork until upstream PR #1398 merges
+          # https://github.com/Devolutions/IronRDP/pull/1398
+          # Using branch ref (not commit hash) to get latest Copilot review fixes
+          # TODO: Revert to upstream crates.io version once PR merges
           git clone --depth=1 --branch=fix/rdp6-bitmap-stride-mismatch https://github.com/armconsol/IronRDP.git /tmp/ironrdp-patch
           echo "IronRDP patch cloned from armconsol/IronRDP fix branch"
       - run: cargo generate-lockfile --manifest-path src-tauri/Cargo.toml
@@ -111,6 +115,10 @@ jobs:
         run: rustup component add clippy
       - name: Clone IronRDP patch
         run: |
+          # Clone from our fork until upstream PR #1398 merges
+          # https://github.com/Devolutions/IronRDP/pull/1398
+          # Using branch ref (not commit hash) to get latest Copilot review fixes
+          # TODO: Revert to upstream crates.io version once PR merges
           git clone --depth=1 --branch=fix/rdp6-bitmap-stride-mismatch https://github.com/armconsol/IronRDP.git /tmp/ironrdp-patch
           echo "IronRDP patch cloned from armconsol/IronRDP fix branch"
       - run: cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
@@ -153,6 +161,10 @@ jobs:
             pkg-config
       - name: Clone IronRDP patch
         run: |
+          # Clone from our fork until upstream PR #1398 merges
+          # https://github.com/Devolutions/IronRDP/pull/1398
+          # Using branch ref (not commit hash) to get latest Copilot review fixes
+          # TODO: Revert to upstream crates.io version once PR merges
           git clone --depth=1 --branch=fix/rdp6-bitmap-stride-mismatch https://github.com/armconsol/IronRDP.git /tmp/ironrdp-patch
           echo "IronRDP patch cloned from armconsol/IronRDP fix branch"
       - run: cargo test --manifest-path src-tauri/Cargo.toml -- --test-threads=1
