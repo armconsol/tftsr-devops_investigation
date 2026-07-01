@@ -40,12 +40,15 @@ git log --oneline
 
 ## Upstream Status
 
-**TODO:** Report this bug to IronRDP upstream at https://github.com/Devolutions/IronRDP
+**Pull Request:** https://github.com/Devolutions/IronRDP/pull/1398
 
-Include:
-- Test case with DGX server showing dimension mismatch
-- Debug logs showing `source != rectangle` dimensions
-- Patch diff from this fix
+Submitted to IronRDP upstream on 2026-07-01 by @armconsol.
+
+Includes:
+- Complete fix with detailed explanation
+- Real traffic examples from DGX server showing dimension mismatch
+- Debug logging to expose the issue
+- Backward-compatible API changes
 
 ## Building with Patch
 
