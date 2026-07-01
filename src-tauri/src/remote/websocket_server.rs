@@ -493,4 +493,61 @@ mod tests {
         assert_eq!(session_id_from_path("/"), "");
         assert_eq!(session_id_from_path(""), "");
     }
+
+    #[test]
+    fn test_encode_frame() {
+        let frame = RdpFrame {
+            width: 1920,
+            height: 1080,
+            data: vec![255u8; 1920 * 1080 * 4], // White RGBA frame
+            timestamp: 1234567890,
+            frame_number: 1,
+        };
+
+        let encoded = encode_frame(&frame);
+
+        // Check header: first 4 bytes = width (LE), next 4 bytes = height (LE)
+        assert_eq!(encoded.len(), 8 + (1920 * 1080 * 4));
+        assert_eq!(
+            u32::from_le_bytes([encoded[0], encoded[1], encoded[2], encoded[3]]),
+            1920
+        );
+        assert_eq!(
+            u32::from_le_bytes([encoded[4], encoded[5], encoded[6], encoded[7]]),
+            1080
+        );
+
+        // Check pixel data starts at offset 8
+        assert_eq!(encoded[8], 255);
+    }
+
+    #[tokio::test]
+    async fn test_websocket_server_lifecycle() {
+        let server = WebSocketServer::new();
+
+        // Start server on random port (returns only port, no receiver)
+        let port = server
+            .start_random_port()
+            .await
+            .expect("Should start server");
+        assert!(port > 0, "Port should be assigned");
+
+        // Register a session (returns frame sender)
+        let session_id = "test-session-123";
+        let rdp_session_id = "rdp-session-123";
+
+        let _frame_tx = server.register_session(session_id, rdp_session_id).await;
+
+        // Verify session is tracked (returns WebSocketSession structs)
+        let sessions = server.list_sessions().await;
+        assert_eq!(sessions.len(), 1);
+        assert_eq!(sessions[0].rdp_session_id, rdp_session_id);
+
+        // Unregister session (returns void)
+        server.unregister_session(session_id).await;
+
+        // Verify session is removed
+        let sessions_after = server.list_sessions().await;
+        assert_eq!(sessions_after.len(), 0);
+    }
 }
