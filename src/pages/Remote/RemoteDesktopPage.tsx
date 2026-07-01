@@ -428,11 +428,14 @@ function SessionView({ session, onDisconnect }: SessionViewProps) {
     ws.onerror = () => setWsStatus('error');
     ws.onclose = () => {
       setWsStatus('disconnected');
-      stopRdpSession(sessionRef.current.id).catch(() => {});
     };
 
-    return () => { ws.close(); };
-  }, [session.websocket_url, sendResize]);
+    return () => {
+      ws.close();
+      // Stop the RDP session when WebSocket is cleaned up
+      stopRdpSession(sessionRef.current.id).catch(() => {});
+    };
+  }, [session.websocket_url]);
 
   const sendInput = (payload: Record<string, unknown>) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {

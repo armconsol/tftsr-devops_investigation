@@ -11,6 +11,7 @@ use tokio::sync::mpsc;
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
+use super::diagnostics::{ConnectionState, RdpDiagnostics};
 use super::input::RawInputEvent;
 use super::rdp_client::{RdpConfig, RdpConnectionHandler, ResizeRequest};
 use super::ssh_tunnel::SshTunnelConfig;
@@ -54,6 +55,7 @@ pub struct RdpSessionInternal {
 #[derive(Clone)]
 pub struct RdpManager {
     sessions: Arc<Mutex<HashMap<String, RdpSessionInternal>>>,
+    diagnostics: Arc<Mutex<HashMap<String, RdpDiagnostics>>>,
     pub websocket_server: Arc<WebSocketServer>,
     rdp_handler: Arc<RdpConnectionHandler>,
 }
@@ -66,6 +68,7 @@ impl RdpManager {
 
         RdpManager {
             sessions: Arc::new(Mutex::new(HashMap::new())),
+            diagnostics: Arc::new(Mutex::new(HashMap::new())),
             websocket_server,
             rdp_handler: Arc::new(rdp_handler),
         }
@@ -123,6 +126,12 @@ impl RdpManager {
         let mut sessions = self.sessions.lock().unwrap();
         sessions.insert(session_id.clone(), session.clone());
 
+        // Initialize diagnostics
+        let mut diagnostics = self.diagnostics.lock().unwrap();
+        let mut diag = RdpDiagnostics::new(&session_id);
+        diag.set_connection_state(ConnectionState::Disconnected);
+        diagnostics.insert(session_id.clone(), diag);
+
         info!(
             "Created RDP session: {} for connection: {}",
             session_id, connection.id
@@ -174,6 +183,14 @@ impl RdpManager {
             ssh_config: ssh_config.clone(),
         };
 
+        // Update diagnostics: connecting
+        {
+            let mut diagnostics = self.diagnostics.lock().unwrap();
+            if let Some(diag) = diagnostics.get_mut(session_id) {
+                diag.set_connection_state(ConnectionState::Connecting);
+            }
+        }
+
         // Start the WebSocket listener for this session and register the canonical
         // session id so the parked frame receiver is routed to the browser client
         // that connects to `ws://.../rdp/{session_id}`.
@@ -217,21 +234,47 @@ impl RdpManager {
             }
         }
 
+        // Update diagnostics: connected
+        {
+            let mut diagnostics = self.diagnostics.lock().unwrap();
+            if let Some(diag) = diagnostics.get_mut(session_id) {
+                diag.set_connection_state(ConnectionState::Connected);
+                diag.set_websocket_state(true, true);
+            }
+        }
+
         // Spawn the actual connection task. `connect()` runs the full session
         // loop, so once it returns (cleanly or with an error) the session is no
         // longer live — flip `connected` to false so the UI/state don't report a
         // dead stream as active.
         let session_id_clone = session_id.to_string();
         let sessions_for_task = self.sessions.clone();
+        let diagnostics_for_task = self.diagnostics.clone();
         let connect_session = rdp_session.clone();
         tokio::spawn(async move {
-            match connect_session.connect().await {
-                Ok(_) => info!("RDP session ended cleanly: {}", session_id_clone),
-                Err(e) => error!("RDP session error: {}", e),
-            }
+            let connection_failed = match connect_session.connect().await {
+                Ok(_) => {
+                    info!("RDP session ended cleanly: {}", session_id_clone);
+                    false
+                }
+                Err(e) => {
+                    error!("RDP session error: {}", e);
+                    true
+                }
+            };
             if let Some(s) = sessions_for_task.lock().unwrap().get_mut(&session_id_clone) {
                 s.connected = false;
                 s.resize_tx = None;
+            }
+            // Update diagnostics
+            let mut diagnostics = diagnostics_for_task.lock().unwrap();
+            if let Some(diag) = diagnostics.get_mut(&session_id_clone) {
+                if connection_failed {
+                    diag.set_connection_state(ConnectionState::Failed);
+                } else {
+                    diag.set_connection_state(ConnectionState::Disconnected);
+                }
+                diag.set_websocket_state(false, false);
             }
         });
 
@@ -278,6 +321,13 @@ impl RdpManager {
             info!("RDP session stopped: {}", session_id);
         }
 
+        // Update diagnostics
+        let mut diagnostics = self.diagnostics.lock().unwrap();
+        if let Some(diag) = diagnostics.get_mut(session_id) {
+            diag.set_connection_state(ConnectionState::Disconnected);
+            diag.set_websocket_state(false, false);
+        }
+
         Ok(())
     }
 
@@ -318,6 +368,26 @@ impl RdpManager {
                 ssh_enabled: s.ssh_config.is_some(),
             }
         })
+    }
+
+    /// Get diagnostics for a session
+    pub fn get_diagnostics(&self, session_id: &str) -> Option<RdpDiagnostics> {
+        let mut diagnostics = self.diagnostics.lock().unwrap();
+
+        diagnostics.get_mut(session_id).map(|diag| {
+            // Update health assessment and stall detection before returning
+            diag.detect_frame_stall(5);
+            diag.compute_health();
+            diag.clone()
+        })
+    }
+
+    /// Record that a frame was received by the frontend (called from frontend via IPC)
+    pub fn record_frame_received(&self, session_id: &str) {
+        let mut diagnostics = self.diagnostics.lock().unwrap();
+        if let Some(diag) = diagnostics.get_mut(session_id) {
+            diag.record_frame_received();
+        }
     }
 
     /// Delete session
