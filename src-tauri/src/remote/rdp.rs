@@ -580,4 +580,76 @@ mod tests {
         let final_session = manager.get_session(&session.id).unwrap();
         assert!(!final_session.connected);
     }
+
+    #[test]
+    fn test_diagnostics_frame_tracking() {
+        use crate::remote::diagnostics::RdpDiagnostics;
+
+        let mut diag = RdpDiagnostics::default();
+        diag.session_id = "test-session-diag".to_string();
+
+        // Record a frame sent
+        diag.record_frame_sent(1920, 1080, 1920 * 1080 * 4);
+
+        // Verify frame was tracked
+        assert_eq!(diag.frame_stats.frames_sent, 1);
+        assert_eq!(diag.frame_stats.last_frame_width, 1920);
+        assert_eq!(diag.frame_stats.last_frame_height, 1080);
+        assert_eq!(diag.frame_stats.total_bytes_sent, 1920 * 1080 * 4);
+        assert!(!diag.frame_stats.frame_stall_detected);
+
+        // Record a frame received
+        diag.record_frame_received();
+        assert_eq!(diag.frame_stats.frames_received, 1);
+    }
+
+    #[test]
+    fn test_session_cleanup() {
+        let manager = RdpManager::new();
+
+        let connection = RemoteConnection {
+            id: "test-conn-cleanup".to_string(),
+            name: "Cleanup Test".to_string(),
+            protocol: RemoteProtocol::Rdp,
+            hostname: "192.168.1.106".to_string(),
+            port: 3389,
+            username: Some("cleanuser".to_string()),
+            domain: None,
+            ssh_enabled: false,
+            ssh_hostname: None,
+            ssh_port: None,
+            ssh_username: None,
+            resolution: "1920x1080".to_string(),
+            color_depth: 32,
+            clipboard_sync: true,
+            drive_redirect: false,
+            multi_monitor: false,
+            compression: true,
+            quality: 80,
+            auto_resize: true,
+            stretch_to_fill: false,
+            created_at: "2024-01-01 00:00:00".to_string(),
+            updated_at: "2024-01-01 00:00:00".to_string(),
+            last_connected_at: None,
+        };
+
+        let session = manager
+            .create_session(&connection, "password123", None, None, None)
+            .unwrap();
+        let session_id = session.id.clone();
+
+        // Verify session exists
+        assert!(manager.get_session(&session_id).is_some());
+
+        // Delete session (which calls stop_session internally)
+        manager
+            .delete_session(&session_id)
+            .expect("Should delete session");
+
+        // Verify session no longer exists
+        assert!(
+            manager.get_session(&session_id).is_none(),
+            "Session should be deleted"
+        );
+    }
 }
