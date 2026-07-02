@@ -104,9 +104,10 @@ rustls = { version = "0.23", features = ["aws_lc_rs"] }
 sspi = "0.21"
 image = "0.25"
 # Database drivers for v3.0.0 database management feature
-tokio-postgres = "0.7"
-sqlx = { version = "0.8", features = ["postgres", "mysql", "runtime-tokio-native-tls"] }
-mysql_async = "0.34"
+# Using native-tls with vendored-openssl to avoid system OpenSSL dependencies in CI
+tokio-postgres = { version = "0.7", features = ["with-serde_json-1"] }
+sqlx = { version = "0.8", features = ["postgres", "mysql", "runtime-tokio-native-tls"], default-features = false }
+mysql_async = { version = "0.34", default-features = false, features = ["default-rustls"] }
 mongodb = "3"
 bson = "2.13"
 redis = { version = "0.25", features = ["aio", "tokio-comp", "connection-manager"] }
