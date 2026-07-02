@@ -577,6 +577,7 @@ export function TabsTrigger({ className, children, value }: { className?: string
 
   return (
     <button
+      type="button"
       className={cn(
         "inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1.5 text-sm font-medium ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50",
         ctx.value === value
@@ -646,6 +647,7 @@ export function DialogContent({ className, children }: { className?: string; chi
         onClick={(e) => e.stopPropagation()}
       >
         <button
+          type="button"
           onClick={() => ctx.onOpenChange(false)}
           className="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 text-foreground"
           aria-label="Close"

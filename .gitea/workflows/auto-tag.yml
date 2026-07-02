@@ -391,7 +391,7 @@ jobs:
     needs: autotag
     runs-on: linux-amd64
     container:
-      image: 172.0.0.29:3000/sarman/tftsr-linux-amd64:rust1.88-node22
+      image: 172.0.0.29:3000/sarman/tftsr-linux-amd64:rust1.89-node22
     env:
       RELEASE_TAG: ${{ needs.autotag.outputs.release_tag }}
     steps:
@@ -421,6 +421,14 @@ jobs:
       - name: Install libsodium
         run: |
           apt-get update && apt-get install -y libsodium-dev pkg-config
+      - name: Clone IronRDP patch
+        run: |
+          # Clone from our fork until upstream PR #1398 merges
+          # https://github.com/Devolutions/IronRDP/pull/1398
+          # Using branch ref (not commit hash) to get latest Copilot review fixes
+          # TODO: Revert to upstream crates.io version once PR merges
+          git clone --depth=1 --branch=fix/rdp6-bitmap-stride-mismatch https://github.com/armconsol/IronRDP.git /tmp/ironrdp-patch
+          echo "IronRDP patch cloned from armconsol/IronRDP fix branch"
       - name: Build
         env:
           APPIMAGE_EXTRACT_AND_RUN: "1"
@@ -488,7 +496,7 @@ jobs:
     needs: autotag
     runs-on: linux-amd64
     container:
-      image: 172.0.0.29:3000/sarman/tftsr-windows-cross:rust1.88-node22
+      image: 172.0.0.29:3000/sarman/tftsr-windows-cross:rust1.89-node22
     env:
       RELEASE_TAG: ${{ needs.autotag.outputs.release_tag }}
     steps:
@@ -518,6 +526,14 @@ jobs:
       - name: Install libsodium
         run: |
           apt-get update && apt-get install -y libsodium-dev pkg-config
+      - name: Clone IronRDP patch
+        run: |
+          # Clone from our fork until upstream PR #1398 merges
+          # https://github.com/Devolutions/IronRDP/pull/1398
+          # Using branch ref (not commit hash) to get latest Copilot review fixes
+          # TODO: Revert to upstream crates.io version once PR merges
+          git clone --depth=1 --branch=fix/rdp6-bitmap-stride-mismatch https://github.com/armconsol/IronRDP.git /tmp/ironrdp-patch
+          echo "IronRDP patch cloned from armconsol/IronRDP fix branch"
       - name: Build
         env:
           CC_x86_64_pc_windows_gnu: x86_64-w64-mingw32-gcc
@@ -597,6 +613,19 @@ jobs:
           git remote add origin http://172.0.0.29:3000/sarman/tftsr-devops_investigation.git
           git fetch --depth=1 origin "refs/tags/${RELEASE_TAG}"
           git checkout FETCH_HEAD
+      - name: Clean up previous IronRDP patch
+        run: |
+          # macOS runners are persistent, so clean up from previous builds
+          rm -rf /tmp/ironrdp-patch
+          echo "Cleaned up /tmp/ironrdp-patch"
+      - name: Clone IronRDP patch
+        run: |
+          # Clone from our fork until upstream PR #1398 merges
+          # https://github.com/Devolutions/IronRDP/pull/1398
+          # Using branch ref (not commit hash) to get latest Copilot review fixes
+          # TODO: Revert to upstream crates.io version once PR merges
+          git clone --depth=1 --branch=fix/rdp6-bitmap-stride-mismatch https://github.com/armconsol/IronRDP.git /tmp/ironrdp-patch
+          echo "IronRDP patch cloned from armconsol/IronRDP fix branch"
       - name: Build
         env:
           MACOSX_DEPLOYMENT_TARGET: "11.0"
@@ -673,7 +702,7 @@ jobs:
     needs: autotag
     runs-on: linux-amd64
     container:
-      image: 172.0.0.29:3000/sarman/tftsr-linux-arm64:rust1.88-node22
+      image: 172.0.0.29:3000/sarman/tftsr-linux-arm64:rust1.89-node22
     env:
       RELEASE_TAG: ${{ needs.autotag.outputs.release_tag }}
     steps:
@@ -703,6 +732,14 @@ jobs:
       - name: Install libsodium
         run: |
           apt-get update && apt-get install -y libsodium-dev pkg-config libssl-dev
+      - name: Clone IronRDP patch
+        run: |
+          # Clone from our fork until upstream PR #1398 merges
+          # https://github.com/Devolutions/IronRDP/pull/1398
+          # Using branch ref (not commit hash) to get latest Copilot review fixes
+          # TODO: Revert to upstream crates.io version once PR merges
+          git clone --depth=1 --branch=fix/rdp6-bitmap-stride-mismatch https://github.com/armconsol/IronRDP.git /tmp/ironrdp-patch
+          echo "IronRDP patch cloned from armconsol/IronRDP fix branch"
       - name: Build
         env:
           CC_aarch64_unknown_linux_gnu: aarch64-linux-gnu-gcc

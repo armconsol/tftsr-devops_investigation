@@ -1,0 +1,166 @@
+From 76276b42adc408b9d5c1022a3c884c576d6e62c3 Mon Sep 17 00:00:00 2001
+From: Shaun Arman <Shaun.Arman@motorolasolutions.com>
+Date: Wed, 1 Jul 2026 08:12:41 -0500
+Subject: [PATCH] fix(rdp6): use actual bitmap dimensions instead of rectangle
+ dimensions
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+RDP6 compressed bitmap updates can have different dimensions than their
+placement rectangles. The BitmapUpdate contains:
+- update.width × update.height: actual decoded bitmap size
+- update.rectangle: where to place the bitmap on screen
+
+Previously, apply_rgb24() was chunking the decoded RGB24 data using
+rectangle.width(), causing stride mismatches when update.width != rectangle.width().
+
+This manifested as horizontal striping and blur artifacts when connecting
+to servers like NVIDIA DGX that send tiled updates with mismatched dimensions.
+
+Example from real traffic:
+  source=348x11, rectangle=345x11 (left:788, right:1132)
+  Rectangle width: 1132-788+1 = 345, but update.width = 348
+
+The decoder produces 348 pixels/row, but chunking at 345 pixels/row caused
+pixel data misalignment.
+
+Fix:
+- Add apply_rgb24_with_dimensions() that accepts explicit source_width
+- Update RDP6 handler in fast_path.rs to use update.width for chunking
+- Keep apply_rgb24() for backward compatibility (uses rectangle.width)
+
+Tested against NVIDIA DGX server at 1920x1080 - clean rendering with no artifacts.
+---
+ crates/ironrdp-session/src/fast_path.rs | 27 ++++++++++++---
+ crates/ironrdp-session/src/image.rs     | 44 ++++++++++++++++++++-----
+ 2 files changed, 59 insertions(+), 12 deletions(-)
+
+diff --git a/crates/ironrdp-session/src/fast_path.rs b/crates/ironrdp-session/src/fast_path.rs
+index 2a05d1a..88d7adf 100644
+--- a/crates/ironrdp-session/src/fast_path.rs
++++ b/crates/ironrdp-session/src/fast_path.rs
+@@ -203,15 +203,34 @@ impl Processor {
+                     // Compressed bitmaps at a color depth of 32 bpp are compressed using RDP 6.0
+                     // Bitmap Compression and stored inside an RDP 6.0 Bitmap Compressed Stream
+                     // structure ([MS-RDPEGDI] section 2.2.2.5.1).
+-                    debug!("32 bpp compressed RDP6_BITMAP_STREAM");
++                    let source_width = usize::from(update.width);
++                    let source_height = usize::from(update.height);
++                    let rect_width = usize::from(update.rectangle.width());
++                    let rect_height = usize::from(update.rectangle.height());
++
++                    debug!(
++                        "32 bpp compressed RDP6_BITMAP_STREAM: source={}x{}, rectangle={}x{} at {:?}, data_len={}, expected={}",
++                        source_width,
++                        source_height,
++                        rect_width,
++                        rect_height,
++                        update.rectangle,
++                        update.bitmap_data.len(),
++                        source_width * source_height * 3
++                    );
+ 
+                     match self.bitmap_stream_decoder.decode_bitmap_stream_to_rgb24(
+                         update.bitmap_data,
+                         &mut buf,
+-                        usize::from(update.width),
+-                        usize::from(update.height),
++                        source_width,
++                        source_height,
+                     ) {
+-                        Ok(()) => image.apply_rgb24(&buf, &update.rectangle, true)?,
++                        Ok(()) => {
++                            debug!("RDP6 decoded to {} bytes (expected {})", buf.len(), source_width * source_height * 3);
++                            // Use actual decoded dimensions (source_width), not rectangle width
++                            // The rectangle tells us WHERE to place the bitmap, not HOW BIG it is
++                            image.apply_rgb24_with_dimensions(&buf, &update.rectangle, source_width, true)?
++                        }
+                         Err(err) => {
+                             warn!("Invalid RDP6_BITMAP_STREAM: {err}");
+                             update.rectangle.clone()
+diff --git a/crates/ironrdp-session/src/image.rs b/crates/ironrdp-session/src/image.rs
+index 0d42072..406780f 100644
+--- a/crates/ironrdp-session/src/image.rs
++++ b/crates/ironrdp-session/src/image.rs
+@@ -660,6 +660,18 @@ impl DecodedImage {
+         &mut self,
+         bgr24: &[u8],
+         update_rectangle: &InclusiveRectangle,
++    ) -> SessionResult<InclusiveRectangle> {
++        self.apply_bgr24_bitmap_with_order(bgr24, update_rectangle, true)
++    }
++
++    /// Apply a 24-bit BGR bitmap with configurable row order.
++    /// If `bottom_up` is true, rows are reversed (standard RDP bitmap order).
++    /// If false, rows are kept in top-down order (RDP6 decompressed output).
++    pub(crate) fn apply_bgr24_bitmap_with_order(
++        &mut self,
++        bgr24: &[u8],
++        update_rectangle: &InclusiveRectangle,
++        bottom_up: bool,
+     ) -> SessionResult<InclusiveRectangle> {
+         if !self.rect_fits(update_rectangle) {
+             debug!(
+@@ -680,11 +692,13 @@ impl DecodedImage {
+ 
+         let pointer_rendering_state = self.pointer_rendering_begin(update_rectangle)?;
+ 
+-        bgr24
+-            .chunks_exact(rectangle_width * SRC_COLOR_DEPTH)
+-            .rev()
+-            .enumerate()
+-            .for_each(|(row_idx, row)| {
++        let rows: Box<dyn Iterator<Item = (usize, &[u8])>> = if bottom_up {
++            Box::new(bgr24.chunks_exact(rectangle_width * SRC_COLOR_DEPTH).rev().enumerate())
++        } else {
++            Box::new(bgr24.chunks_exact(rectangle_width * SRC_COLOR_DEPTH).enumerate())
++        };
++
++        rows.for_each(|(row_idx, row)| {
+                 row.chunks_exact(SRC_COLOR_DEPTH)
+                     .enumerate()
+                     .for_each(|(col_idx, src_pixel)| {
+@@ -793,15 +807,18 @@ impl DecodedImage {
+         Ok(update_rectangle)
+     }
+ 
+-    pub(crate) fn apply_rgb24(
++    /// Apply RGB24 bitmap with explicit source dimensions.
++    /// `rgb24` contains `source_width × source_height` pixels in RGB24 format.
++    /// `update_rectangle` specifies WHERE to place the bitmap, not its size.
++    pub(crate) fn apply_rgb24_with_dimensions(
+         &mut self,
+         rgb24: &[u8],
+         update_rectangle: &InclusiveRectangle,
++        source_width: usize,
+         flip: bool,
+     ) -> SessionResult<InclusiveRectangle> {
+         const SRC_COLOR_DEPTH: usize = 3;
+-        let rectangle_width = usize::from(update_rectangle.width());
+-        let lines = rgb24.chunks_exact(rectangle_width * SRC_COLOR_DEPTH);
++        let lines = rgb24.chunks_exact(source_width * SRC_COLOR_DEPTH);
+         if flip {
+             self.apply_rgb24_iter(lines.rev(), update_rectangle)
+         } else {
+@@ -809,6 +826,17 @@ impl DecodedImage {
+         }
+     }
+ 
++    pub(crate) fn apply_rgb24(
++        &mut self,
++        rgb24: &[u8],
++        update_rectangle: &InclusiveRectangle,
++        flip: bool,
++    ) -> SessionResult<InclusiveRectangle> {
++        // Legacy API: assume source width matches rectangle width
++        let rectangle_width = usize::from(update_rectangle.width());
++        self.apply_rgb24_with_dimensions(rgb24, update_rectangle, rectangle_width, flip)
++    }
++
+     #[cfg(feature = "qoi")]
+     fn apply_rgba32_iter<'a, I>(
+         &mut self,
+-- 
+2.50.1 (Apple Git-155)
+

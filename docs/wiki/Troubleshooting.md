@@ -1,5 +1,25 @@
 # Troubleshooting
 
+## Runtime Logging
+
+### Where backend logs are written
+
+Backend logs are written locally to:
+
+- Linux: `~/.local/share/tftsr/logs/backend.log` (or `${TRCAA_DATA_DIR}/logs/backend.log` / legacy `${TFTSR_DATA_DIR}/logs/backend.log` if overridden)
+- macOS: `~/Library/Application Support/tftsr/logs/backend.log`
+- Windows: `%APPDATA%\\tftsr\\logs\\backend.log`
+
+The file sink rolls daily; console logging remains enabled. Daily rotation is currently not capped by day-count retention.
+
+### Enable debug logging for deeper diagnostics
+
+1. Open **Settings → Security**
+2. Turn on **Enable debug logging**
+3. Reproduce the issue and inspect `backend.log`
+
+Default level is normal (`info`). Debug logging should be enabled only while actively diagnosing.
+
 ## CI/CD — Gitea Actions
 
 ### Build Not Triggering After Push
@@ -169,6 +189,56 @@ sudo apt-get install -y libwebkit2gtk-4.1-dev libssl-dev libgtk-3-dev \
 
 ---
 
+### Windows: `no method named userauth_pubkey_memory` on `ssh2::Session`
+
+```text
+error[E0599]: no method named `userauth_pubkey_memory` found for
+mutable reference `&mut ssh2::Session`
+```
+
+In-memory SSH key auth (`authenticate_with_key_data` in `remote/ssh_tunnel.rs`)
+requires libssh2 to be built against OpenSSL. The default Windows crypto backend
+does not expose `userauth_pubkey_memory`.
+
+**Fix:** enable the `vendored-openssl` feature on `ssh2` so OpenSSL is statically
+linked on every platform:
+```toml
+ssh2 = { version = "0.9", features = ["vendored-openssl"] }
+```
+> Trade-off: OpenSSL is pinned to the bundled version and no longer tracks OS
+> security updates — keep `ssh2`/`openssl-src` current (e.g. `cargo audit` in CI).
+
+---
+
+### macOS: `unresolved module or unlinked crate security_framework`
+
+```text
+error[E0433]: failed to resolve: use of unresolved module or unlinked
+crate `security_framework`
+```
+
+`secure_storage.rs` previously hand-rolled a macOS backend against the
+`security_framework` crate, which was never declared in `Cargo.toml`.
+
+**Fix:** use the `keyring` crate for macOS too (mirroring Windows/Linux). Note
+`keyring` 3.x ships **no backend by default** (`default = []`) and silently falls
+back to an in-memory mock, so the native store must be opted in per target:
+```toml
+[target.'cfg(target_os = "macos")'.dependencies]
+keyring = { version = "3.0", features = ["apple-native"] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+keyring = { version = "3.0", features = ["windows-native"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+keyring = { version = "3.0", features = ["sync-secret-service"] }
+```
+Build a fresh `keyring::Entry::new(service_name, account)` **per call** so each
+credential is stored under its own account — a single cached `Entry` collides all
+credentials into one slot.
+
+---
+
 ## Database
 
 ### DB Won't Open in Production
@@ -299,3 +369,79 @@ docker exec gogs_postgres_db psql -U gogs -d gogsdb -c "SELECT id, lower_name, i
 ```
 
 Database is named `gogsdb`. The PostgreSQL instance uses SCRAM-SHA-256 auth (MD5 also configured for the `gogs` user for compatibility with older clients).
+
+---
+
+## Remote Desktop (RDP)
+
+### Connecting Re-Prompts for a Password Already Saved on the Connection
+
+**Cause:** The RDP password is stored encrypted in `remote_credentials.rdp_password_encrypted`, but the backend had no function to retrieve it, and `start_rdp_session` required a `password` argument — so the UI always showed a "Connect" password dialog.
+
+**Fix:** `get_remote_rdp_password()` (`src-tauri/src/remote/connection.rs`) decrypts the stored password, and `start_rdp_session` now takes `password: Option<String>`. When the argument is omitted/blank, the stored password is used. The frontend (`src/pages/Remote/RemoteDesktopPage.tsx`) connects with stored credentials immediately and only shows the password dialog as a fallback if that fails.
+
+> **Security note — stored RDP credentials.** RDP passwords are encrypted at rest
+> (AES-256-GCM via `integrations::auth`) in `remote_credentials.rdp_password_encrypted`,
+> keyed by `TRCAA_ENCRYPTION_KEY` (or an auto-generated `.enckey`, mode `0600`).
+> The protection is therefore only as strong as that key: anyone who can read the
+> key file and the database can recover the passwords. Prefer the SSH-tunnel path
+> for untrusted networks, keep the encryption key off the database host where
+> possible, and treat the auto-generated `.enckey` as a secret (back it up
+> securely, never commit it). Decrypted passwords are only held in memory for the
+> duration of a connect call and are never logged or returned to the frontend.
+
+### Connecting Shows Only a Black Screen (No Desktop)
+
+**Cause (two parts):**
+1. `start_rdp_session` called the legacy **sync** `RdpManager::start_session`, which never actually connected via IronRDP and never started a WebSocket server — it returned a `ws://` URL pointing at a dead port, so no frames were ever sent.
+2. Even on the async path, the session id used by the frame sender, `register_session`, the `ws://.../rdp/{id}` URL, and `handle_client` did not match (each generated its own UUID), so frames could not be routed to the client.
+
+**Fix:** The command now drives the real async connect path (`start_session_with_password`). A single canonical session id is used across `RdpClientSession` (`new_with_id` / `create_session_with_id`), `WebSocketServer::register_session`, the returned URL, and `handle_client`, which now parses the id from the `/rdp/{id}` request path (`session_id_from_path`) instead of generating a new one. `handle_client` rejects connections for unregistered session ids.
+
+### Black Screen Persisted After Connecting (Frames Produced but Never Delivered)
+
+**Symptom:** Backend logs show `connected=true` and frames being produced
+(`frames_sent` > 0), yet the canvas stays black — the WebSocket client receives
+no frames.
+
+**Cause:** The frame-forwarding task awaited `frame_rx.recv()`. Frames are
+produced by the blocking IronRDP `connect()` loop running on a tokio worker.
+Channel `try_send` wakeups are enqueued on that worker's **local** run-queue,
+which it never drains while parked in a blocking socket read; work-stealing did
+not reliably pick the wakeup up, so `recv().await` never woke despite buffered
+frames. (Timer wakeups such as the heartbeat use a different path and worked,
+which confirmed the runtime itself was healthy.)
+
+**Fix:** The forwarder polls `try_recv()` with a 5 ms async sleep instead of
+awaiting `recv()`, decoupling frame delivery from the starved channel waker. See
+`remote/rdp_client.rs` (`new_with_id`).
+
+### Black Screen with `Session not found` After WebSocket Reset
+
+**Symptom:** Disk logs show this sequence:
+1. WebSocket connects, then resets quickly (`Connection reset without closing handshake`)
+2. RDP decode continues and frame production logs continue
+3. Repeated `Failed to send frame: Session not found: <session_id>`
+
+**Cause:** WebSocket lifecycle teardown dropped frame-routing state while the
+RDP session stayed active. In parallel, subprotocol negotiation was not strict
+enough and clients could attach without session-bound token validation.
+
+**Fix:** The WebSocket layer now:
+- requires `Sec-WebSocket-Protocol: binary` at handshake
+- uses per-session auth tokens in the RDP WebSocket URL (`?token=...`)
+- enforces one active controlling client per session
+- keeps session routing registered across transient disconnect windows so reconnect can resume streaming
+
+### Mouse/Keyboard Do Nothing in the RDP Session
+
+**Cause:** Input was never wired from the webview to the session — `handle_client`
+only logged inbound WebSocket messages.
+
+**Fix:** The frontend sends `RawInputEvent` JSON over the same WebSocket; the
+server decodes it (`remote/input.rs`), routes it through a per-session channel to
+a dispatch task, and `RdpClientSession::handle_input` emits IronRDP fastpath
+input. Mouse moves are sent before button state changes, coordinates are scaled
+from CSS pixels to the RDP resolution on the frontend and clamped on the backend,
+and JS `KeyboardEvent.code` values map to RDP scancode set 1 (extended keys carry
+`0xE000`).

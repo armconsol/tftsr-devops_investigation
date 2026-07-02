@@ -1,3 +1,6 @@
+// Copyright (c) 2025 Shaun Arman
+// MIT License - see LICENSE file for details
+
 import React, { useState, useEffect, useRef } from "react";
 import { Routes, Route, NavLink, useLocation } from "react-router-dom";
 import {
@@ -23,7 +26,12 @@ import {
 } from "lucide-react";
 import { Toaster } from "sonner";
 import { useSettingsStore } from "@/stores/settingsStore";
-import { getAppVersionCmd, loadAiProvidersCmd, testProviderConnectionCmd, shutdownPortForwardsCmd } from "@/lib/tauriCommands";
+import {
+  getAppVersionCmd,
+  loadAiProvidersCmd,
+  testProviderConnectionCmd,
+  shutdownPortForwardsCmd,
+} from "@/lib/tauriCommands";
 
 import Dashboard from "@/pages/Dashboard";
 import NewIssue from "@/pages/NewIssue";
@@ -33,6 +41,8 @@ import Resolution from "@/pages/Resolution";
 import RCA from "@/pages/RCA";
 import Postmortem from "@/pages/Postmortem";
 import History from "@/pages/History";
+import RemoteDesktopPage from "@/pages/Remote/RemoteDesktopPage";
+import { RemoteDesktopPage as RemoteDesktopPageAlt } from "@/pages/RemoteDesktop/RemoteDesktopPage";
 import AIProviders from "@/pages/Settings/AIProviders";
 import Ollama from "@/pages/Settings/Ollama";
 import Integrations from "@/pages/Settings/Integrations";
@@ -98,6 +108,7 @@ const navItems = [
       { to: "/proxmox/nodes", label: "Node Detail" },
     ],
   },
+  { to: "/remote-desktop", icon: Server, label: "Remote Desktop" },
   { to: "/history", icon: Clock, label: "History" },
 ];
 
@@ -117,7 +128,12 @@ export default function App() {
   const [collapsed, setCollapsed] = useState(false);
   const [expandedSections, setExpandedSections] = useState<string[]>([]);
   const [appVersion, setAppVersion] = useState("");
-  const { theme, setTheme, setProviders, getActiveProvider } = useSettingsStore();
+  const {
+    theme,
+    setTheme,
+    setProviders,
+    getActiveProvider,
+  } = useSettingsStore();
   const cleanupDone = useRef(false);
   const location = useLocation();
 
@@ -315,6 +331,7 @@ export default function App() {
             <Route path="/issue/:id/rca" element={<RCA />} />
             <Route path="/issue/:id/postmortem" element={<Postmortem />} />
             <Route path="/history" element={<History />} />
+            <Route path="/remote" element={<RemoteDesktopPageAlt />} />
             <Route path="/settings/providers" element={<AIProviders />} />
             <Route path="/settings/ollama" element={<Ollama />} />
             <Route path="/settings/shell" element={<ShellExecution />} />
@@ -326,6 +343,7 @@ export default function App() {
           <Route path="/proxmox/storage" element={<ProxmoxStoragePage />} />
           <Route path="/proxmox/network" element={<ProxmoxNetworkPage />} />
           <Route path="/proxmox/firewall" element={<ProxmoxFirewallPage />} />
+          <Route path="/remote-desktop" element={<RemoteDesktopPage />} />
           <Route path="/proxmox/acl" element={<ProxmoxACLPage />} />
           <Route path="/proxmox/backup" element={<ProxmoxBackupPage />} />
           <Route path="/proxmox/ceph" element={<ProxmoxCephPage />} />
