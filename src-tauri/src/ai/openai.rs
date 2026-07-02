@@ -416,8 +416,11 @@ impl OpenAiProvider {
         let json: serde_json::Value = resp.json().await?;
 
         tracing::debug!(
-            "GenAI response: {}",
-            serde_json::to_string_pretty(&json).unwrap_or_else(|_| "invalid JSON".to_string())
+            has_msg = json.get("msg").is_some(),
+            has_tool_calls = json.get("tool_calls").is_some()
+                || json.get("toolCalls").is_some()
+                || json.get("function_calls").is_some(),
+            "GenAI response metadata"
         );
 
         // Extract response content from "msg" field
@@ -499,7 +502,17 @@ impl OpenAiProvider {
                                 }
                             }
 
-                            tracing::warn!("GenAI: Failed to parse tool call: {call:?}");
+                            tracing::warn!(
+                                has_id = call.get("id").is_some(),
+                                has_name = call.get("name").is_some()
+                                    || call.get("function").and_then(|f| f.get("name")).is_some(),
+                                has_args = call.get("arguments").is_some()
+                                    || call
+                                        .get("function")
+                                        .and_then(|f| f.get("arguments"))
+                                        .is_some(),
+                                "GenAI: Failed to parse tool call"
+                            );
                             None
                         })
                         .collect();

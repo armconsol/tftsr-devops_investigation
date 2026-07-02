@@ -54,6 +54,36 @@ pub async fn recommend_models() -> Result<Vec<ModelRecommendation>, String> {
 
 // --- Settings commands ---
 
+fn apply_partial_settings(
+    settings: &mut AppSettings,
+    partial_settings: &serde_json::Value,
+) -> Option<bool> {
+    if let Some(theme) = partial_settings.get("theme").and_then(|v| v.as_str()) {
+        settings.theme = theme.to_string();
+    }
+    if let Some(active_provider) = partial_settings
+        .get("active_provider")
+        .and_then(|v| v.as_str())
+    {
+        settings.active_provider = Some(active_provider.to_string());
+    }
+    if let Some(ch) = partial_settings
+        .get("update_channel")
+        .and_then(|v| v.as_str())
+    {
+        settings.update_channel = ch.to_string();
+    }
+    if let Some(enabled) = partial_settings
+        .get("debug_logging_enabled")
+        .and_then(|v| v.as_bool())
+    {
+        settings.debug_logging_enabled = enabled;
+        return Some(enabled);
+    }
+
+    None
+}
+
 #[tauri::command]
 pub async fn get_settings(state: tauri::State<'_, AppState>) -> Result<AppSettings, String> {
     state
@@ -69,21 +99,13 @@ pub async fn update_settings(
     state: tauri::State<'_, AppState>,
 ) -> Result<AppSettings, String> {
     let mut settings = state.settings.lock().map_err(|e| e.to_string())?;
-
-    if let Some(theme) = partial_settings.get("theme").and_then(|v| v.as_str()) {
-        settings.theme = theme.to_string();
-    }
-    if let Some(active_provider) = partial_settings
-        .get("active_provider")
-        .and_then(|v| v.as_str())
-    {
-        settings.active_provider = Some(active_provider.to_string());
-    }
-    if let Some(ch) = partial_settings
-        .get("update_channel")
-        .and_then(|v| v.as_str())
-    {
-        settings.update_channel = ch.to_string();
+    let previous_debug_logging = settings.debug_logging_enabled;
+    let debug_logging_update = apply_partial_settings(&mut settings, &partial_settings);
+    if let Some(enabled) = debug_logging_update {
+        if let Err(e) = crate::set_debug_logging_enabled(enabled) {
+            settings.debug_logging_enabled = previous_debug_logging;
+            return Err(e);
+        }
     }
 
     Ok(settings.clone())
@@ -638,5 +660,17 @@ mod updater_tests {
         let settings = AppSettings::default();
         let json = serde_json::to_string(&settings).unwrap();
         assert!(json.contains("\"stable\""));
+    }
+
+    #[test]
+    fn test_apply_partial_settings_extracts_debug_logging_toggle() {
+        let mut settings = AppSettings::default();
+        let partial = serde_json::json!({
+            "debug_logging_enabled": true
+        });
+
+        let update = apply_partial_settings(&mut settings, &partial);
+        assert_eq!(update, Some(true));
+        assert!(settings.debug_logging_enabled);
     }
 }

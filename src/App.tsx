@@ -26,7 +26,12 @@ import {
 } from "lucide-react";
 import { Toaster } from "sonner";
 import { useSettingsStore } from "@/stores/settingsStore";
-import { getAppVersionCmd, loadAiProvidersCmd, testProviderConnectionCmd, shutdownPortForwardsCmd } from "@/lib/tauriCommands";
+import {
+  getAppVersionCmd,
+  loadAiProvidersCmd,
+  testProviderConnectionCmd,
+  shutdownPortForwardsCmd,
+} from "@/lib/tauriCommands";
 
 import Dashboard from "@/pages/Dashboard";
 import NewIssue from "@/pages/NewIssue";
@@ -123,7 +128,12 @@ export default function App() {
   const [collapsed, setCollapsed] = useState(false);
   const [expandedSections, setExpandedSections] = useState<string[]>([]);
   const [appVersion, setAppVersion] = useState("");
-  const { theme, setTheme, setProviders, getActiveProvider } = useSettingsStore();
+  const {
+    theme,
+    setTheme,
+    setProviders,
+    getActiveProvider,
+  } = useSettingsStore();
   const cleanupDone = useRef(false);
   const location = useLocation();
 

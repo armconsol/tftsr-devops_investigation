@@ -22,22 +22,99 @@ pub mod state;
 
 use sha2::{Digest, Sha256};
 use state::AppState;
-use std::sync::{Arc, Mutex};
+use std::path::Path;
+use std::sync::{Arc, Mutex, OnceLock};
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::util::SubscriberInitExt;
+use tracing_subscriber::EnvFilter;
+
+type LogReloadHandle = tracing_subscriber::reload::Handle<EnvFilter, tracing_subscriber::Registry>;
+
+static LOG_FILTER_HANDLE: OnceLock<LogReloadHandle> = OnceLock::new();
+static LOG_FILE_GUARD: OnceLock<tracing_appender::non_blocking::WorkerGuard> = OnceLock::new();
+
+fn default_log_directive(debug_logging_enabled: bool) -> &'static str {
+    if debug_logging_enabled {
+        "debug"
+    } else {
+        "info"
+    }
+}
+
+fn build_default_log_filter(debug_logging_enabled: bool) -> EnvFilter {
+    EnvFilter::new(default_log_directive(debug_logging_enabled))
+}
+
+#[cfg(unix)]
+fn secure_log_directory(log_dir: &Path) -> Result<(), String> {
+    use std::os::unix::fs::PermissionsExt;
+
+    std::fs::set_permissions(log_dir, std::fs::Permissions::from_mode(0o700))
+        .map_err(|e| format!("failed to set permissions on log directory {log_dir:?}: {e}"))
+}
+
+#[cfg(not(unix))]
+fn secure_log_directory(_log_dir: &Path) -> Result<(), String> {
+    Ok(())
+}
+
+fn init_tracing(data_dir: &Path) -> Result<(), String> {
+    let log_dir = data_dir.join("logs");
+    std::fs::create_dir_all(&log_dir)
+        .map_err(|e| format!("failed to create log directory {log_dir:?}: {e}"))?;
+    secure_log_directory(&log_dir)?;
+
+    let file_appender = tracing_appender::rolling::daily(log_dir, "backend.log");
+    let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
+
+    let initial_filter =
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| build_default_log_filter(false));
+    let (filter_layer, filter_handle) = tracing_subscriber::reload::Layer::new(initial_filter);
+
+    tracing_subscriber::registry()
+        .with(filter_layer)
+        .with(tracing_subscriber::fmt::layer())
+        .with(
+            tracing_subscriber::fmt::layer()
+                .with_writer(non_blocking)
+                .with_ansi(false),
+        )
+        .try_init()
+        .map_err(|e| format!("failed to initialize tracing subscriber: {e}"))?;
+
+    let _ = LOG_FILTER_HANDLE.set(filter_handle);
+    let _ = LOG_FILE_GUARD.set(guard);
+    Ok(())
+}
+
+fn init_tracing_fallback() {
+    let _ = tracing_subscriber::fmt()
+        .with_env_filter(
+            EnvFilter::try_from_default_env().unwrap_or_else(|_| build_default_log_filter(false)),
+        )
+        .try_init();
+}
+
+pub fn set_debug_logging_enabled(enabled: bool) -> Result<(), String> {
+    let handle = LOG_FILTER_HANDLE
+        .get()
+        .ok_or_else(|| "logging subscriber is not initialized".to_string())?;
+    handle
+        .reload(build_default_log_filter(enabled))
+        .map_err(|e| format!("failed to update log filter: {e}"))
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    // Initialize tracing subscriber for structured logging
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
-        )
-        .init();
+    // Determine data directory
+    let data_dir = crate::state::get_app_data_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("./tftsr-data"));
+    if let Err(e) = init_tracing(&data_dir) {
+        init_tracing_fallback();
+        tracing::warn!("Falling back to console-only logging: {e}");
+    }
 
     tracing::info!("Starting Troubleshooting and RCA Assistant application");
-
-    // Determine data directory
-    let data_dir = dirs_data_dir();
 
     // Initialize database
     let conn = db::connection::init_db(&data_dir).expect("Failed to initialize database");
@@ -508,48 +585,17 @@ pub fn run() {
         .expect("Error running Troubleshooting and RCA Assistant application");
 }
 
-/// Determine the application data directory.
-fn dirs_data_dir() -> std::path::PathBuf {
-    // Support both TRCAA_DATA_DIR (new) and TFTSR_DATA_DIR (legacy) for backwards compatibility
-    if let Ok(dir) = std::env::var("TRCAA_DATA_DIR") {
-        return std::path::PathBuf::from(dir);
-    }
-    if let Ok(dir) = std::env::var("TFTSR_DATA_DIR") {
-        tracing::warn!("TFTSR_DATA_DIR is deprecated, use TRCAA_DATA_DIR instead");
-        return std::path::PathBuf::from(dir);
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_default_log_directive_uses_info_by_default() {
+        assert_eq!(default_log_directive(false), "info");
     }
 
-    // Use platform-appropriate data directory
-    #[cfg(target_os = "linux")]
-    {
-        if let Ok(xdg) = std::env::var("XDG_DATA_HOME") {
-            return std::path::PathBuf::from(xdg).join("tftsr");
-        }
-        if let Ok(home) = std::env::var("HOME") {
-            return std::path::PathBuf::from(home)
-                .join(".local")
-                .join("share")
-                .join("tftsr");
-        }
+    #[test]
+    fn test_default_log_directive_uses_debug_when_enabled() {
+        assert_eq!(default_log_directive(true), "debug");
     }
-
-    #[cfg(target_os = "macos")]
-    {
-        if let Ok(home) = std::env::var("HOME") {
-            return std::path::PathBuf::from(home)
-                .join("Library")
-                .join("Application Support")
-                .join("tftsr");
-        }
-    }
-
-    #[cfg(target_os = "windows")]
-    {
-        if let Ok(appdata) = std::env::var("APPDATA") {
-            return std::path::PathBuf::from(appdata).join("tftsr");
-        }
-    }
-
-    // Fallback
-    std::path::PathBuf::from("./tftsr-data")
 }

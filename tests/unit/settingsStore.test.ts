@@ -21,6 +21,7 @@ describe("Settings Store", () => {
       default_provider: "ollama",
       default_model: "llama3.2:3b",
       ollama_url: "http://localhost:11434",
+      debug_logging_enabled: false,
       pii_enabled_patterns: Object.fromEntries(DEFAULT_PII_PATTERNS.map((id) => [id, true])),
     });
   });
@@ -54,6 +55,10 @@ describe("Settings Store", () => {
     expect(raw).toBeTruthy();
     expect(raw).not.toContain("sk-test-key");
   });
+
+  it("defaults debug logging toggle to disabled", () => {
+    expect(useSettingsStore.getState().debug_logging_enabled).toBe(false);
+  });
 });
 
 describe("Settings Store — PII patterns", () => {
@@ -66,6 +71,7 @@ describe("Settings Store — PII patterns", () => {
       default_provider: "ollama",
       default_model: "llama3.2:3b",
       ollama_url: "http://localhost:11434",
+      debug_logging_enabled: false,
       pii_enabled_patterns: Object.fromEntries(DEFAULT_PII_PATTERNS.map((id) => [id, true])),
     });
   });

@@ -307,13 +307,20 @@ interface ModelRecommendation {
 ```typescript
 getSettingsCmd() → AppSettings
 ```
-Reads app settings from the `settings` table.
+Reads in-memory app settings from backend state.
+Settings are not written to a dedicated settings table in this flow; frontend state is persisted in local storage and re-synced through `update_settings`.
+
+`AppSettings` includes:
+- `debug_logging_enabled: boolean` (default `false`)
+- `update_channel: string`
 
 ### `update_settings`
 ```typescript
 updateSettingsCmd(partial: Partial<AppSettings>) → AppSettings
 ```
-Merges partial settings and persists to DB.
+Merges partial settings in backend state. If `debug_logging_enabled` is provided,
+the backend tracing filter is updated live (`info` by default, `debug` when enabled).
+This command is the supported toggle path (it applies both state update and live log-level reload).
 
 ### `get_audit_log`
 ```typescript
