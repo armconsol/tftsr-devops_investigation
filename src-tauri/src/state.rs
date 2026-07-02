@@ -60,6 +60,8 @@ pub struct AppSettings {
     pub default_provider: String,
     pub default_model: String,
     pub ollama_url: String,
+    #[serde(default)]
+    pub debug_logging_enabled: bool,
     #[serde(default = "default_update_channel")]
     pub update_channel: String,
 }
@@ -77,6 +79,7 @@ impl Default for AppSettings {
             default_provider: "ollama".to_string(),
             default_model: "llama3.2:3b".to_string(),
             ollama_url: "http://localhost:11434".to_string(),
+            debug_logging_enabled: false,
             update_channel: "stable".to_string(),
         }
     }
@@ -213,7 +216,23 @@ mod tests {
         let settings = AppSettings::default();
         assert_eq!(settings.theme, "dark");
         assert_eq!(settings.default_provider, "ollama");
+        assert!(!settings.debug_logging_enabled);
         assert_eq!(settings.update_channel, "stable");
+    }
+
+    #[test]
+    fn test_app_settings_deserialize_defaults_debug_logging_disabled() {
+        let json = r#"{
+            "theme":"dark",
+            "ai_providers":[],
+            "default_provider":"ollama",
+            "default_model":"llama3.2:3b",
+            "ollama_url":"http://localhost:11434"
+        }"#;
+
+        let settings: AppSettings =
+            serde_json::from_str(json).expect("settings should deserialize");
+        assert!(!settings.debug_logging_enabled);
     }
 
     #[test]

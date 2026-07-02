@@ -26,7 +26,13 @@ import {
 } from "lucide-react";
 import { Toaster } from "sonner";
 import { useSettingsStore } from "@/stores/settingsStore";
-import { getAppVersionCmd, loadAiProvidersCmd, testProviderConnectionCmd, shutdownPortForwardsCmd } from "@/lib/tauriCommands";
+import {
+  getAppVersionCmd,
+  loadAiProvidersCmd,
+  testProviderConnectionCmd,
+  shutdownPortForwardsCmd,
+  updateSettingsCmd,
+} from "@/lib/tauriCommands";
 
 import Dashboard from "@/pages/Dashboard";
 import NewIssue from "@/pages/NewIssue";
@@ -123,8 +129,16 @@ export default function App() {
   const [collapsed, setCollapsed] = useState(false);
   const [expandedSections, setExpandedSections] = useState<string[]>([]);
   const [appVersion, setAppVersion] = useState("");
-  const { theme, setTheme, setProviders, getActiveProvider } = useSettingsStore();
+  const {
+    theme,
+    setTheme,
+    setProviders,
+    getActiveProvider,
+    debug_logging_enabled,
+  } = useSettingsStore();
   const cleanupDone = useRef(false);
+  const lastSyncedDebugLogging = useRef<boolean | null>(null);
+  const skippingRollbackSync = useRef(false);
   const location = useLocation();
 
   useEffect(() => {
@@ -174,6 +188,27 @@ export default function App() {
     };
     initializeProviders();
   }, [setProviders, getActiveProvider]);
+
+  // Keep backend log level synchronized with persisted settings toggle.
+  useEffect(() => {
+    if (skippingRollbackSync.current) {
+      skippingRollbackSync.current = false;
+      return;
+    }
+
+    const previousValue = lastSyncedDebugLogging.current;
+    updateSettingsCmd({ debug_logging_enabled })
+      .then(() => {
+        lastSyncedDebugLogging.current = debug_logging_enabled;
+      })
+      .catch((err) => {
+        console.error("Failed to update backend debug logging setting:", err);
+        if (previousValue !== null && previousValue !== debug_logging_enabled) {
+          skippingRollbackSync.current = true;
+          useSettingsStore.getState().setDebugLoggingEnabled(previousValue);
+        }
+      });
+  }, [debug_logging_enabled]);
 
   return (
     <>

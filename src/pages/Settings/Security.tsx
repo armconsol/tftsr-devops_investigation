@@ -30,7 +30,12 @@ const piiPatterns = [
 ];
 
 export default function Security() {
-  const { pii_enabled_patterns, setPiiPattern } = useSettingsStore();
+  const {
+    pii_enabled_patterns,
+    setPiiPattern,
+    debug_logging_enabled,
+    setDebugLoggingEnabled,
+  } = useSettingsStore();
   const [auditEntries, setAuditEntries] = useState<AuditEntry[]>([]);
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   const [isLoading, setIsLoading] = useState(false);
@@ -116,6 +121,10 @@ export default function Security() {
     });
   };
 
+  const toggleDebugLogging = () => {
+    setDebugLoggingEnabled(!debug_logging_enabled);
+  };
+
   return (
     <div className="p-6 space-y-6">
       <div>
@@ -124,6 +133,40 @@ export default function Security() {
           Configure PII detection patterns and review the audit log.
         </p>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg flex items-center gap-2">
+            <Shield className="w-5 h-5" />
+            Backend Logging
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center justify-between py-1">
+            <div>
+              <p className="text-sm font-medium">Enable debug logging</p>
+              <p className="text-xs text-muted-foreground">
+                Off by default (normal logging). Enable for detailed backend diagnostics.
+              </p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={debug_logging_enabled}
+              onClick={toggleDebugLogging}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                debug_logging_enabled ? "bg-blue-500" : "bg-muted"
+              }`}
+            >
+              <span
+                className={`inline-block h-5 w-5 rounded-full bg-background transition-transform ${
+                  debug_logging_enabled ? "translate-x-5" : "translate-x-0.5"
+                }`}
+              />
+            </button>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* PII Patterns */}
       <Card>

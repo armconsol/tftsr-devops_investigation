@@ -1,5 +1,25 @@
 # Troubleshooting
 
+## Runtime Logging
+
+### Where backend logs are written
+
+Backend logs are written locally to:
+
+- Linux: `~/.local/share/tftsr/logs/backend.log` (or `${TRCAA_DATA_DIR}/logs/backend.log` if overridden)
+- macOS: `~/Library/Application Support/tftsr/logs/backend.log`
+- Windows: `%APPDATA%\\tftsr\\logs\\backend.log`
+
+The file sink rolls daily; console logging remains enabled.
+
+### Enable debug logging for deeper diagnostics
+
+1. Open **Settings → Security**
+2. Turn on **Enable debug logging**
+3. Reproduce the issue and inspect `backend.log`
+
+Default level is normal (`info`). Debug logging should be enabled only while actively diagnosing.
+
 ## CI/CD — Gitea Actions
 
 ### Build Not Triggering After Push

@@ -23,6 +23,10 @@ TRCAA uses a Tauri 2.x architecture: a Rust backend runs natively, and a React/T
 
 **Entry point:** `src-tauri/src/lib.rs` → `run()` initialises tracing, opens the DB, registers Tauri plugins, and calls `generate_handler![]` with all IPC commands.
 
+**Backend logging:** tracing now writes to both console and local disk at
+`<app_data_dir>/logs/backend.log` (daily rolling file). Default level is `info`;
+`debug` can be enabled at runtime via settings (`debug_logging_enabled`).
+
 ### Shared State
 
 ```rust
@@ -116,7 +120,7 @@ src-tauri/src/
 | Store | Persistence | Contents |
 |-------|------------|----------|
 | `sessionStore.ts` | Not persisted (ephemeral) | currentIssue, messages, piiSpans, approvedRedactions, whyLevel (0–5), loading state |
-| `settingsStore.ts` | `localStorage` as `"tftsr-settings"` | AI providers, theme, Ollama URL, active provider |
+| `settingsStore.ts` | `localStorage` as `"trcaa-settings"` | AI providers, theme, Ollama URL, active provider, debug logging toggle |
 | `historyStore.ts` | Not persisted (cache) | Past issues list, search query |
 
 ### Page Flow
