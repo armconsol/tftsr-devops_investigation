@@ -39,6 +39,7 @@ impl DatabasePoolManager {
     }
 
     /// Get or create a driver for the given connection ID
+    #[tracing::instrument(skip(self, config), fields(connection_id = %connection_id, db_type = ?config.database_type))]
     pub async fn get_or_create_driver(
         &self,
         connection_id: &str,
@@ -47,12 +48,14 @@ impl DatabasePoolManager {
         let pools = self.pools.read().await;
 
         if let Some(driver) = pools.get(connection_id) {
+            tracing::debug!("Reusing existing database connection");
             return Ok(Arc::clone(driver));
         }
 
         drop(pools);
 
         // Create new driver
+        tracing::debug!("Creating new database connection");
         let mut driver = crate::db_drivers::create_driver(config)?;
         driver.connect(config).await?;
 
@@ -60,6 +63,8 @@ impl DatabasePoolManager {
 
         let mut pools = self.pools.write().await;
         pools.insert(connection_id.to_string(), Arc::clone(&driver_arc));
+
+        tracing::debug!("Database connection added to pool");
 
         Ok(driver_arc)
     }
