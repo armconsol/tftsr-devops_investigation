@@ -13,7 +13,10 @@ mod openssl_vendored_tests {
 
         // Verify we can call OpenSSL functions
         let version_text = version::version();
-        assert!(!version_text.is_empty(), "OpenSSL version should not be empty");
+        assert!(
+            !version_text.is_empty(),
+            "OpenSSL version should not be empty"
+        );
 
         // The version should start with "OpenSSL" (vendored or system)
         assert!(

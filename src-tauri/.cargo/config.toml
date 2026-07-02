@@ -6,7 +6,11 @@
 rustflags = ["-C", "link-arg=-Wl,--exclude-all-symbols"]
 
 [env]
-# Use system OpenSSL instead of vendoring from source (which requires Perl modules
-# unavailable on some environments and breaks clippy/check).
+# Use system OpenSSL on macOS/Linux dev machines (faster builds)
+# Note: This is overridden for Windows cross-compile target below
 OPENSSL_NO_VENDOR = "1"
 SODIUM_STATIC = "1"
+
+# Override for Windows cross-compile: allow vendored OpenSSL
+[target.x86_64-pc-windows-gnu.env]
+OPENSSL_NO_VENDOR = "0"

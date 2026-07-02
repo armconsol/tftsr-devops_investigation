@@ -164,8 +164,8 @@ export function SQLEditor() {
     try {
       await createQueryBookmarkCmd({
         name: bookmarkName,
-        query_text: tab.content,
-        connection_id: tab.connectionId || undefined,
+        queryText: tab.content,
+        connectionId: tab.connectionId || undefined,
       });
       toast.success('Bookmark saved');
       setBookmarkDialog(false);
@@ -178,7 +178,7 @@ export function SQLEditor() {
   const handleHistoryItemClick = (item: QueryHistory) => {
     const tab = getActiveTab();
     if (tab) {
-      updateTabQuery(tab.id, item.query_text);
+      updateTabQuery(tab.id, item.queryText);
       toast.info('Query loaded from history');
     }
   };
