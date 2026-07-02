@@ -60,20 +60,40 @@ impl DatabaseDriver for PostgresDriver {
             pg_config.options(format!("-c {}={}", key, value));
         }
 
-        let (client, connection) = pg_config
-            .connect(NoTls)
-            .await
-            .map_err(|e| DriverError::ConnectionFailed(e.to_string()))?;
+        tracing::debug!(
+            host = %config.host,
+            port = %config.port,
+            database = ?config.database.as_deref(),
+            user = %config.username,
+            "Attempting PostgreSQL connection"
+        );
 
-        // Spawn connection handler
+        let (client, connection) = pg_config.connect(NoTls).await.map_err(|e| {
+            tracing::error!(
+                host = %config.host,
+                port = %config.port,
+                database = ?config.database.as_deref(),
+                user = %config.username,
+                error = %e,
+                "PostgreSQL connection failed"
+            );
+            DriverError::ConnectionFailed(e.to_string())
+        })?;
+
+        // Spawn connection handler with proper tracing
         tokio::spawn(async move {
             if let Err(e) = connection.await {
-                eprintln!("PostgreSQL connection error: {}", e);
+                tracing::error!(
+                    error = %e,
+                    "PostgreSQL background connection handler failed"
+                );
             }
         });
 
         self.client = Some(Arc::new(Mutex::new(client)));
         self.config = config.clone();
+
+        tracing::debug!("PostgreSQL connection established successfully");
 
         Ok(())
     }

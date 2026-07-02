@@ -660,17 +660,42 @@ pub async fn test_database_connection(
                 .await
                 .map_err(|e| format!("Failed to disconnect: {}", e))?;
 
+            tracing::info!(
+                connection_id = %connection_id,
+                latency_ms = %latency,
+                "Database connection test succeeded"
+            );
+
             Ok(ConnectionTestResult {
                 success: true,
                 message: "Connection successful".to_string(),
                 latency_ms: Some(latency),
             })
         }
-        Err(e) => Ok(ConnectionTestResult {
-            success: false,
-            message: format!("Connection failed: {}", e),
-            latency_ms: None,
-        }),
+        Err(e) => {
+            let detailed_message = format!(
+                "Connection failed: {} (host: {}, port: {}, database: {})",
+                e,
+                config.host,
+                config.port,
+                config.database.as_deref().unwrap_or("default")
+            );
+
+            tracing::warn!(
+                connection_id = %connection_id,
+                host = %config.host,
+                port = %config.port,
+                database = ?config.database,
+                error = %e,
+                "Database connection test failed"
+            );
+
+            Ok(ConnectionTestResult {
+                success: false,
+                message: detailed_message,
+                latency_ms: None,
+            })
+        }
     }
 }
 
