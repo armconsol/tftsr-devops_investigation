@@ -1,7 +1,6 @@
 // Security utilities for database operations
 
-use regex::Regex;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 /// Validates SQL identifiers (table names, column names) to prevent SQL injection
 ///
@@ -12,11 +11,16 @@ pub fn validate_sql_identifier(name: &str) -> Result<(), String> {
     }
 
     if name.len() > 64 {
-        return Err(format!("Identifier too long: {} characters (max 64)", name.len()));
+        return Err(format!(
+            "Identifier too long: {} characters (max 64)",
+            name.len()
+        ));
     }
 
     // Allow alphanumeric, underscore, and period (for schema.table notation)
-    let valid_chars = name.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '.');
+    let valid_chars = name
+        .chars()
+        .all(|c| c.is_alphanumeric() || c == '_' || c == '.');
 
     if !valid_chars {
         return Err(format!(
@@ -28,8 +32,8 @@ pub fn validate_sql_identifier(name: &str) -> Result<(), String> {
     // Prevent SQL keywords being used as unquoted identifiers
     let uppercase = name.to_uppercase();
     let sql_keywords = [
-        "SELECT", "INSERT", "UPDATE", "DELETE", "DROP", "CREATE", "ALTER", "FROM", "WHERE",
-        "JOIN", "UNION", "ORDER", "GROUP", "HAVING",
+        "SELECT", "INSERT", "UPDATE", "DELETE", "DROP", "CREATE", "ALTER", "FROM", "WHERE", "JOIN",
+        "UNION", "ORDER", "GROUP", "HAVING",
     ];
 
     if sql_keywords.contains(&uppercase.as_str()) {
@@ -128,10 +132,7 @@ mod tests {
         let temp_file = temp_dir.join("test.csv");
         std::fs::write(&temp_file, "test").unwrap();
 
-        let result = validate_file_path(
-            temp_file.to_str().unwrap(),
-            &["/some/other/directory"],
-        );
+        let result = validate_file_path(temp_file.to_str().unwrap(), &["/some/other/directory"]);
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("outside allowed"));
 
@@ -157,6 +158,9 @@ mod tests {
         // Cleanup before assertion
         std::fs::remove_file(&temp_file).ok();
 
-        assert!(result.is_ok(), "Expected path validation to succeed for temp file in allowed directory");
+        assert!(
+            result.is_ok(),
+            "Expected path validation to succeed for temp file in allowed directory"
+        );
     }
 }
