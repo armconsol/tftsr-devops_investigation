@@ -306,23 +306,43 @@ mod tests {
 
 // ─── Database Connection Management ─────────────────────────────────────────
 
+/// Parameters for creating a database connection
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateConnectionParams {
+    pub name: String,
+    pub db_type: String,
+    pub host: String,
+    pub port: u16,
+    pub database_name: Option<String>,
+    pub username: String,
+    pub password: String,
+    pub ssl_enabled: bool,
+    pub ssl_ca_cert_path: Option<String>,
+    pub ssl_client_cert_path: Option<String>,
+    pub ssl_client_key_path: Option<String>,
+    pub connection_options: Option<String>,
+}
+
 /// Create a new database connection
 #[tauri::command]
 pub async fn create_database_connection(
-    name: String,
-    db_type: String,
-    host: String,
-    port: u16,
-    database_name: Option<String>,
-    username: String,
-    password: String,
-    ssl_enabled: bool,
-    ssl_ca_cert_path: Option<String>,
-    ssl_client_cert_path: Option<String>,
-    ssl_client_key_path: Option<String>,
-    connection_options: Option<String>,
+    params: CreateConnectionParams,
     state: State<'_, AppState>,
 ) -> Result<DatabaseConnection, String> {
+    let CreateConnectionParams {
+        name,
+        db_type,
+        host,
+        port,
+        database_name,
+        username,
+        password,
+        ssl_enabled,
+        ssl_ca_cert_path,
+        ssl_client_cert_path,
+        ssl_client_key_path,
+        connection_options,
+    } = params;
     // Encrypt password
     let encrypted_password = crate::integrations::auth::encrypt_token(&password)
         .map_err(|e| format!("Failed to encrypt password: {}", e))?;
@@ -403,19 +423,35 @@ pub async fn create_database_connection(
     Ok(connection)
 }
 
+/// Parameters for updating a database connection
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateConnectionParams {
+    pub id: String,
+    pub name: Option<String>,
+    pub password: Option<String>,
+    pub ssl_enabled: Option<bool>,
+    pub ssl_ca_cert_path: Option<String>,
+    pub ssl_client_cert_path: Option<String>,
+    pub ssl_client_key_path: Option<String>,
+    pub connection_options: Option<String>,
+}
+
 /// Update an existing database connection
 #[tauri::command]
 pub async fn update_database_connection(
-    id: String,
-    name: Option<String>,
-    password: Option<String>,
-    ssl_enabled: Option<bool>,
-    ssl_ca_cert_path: Option<String>,
-    ssl_client_cert_path: Option<String>,
-    ssl_client_key_path: Option<String>,
-    connection_options: Option<String>,
+    params: UpdateConnectionParams,
     state: State<'_, AppState>,
 ) -> Result<DatabaseConnection, String> {
+    let UpdateConnectionParams {
+        id,
+        name,
+        password,
+        ssl_enabled,
+        ssl_ca_cert_path,
+        ssl_client_cert_path,
+        ssl_client_key_path,
+        connection_options,
+    } = params;
     // Encrypt new password if provided
     let encrypted_password = if let Some(pwd) = password {
         Some(
@@ -1320,10 +1356,10 @@ fn json_to_data_value(value: &serde_json::Value, expected_type: &str) -> DataVal
         }
     }
 
-    if expected_lower.contains("json") || expected_lower.contains("jsonb") {
-        if value.is_object() || value.is_array() {
-            return DataValue::Json(value.clone());
-        }
+    if (expected_lower.contains("json") || expected_lower.contains("jsonb"))
+        && (value.is_object() || value.is_array())
+    {
+        return DataValue::Json(value.clone());
     }
 
     // Fallback to native JSON types
@@ -1449,7 +1485,7 @@ pub async fn update_table_rows(
         }
 
         // Validate column updates exist in schema
-        for (col_name, _) in &update.column_updates {
+        for col_name in update.column_updates.keys() {
             if !column_types.contains_key(col_name) {
                 let err = format!(
                     "Update {} references non-existent column: {}",

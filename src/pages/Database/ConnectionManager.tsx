@@ -54,7 +54,10 @@ export function ConnectionManager() {
     if (!editingConnection) return;
 
     try {
-      await updateDatabaseConnectionCmd(editingConnection.id, data);
+      await updateDatabaseConnectionCmd({
+        id: editingConnection.id,
+        ...data,
+      });
       toast.success('Connection updated');
       setDialogOpen(false);
       setEditingConnection(null);

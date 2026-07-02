@@ -1934,20 +1934,22 @@ export const createDatabaseConnectionCmd = (params: {
   username: string;
   password: string;
   ssl_enabled: boolean;
-}) => invoke<DatabaseConnection>("create_database_connection", params);
+  ssl_ca_cert_path?: string;
+  ssl_client_cert_path?: string;
+  ssl_client_key_path?: string;
+  connection_options?: string;
+}) => invoke<DatabaseConnection>("create_database_connection", { params });
 
-export const updateDatabaseConnectionCmd = (
-  id: string,
-  params: {
-    name?: string;
-    host?: string;
-    port?: number;
-    database_name?: string;
-    username?: string;
-    password?: string;
-    ssl_enabled?: boolean;
-  }
-) => invoke<DatabaseConnection>("update_database_connection", { id, ...params });
+export const updateDatabaseConnectionCmd = (params: {
+  id: string;
+  name?: string;
+  password?: string;
+  ssl_enabled?: boolean;
+  ssl_ca_cert_path?: string;
+  ssl_client_cert_path?: string;
+  ssl_client_key_path?: string;
+  connection_options?: string;
+}) => invoke<DatabaseConnection>("update_database_connection", { params });
 
 export const deleteDatabaseConnectionCmd = (id: string) =>
   invoke<void>("delete_database_connection", { id });
