@@ -437,6 +437,84 @@ pub fn run_migrations(conn: &Connection) -> anyhow::Result<()> {
             "034_add_proxmox_username_column",
             "ALTER TABLE proxmox_clusters ADD COLUMN username TEXT NOT NULL DEFAULT '';",
         ),
+        (
+            "035_create_remote_connections",
+            "CREATE TABLE IF NOT EXISTS remote_connections (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                protocol TEXT NOT NULL CHECK(protocol IN ('rdp', 'vnc')),
+                hostname TEXT NOT NULL,
+                port INTEGER NOT NULL DEFAULT 3389,
+                username TEXT,
+                password_encrypted TEXT NOT NULL,
+                domain TEXT,
+                resolution TEXT NOT NULL DEFAULT '1280x800',
+                color_depth INTEGER NOT NULL DEFAULT 32,
+                clipboard_sync INTEGER NOT NULL DEFAULT 1,
+                drive_redirect INTEGER NOT NULL DEFAULT 0,
+                multi_monitor INTEGER NOT NULL DEFAULT 0,
+                compression INTEGER NOT NULL DEFAULT 1,
+                quality INTEGER NOT NULL DEFAULT 80,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+                last_connected_at TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_remote_connections_protocol ON remote_connections(protocol);
+            CREATE INDEX IF NOT EXISTS idx_remote_connections_last_connected ON remote_connections(last_connected_at);",
+        ),
+        (
+            "035a_upgrade_remote_connections_ssh",
+            "DROP TABLE IF EXISTS remote_connections;
+            CREATE TABLE IF NOT EXISTS remote_connections (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                protocol TEXT NOT NULL CHECK(protocol IN ('rdp', 'vnc')),
+                hostname TEXT NOT NULL,
+                port INTEGER NOT NULL,
+                username TEXT,
+                domain TEXT,
+                resolution TEXT NOT NULL DEFAULT 'auto',
+                color_depth INTEGER NOT NULL DEFAULT 32,
+                clipboard_sync INTEGER NOT NULL DEFAULT 1,
+                drive_redirect INTEGER NOT NULL DEFAULT 0,
+                multi_monitor INTEGER NOT NULL DEFAULT 0,
+                compression INTEGER NOT NULL DEFAULT 1,
+                quality INTEGER NOT NULL DEFAULT 80,
+                ssh_enabled INTEGER NOT NULL DEFAULT 0,
+                ssh_hostname TEXT,
+                ssh_port INTEGER DEFAULT 22,
+                ssh_username TEXT,
+                auto_resize INTEGER NOT NULL DEFAULT 1,
+                stretch_to_fill INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+                last_connected_at TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_remote_connections_protocol ON remote_connections(protocol);
+            CREATE INDEX IF NOT EXISTS idx_remote_connections_ssh ON remote_connections(ssh_enabled);",
+        ),
+        (
+            "036_create_remote_credentials",
+            "CREATE TABLE IF NOT EXISTS remote_credentials (
+                id TEXT PRIMARY KEY,
+                connection_id TEXT NOT NULL REFERENCES remote_connections(id) ON DELETE CASCADE,
+                rdp_password_encrypted TEXT,
+                ssh_password_encrypted TEXT,
+                ssh_key_encrypted TEXT,
+                ssh_key_passphrase_encrypted TEXT,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+                UNIQUE(connection_id)
+            );",
+        ),
+        (
+            "037_create_ssh_credentials",
+            "CREATE TABLE IF NOT EXISTS ssh_credentials (
+                key_id TEXT PRIMARY KEY,
+                encrypted_data TEXT NOT NULL,
+                updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );",
+        ),
     ];
 
     for (name, sql) in migrations {

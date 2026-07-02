@@ -23,6 +23,11 @@ TRCAA uses a Tauri 2.x architecture: a Rust backend runs natively, and a React/T
 
 **Entry point:** `src-tauri/src/lib.rs` → `run()` initialises tracing, opens the DB, registers Tauri plugins, and calls `generate_handler![]` with all IPC commands.
 
+**Backend logging:** tracing now writes to both console and local disk at
+`<app_data_dir>/logs/backend.log` (daily rolling file). Default level is `info`;
+`debug` can be enabled at runtime via settings (`debug_logging_enabled`).
+Current retention behavior is daily rotation only (no fixed max-days purge yet).
+
 ### Shared State
 
 ```rust
@@ -116,7 +121,7 @@ src-tauri/src/
 | Store | Persistence | Contents |
 |-------|------------|----------|
 | `sessionStore.ts` | Not persisted (ephemeral) | currentIssue, messages, piiSpans, approvedRedactions, whyLevel (0–5), loading state |
-| `settingsStore.ts` | `localStorage` as `"tftsr-settings"` | AI providers, theme, Ollama URL, active provider |
+| `settingsStore.ts` | `localStorage` as `"trcaa-settings"` | AI providers, theme, Ollama URL, active provider, debug logging toggle |
 | `historyStore.ts` | Not persisted (cache) | Past issues list, search query |
 
 ### Page Flow
@@ -276,3 +281,48 @@ User Input
   ↓
 [Export] ────────── MD or PDF to user-chosen directory
 ```
+
+## Remote Desktop (RDP)
+
+The `remote/` module provides an in-app RDP client. Pixels are decoded in Rust
+(IronRDP) and streamed to a `<canvas>` in the webview over a local WebSocket;
+keyboard/mouse input flows back over the same socket.
+
+### Module Layout
+
+| Path | Responsibility |
+|------|---------------|
+| `remote/rdp.rs` | Session lifecycle (`start_session_async`): spawns the connect task, owns the per-session input channel + dispatch task |
+| `remote/rdp_client.rs` | IronRDP connect/handshake, frame capture, input translation to fastpath PDUs |
+| `remote/input.rs` | `RawInputEvent` wire type, JS `KeyboardEvent.code` → RDP scancode map, coordinate clamping |
+| `remote/websocket_server.rs` | Local WS server: streams frames out, decodes JSON input frames in, per-session routing |
+| `remote/ssh_tunnel.rs` | Optional SSH tunnel for the TCP connection |
+
+### Pipeline
+
+```
+Browser <canvas>  ──WS binary frame [u32 LE w][u32 LE h][RGBA]──  websocket_server
+        │                                                              ▲
+        │ WS JSON text {type,...}                                      │ frame_rx (poll)
+        ▼                                                              │
+  websocket_server ──input mpsc──▶ rdp.rs dispatch ──▶ session.handle_input
+                                                          ▼
+                                            IronRDP fastpath input  ──▶  RDP host
+```
+
+### Key Implementation Notes
+
+- **Frame forwarder uses polling, not `recv().await`.** Frames are produced by a
+  blocking IronRDP `connect()` loop on a tokio worker. Channel wakeups land on
+  that worker's local run-queue, which it never drains while blocked in a socket
+  read, so an awaiting `recv()` never wakes. The forwarder instead polls
+  `try_recv()` with a 5 ms async sleep, decoupling delivery from the starved
+  waker.
+- **Socket read-timeout duality.** The IronRDP blocking handshake does not
+  tolerate `WouldBlock`/`TimedOut`, so a 30 s read timeout is used during
+  negotiation, then lowered to 50 ms after `connect_finalize` so queued input is
+  serviced promptly even when the server sends no graphics.
+- **Slow-path graphics** (xrdp-style `ShareDataPdu::Update`) require
+  ironrdp-session ≥ 0.10 (ironrdp 0.16 generation, MSRV Rust 1.89).
+- **Input hardening.** The WS server caps messages at 4 KiB, validates the
+  session id from the path, and drops input on channel saturation (`try_send`).

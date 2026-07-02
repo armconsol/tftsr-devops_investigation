@@ -60,47 +60,55 @@ jobs:
           # Only strip lines that are ENTIRELY a long base64 blob (e.g. PEM cert bodies)
           B64_PATTERN='^[[:space:]]*[A-Za-z0-9+/]{60,}={0,2}[[:space:]]*$'
 
-          # Split changed files into batches capped at MAX_BATCH_LINES each.
-          # File boundaries are always respected — a file is never split across batches.
-          MAX_BATCH_LINES=2500
+          # Split changed files into batches capped at MAX_BATCH_LINES lines
+          # and MAX_BATCH_BYTES bytes. File boundaries are always respected.
+          MAX_BATCH_LINES=600
+          MAX_BATCH_BYTES=400000
           BATCH=1
           BATCH_LINES=0
+          BATCH_BYTES=0
           TOTAL_LINES=0
           BATCH_FILE="/tmp/pr_batch_001.txt"
           > "$BATCH_FILE"
 
-          while IFS= read -r file; do
-            [ -f "$file" ] || continue
-            file_lines=$(wc -l < "$file" | tr -d ' ')
+           while IFS= read -r file; do
+             [ -f "$file" ] || continue
+             file_lines=$(wc -l < "$file" | tr -d ' ')
 
-            # Build context for this individual file into a temp file
-            {
-              printf '\n════════ FILE: %s (%s lines) ════════\n' "$file" "$file_lines"
-              if [ "$file_lines" -le 500 ]; then
-                grep -v -E "$SECRET_PATTERN" "$file" | grep -v -E "$B64_PATTERN" || true
-              else
-                printf '[File too large for full view (%s lines) — showing changed sections only]\n' "$file_lines"
-                git diff -U50 origin/${{ github.base_ref }}..HEAD -- "$file" \
-                  | grep -v -E "$SECRET_PATTERN" \
-                  | grep -v -E "$B64_PATTERN" \
-                  || true
-              fi
-            } > /tmp/fc_tmp.txt
+             # Build context for this individual file into a temp file
+             {
+               printf '\n════════ FILE: %s (%s lines) ════════\n' "$file" "$file_lines"
+               if [ "$file_lines" -le 500 ]; then
+                 grep -v -E "$SECRET_PATTERN" "$file" | grep -v -E "$B64_PATTERN" || true
+               else
+                 printf '[File too large for full view (%s lines) — showing changed sections only]\n' "$file_lines"
+                 git diff -U50 origin/${{ github.base_ref }}..HEAD -- "$file" \
+                   | grep -v -E "$SECRET_PATTERN" \
+                   | grep -v -E "$B64_PATTERN" \
+                   || true
+               fi
+             } > /tmp/fc_tmp.txt
 
-            FC_LINES=$(wc -l < /tmp/fc_tmp.txt | tr -d ' ')
+             FC_LINES=$(wc -l < /tmp/fc_tmp.txt | tr -d ' ')
+             FC_BYTES=$(wc -c < /tmp/fc_tmp.txt | tr -d ' ')
 
-            # Start a new batch if this file would overflow the current one (and batch is not empty)
-            if [ "$BATCH_LINES" -gt 0 ] && [ $((BATCH_LINES + FC_LINES)) -gt $MAX_BATCH_LINES ]; then
-              BATCH=$((BATCH + 1))
-              BATCH_LINES=0
-              BATCH_FILE="/tmp/pr_batch_$(printf '%03d' $BATCH).txt"
-              > "$BATCH_FILE"
-            fi
+             # Start a new batch if adding this file would exceed either the line
+             # cap or the byte cap (and the current batch is not empty).
+             if [ "$BATCH_LINES" -gt 0 ] && \
+                { [ $((BATCH_LINES + FC_LINES)) -gt $MAX_BATCH_LINES ] || \
+                  [ $((BATCH_BYTES + FC_BYTES)) -gt $MAX_BATCH_BYTES ]; }; then
+               BATCH=$((BATCH + 1))
+               BATCH_LINES=0
+               BATCH_BYTES=0
+               BATCH_FILE="/tmp/pr_batch_$(printf '%03d' $BATCH).txt"
+               > "$BATCH_FILE"
+             fi
 
-            cat /tmp/fc_tmp.txt >> "$BATCH_FILE"
-            BATCH_LINES=$((BATCH_LINES + FC_LINES))
-            TOTAL_LINES=$((TOTAL_LINES + FC_LINES))
-          done < /tmp/pr_files.txt
+             cat /tmp/fc_tmp.txt >> "$BATCH_FILE"
+             BATCH_LINES=$((BATCH_LINES + FC_LINES))
+             BATCH_BYTES=$((BATCH_BYTES + FC_BYTES))
+             TOTAL_LINES=$((TOTAL_LINES + FC_LINES))
+           done < /tmp/pr_files.txt
 
           rm -f /tmp/fc_tmp.txt
 
@@ -321,7 +329,20 @@ jobs:
 
             if [ "$HTTP_CODE" != "200" ]; then
               echo "ERROR: Batch ${i} failed (HTTP $HTTP_CODE)"
-              cat /tmp/llm_response.json
+              # Scrub error body: strip model names, fallback lists, URLs, and
+              # any token/key values before writing to the log so internal LiteLLM
+              # infrastructure is not exposed publicly.
+              jq -r '.error.message // .error // "LLM request failed"' /tmp/llm_response.json 2>/dev/null \
+                | sed \
+                    -e 's/model=[a-zA-Z0-9._-]*/model=<redacted>/g' \
+                    -e 's/Received Model Group=[a-zA-Z0-9._-]*/Received Model Group=<redacted>/g' \
+                    -e 's/Available Model Group Fallbacks=\[[^]]*\]/Available Model Group Fallbacks=<redacted>/g' \
+                    -e 's/fallbacks=\[[^]]*\]/fallbacks=<redacted>/g' \
+                    -e 's|https\?://[^[:space:]"]*|<url-redacted>|g' \
+                    -e 's/litellm\.[A-Za-z]*Error: //g' \
+                    -e '/^$/d' \
+                | head -5 \
+                || echo "(could not parse error response)"
               {
                 echo "## Batch ${i} of ${BATCH_COUNT}"
                 echo ""

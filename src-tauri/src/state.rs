@@ -1,3 +1,6 @@
+// Copyright (c) 2025 Shaun Arman
+// MIT License - see LICENSE file for details
+
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -57,6 +60,8 @@ pub struct AppSettings {
     pub default_provider: String,
     pub default_model: String,
     pub ollama_url: String,
+    #[serde(default)]
+    pub debug_logging_enabled: bool,
     #[serde(default = "default_update_channel")]
     pub update_channel: String,
 }
@@ -74,6 +79,7 @@ impl Default for AppSettings {
             default_provider: "ollama".to_string(),
             default_model: "llama3.2:3b".to_string(),
             ollama_url: "http://localhost:11434".to_string(),
+            debug_logging_enabled: false,
             update_channel: "stable".to_string(),
         }
     }
@@ -151,12 +157,18 @@ pub struct AppState {
     pub log_streams: Arc<TokioMutex<HashMap<String, tokio::task::AbortHandle>>>,
     /// PTY session manager for interactive shells
     pub pty_sessions: Arc<crate::shell::SessionManager>,
+    /// RDP session manager
+    pub rdp_manager: Arc<std::sync::Mutex<crate::remote::rdp::RdpManager>>,
 }
 
 /// Determine the application data directory.
 /// Returns None if the directory cannot be determined.
 pub fn get_app_data_dir() -> Option<PathBuf> {
+    if let Ok(dir) = std::env::var("TRCAA_DATA_DIR") {
+        return Some(PathBuf::from(dir));
+    }
     if let Ok(dir) = std::env::var("TFTSR_DATA_DIR") {
+        tracing::warn!("TFTSR_DATA_DIR is deprecated, use TRCAA_DATA_DIR instead");
         return Some(PathBuf::from(dir));
     }
 
@@ -195,8 +207,8 @@ pub fn get_app_data_dir() -> Option<PathBuf> {
         }
     }
 
-    // Fallback
-    Some(PathBuf::from("./tftsr-data"))
+    // Fallback: use current working directory joined with tftsr-data
+    std::env::current_dir().ok().map(|p| p.join("tftsr-data"))
 }
 
 #[cfg(test)]
@@ -208,7 +220,23 @@ mod tests {
         let settings = AppSettings::default();
         assert_eq!(settings.theme, "dark");
         assert_eq!(settings.default_provider, "ollama");
+        assert!(!settings.debug_logging_enabled);
         assert_eq!(settings.update_channel, "stable");
+    }
+
+    #[test]
+    fn test_app_settings_deserialize_defaults_debug_logging_disabled() {
+        let json = r#"{
+            "theme":"dark",
+            "ai_providers":[],
+            "default_provider":"ollama",
+            "default_model":"llama3.2:3b",
+            "ollama_url":"http://localhost:11434"
+        }"#;
+
+        let settings: AppSettings =
+            serde_json::from_str(json).expect("settings should deserialize");
+        assert!(!settings.debug_logging_enabled);
     }
 
     #[test]

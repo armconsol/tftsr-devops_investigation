@@ -1,3 +1,6 @@
+// Copyright (c) 2025 Shaun Arman
+// MIT License - see LICENSE file for details
+
 // CLI tools for TFTSR Proxmox Management
 // Provides command-line interface for Proxmox operations
 

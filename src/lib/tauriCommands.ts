@@ -256,6 +256,8 @@ export interface AppSettings {
   default_provider: string;
   default_model: string;
   ollama_url: string;
+  debug_logging_enabled: boolean;
+  update_channel: string;
 }
 
 // ─── TriageMessage (for UI store, not a DB type) ──────────────────────────────
@@ -1620,3 +1622,192 @@ export const getPodMetricsCmd = (clusterId: string, namespace: string) =>
 
 export const getNodeMetricsCmd = (clusterId: string) =>
   invoke<NodeMetrics[]>("get_node_metrics", { clusterId });
+
+// ─── Remote Connection Types ─────────────────────────────────────────────────
+
+export type RemoteProtocol = "rdp" | "vnc";
+
+export interface RemoteConnection {
+  id: string;
+  name: string;
+  protocol: RemoteProtocol;
+  hostname: string;
+  port: number;
+  username?: string;
+  domain?: string;
+  // SSH tunnel configuration (non-sensitive)
+  ssh_enabled: boolean;
+  ssh_hostname?: string;
+  ssh_port?: number;
+  ssh_username?: string;
+  // Display settings
+  resolution: string;
+  color_depth: number;
+  clipboard_sync: boolean;
+  drive_redirect: boolean;
+  multi_monitor: boolean;
+  compression: boolean;
+  quality: number;
+  auto_resize: boolean;
+  stretch_to_fill: boolean;
+  // Metadata
+  created_at: string;
+  updated_at: string;
+  last_connected_at?: string;
+}
+
+export interface NewRemoteConnection {
+  name: string;
+  protocol: RemoteProtocol;
+  hostname: string;
+  port: number;
+  username?: string;
+  password: string; // Will be encrypted and stored separately
+  domain?: string;
+  // SSH tunnel configuration
+  ssh_enabled: boolean;
+  ssh_hostname?: string;
+  ssh_port?: number;
+  ssh_username?: string;
+  ssh_password?: string;
+  ssh_key_data?: string;
+  ssh_key_passphrase?: string;
+  // Display settings
+  resolution?: string;
+  color_depth?: number;
+  clipboard_sync?: boolean;
+  drive_redirect?: boolean;
+  multi_monitor?: boolean;
+  compression?: boolean;
+  quality?: number;
+  auto_resize: boolean;
+  stretch_to_fill: boolean;
+}
+
+export interface RemoteConnectionUpdate {
+  name?: string;
+  protocol?: RemoteProtocol;
+  hostname?: string;
+  port?: number;
+  username?: string | null;
+  domain?: string | null;
+  // SSH tunnel configuration
+  ssh_enabled?: boolean;
+  ssh_hostname?: string;
+  ssh_port?: number;
+  ssh_username?: string;
+  // Display settings
+  resolution?: string;
+  color_depth?: number;
+  clipboard_sync?: boolean;
+  drive_redirect?: boolean;
+  multi_monitor?: boolean;
+  compression?: boolean;
+  quality?: number;
+  auto_resize?: boolean;
+  stretch_to_fill?: boolean;
+}
+
+export interface RemoteCredentials {
+  id: string;
+  connection_id: string;
+  rdp_password_encrypted?: string;
+  ssh_password_encrypted?: string;
+  ssh_key_encrypted?: string;
+  ssh_key_passphrase_encrypted?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RemoteConnectionSummary {
+  id: string;
+  name: string;
+  protocol: RemoteProtocol;
+  hostname: string;
+  port: number;
+  username?: string;
+  status: string;
+  ssh_enabled: boolean;
+  created_at: string;
+  updated_at: string;
+  last_connected_at?: string;
+}
+
+export interface RemoteConnectionFilter {
+  protocol?: RemoteProtocol;
+  name?: string;
+  limit?: number;
+  offset?: number;
+}
+
+// ─── Remote Connection Commands ──────────────────────────────────────────────
+
+export const addRemoteConnectionCmd = (connection: NewRemoteConnection) =>
+  invoke<RemoteConnection>("create_remote_connection", { newConn: connection });
+
+export const getRemoteConnectionCmd = (connectionId: string) =>
+  invoke<RemoteConnection | null>("get_remote_connection", { id: connectionId });
+
+export const listRemoteConnectionsCmd = (filter?: RemoteConnectionFilter) =>
+  invoke<RemoteConnectionSummary[]>("list_remote_connections", { filter: filter ?? null });
+
+export const updateRemoteConnectionCmd = (connectionId: string, updates: RemoteConnectionUpdate) =>
+  invoke<RemoteConnection>("update_remote_connection", { id: connectionId, update: updates });
+
+export const deleteRemoteConnectionCmd = (connectionId: string) =>
+  invoke<void>("delete_remote_connection", { id: connectionId });
+
+// ─── RDP Session Commands ──────────────────────────────────────────────────
+
+export interface RdpSession {
+  id: string;
+  connection_id: string;
+  hostname: string;
+  port: number;
+  username: string;
+  resolution: string;
+  color_depth: number;
+  websocket_port: number;
+  websocket_url: string;
+  connected: boolean;
+  ssh_enabled: boolean;
+}
+
+export const startRdpSession = (connectionId: string, password?: string) =>
+  invoke<RdpSession>("start_rdp_session", { connectionId, password });
+
+export const stopRdpSession = (sessionId: string) =>
+  invoke<void>("stop_rdp_session", { sessionId });
+
+export const getRdpSession = (sessionId: string) =>
+  invoke<RdpSession | null>("get_rdp_session", { sessionId });
+
+export const resizeRdpSession = (sessionId: string, width: number, height: number) =>
+  invoke<void>("resize_rdp_session", { sessionId, width, height });
+
+export interface RdpDiagnostics {
+  session_id: string;
+  connection_state: 'disconnected' | 'connecting' | 'connected' | 'failed';
+  frame_stats: {
+    frames_sent: number;
+    frames_received: number;
+    last_frame_timestamp: number;
+    last_frame_width: number;
+    last_frame_height: number;
+    total_bytes_sent: number;
+    frame_stall_detected: boolean;
+  };
+  websocket_state: {
+    connected: boolean;
+    session_registered: boolean;
+    last_message_timestamp: number;
+  };
+  health: 'healthy' | 'degraded' | 'stalled' | 'failed';
+  timestamp: number;
+}
+
+export const getRdpDiagnostics = (sessionId: string) =>
+  invoke<RdpDiagnostics>("get_rdp_diagnostics", { sessionId });
+
+export const getRemoteConnections = (filter?: RemoteConnectionFilter) =>
+  listRemoteConnectionsCmd(filter);
