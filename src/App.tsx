@@ -23,6 +23,7 @@ import {
   Server,
   Server as ServerIcon,
   Settings,
+  Database,
 } from "lucide-react";
 import { Toaster } from "sonner";
 import { useSettingsStore } from "@/stores/settingsStore";
@@ -78,6 +79,15 @@ import { ProxmoxSettings } from "@/pages/Settings/Proxmox";
 import { Updater } from "@/pages/Settings/Updater";
 import { RouteErrorBoundary } from "@/components/RouteErrorBoundary";
 
+// Database Management Pages
+import { ConnectionManager } from "@/pages/Database/ConnectionManager";
+import { SQLEditor } from "@/pages/Database/SQLEditor";
+import { SchemaExplorer } from "@/pages/Database/SchemaExplorer";
+import { QueryHistoryPage } from "@/pages/Database/QueryHistory";
+import { ImportExport } from "@/pages/Database/ImportExport";
+import { ERDiagram } from "@/pages/Database/ERDiagram";
+import { QueryBuilder } from "@/pages/Database/QueryBuilder";
+
 const navItems = [
   { to: "/", icon: Home, label: "Dashboard" },
   { to: "/new-issue", icon: Plus, label: "New Issue" },
@@ -106,6 +116,20 @@ const navItems = [
       { to: "/proxmox/admin", label: "Administration" },
       { to: "/proxmox/updates", label: "Updates" },
       { to: "/proxmox/nodes", label: "Node Detail" },
+    ],
+  },
+  {
+    to: "/database",
+    icon: Database,
+    label: "Database",
+    children: [
+      { to: "/database/connections", label: "Connections" },
+      { to: "/database/editor", label: "SQL Editor" },
+      { to: "/database/query-builder", label: "Query Builder" },
+      { to: "/database/schema", label: "Schema Explorer" },
+      { to: "/database/history", label: "Query History" },
+      { to: "/database/import-export", label: "Import/Export" },
+      { to: "/database/er-diagram", label: "ER Diagram" },
     ],
   },
   { to: "/remote-desktop", icon: Server, label: "Remote Desktop" },
@@ -365,6 +389,15 @@ export default function App() {
             <Route path="/settings/integrations" element={<Integrations />} />
             <Route path="/settings/mcp" element={<MCPServers />} />
             <Route path="/settings/security" element={<Security />} />
+
+            {/* Database Management Routes */}
+            <Route path="/database/connections" element={<ConnectionManager />} />
+            <Route path="/database/editor" element={<SQLEditor />} />
+            <Route path="/database/query-builder" element={<QueryBuilder />} />
+            <Route path="/database/schema" element={<SchemaExplorer />} />
+            <Route path="/database/history" element={<QueryHistoryPage />} />
+            <Route path="/database/import-export" element={<ImportExport />} />
+            <Route path="/database/er-diagram" element={<ERDiagram />} />
           </Routes>
           </RouteErrorBoundary>
         </main>

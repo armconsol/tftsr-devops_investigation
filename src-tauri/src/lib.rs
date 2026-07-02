@@ -7,6 +7,7 @@ pub mod audit;
 pub mod cli;
 pub mod commands;
 pub mod db;
+pub mod db_drivers;
 pub mod docs;
 pub mod integrations;
 pub mod kube;
@@ -120,6 +121,11 @@ pub fn run() {
     let conn = db::connection::init_db(&data_dir).expect("Failed to initialize database");
     tracing::info!("Database initialized at {data_dir:?}");
 
+    // Initialize database pool manager
+    let db_pool_manager = Arc::new(tokio::sync::Mutex::new(
+        crate::db_drivers::DatabasePoolManager::new(),
+    ));
+
     let app_state = AppState {
         db: Arc::new(Mutex::new(conn)),
         settings: Arc::new(Mutex::new(state::AppSettings::default())),
@@ -135,6 +141,7 @@ pub fn run() {
         log_streams: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
         pty_sessions: Arc::new(crate::shell::SessionManager::new()),
         rdp_manager: Arc::new(std::sync::Mutex::new(crate::remote::rdp::RdpManager::new())),
+        db_pool_manager,
     };
     let stronghold_salt = format!(
         "tftsr-stronghold-salt-v1-{:x}",
@@ -190,6 +197,35 @@ pub fn run() {
             commands::db::get_timeline_events,
             commands::db::load_clusters,
             commands::db::load_port_forwards,
+            // Database Management - Connection Management
+            commands::database::create_database_connection,
+            commands::database::update_database_connection,
+            commands::database::delete_database_connection,
+            commands::database::list_database_connections,
+            commands::database::test_database_connection,
+            commands::database::execute_database_query,
+            commands::database::get_databases,
+            commands::database::get_schema,
+            commands::database::get_tables,
+            commands::database::get_table_schema,
+            commands::database::begin_transaction,
+            commands::database::commit_transaction,
+            commands::database::rollback_transaction,
+            commands::database::get_query_history,
+            commands::database::search_query_history,
+            commands::database::create_query_bookmark,
+            commands::database::list_query_bookmarks,
+            commands::database::delete_query_bookmark,
+            // Database Management - Import/Export/Visualization
+            commands::database::import_csv_data,
+            commands::database::import_json_data,
+            commands::database::export_query_results,
+            commands::database::generate_er_diagram,
+            commands::database::preview_csv_file,
+            commands::database::preview_json_file,
+            // Database Management - Inline CRUD & Query Plans
+            commands::database::update_table_rows,
+            commands::database::explain_query,
             // Analysis / PII
             commands::analysis::upload_log_file,
             commands::analysis::upload_log_file_by_content,

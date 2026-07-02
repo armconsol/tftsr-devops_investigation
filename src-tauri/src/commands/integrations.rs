@@ -441,6 +441,9 @@ pub async fn initiate_oauth(
         let rdp_manager = app_state.rdp_manager.clone();
 
         tokio::spawn(async move {
+            let db_pool_manager = Arc::new(tokio::sync::Mutex::new(
+                crate::db_drivers::DatabasePoolManager::new(),
+            ));
             let app_state_for_callback = AppState {
                 db,
                 settings,
@@ -456,6 +459,7 @@ pub async fn initiate_oauth(
                 pty_sessions,
                 proxmox_clusters,
                 rdp_manager,
+                db_pool_manager,
             };
             while let Some(callback) = callback_rx.recv().await {
                 tracing::info!("Received OAuth callback for state: {}", callback.state);

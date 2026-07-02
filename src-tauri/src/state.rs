@@ -159,6 +159,8 @@ pub struct AppState {
     pub pty_sessions: Arc<crate::shell::SessionManager>,
     /// RDP session manager
     pub rdp_manager: Arc<std::sync::Mutex<crate::remote::rdp::RdpManager>>,
+    /// Database connection pool manager for multi-database support
+    pub db_pool_manager: Arc<TokioMutex<crate::db_drivers::DatabasePoolManager>>,
 }
 
 /// Determine the application data directory.
