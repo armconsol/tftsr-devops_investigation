@@ -396,6 +396,23 @@ which confirmed the runtime itself was healthy.)
 awaiting `recv()`, decoupling frame delivery from the starved channel waker. See
 `remote/rdp_client.rs` (`new_with_id`).
 
+### Black Screen with `Session not found` After WebSocket Reset
+
+**Symptom:** Disk logs show this sequence:
+1. WebSocket connects, then resets quickly (`Connection reset without closing handshake`)
+2. RDP decode continues and frame production logs continue
+3. Repeated `Failed to send frame: Session not found: <session_id>`
+
+**Cause:** WebSocket lifecycle teardown dropped frame-routing state while the
+RDP session stayed active. In parallel, subprotocol negotiation was not strict
+enough and clients could attach without session-bound token validation.
+
+**Fix:** The WebSocket layer now:
+- requires `Sec-WebSocket-Protocol: binary` at handshake
+- uses per-session auth tokens in the RDP WebSocket URL (`?token=...`)
+- enforces one active controlling client per session
+- keeps session routing registered across transient disconnect windows so reconnect can resume streaming
+
 ### Mouse/Keyboard Do Nothing in the RDP Session
 
 **Cause:** Input was never wired from the webview to the session — `handle_client`

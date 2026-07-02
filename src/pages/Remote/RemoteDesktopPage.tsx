@@ -397,7 +397,7 @@ function SessionView({ session, onDisconnect }: SessionViewProps) {
   }, [scheduleResize]);
 
   useEffect(() => {
-    const ws = new WebSocket(session.websocket_url);
+    const ws = new WebSocket(session.websocket_url, 'binary');
     wsRef.current = ws;
     ws.binaryType = 'arraybuffer';
 
