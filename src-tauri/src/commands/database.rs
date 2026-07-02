@@ -1202,15 +1202,9 @@ async fn load_connection_config(
     let password = crate::integrations::auth::decrypt_token(&encrypted_password)
         .map_err(|e| format!("Failed to decrypt password: {}", e))?;
 
-    // Parse database type
-    let database_type = match db_type.as_str() {
-        "postgresql" => DatabaseType::PostgreSQL,
-        "mysql" => DatabaseType::MySQL,
-        "mongodb" => DatabaseType::MongoDB,
-        "redis" => DatabaseType::Redis,
-        "cassandra" => DatabaseType::Cassandra,
-        _ => return Err(format!("Unsupported database type: {}", db_type)),
-    };
+    // Parse database type using the type's parse method to support all aliases
+    let database_type = DatabaseType::parse(&db_type)
+        .ok_or_else(|| format!("Unsupported database type: {}", db_type))?;
 
     // Parse SSL config
     let ssl_config = if ssl_enabled != 0 {
@@ -1866,6 +1860,46 @@ mod update_tests {
         let v = serde_json::json!(null);
         let dv = json_to_data_value(&v, "VARCHAR");
         assert!(matches!(dv, DataValue::Null));
+    }
+
+    #[test]
+    fn test_database_type_parse_postgresql_aliases() {
+        // Test that all PostgreSQL aliases are supported
+        assert_eq!(
+            DatabaseType::parse("postgresql"),
+            Some(DatabaseType::PostgreSQL)
+        );
+        assert_eq!(
+            DatabaseType::parse("postgres"),
+            Some(DatabaseType::PostgreSQL)
+        );
+        assert_eq!(DatabaseType::parse("pg"), Some(DatabaseType::PostgreSQL));
+        assert_eq!(
+            DatabaseType::parse("POSTGRESQL"),
+            Some(DatabaseType::PostgreSQL)
+        );
+        assert_eq!(
+            DatabaseType::parse("PostgreSQL"),
+            Some(DatabaseType::PostgreSQL)
+        );
+    }
+
+    #[test]
+    fn test_database_type_parse_mysql() {
+        assert_eq!(DatabaseType::parse("mysql"), Some(DatabaseType::MySQL));
+        assert_eq!(DatabaseType::parse("MySQL"), Some(DatabaseType::MySQL));
+    }
+
+    #[test]
+    fn test_database_type_parse_mongodb_aliases() {
+        assert_eq!(DatabaseType::parse("mongodb"), Some(DatabaseType::MongoDB));
+        assert_eq!(DatabaseType::parse("mongo"), Some(DatabaseType::MongoDB));
+    }
+
+    #[test]
+    fn test_database_type_parse_unknown() {
+        assert_eq!(DatabaseType::parse("unknown"), None);
+        assert_eq!(DatabaseType::parse("sqlite"), None);
     }
 }
 
