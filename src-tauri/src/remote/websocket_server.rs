@@ -471,15 +471,19 @@ mod tests {
             .register_session("ws-session-123", rdp_session_id)
             .await;
         assert!(!token.is_empty());
-        assert!(tx
-            .send(RdpFrame {
-                width: 1920,
-                height: 1080,
-                data: vec![0u8; 100],
-                timestamp: 0,
-                frame_number: 0,
-            })
-            .is_ok());
+        let mut rx = tx.subscribe();
+        let frame = RdpFrame {
+            width: 1920,
+            height: 1080,
+            data: vec![0u8; 100],
+            timestamp: 0,
+            frame_number: 0,
+        };
+        assert!(tx.send(frame.clone()).is_ok());
+        let received = rx.recv().await.expect("subscriber should receive frame");
+        assert_eq!(received.width, frame.width);
+        assert_eq!(received.height, frame.height);
+        assert_eq!(received.frame_number, frame.frame_number);
     }
 
     #[tokio::test]

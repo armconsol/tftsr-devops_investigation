@@ -29,12 +29,15 @@ Root cause was a WebSocket lifecycle/routing mismatch: connection teardown remov
   - Returned tokenized WebSocket URLs for active sessions.
 - Updated `src/pages/Remote/RemoteDesktopPage.tsx`:
   - WebSocket now explicitly requests `binary` subprotocol.
+- Follow-up test hardening (`src-tauri/src/remote/websocket_server.rs`):
+  - Updated `test_register_session` to subscribe before sending on `broadcast::Sender`, then assert the frame is received.
+  - Aligns test expectations with Tokio broadcast semantics (send without receivers returns error).
 
 ## Testing Needed
 - Rust:
   - `cargo fmt --manifest-path src-tauri/Cargo.toml --check` ✅
-  - `cargo test --manifest-path src-tauri/Cargo.toml websocket_server -- --test-threads=1` ⛔ blocked (missing `/tmp/ironrdp-patch/crates/ironrdp`)
-  - `cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings` ⛔ blocked (same dependency path)
+  - `cargo test --manifest-path src-tauri/Cargo.toml -- --test-threads=1` ⛔ blocked locally (missing `/tmp/ironrdp-patch/crates/ironrdp`); CI has shown full-suite execution.
+  - `cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings` ⛔ blocked locally (same dependency path)
 - Frontend:
   - `npx tsc --noEmit` ✅
   - `npx eslint src/ tests/ --quiet` ✅
