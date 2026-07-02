@@ -145,7 +145,7 @@ export interface LogFile {
   id: string;
   issue_id: string;
   file_name: string;
-  file_path: string;
+  filePath: string;
   file_size: number;
   mime_type: string;
   content_hash: string;
@@ -157,7 +157,7 @@ export interface ImageAttachment {
   id: string;
   issue_id: string;
   file_name: string;
-  file_path: string;
+  filePath: string;
   file_size: number;
   mime_type: string;
   upload_hash: string;
@@ -670,7 +670,7 @@ export interface LogFileSummary {
   issue_id: string;
   issue_title: string;
   file_name: string;
-  file_path: string;
+  filePath: string;
   file_size: number;
   mime_type: string;
   content_hash: string;
@@ -683,7 +683,7 @@ export interface ImageAttachmentSummary {
   issue_id: string;
   issue_title: string;
   file_name: string;
-  file_path: string;
+  filePath: string;
   file_size: number;
   mime_type: string;
   upload_hash: string;
@@ -1710,7 +1710,7 @@ export interface RemoteConnectionUpdate {
 
 export interface RemoteCredentials {
   id: string;
-  connection_id: string;
+  connectionId: string;
   rdp_password_encrypted?: string;
   ssh_password_encrypted?: string;
   ssh_key_encrypted?: string;
@@ -1761,7 +1761,7 @@ export const deleteRemoteConnectionCmd = (connectionId: string) =>
 
 export interface RdpSession {
   id: string;
-  connection_id: string;
+  connectionId: string;
   hostname: string;
   port: number;
   username: string;
@@ -1885,8 +1885,8 @@ export interface ForeignKey {
 
 export interface QueryHistory {
   id: string;
-  connection_id: string;
-  query_text: string;
+  connectionId: string;
+  queryText: string;
   row_count: number | null;
   execution_time_ms: number | null;
   status: string;
@@ -1897,8 +1897,8 @@ export interface QueryHistory {
 export interface QueryBookmark {
   id: string;
   name: string;
-  query_text: string;
-  connection_id: string | null;
+  queryText: string;
+  connectionId: string | null;
   tags: string | null;
   description: string | null;
   created_at: string;
@@ -1957,130 +1957,130 @@ export const deleteDatabaseConnectionCmd = (id: string) =>
 export const listDatabaseConnectionsCmd = () =>
   invoke<DatabaseConnection[]>("list_database_connections");
 
-export const testDatabaseConnectionCmd = (connection_id: string) =>
-  invoke<ConnectionTestResult>("test_database_connection", { connection_id });
+export const testDatabaseConnectionCmd = (connectionId: string) =>
+  invoke<ConnectionTestResult>("test_database_connection", { connectionId });
 
 // Query Execution
 export const executeDatabaseQueryCmd = (
-  connection_id: string,
+  connectionId: string,
   query: string,
   page: number,
-  page_size: number
+  pageSize: number
 ) =>
   invoke<QueryExecutionResult>("execute_database_query", {
-    connection_id,
+    connectionId,
     query,
     page,
-    page_size,
+    pageSize,
   });
 
-export const getDatabasesCmd = (connection_id: string) =>
-  invoke<string[]>("get_databases", { connection_id });
+export const getDatabasesCmd = (connectionId: string) =>
+  invoke<string[]>("get_databases", { connectionId });
 
-export const getSchemaCmd = (connection_id: string, database: string) =>
-  invoke<Schema>("get_schema", { connection_id, database });
+export const getSchemaCmd = (connectionId: string, database: string) =>
+  invoke<Schema>("get_schema", { connectionId, database });
 
-export const getTablesCmd = (connection_id: string, database: string) =>
-  invoke<string[]>("get_tables", { connection_id, database });
+export const getTablesCmd = (connectionId: string, database: string) =>
+  invoke<string[]>("get_tables", { connectionId, database });
 
 export const getTableSchemaCmd = (
-  connection_id: string,
+  connectionId: string,
   database: string,
   table: string
 ) =>
-  invoke<Table>("get_table_schema", { connection_id, database, table });
+  invoke<Table>("get_table_schema", { connectionId, database, table });
 
 // Transaction Management
-export const beginTransactionCmd = (connection_id: string) =>
-  invoke<string>("begin_transaction", { connection_id });
+export const beginTransactionCmd = (connectionId: string) =>
+  invoke<string>("begin_transaction", { connectionId });
 
-export const commitTransactionCmd = (connection_id: string, transaction_id: string) =>
-  invoke<void>("commit_transaction", { connection_id, transaction_id });
+export const commitTransactionCmd = (connectionId: string, transactionId: string) =>
+  invoke<void>("commit_transaction", { connectionId, transactionId });
 
-export const rollbackTransactionCmd = (connection_id: string, transaction_id: string) =>
-  invoke<void>("rollback_transaction", { connection_id, transaction_id });
+export const rollbackTransactionCmd = (connectionId: string, transactionId: string) =>
+  invoke<void>("rollback_transaction", { connectionId, transactionId });
 
 // Query History
-export const getQueryHistoryCmd = (connection_id: string, limit: number) =>
-  invoke<QueryHistory[]>("get_query_history", { connection_id, limit });
+export const getQueryHistoryCmd = (connectionId: string, limit: number) =>
+  invoke<QueryHistory[]>("get_query_history", { connectionId, limit });
 
 export const searchQueryHistoryCmd = (
-  connection_id: string,
-  search_term: string,
+  connectionId: string,
+  searchTerm: string,
   limit: number
 ) =>
   invoke<QueryHistory[]>("search_query_history", {
-    connection_id,
-    search_term,
+    connectionId,
+    searchTerm,
     limit,
   });
 
 // Query Bookmarks
 export const createQueryBookmarkCmd = (params: {
   name: string;
-  query_text: string;
-  connection_id?: string;
+  queryText: string;
+  connectionId?: string;
   tags?: string;
   description?: string;
 }) => invoke<QueryBookmark>("create_query_bookmark", params);
 
-export const listQueryBookmarksCmd = (connection_id?: string) =>
-  invoke<QueryBookmark[]>("list_query_bookmarks", { connection_id });
+export const listQueryBookmarksCmd = (connectionId?: string) =>
+  invoke<QueryBookmark[]>("list_query_bookmarks", { connectionId });
 
 export const deleteQueryBookmarkCmd = (id: string) =>
   invoke<void>("delete_query_bookmark", { id });
 
 // Import/Export
 export const importCsvDataCmd = (
-  connection_id: string,
-  file_path: string,
-  target_table: string,
-  column_mappings: Array<{ sourceColumn: string; targetColumn: string }>
+  connectionId: string,
+  filePath: string,
+  targetTable: string,
+  columnMappings: Array<{ sourceColumn: string; targetColumn: string }>
 ) =>
   invoke<ImportResult>("import_csv_data", {
-    connection_id,
-    file_path,
-    target_table,
-    column_mappings,
+    connectionId,
+    filePath,
+    targetTable,
+    columnMappings,
   });
 
 export const importJsonDataCmd = (
-  connection_id: string,
-  file_path: string,
-  target_table: string,
-  column_mappings: Array<{ sourceColumn: string; targetColumn: string }>
+  connectionId: string,
+  filePath: string,
+  targetTable: string,
+  columnMappings: Array<{ sourceColumn: string; targetColumn: string }>
 ) =>
   invoke<ImportResult>("import_json_data", {
-    connection_id,
-    file_path,
-    target_table,
-    column_mappings,
+    connectionId,
+    filePath,
+    targetTable,
+    columnMappings,
   });
 
 export const exportQueryResultsCmd = (
   results: QueryResult,
-  file_path: string,
+  filePath: string,
   format: string
 ) =>
-  invoke<void>("export_query_results", { results, file_path, format });
+  invoke<void>("export_query_results", { results, filePath, format });
 
-export const previewCsvFileCmd = (file_path: string, limit: number) =>
+export const previewCsvFileCmd = (filePath: string, limit: number) =>
   invoke<{
     columns: string[];
     rows: any[][];
     totalRows: number;
-  }>("preview_csv_file", { file_path, limit });
+  }>("preview_csv_file", { filePath, limit });
 
-export const previewJsonFileCmd = (file_path: string, limit: number) =>
+export const previewJsonFileCmd = (filePath: string, limit: number) =>
   invoke<{
     columns: string[];
     rows: any[][];
     totalRows: number;
-  }>("preview_json_file", { file_path, limit });
+  }>("preview_json_file", { filePath, limit });
 
 // ER Diagram
-export const generateErDiagramCmd = (connection_id: string, database: string) =>
-  invoke<ERDiagram>("generate_er_diagram", { connection_id, database });
+export const generateErDiagramCmd = (connectionId: string, database: string) =>
+  invoke<ERDiagram>("generate_er_diagram", { connectionId, database });
 
 // ─── Table Row Updates (Inline CRUD) ────────────────────────────────────────
 
@@ -2100,13 +2100,13 @@ export interface RowUpdate {
  * `updates` is an array of objects with `primary_keys` and `column_updates`.
  */
 export const updateTableRowsCmd = (
-  connection_id: string,
+  connectionId: string,
   database: string,
   table_name: string,
   updates: RowUpdate[]
 ) =>
   invoke<UpdateResult>("update_table_rows", {
-    connectionId: connection_id,
+    connectionId: connectionId,
     database,
     tableName: table_name,
     updates,
@@ -2133,5 +2133,5 @@ export interface ExplainResult {
   raw_output: string;
 }
 
-export const explainQueryCmd = (connection_id: string, query: string) =>
-  invoke<ExplainResult>("explain_query", { connectionId: connection_id, query });
+export const explainQueryCmd = (connectionId: string, query: string) =>
+  invoke<ExplainResult>("explain_query", { connectionId: connectionId, query });

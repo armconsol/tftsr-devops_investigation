@@ -200,7 +200,7 @@ describe("RDP Session Commands", () => {
     it("should call invoke with connectionId and password", async () => {
       const mockSession: RdpSession = {
         id: "session-123",
-        connection_id: "conn-456",
+        connectionId: "conn-456",
         hostname: "192.168.1.100",
         port: 3389,
         username: "admin",
@@ -226,7 +226,7 @@ describe("RDP Session Commands", () => {
     it("should omit the password so the stored credential is used", async () => {
       const mockSession: RdpSession = {
         id: "session-789",
-        connection_id: "conn-456",
+        connectionId: "conn-456",
         hostname: "192.168.1.100",
         port: 3389,
         username: "admin",

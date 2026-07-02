@@ -26,7 +26,7 @@ export function QueryHistoryPage() {
   useEffect(() => {
     if (searchTerm) {
       const filtered = history.filter((item) =>
-        item.query_text.toLowerCase().includes(searchTerm.toLowerCase())
+        item.queryText.toLowerCase().includes(searchTerm.toLowerCase())
       );
       setFilteredHistory(filtered);
     } else {
@@ -69,7 +69,7 @@ export function QueryHistoryPage() {
   const handleReExecute = (item: QueryHistory) => {
     const activeTab = getActiveTab();
     if (activeTab) {
-      updateTabQuery(activeTab.id, item.query_text);
+      updateTabQuery(activeTab.id, item.queryText);
       navigate('/database/editor');
       toast.success('Query loaded in editor');
     } else {
@@ -132,7 +132,7 @@ export function QueryHistoryPage() {
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex-1 min-w-0">
                       <pre className="font-mono text-sm bg-muted p-2 rounded overflow-x-auto">
-                        {item.query_text}
+                        {item.queryText}
                       </pre>
 
                       <div className="flex items-center gap-4 mt-2 text-sm text-muted-foreground">

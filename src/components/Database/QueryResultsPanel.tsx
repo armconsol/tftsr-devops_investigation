@@ -111,7 +111,7 @@ export function QueryResultsPanel({
               >
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
-                    <p className="text-sm font-mono truncate">{item.query_text}</p>
+                    <p className="text-sm font-mono truncate">{item.queryText}</p>
                     <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
                       <span>{new Date(item.executed_at).toLocaleString()}</span>
                       <span>
