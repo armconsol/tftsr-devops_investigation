@@ -34,7 +34,7 @@ jobs:
         env:
           GITEA_API: ${{ secrets.GITEA_API_URL }}/api/v1/repos/${{ github.repository }}
           GITEA_TOKEN: ${{ secrets.RELEASE_TOKEN }}
-          GH_REPO: armconsol/tftsr-devops_investigation
+          GH_REPO: msicie/apollo_nxt-trcaa
           GH_TOKEN: ${{ secrets.GH_RELEASE_TOKEN }}
           EVENT_TAG: ${{ github.event.release.tag_name }}
           INPUT_TAG: ${{ github.event.inputs.tag }}
