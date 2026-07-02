@@ -17,6 +17,7 @@ interface PreviewData {
 
 export function ImportExport() {
   const { activeConnectionId, queryResults } = useDatabaseStore();
+  const [activeTab, setActiveTab] = useState('import');
   const [importFile, setImportFile] = useState<string | null>(null);
   const [targetTable, setTargetTable] = useState('');
   const [importFormat, setImportFormat] = useState<'csv' | 'json'>('csv');
@@ -133,7 +134,7 @@ export function ImportExport() {
     <div className="p-6">
       <h1 className="text-2xl font-bold mb-6">Import/Export Data</h1>
 
-      <Tabs defaultValue="import">
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList>
           <TabsTrigger value="import">
             <Upload className="w-4 h-4 mr-2" />

@@ -1,7 +1,8 @@
 // Virtual Table for Query Results
 
 import { useMemo } from 'react';
-import { FixedSizeFixedSizeList } from 'react-window';
+// @ts-ignore - react-window types issue
+import { FixedSizeList as List } from 'react-window';
 import type { QueryResult } from '@/lib/tauriCommands';
 
 interface ResultTableProps {
@@ -96,7 +97,7 @@ export function ResultTable({ result, height = 400 }: ResultTableProps) {
       </div>
 
       {/* Rows */}
-      <FixedSizeList
+      <List
         height={height - HEADER_HEIGHT}
         itemCount={result.rows.length}
         itemSize={ROW_HEIGHT}
@@ -104,7 +105,7 @@ export function ResultTable({ result, height = 400 }: ResultTableProps) {
         style={{ overflowX: 'auto' }}
       >
         {Row}
-      </FixedSizeList>
+      </List>
 
       {/* Footer */}
       <div

@@ -685,8 +685,16 @@ pub async fn execute_database_query(
     };
 
     // Save to history
-    save_query_history(&connection_id, &query, row_count, execution_time, "success", None, &state)
-        .await?;
+    save_query_history(
+        &connection_id,
+        &query,
+        row_count,
+        execution_time,
+        "success",
+        None,
+        &state,
+    )
+    .await?;
 
     Ok(QueryExecutionResult {
         query_result: paginated_result,
@@ -1089,10 +1097,7 @@ pub async fn list_query_bookmarks(
 
 /// Delete query bookmark
 #[tauri::command]
-pub async fn delete_query_bookmark(
-    id: String,
-    state: State<'_, AppState>,
-) -> Result<(), String> {
+pub async fn delete_query_bookmark(id: String, state: State<'_, AppState>) -> Result<(), String> {
     let db = state
         .db
         .lock()
@@ -1111,7 +1116,19 @@ async fn load_connection_config(
     connection_id: &str,
     state: &State<'_, AppState>,
 ) -> Result<ConnectionConfig, String> {
-    let (db_type, host, port, database_name, username, encrypted_password, ssl_enabled, ssl_ca_cert_path, ssl_client_cert_path, ssl_client_key_path, connection_options) = {
+    let (
+        db_type,
+        host,
+        port,
+        database_name,
+        username,
+        encrypted_password,
+        ssl_enabled,
+        ssl_ca_cert_path,
+        ssl_client_cert_path,
+        ssl_client_key_path,
+        connection_options,
+    ) = {
         let db = state
             .db
             .lock()
@@ -1425,11 +1442,7 @@ pub async fn update_table_rows(
         // Validate primary keys are present
         for pk_col in &pk_columns {
             if !update.primary_keys.contains_key(pk_col) {
-                let err = format!(
-                    "Update {} missing primary key column: {}",
-                    idx + 1,
-                    pk_col
-                );
+                let err = format!("Update {} missing primary key column: {}", idx + 1, pk_col);
                 errors.push(err);
                 update_invalid = true;
             }
@@ -1458,7 +1471,10 @@ pub async fn update_table_rows(
             .primary_keys
             .iter()
             .map(|(k, v)| {
-                let expected_type = column_types.get(k).cloned().unwrap_or_else(|| "TEXT".to_string());
+                let expected_type = column_types
+                    .get(k)
+                    .cloned()
+                    .unwrap_or_else(|| "TEXT".to_string());
                 (k.clone(), json_to_data_value(v, &expected_type))
             })
             .collect();
@@ -1467,7 +1483,10 @@ pub async fn update_table_rows(
             .column_updates
             .iter()
             .map(|(k, v)| {
-                let expected_type = column_types.get(k).cloned().unwrap_or_else(|| "TEXT".to_string());
+                let expected_type = column_types
+                    .get(k)
+                    .cloned()
+                    .unwrap_or_else(|| "TEXT".to_string());
                 (k.clone(), json_to_data_value(v, &expected_type))
             })
             .collect();
@@ -1478,7 +1497,12 @@ pub async fn update_table_rows(
         };
 
         // Build UPDATE statement
-        match build_update_statement(&table_name, &pk_columns, &typed_update, &config.database_type) {
+        match build_update_statement(
+            &table_name,
+            &pk_columns,
+            &typed_update,
+            &config.database_type,
+        ) {
             Ok((sql, params)) => {
                 // Execute update
                 match driver.execute_query(&sql, params).await {
@@ -1581,7 +1605,11 @@ fn build_update_statement(
 
     // Build SET clause
     for (col_name, value) in &update.column_updates {
-        set_clauses.push(format!("{} = {}", col_name, param_placeholder(param_idx, db_type)));
+        set_clauses.push(format!(
+            "{} = {}",
+            col_name,
+            param_placeholder(param_idx, db_type)
+        ));
         params.push(value.clone());
         param_idx += 1;
     }
@@ -1593,7 +1621,11 @@ fn build_update_statement(
             .primary_keys
             .get(pk_col)
             .ok_or_else(|| format!("Missing primary key: {}", pk_col))?;
-        where_clauses.push(format!("{} = {}", pk_col, param_placeholder(param_idx, db_type)));
+        where_clauses.push(format!(
+            "{} = {}",
+            pk_col,
+            param_placeholder(param_idx, db_type)
+        ));
         params.push(pk_value.clone());
         param_idx += 1;
     }
@@ -1652,9 +1684,7 @@ fn validate_data_type(value: &DataValue, expected_type: &str) -> bool {
                 || expected_lower.contains("numeric")
                 || expected_lower.contains("decimal")
         }
-        DataValue::Boolean(_) => {
-            expected_lower.contains("bool") || expected_lower.contains("bit")
-        }
+        DataValue::Boolean(_) => expected_lower.contains("bool") || expected_lower.contains("bit"),
         DataValue::String(_) => {
             expected_lower.contains("char")
                 || expected_lower.contains("varchar")
@@ -1671,9 +1701,7 @@ fn validate_data_type(value: &DataValue, expected_type: &str) -> bool {
                 || expected_lower.contains("bytea")
                 || expected_lower.contains("binary")
         }
-        DataValue::Json(_) => {
-            expected_lower.contains("json") || expected_lower.contains("jsonb")
-        }
+        DataValue::Json(_) => expected_lower.contains("json") || expected_lower.contains("jsonb"),
         DataValue::Array(_) => expected_lower.contains("array"),
         DataValue::Null => true,
     }
@@ -1690,23 +1718,29 @@ mod update_tests {
         assert!(validate_data_type(&DataValue::Integer(42), "BIGINT"));
         assert!(validate_data_type(&DataValue::Float(3.14), "FLOAT"));
         assert!(validate_data_type(&DataValue::Float(3.14), "DOUBLE"));
-        assert!(validate_data_type(&DataValue::String("test".into()), "VARCHAR"));
-        assert!(validate_data_type(&DataValue::String("test".into()), "TEXT"));
+        assert!(validate_data_type(
+            &DataValue::String("test".into()),
+            "VARCHAR"
+        ));
+        assert!(validate_data_type(
+            &DataValue::String("test".into()),
+            "TEXT"
+        ));
         assert!(validate_data_type(&DataValue::Boolean(true), "BOOLEAN"));
         assert!(validate_data_type(&DataValue::Null, "INTEGER"));
         assert!(validate_data_type(&DataValue::Null, "VARCHAR"));
 
         // Type mismatches
-        assert!(!validate_data_type(&DataValue::String("test".into()), "INTEGER"));
+        assert!(!validate_data_type(
+            &DataValue::String("test".into()),
+            "INTEGER"
+        ));
         assert!(!validate_data_type(&DataValue::Integer(42), "VARCHAR"));
     }
 
     #[test]
     fn test_param_placeholder() {
-        assert_eq!(
-            param_placeholder(1, &DatabaseType::PostgreSQL),
-            "$1"
-        );
+        assert_eq!(param_placeholder(1, &DatabaseType::PostgreSQL), "$1");
         assert_eq!(param_placeholder(1, &DatabaseType::MySQL), "?");
         assert_eq!(param_placeholder(2, &DatabaseType::PostgreSQL), "$2");
     }
@@ -1725,9 +1759,13 @@ mod update_tests {
             column_updates,
         };
 
-        let (sql, params) =
-            build_update_statement("users", &["id".to_string()], &update, &DatabaseType::PostgreSQL)
-                .unwrap();
+        let (sql, params) = build_update_statement(
+            "users",
+            &["id".to_string()],
+            &update,
+            &DatabaseType::PostgreSQL,
+        )
+        .unwrap();
 
         assert!(sql.contains("UPDATE users"));
         assert!(sql.contains("SET"));
@@ -1872,7 +1910,9 @@ fn build_explain_sql(query: &str, db_type: &DatabaseType) -> Result<String, Stri
         DatabaseType::PostgreSQL => Ok(format!("EXPLAIN (FORMAT JSON) {}", trimmed)),
         DatabaseType::MySQL => Ok(format!("EXPLAIN {}", trimmed)),
         DatabaseType::Cassandra => Ok(format!("TRACING ON; {}", trimmed)),
-        DatabaseType::MongoDB => Err("EXPLAIN is not supported for MongoDB through SQL".to_string()),
+        DatabaseType::MongoDB => {
+            Err("EXPLAIN is not supported for MongoDB through SQL".to_string())
+        }
         DatabaseType::Redis => Err("EXPLAIN is not supported for Redis".to_string()),
     }
 }
@@ -1990,13 +2030,11 @@ fn parse_mysql_explain(result: &QueryResult) -> Option<ExplainNode> {
         let table_name = get(table_idx);
         let scan_type = get(type_idx).unwrap_or_else(|| "Unknown".to_string());
         let key = get(key_idx);
-        let rows = rows_idx
-            .and_then(|i| row.get(i))
-            .and_then(|v| match v {
-                DataValue::Integer(n) => Some(*n),
-                DataValue::String(s) => s.parse::<i64>().ok(),
-                _ => None,
-            });
+        let rows = rows_idx.and_then(|i| row.get(i)).and_then(|v| match v {
+            DataValue::Integer(n) => Some(*n),
+            DataValue::String(s) => s.parse::<i64>().ok(),
+            _ => None,
+        });
         let extra = get(extra_idx);
 
         nodes.push(ExplainNode {
