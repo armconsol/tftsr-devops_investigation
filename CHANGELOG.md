@@ -4,6 +4,60 @@ All notable changes to TRCAA are documented here.
 Commit types shown: feat, fix, perf, docs, refactor.
 CI, chore, and build changes are excluded.
 
+## [2.0.0] — 2026-07-02
+
+### Merge
+- **master**: Resolve Cargo.lock conflict for beta promotion
+
+## [1.8.0] — 2026-06-27
+
+### Bug Fixes
+- Resolve security and formatting issues in remote desktop module
+- **merge**: Resolve conflicts with beta — keep SSH cred schema, fix duplicate RemoteDesktopPage import
+- **deps**: Downgrade ironrdp to 0.14/sspi to 0.18 for rustc 1.88 compatibility
+- **deps**: Pin ironrdp-tls to =0.2.0 to prevent Cargo resolving to 0.2.1
+- **build**: Remove unix-only deps and add RDP connection management UI
+- **version**: Bump tauri.conf.json to 2.0.0 to match Cargo.toml and package.json
+- **rdp**: Make password optional in edit form; add SSH credential hint text
+- **build**: Resolve Windows ssh2 and macOS keychain build failures
+- **build**: Address PR review and headless-CI keychain test failure
+- **remote**: Correct create_remote_connection arg casing and wire connection-form tabs
+- **remote-desktop**: Stop tab clicks closing edit dialog and fix black RDP screen
+- **rdp**: Use saved password and fix black-screen frame routing
+- **rdp**: Address PR review findings
+- **remote**: Deliver a usable RDP client (fix black screen + wire input)
+- **docker**: Add GitHub fallback and connect-timeout for libsodium download
+- **docker**: Install make and set SODIUM_LIB_DIR in linux-amd64 builder
+- **rdp**: Prevent duplicate WebSocket connections causing blank screen
+- **rdp**: Move stopRdpSession to cleanup, not onclose handler
+- **rdp**: Patch IronRDP to fix RDP6 bitmap stride mismatch
+- **rdp**: Use patched IronRDP to resolve DGX bitmap stride issue
+- **ci**: Clone IronRDP from our fork instead of upstream
+- **ci**: Add IronRDP clone step to test workflow
+- **ci**: Add IronRDP clone to auto-tag.yml and clean up before macOS builds
+- **rdp**: Prevent premature session stop causing black screen
+- **rdp**: Harden websocket lifecycle for black-screen reconnects
+- **rdp**: Correct tungstenite handshake error response type
+- **settings**: Address PR review follow-up findings
+
+### Documentation
+- Add ticket summary for Remote Desktop tab-submit and black-screen fixes
+- Scrub internal IPs and DB credentials from wiki; fix Rust version
+- Add IronRDP upstream issue and patch
+- Update IRONRDP_PATCH.md with upstream PR link
+- Add upstream issue link
+- Add Copilot review resolution notes
+- **ci**: Add comments explaining IronRDP fork usage
+
+### Features
+- Add remote desktop feature with RDP and VNC support
+- Add MIT license headers to all source files
+- **rdp**: Add diagnostics and enhanced logging for blank screen troubleshooting
+- **logging**: Add backend disk logs with debug toggle
+
+### Security
+- **ssh**: Redact secrets in SshTunnelConfig Debug output
+
 ## [1.4.0] — 2026-06-26
 
 ### Bug Fixes
@@ -98,6 +152,58 @@ CI, chore, and build changes are excluded.
 - **proxmox**: Stop Ceph page going blank on Ceph-enabled hosts
 - **proxmox**: Fall back to HA rules when groups are migrated (PVE 9)
 - **proxmox**: Make Backup Trigger and Edit actions work
+- **proxmox**: Use remote_migrate REST path and validate cross-DC inputs
+- **ci**: Address PR #143 review findings
+- **kube**: Encode PTY stdin as UTF-8 bytes for send_pty_stdin
+- **proxmox**: Correct Ceph API parsing for OSDs, monitors, FS and flags
+- **k8s**: Open pod & workload logs in the bottom dock with live streaming
+- **ci**: Revert model name to qwen3.5-122b-think
+- **ci**: Add missing sys import to PR review verification script
+- **ci**: Auto-tag cuts a new minor stable on every beta→master promotion
+- **sync**: Drop GITEA_API_URL secret dependency in inbound mirror
+- **sync**: Redact tokens in reconcile git output; harden PR-head path filter
+- Resolve security and formatting issues in remote desktop module
+- **ci**: Initialise BATCH_BYTES and MAX_BATCH_BYTES before loop
+- **remote_types**: From<NewRemoteCredentials> now encrypts credentials via TryFrom
+- **state**: Replace relative fallback data dir with cwd-relative absolute path
+- **integrations**: Share app_state.rdp_manager in OAuth task instead of creating new instance
+- **rdp**: Populate SSH credentials in SshTunnelConfig from encrypted credential store
+- **websocket**: Hold pending receiver so pre-registered channels stay open until client connects
+- **frontend**: Correct new_conn arg name, deprecated keyCode, WS close, null checks
+- **proxmox**: Address 11 dashboard issues and add missing VM action commands
+- **proxmox**: Resolve remaining PR review findings
+- **proxmox**: Comprehensive VM management and UI improvements
+- Resolve build errors and add logs to gitignore
+- **proxmox**: Resolve 7 dashboard and AI chat issues
+- **firewall**: Correct PVE API field names for rule listing and creation
+- **proxmox**: Address PR review findings
+- **proxmox**: Address second PR review pass — menu positioning + code clarity
+- **fmt**: Apply cargo fmt to resolve CI formatting check failure
+- **proxmox**: Fix VM actions, remove Disk column, add Create VM
+- **proxmox**: Address PR review suggestions
+- **fmt**: Apply cargo fmt to proxmox command ISO validation
+- **proxmox**: Align ISO frontend validation with backend
+- **proxmox**: Replace window.prompt with CloneDialog in VMList
+- **fmt**: Reformat storage.rs map_err closure to satisfy rustfmt line-length rule
+- **proxmox**: Replace empty JSON body with post_form, fix firewall field names, add 23 new commands
+- **proxmox**: Add input validation to all new Tauri commands
+- **proxmox**: Correct API field names and double-unwrap bug across 6 modules
+- **proxmox**: Add path-traversal validation to firewall and HA group commands
+- **proxmox**: Address automated PR review findings
+- **review**: Address automated PR review findings
+- **proxmox**: Prevent app crash/nav loss via route error boundary
+- **proxmox**: Datacenter/node selectors with auto-load for node-scoped pages
+- **proxmox**: Tolerant HA/backup loading and working HA edit dialogs
+- **proxmox**: Wire up storage edit/delete actions
+- **proxmox**: Replace dead cluster-views API with local saved views
+- **proxmox**: Real cross-DC migration with task polling
+- **proxmox**: Address automated PR review findings
+- **proxmox**: Resolve 6 parity issues — ceph node paths, APT/backup key mismatch, admin node default, remove Views
+- **security**: Add validate_node to 4 ceph functions missing path-traversal guard
+- **proxmox**: Allow loopback ws:// in CSP so consoles render
+- **proxmox**: Stop Ceph page going blank on Ceph-enabled hosts
+- **proxmox**: Fall back to HA rules when groups are migrated (PVE 9)
+- **proxmox**: Make Backup Trigger and Edit actions work
 
 ### Documentation
 - Document pkg-config environment variable strategy
@@ -113,8 +219,28 @@ CI, chore, and build changes are excluded.
 - Add ticket summary for proxmox full-parity work
 - Add IPC command docs and ticket summary for Proxmox parity fixes
 - **proxmox**: Add ticket for console/ceph/ha/backup fixes
+- **proxmox**: Document 501 migration gotcha and console clipboard
+- Add ticket summary for proxmox and AI chat fixes
+- **proxmox**: Document 27 new Proxmox IPC commands in wiki
+- Add ticket summary for proxmox full-parity work
+- Add IPC command docs and ticket summary for Proxmox parity fixes
+- **proxmox**: Add ticket for console/ceph/ha/backup fixes
 
 ### Features
+- **proxmox**: Implement full feature parity with snapshot and network CRUD
+- Integrate SnapshotDialog and remove duplicate NetworkInterfaceConfig
+- **proxmox**: ISO upload, full CRUD validation, and security hardening
+- **proxmox**: Full frontend-backend parity — wire all stubs, add typed wrappers, new commands
+- **proxmox**: 100% feature parity with proxmox-datacenter-manager
+- **proxmox**: In-app noVNC graphical console for VMs and containers
+- **proxmox**: Add host shell console to Remotes (PVE vncshell + PBS termproxy)
+- **proxmox**: Enforce node-scoped ceph endpoints
+- **proxmox**: Add console copy/paste via clipboard-manager
+- **sync**: Add two-way content sync with GitHub msicie/apollo_nxt-trcaa
+- Add remote desktop feature with RDP and VNC support
+- Add MIT license headers to all source files
+- **rdp**: Supersede beta RDP implementation with full SSH tunnel support
+- **secure_storage**: Re-enable module; expose get_encryption_key_material_hex
 - **proxmox**: Implement full feature parity with snapshot and network CRUD
 - Integrate SnapshotDialog and remove duplicate NetworkInterfaceConfig
 - **proxmox**: ISO upload, full CRUD validation, and security hardening
@@ -129,6 +255,7 @@ CI, chore, and build changes are excluded.
 - **ci**: Move SODIUM_LIB_DIR to job-level env
 - **pr-review**: Switch from deprecated qwen3-coder-next to qwen3.5-122b-think
 - **proxmox**: Extract test helper and use PROXMOX_HOST env var
+- **review**: Address PR #142 review suggestions
 
 ## [1.2.3] — 2026-06-13
 
