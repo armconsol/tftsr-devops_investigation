@@ -143,16 +143,20 @@ mod tests {
     fn test_validate_file_path_valid() {
         // Create a temp file for testing
         let temp_dir = std::env::temp_dir();
-        let temp_file = temp_dir.join("test.csv");
+        let temp_file = temp_dir.join("test_validate.csv");
         std::fs::write(&temp_file, "test").unwrap();
+
+        // Canonicalize the temp_dir to match what validate_file_path does
+        let canonical_temp_dir = temp_dir.canonicalize().unwrap();
 
         let result = validate_file_path(
             temp_file.to_str().unwrap(),
-            &[temp_dir.to_str().unwrap()],
+            &[canonical_temp_dir.to_str().unwrap()],
         );
-        assert!(result.is_ok());
 
-        // Cleanup
+        // Cleanup before assertion
         std::fs::remove_file(&temp_file).ok();
+
+        assert!(result.is_ok(), "Expected path validation to succeed for temp file in allowed directory");
     }
 }
