@@ -13,8 +13,9 @@ export function formatSQL(sql: string, options: FormatOptions = {}): string {
   try {
     return format(sql, {
       language: options.language || 'sql',
-      indent: options.indent || '  ',
-      uppercase: options.uppercase !== false,
+      tabWidth: 2,
+      useTabs: false,
+      keywordCase: options.uppercase !== false ? 'upper' : 'preserve',
       linesBetweenQueries: options.linesBetweenQueries || 2,
     });
   } catch (error) {

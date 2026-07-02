@@ -1,13 +1,12 @@
 // Data Import/Export Page
 
 import { useState } from 'react';
-import { Button, Input, Label, Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Button, Input, Label, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui';
 import { Upload, Download, FileText, Table } from 'lucide-react';
 import { ColumnMapper, type ColumnMapping } from '@/components/Database/ColumnMapper';
 import { useDatabaseStore } from '@/stores/databaseStore';
 import { importCsvDataCmd, importJsonDataCmd, exportQueryResultsCmd, previewCsvFileCmd, previewJsonFileCmd } from '@/lib/tauriCommands';
-import { open, save } from '@tauri-apps/api/dialog';
+import { open, save } from '@tauri-apps/plugin-dialog';
 import { toast } from 'sonner';
 
 interface PreviewData {

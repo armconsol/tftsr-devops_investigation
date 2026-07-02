@@ -1,6 +1,6 @@
 // SQL autocomplete provider for Monaco Editor
 
-import type * as monaco from 'monaco-editor';
+import * as monaco from 'monaco-editor';
 
 export interface TableSchema {
   name: string;

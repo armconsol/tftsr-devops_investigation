@@ -2,7 +2,6 @@
 
 import { useState } from 'react';
 import { Button, Input, Label, Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui';
-import { Checkbox } from '@/components/ui/checkbox';
 import type { DatabaseConnection } from '@/stores/databaseStore';
 
 interface ConnectionFormProps {
@@ -178,12 +177,14 @@ export function ConnectionForm({ connection, onSubmit, onCancel, isLoading }: Co
       </div>
 
       <div className="flex items-center space-x-2">
-        <Checkbox
+        <input
+          type="checkbox"
           id="ssl_enabled"
           checked={formData.ssl_enabled}
-          onCheckedChange={(checked) =>
-            setFormData({ ...formData, ssl_enabled: checked as boolean })
+          onChange={(e) =>
+            setFormData({ ...formData, ssl_enabled: e.target.checked })
           }
+          className="rounded border-gray-300"
         />
         <Label htmlFor="ssl_enabled">Enable SSL/TLS</Label>
       </div>

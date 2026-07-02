@@ -2061,4 +2061,3 @@ mod explain_tests {
         assert_eq!(plan.children.len(), 2);
     }
 }
-

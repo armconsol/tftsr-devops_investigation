@@ -1,9 +1,8 @@
 // Database Connection Manager Page
 
 import { useState, useEffect } from 'react';
-import { Button } from '@/components/ui';
+import { Button, Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui';
 import { Plus, RefreshCw, Trash2, Edit, TestTube } from 'lucide-react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { ConnectionForm, type ConnectionFormData } from '@/components/Database/ConnectionForm';
 import { useDatabaseStore } from '@/stores/databaseStore';
 import {

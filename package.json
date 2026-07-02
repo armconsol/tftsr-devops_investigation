@@ -32,6 +32,7 @@
     "chart.js": "^4.5.1",
     "class-variance-authority": "^0.7",
     "clsx": "^2",
+    "html-to-image": "^1.11.13",
     "lucide-react": "latest",
     "monaco-editor": "^0.52.2",
     "papaparse": "^5.5.4",

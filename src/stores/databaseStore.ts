@@ -9,6 +9,9 @@ import type {
   QueryBookmark,
 } from '@/lib/tauriCommands';
 
+// Re-export types for convenience
+export type { DatabaseConnection, QueryResult, QueryHistory, QueryBookmark };
+
 export interface EditorTab {
   id: string;
   title: string;
