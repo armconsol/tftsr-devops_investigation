@@ -45,6 +45,7 @@ pub struct RdpSessionInternal {
     pub resolution: String,
     pub color_depth: u32,
     pub websocket_port: u16,
+    pub websocket_token: String,
     pub ssh_config: Option<SshTunnelConfig>,
     pub connected: bool,
     /// Sender end of the resize channel; present while the session is running.
@@ -117,6 +118,7 @@ impl RdpManager {
             resolution: connection.resolution.clone(),
             color_depth: connection.color_depth,
             websocket_port,
+            websocket_token: String::new(),
             ssh_config,
             connected: false,
             resize_tx: None,
@@ -192,10 +194,11 @@ impl RdpManager {
         }
 
         // Start the WebSocket listener for this session and register the canonical
-        // session id so the parked frame receiver is routed to the browser client
-        // that connects to `ws://.../rdp/{session_id}`.
+        // session id with an auth token. The browser must present this token when
+        // connecting to `ws://.../rdp/{session_id}?token=...`.
         let websocket_port = self.websocket_server.start_random_port().await?;
-        self.websocket_server
+        let (_frame_tx, ws_token) = self
+            .websocket_server
             .register_session(session_id, session_id)
             .await;
 
@@ -231,6 +234,7 @@ impl RdpManager {
                 s.resize_tx = Some(resize_tx);
                 s.connected = true;
                 s.websocket_port = websocket_port;
+                s.websocket_token = ws_token.clone();
             }
         }
 
@@ -278,7 +282,10 @@ impl RdpManager {
             }
         });
 
-        let ws_url = format!("ws://127.0.0.1:{}/rdp/{}", websocket_port, session_id);
+        let ws_url = format!(
+            "ws://127.0.0.1:{}/rdp/{}?token={}",
+            websocket_port, session_id, ws_token
+        );
 
         info!("RDP session started: {}", session_id);
         Ok(ws_url)
@@ -301,11 +308,15 @@ impl RdpManager {
             if let Some(session) = sessions.get_mut(session_id) {
                 session.connected = true;
                 session.websocket_port = websocket_port;
+                session.websocket_token = "test".to_string();
             }
         }
 
         // Generate WebSocket URL
-        let ws_url = format!("ws://127.0.0.1:{}/rdp/{}", websocket_port, session_id);
+        let ws_url = format!(
+            "ws://127.0.0.1:{}/rdp/{}?token=test",
+            websocket_port, session_id
+        );
 
         info!("RDP session started (sync): {}", session_id);
         Ok(ws_url)
@@ -353,7 +364,14 @@ impl RdpManager {
         let sessions = self.sessions.lock().unwrap();
 
         sessions.get(session_id).map(|s| {
-            let ws_url = format!("ws://127.0.0.1:{}/rdp/{}", s.websocket_port, session_id);
+            let ws_url = if s.websocket_token.is_empty() {
+                format!("ws://127.0.0.1:{}/rdp/{}", s.websocket_port, session_id)
+            } else {
+                format!(
+                    "ws://127.0.0.1:{}/rdp/{}?token={}",
+                    s.websocket_port, session_id, s.websocket_token
+                )
+            };
             RdpSession {
                 id: s.id.clone(),
                 connection_id: s.connection_id.clone(),
