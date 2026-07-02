@@ -69,15 +69,29 @@ impl DatabaseDriver for PostgresDriver {
         );
 
         let (client, connection) = pg_config.connect(NoTls).await.map_err(|e| {
+            let detail = if let Some(db_err) = e.as_db_error() {
+                format!(
+                    "{}: {} (code: {}{})",
+                    db_err.severity(),
+                    db_err.message(),
+                    db_err.code().code(),
+                    db_err
+                        .hint()
+                        .map(|h| format!(", hint: {}", h))
+                        .unwrap_or_default()
+                )
+            } else {
+                e.to_string()
+            };
             tracing::error!(
                 host = %config.host,
                 port = %config.port,
                 database = ?config.database.as_deref(),
                 user = %config.username,
-                error = %e,
+                error = %detail,
                 "PostgreSQL connection failed"
             );
-            DriverError::ConnectionFailed(e.to_string())
+            DriverError::ConnectionFailed(detail)
         })?;
 
         // Spawn connection handler with proper tracing
@@ -129,12 +143,28 @@ impl DatabaseDriver for PostgresDriver {
                     latency_ms: Some(latency_ms),
                 })
             }
-            Err(e) => Ok(ConnectionStatus {
-                is_connected: false,
-                message: format!("Connection test failed: {}", e),
-                server_version: None,
-                latency_ms: Some(latency_ms),
-            }),
+            Err(e) => {
+                let detail = if let Some(db_err) = e.as_db_error() {
+                    format!(
+                        "{}: {} (code: {}{})",
+                        db_err.severity(),
+                        db_err.message(),
+                        db_err.code().code(),
+                        db_err
+                            .hint()
+                            .map(|h| format!(", hint: {}", h))
+                            .unwrap_or_default()
+                    )
+                } else {
+                    e.to_string()
+                };
+                Ok(ConnectionStatus {
+                    is_connected: false,
+                    message: format!("Connection test failed: {}", detail),
+                    server_version: None,
+                    latency_ms: Some(latency_ms),
+                })
+            }
         }
     }
 
