@@ -241,7 +241,7 @@ impl WebSocketServer {
         input_senders: Arc<Mutex<HashMap<String, mpsc::Sender<RawInputEvent>>>>,
     ) -> Result<()> {
         use std::sync::Mutex as StdMutex;
-        use tokio_tungstenite::tungstenite::handshake::server::{Request, Response};
+        use tokio_tungstenite::tungstenite::handshake::server::{ErrorResponse, Request, Response};
         use tokio_tungstenite::tungstenite::http::{header, StatusCode};
 
         // Capture full URI (`/rdp/{session_id}?token=...`) during handshake.
@@ -258,8 +258,8 @@ impl WebSocketServer {
                     .get(header::SEC_WEBSOCKET_PROTOCOL)
                     .and_then(|h| h.to_str().ok()),
             ) {
-                let mut reject =
-                    Response::new(Some("Missing required websocket subprotocol".into()));
+                let mut reject: ErrorResponse =
+                    ErrorResponse::new(Some("Missing required websocket subprotocol".into()));
                 *reject.status_mut() = StatusCode::BAD_REQUEST;
                 return Err(reject);
             }
