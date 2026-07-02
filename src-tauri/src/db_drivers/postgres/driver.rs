@@ -75,7 +75,10 @@ impl DatabaseDriver for PostgresDriver {
                     db_err.severity(),
                     db_err.message(),
                     db_err.code().code(),
-                    db_err.hint().map(|h| format!(", hint: {}", h)).unwrap_or_default()
+                    db_err
+                        .hint()
+                        .map(|h| format!(", hint: {}", h))
+                        .unwrap_or_default()
                 )
             } else {
                 e.to_string()
@@ -147,7 +150,10 @@ impl DatabaseDriver for PostgresDriver {
                         db_err.severity(),
                         db_err.message(),
                         db_err.code().code(),
-                        db_err.hint().map(|h| format!(", hint: {}", h)).unwrap_or_default()
+                        db_err
+                            .hint()
+                            .map(|h| format!(", hint: {}", h))
+                            .unwrap_or_default()
                     )
                 } else {
                     e.to_string()
