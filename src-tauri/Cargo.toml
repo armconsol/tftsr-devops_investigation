@@ -38,6 +38,7 @@ anyhow = "1"
 thiserror = "2"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-appender = "0.2"
 chrono = { version = "0.4", features = ["serde"] }
 futures = "0.3"
 async-trait = "0.1"
@@ -70,7 +71,10 @@ ssh2 = { version = "0.9", features = ["vendored-openssl"] }
 # Using patched IronRDP with local path dependencies until PR #1398 is merged upstream
 # Patch fixes RDP6 bitmap stride mismatch causing horizontal striping on DGX
 # https://github.com/Devolutions/IronRDP/pull/1398
-# CI/CD: Set IRON_RDP_PATCH_PATH env var to the patch location on build machine
+# NOTE: Cargo path dependencies cannot use environment-variable interpolation, so
+# this remains an explicit local path in this branch. Follow-up migration to a
+# non-local source (git/workspace) is tracked separately to avoid risky source
+# changes in this logging-focused PR.
 ironrdp = { path = "/tmp/ironrdp-patch/crates/ironrdp", features = [
     "svc",
     "cliprdr",
@@ -118,4 +122,3 @@ keyring = { version = "3.0", features = ["sync-secret-service"] }
 [profile.release]
 opt-level = "s"
 strip = true
-

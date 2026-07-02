@@ -12,6 +12,7 @@ interface SettingsState extends AppSettings {
   setProviders: (providers: ProviderConfig[]) => void;
   setActiveProvider: (name: string) => void;
   setTheme: (theme: "light" | "dark") => void;
+  setDebugLoggingEnabled: (enabled: boolean) => void;
   getActiveProvider: () => ProviderConfig | undefined;
   pii_enabled_patterns: Record<string, boolean>;
   setPiiPattern: (id: string, enabled: boolean) => void;
@@ -26,6 +27,8 @@ export const useSettingsStore = create<SettingsState>()(
       default_provider: "ollama",
       default_model: "llama3.2:3b",
       ollama_url: "http://localhost:11434",
+      debug_logging_enabled: false,
+      update_channel: "stable",
 
       addProvider: (provider) =>
         set((state) => ({ ai_providers: [...state.ai_providers, provider] })),
@@ -42,6 +45,7 @@ export const useSettingsStore = create<SettingsState>()(
       setProviders: (providers) => set({ ai_providers: providers }),
       setActiveProvider: (name) => set({ active_provider: name }),
       setTheme: (theme) => set({ theme }),
+      setDebugLoggingEnabled: (enabled) => set({ debug_logging_enabled: enabled }),
       pii_enabled_patterns: Object.fromEntries(
         ["email", "ip_address", "phone", "ssn", "credit_card", "hostname", "password", "api_key"]
           .map((id) => [id, true])
@@ -65,6 +69,7 @@ export const useSettingsStore = create<SettingsState>()(
         default_provider: state.default_provider,
         default_model: state.default_model,
         ollama_url: state.ollama_url,
+        debug_logging_enabled: state.debug_logging_enabled,
         pii_enabled_patterns: state.pii_enabled_patterns,
       }),
     }
