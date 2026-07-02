@@ -107,7 +107,8 @@ pub fn set_debug_logging_enabled(enabled: bool) -> Result<(), String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Determine data directory
-    let data_dir = dirs_data_dir();
+    let data_dir = crate::state::get_app_data_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("./tftsr-data"));
     if let Err(e) = init_tracing(&data_dir) {
         init_tracing_fallback();
         tracing::warn!("Falling back to console-only logging: {e}");
@@ -582,52 +583,6 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("Error running Troubleshooting and RCA Assistant application");
-}
-
-/// Determine the application data directory.
-fn dirs_data_dir() -> std::path::PathBuf {
-    // Support both TRCAA_DATA_DIR (new) and TFTSR_DATA_DIR (legacy) for backwards compatibility
-    if let Ok(dir) = std::env::var("TRCAA_DATA_DIR") {
-        return std::path::PathBuf::from(dir);
-    }
-    if let Ok(dir) = std::env::var("TFTSR_DATA_DIR") {
-        tracing::warn!("TFTSR_DATA_DIR is deprecated, use TRCAA_DATA_DIR instead");
-        return std::path::PathBuf::from(dir);
-    }
-
-    // Use platform-appropriate data directory
-    #[cfg(target_os = "linux")]
-    {
-        if let Ok(xdg) = std::env::var("XDG_DATA_HOME") {
-            return std::path::PathBuf::from(xdg).join("tftsr");
-        }
-        if let Ok(home) = std::env::var("HOME") {
-            return std::path::PathBuf::from(home)
-                .join(".local")
-                .join("share")
-                .join("tftsr");
-        }
-    }
-
-    #[cfg(target_os = "macos")]
-    {
-        if let Ok(home) = std::env::var("HOME") {
-            return std::path::PathBuf::from(home)
-                .join("Library")
-                .join("Application Support")
-                .join("tftsr");
-        }
-    }
-
-    #[cfg(target_os = "windows")]
-    {
-        if let Ok(appdata) = std::env::var("APPDATA") {
-            return std::path::PathBuf::from(appdata).join("tftsr");
-        }
-    }
-
-    // Fallback
-    std::path::PathBuf::from("./tftsr-data")
 }
 
 #[cfg(test)]

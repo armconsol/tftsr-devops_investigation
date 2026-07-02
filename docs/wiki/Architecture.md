@@ -26,6 +26,7 @@ TRCAA uses a Tauri 2.x architecture: a Rust backend runs natively, and a React/T
 **Backend logging:** tracing now writes to both console and local disk at
 `<app_data_dir>/logs/backend.log` (daily rolling file). Default level is `info`;
 `debug` can be enabled at runtime via settings (`debug_logging_enabled`).
+Current retention behavior is daily rotation only (no fixed max-days purge yet).
 
 ### Shared State
 

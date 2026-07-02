@@ -13,10 +13,12 @@ import {
   setSudoPasswordCmd,
   testSudoPasswordCmd,
   clearSudoPasswordCmd,
+  updateSettingsCmd,
   type AuditEntry,
   type SudoConfigStatus,
 } from "@/lib/tauriCommands";
 import { useSettingsStore } from "@/stores/settingsStore";
+import { toast } from "sonner";
 
 const piiPatterns = [
   { id: "email", label: "Email Addresses", description: "Detect email addresses in logs" },
@@ -122,7 +124,20 @@ export default function Security() {
   };
 
   const toggleDebugLogging = () => {
-    setDebugLoggingEnabled(!debug_logging_enabled);
+    const nextValue = !debug_logging_enabled;
+    setDebugLoggingEnabled(nextValue);
+    updateSettingsCmd({ debug_logging_enabled: nextValue }).catch((err) => {
+      setDebugLoggingEnabled(debug_logging_enabled);
+      toast.error(`Failed to update debug logging: ${String(err)}`);
+    });
+  };
+
+  const formatAuditDetails = (details: string) => {
+    try {
+      return JSON.stringify(JSON.parse(details), null, 2);
+    } catch {
+      return details;
+    }
   };
 
   return (
@@ -371,7 +386,7 @@ export default function Security() {
                               <div className="text-xs space-y-2">
                                 <p className="font-medium text-foreground">Transmitted Data:</p>
                                 <pre className="bg-background/50 p-3 rounded text-xs overflow-x-auto text-foreground/80 whitespace-pre-wrap">
-                                  {JSON.stringify(JSON.parse(entry.details), null, 2)}
+                                  {formatAuditDetails(entry.details)}
                                 </pre>
                                 <div className="flex items-center gap-2 text-muted-foreground pt-1">
                                   <span>Entry ID: {entry.id}</span>

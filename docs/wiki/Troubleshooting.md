@@ -6,11 +6,11 @@
 
 Backend logs are written locally to:
 
-- Linux: `~/.local/share/tftsr/logs/backend.log` (or `${TRCAA_DATA_DIR}/logs/backend.log` if overridden)
+- Linux: `~/.local/share/tftsr/logs/backend.log` (or `${TRCAA_DATA_DIR}/logs/backend.log` / legacy `${TFTSR_DATA_DIR}/logs/backend.log` if overridden)
 - macOS: `~/Library/Application Support/tftsr/logs/backend.log`
 - Windows: `%APPDATA%\\tftsr\\logs\\backend.log`
 
-The file sink rolls daily; console logging remains enabled.
+The file sink rolls daily; console logging remains enabled. Daily rotation is currently not capped by day-count retention.
 
 ### Enable debug logging for deeper diagnostics
 

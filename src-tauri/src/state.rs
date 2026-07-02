@@ -164,7 +164,11 @@ pub struct AppState {
 /// Determine the application data directory.
 /// Returns None if the directory cannot be determined.
 pub fn get_app_data_dir() -> Option<PathBuf> {
+    if let Ok(dir) = std::env::var("TRCAA_DATA_DIR") {
+        return Some(PathBuf::from(dir));
+    }
     if let Ok(dir) = std::env::var("TFTSR_DATA_DIR") {
+        tracing::warn!("TFTSR_DATA_DIR is deprecated, use TRCAA_DATA_DIR instead");
         return Some(PathBuf::from(dir));
     }
 

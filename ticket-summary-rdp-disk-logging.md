@@ -12,7 +12,7 @@ Add backend local-disk logging to improve visibility when diagnosing RDP black s
 
 ## Work Implemented
 - Added backend log file sink (daily rolling) at `<app_data_dir>/logs/backend.log` while retaining console logs.
-- Added runtime log-level reload support and exposed `set_debug_logging_enabled`.
+- Added runtime log-level reload support via `update_settings` (which applies `debug_logging_enabled` and updates tracing filter internally).
 - Extended backend settings model with `debug_logging_enabled` (default `false`).
 - Updated `update_settings` handling to apply debug-level changes live.
 - Extended frontend settings contracts and Zustand store with `debug_logging_enabled`.

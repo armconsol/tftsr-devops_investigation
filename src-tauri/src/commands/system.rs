@@ -77,6 +77,7 @@ fn apply_partial_settings(
         .get("debug_logging_enabled")
         .and_then(|v| v.as_bool())
     {
+        settings.debug_logging_enabled = enabled;
         return Some(enabled);
     }
 
@@ -98,10 +99,13 @@ pub async fn update_settings(
     state: tauri::State<'_, AppState>,
 ) -> Result<AppSettings, String> {
     let mut settings = state.settings.lock().map_err(|e| e.to_string())?;
+    let previous_debug_logging = settings.debug_logging_enabled;
     let debug_logging_update = apply_partial_settings(&mut settings, &partial_settings);
     if let Some(enabled) = debug_logging_update {
-        crate::set_debug_logging_enabled(enabled)?;
-        settings.debug_logging_enabled = enabled;
+        if let Err(e) = crate::set_debug_logging_enabled(enabled) {
+            settings.debug_logging_enabled = previous_debug_logging;
+            return Err(e);
+        }
     }
 
     Ok(settings.clone())
@@ -667,6 +671,6 @@ mod updater_tests {
 
         let update = apply_partial_settings(&mut settings, &partial);
         assert_eq!(update, Some(true));
-        assert!(!settings.debug_logging_enabled);
+        assert!(settings.debug_logging_enabled);
     }
 }
