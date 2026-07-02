@@ -1631,6 +1631,9 @@ fn build_update_statement(
     update: &TypedRowUpdate,
     db_type: &DatabaseType,
 ) -> Result<(String, Vec<DataValue>), String> {
+    // Validate table name to prevent SQL injection
+    crate::commands::database_security::validate_sql_identifier(table_name)?;
+
     if update.column_updates.is_empty() {
         return Err("No columns to update".to_string());
     }
@@ -1639,8 +1642,10 @@ fn build_update_statement(
     let mut set_clauses = Vec::new();
     let mut param_idx = 1;
 
-    // Build SET clause
+    // Build SET clause with validated column names
     for (col_name, value) in &update.column_updates {
+        // Validate column name to prevent SQL injection
+        crate::commands::database_security::validate_sql_identifier(col_name)?;
         set_clauses.push(format!(
             "{} = {}",
             col_name,
@@ -1653,6 +1658,9 @@ fn build_update_statement(
     // Build WHERE clause using primary keys
     let mut where_clauses = Vec::new();
     for pk_col in pk_columns {
+        // Validate primary key column name
+        crate::commands::database_security::validate_sql_identifier(pk_col)?;
+
         let pk_value = update
             .primary_keys
             .get(pk_col)

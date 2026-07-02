@@ -5,6 +5,7 @@ pub mod agentic;
 pub mod ai;
 pub mod analysis;
 pub mod database;
+pub mod database_security;
 pub mod db;
 pub mod docs;
 pub mod image;
