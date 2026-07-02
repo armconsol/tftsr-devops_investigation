@@ -23,7 +23,7 @@ export interface ConnectionFormData {
 }
 
 const DB_TYPES = [
-  { value: 'postgres', label: 'PostgreSQL', defaultPort: 5432 },
+  { value: 'postgresql', label: 'PostgreSQL', defaultPort: 5432 },
   { value: 'mysql', label: 'MySQL', defaultPort: 3306 },
   { value: 'mongodb', label: 'MongoDB', defaultPort: 27017 },
   { value: 'redis', label: 'Redis', defaultPort: 6379 },
@@ -33,7 +33,7 @@ const DB_TYPES = [
 export function ConnectionForm({ connection, onSubmit, onCancel, isLoading }: ConnectionFormProps) {
   const [formData, setFormData] = useState<ConnectionFormData>({
     name: connection?.name || '',
-    db_type: connection?.db_type || 'postgres',
+    db_type: connection?.db_type || 'postgresql',
     host: connection?.host || 'localhost',
     port: connection?.port || 5432,
     database_name: connection?.database_name || '',

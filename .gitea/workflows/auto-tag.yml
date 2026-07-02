@@ -534,6 +534,13 @@ jobs:
           # TODO: Revert to upstream crates.io version once PR merges
           git clone --depth=1 --branch=fix/rdp6-bitmap-stride-mismatch https://github.com/armconsol/IronRDP.git /tmp/ironrdp-patch
           echo "IronRDP patch cloned from armconsol/IronRDP fix branch"
+      - name: Install npm dependencies
+        env:
+          # Set OpenSSL vendoring BEFORE npm ci to avoid pkg-config failures during dependency install
+          OPENSSL_NO_VENDOR: "0"
+          OPENSSL_STATIC: "1"
+        run: |
+          npm ci --legacy-peer-deps
       - name: Build
         env:
           CC_x86_64_pc_windows_gnu: x86_64-w64-mingw32-gcc
@@ -543,7 +550,6 @@ jobs:
           OPENSSL_NO_VENDOR: "0"
           OPENSSL_STATIC: "1"
         run: |
-          npm ci --legacy-peer-deps
           CI=true npx tauri build --target x86_64-pc-windows-gnu
       - name: Upload artifacts
         env:
