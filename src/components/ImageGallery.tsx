@@ -33,17 +33,21 @@ export function ImageGallery({ images, onDelete, showWarning = true }: ImageGall
     return `data:${mimeType};base64,${base64}`;
   };
 
+  const isWebSource = (image: ImageAttachment): boolean => {
+    return image.filePath.length > 0 &&
+           (image.filePath.startsWith("http://") ||
+            image.filePath.startsWith("https://"));
+  };
+
   const getPreviewUrl = (attachment: ImageAttachment): string => {
     if (attachment.filePath && attachment.filePath.length > 0) {
+      // Return web URLs as-is, don't prefix with file://
+      if (isWebSource(attachment)) {
+        return attachment.filePath;
+      }
       return `file://${attachment.filePath}`;
     }
     return base64ToDataUrl(attachment.upload_hash, attachment.mime_type);
-  };
-
-  const isWebSource = (image: ImageAttachment): boolean => {
-    return image.filePath.length > 0 && 
-           (image.filePath.startsWith("http://") || 
-            image.filePath.startsWith("https://"));
   };
 
   return (
