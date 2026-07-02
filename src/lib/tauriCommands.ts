@@ -256,6 +256,8 @@ export interface AppSettings {
   default_provider: string;
   default_model: string;
   ollama_url: string;
+  debug_logging_enabled: boolean;
+  update_channel: string;
 }
 
 // ─── TriageMessage (for UI store, not a DB type) ──────────────────────────────
