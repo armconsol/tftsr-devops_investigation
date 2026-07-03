@@ -84,7 +84,7 @@ export function TableBrowser({ connectionId, database, table }: TableBrowserProp
           : undefined;
 
       const response = await browseTableDataCmd({
-        connection_id: connectionId,
+        connectionId,
         database,
         table,
         pagination: { limit: pageSize, offset: pageIndex * pageSize },

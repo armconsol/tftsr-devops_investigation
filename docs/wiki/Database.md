@@ -468,6 +468,7 @@ Schema Explorer now provides a built-in table browser so users can inspect data 
 - CRUD: `insert_table_row`, `update_table_row`, `delete_table_row`
 
 All commands are wrapped in `src/lib/tauriCommands.ts` and consumed by the table browser UI.
+The frontend wrappers send camelCase invoke keys (`connectionId`, `rowData`, `primaryKeyCol`, `primaryKeyValue`) to match Tauri's command contract.
 
 ## Database SSH Tunneling (v3.0)
 
