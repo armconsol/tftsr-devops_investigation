@@ -4,6 +4,38 @@ All notable changes to TRCAA are documented here.
 Commit types shown: feat, fix, perf, docs, refactor.
 CI, chore, and build changes are excluded.
 
+## [3.0.0] — 2026-07-03
+
+### Bug Fixes
+- **database**: Address PR #196 security findings and code quality issues
+- **tests**: Correct file path validation test to use canonical paths
+- Resolve cargo fmt and clippy issues in database_security module
+- **build**: Use vendored OpenSSL to resolve macOS/Linux build failures
+- **database**: Windows OpenSSL vendoring + IPC parameter naming
+- **images**: Prevent file:// prefix on web URLs in ImageGallery
+- **database**: Correct PostgreSQL type identifier and OpenSSL CI config
+- **database**: Support PostgreSQL aliases (postgres/pg) + fix Windows OpenSSL build
+- **database**: Improve PostgreSQL connection error logging
+- **ci**: Force vendored OpenSSL for Windows MinGW cross-compile
+- **database**: Surface PostgreSQL server error details instead of 'db error'
+- **postgres**: Format method chains to comply with rustfmt
+
+### Documentation
+- Add comprehensive PR #196 final summary
+
+## [2.1.0] — 2026-07-02
+
+### Bug Fixes
+- Remove all TODO placeholders - implement missing functionality
+- **database**: Resolve all CI test failures
+- **database**: Resolve remaining CI test failures
+- **database**: Resolve all clippy warnings
+
+### Features
+- **database**: Implement complete database management system v3.0.0
+- **database**: Complete ALL missing frontend and backend components
+- **database**: Implement ALL 5 missing features - 100% COMPLETE
+
 ## [2.0.0] — 2026-07-02
 
 ### Merge
