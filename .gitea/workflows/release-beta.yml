@@ -397,6 +397,7 @@ jobs:
   build-macos-arm64:
     needs: autotag
     runs-on: macos-arm64
+    timeout-minutes: 120
     steps:
       - name: Checkout
         run: |
@@ -404,6 +405,30 @@ jobs:
           git remote add origin http://172.0.0.29:3000/sarman/tftsr-devops_investigation.git
           git fetch --depth=1 origin "$GITHUB_SHA"
           git checkout FETCH_HEAD
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+          key: ${{ runner.os }}-cargo-macos-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-macos-
+      - name: Cache cargo target
+        uses: actions/cache@v4
+        with:
+          path: src-tauri/target/aarch64-apple-darwin
+          key: ${{ runner.os }}-cargo-macos-target-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-macos-target-
+      - name: Cache npm
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-npm-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-npm-
       - name: Clean up previous IronRDP patch
         run: |
           # macOS runners are persistent, so clean up from previous builds
