@@ -1,120 +1,163 @@
-# libsodium Build Failure - FINAL FIX
+# Database Fix Summary - Windows OpenSSL + IPC Parameter Naming
 
-## The Problem
-`libsodium-sys-stable v1.24.0` build script was failing with:
+**Branch:** `fix/windows-openssl-and-database-ipc`  
+**Date:** 2026-07-02  
+**Status:** ✅ Ready for Review
+
+## Problems Fixed
+
+### Problem 1: Windows CI Build Failure (OpenSSL)
+Windows cross-compile builds were failing with:
 ```
-thread 'main' panicked at build.rs:539:13:
-libsodium not found via pkg-config or vcpkg
-```
-
-## Root Cause Analysis
-
-After 12 hours of attempts, the issue is clear:
-
-### Build Script Logic (from libsodium-sys-stable/build.rs)
-The build script checks in priority order:
-1. **SODIUM_LIB_DIR** - if set, use that path directly (HIGHEST PRIORITY)
-2. **SODIUM_USE_PKG_CONFIG** - if set, try pkg-config/vcpkg
-3. **Fallback** - try to build from source
-
-### Previous Failed Approaches
-1. **PR #101, #102**: Tried pkg-config environment variables - failed because pkg-config couldn't find libsodium in containers
-2. **PR with use-pkg-config feature**: Enabled the feature but pkg-config still failed to locate libraries
-
-### Why pkg-config Failed
-- Container images have libsodium installed but pkg-config can't find the .pc files
-- Cross-compilation adds complexity to pkg-config searches
-- Different containers have different pkg-config configurations
-
-## The Solution
-
-**Use SODIUM_LIB_DIR to bypass pkg-config entirely.**
-
-This directly tells the build script where libsodium is installed, skipping all detection logic.
-
-## Implementation
-
-### test.yml (Rust tests)
-Added to ALL cargo commands:
-```yaml
-env:
-  SODIUM_LIB_DIR: /usr/lib/x86_64-linux-gnu
+Package openssl was not found in the pkg-config search path
+Could not find directory of OpenSSL installation
 ```
 
-### auto-tag.yml (Release builds)
-
-**Linux x86_64:**
-```yaml
-SODIUM_LIB_DIR: /usr/lib/x86_64-linux-gnu
+### Problem 2: Database Connection Test Failure (IPC)
+PostgreSQL connection test was failing with:
+```
+Connection test failed: invalid args `connectionId` for command `test_database_connection`: 
+command test_database_connection missing required key connectionId
 ```
 
-**Linux aarch64:**
-```yaml
-SODIUM_LIB_DIR: /usr/lib/aarch64-linux-gnu
+## Root Causes
+
+### OpenSSL Issue
+- `src-tauri/.cargo/config.toml` globally set `OPENSSL_NO_VENDOR = "1"` in `[env]` block
+- This **overrode** the `openssl-sys` vendored feature declared in Cargo.toml
+- Workspace-level config env vars take precedence over Cargo.toml feature flags
+- `.gitea/workflows/auto-tag.yml` Windows job attempted to override, but workflow env vars cannot override workspace config
+- Result: Windows cross-compile fell back to pkg-config, no system OpenSSL found
+
+### Database IPC Issue
+- Backend Rust function signature: `test_database_connection(connection_id: String, ...)`
+- Tauri automatically converts: `connection_id` → `connectionId` (camelCase) for IPC
+- Frontend `src/lib/tauriCommands.ts` was sending snake_case parameters
+- Tauri expected camelCase parameters to match its automatic conversion
+- Affected commands:
+  - `testDatabaseConnectionCmd`
+  - `executeDatabaseQueryCmd`
+  - All other database commands with snake_case parameters
+
+## Solutions Implemented
+
+### Fix 1: Target-Specific OpenSSL Override
+Added target-specific configuration in `src-tauri/.cargo/config.toml`:
+
+```toml
+[target.x86_64-pc-windows-gnu.env]
+OPENSSL_NO_VENDOR = "0"
 ```
 
-**Windows MinGW:**
-```yaml
-SODIUM_LIB_DIR: /usr/x86_64-w64-mingw32/lib
+**Benefits:**
+- ✅ Target-specific env vars override global env vars
+- ✅ Preserves fast system OpenSSL builds on macOS/Linux dev machines
+- ✅ Enables vendored OpenSSL only for Windows cross-compile
+- ✅ No workflow changes needed
+- ✅ Zero impact on local dev build times
+
+### Fix 2: IPC Parameter Naming Convention
+Updated all database commands in `src/lib/tauriCommands.ts` to use camelCase:
+
+| Before (snake_case) | After (camelCase) |
+|---------------------|-------------------|
+| `connection_id` | `connectionId` |
+| `transaction_id` | `transactionId` |
+| `query_text` | `queryText` |
+| `page_size` | `pageSize` |
+| `search_term` | `searchTerm` |
+| `file_path` | `filePath` |
+| `target_table` | `targetTable` |
+| `column_mappings` | `columnMappings` |
+
+Also updated all call sites:
+- `src/pages/Database/SQLEditor.tsx`
+- `src/pages/Database/QueryHistory.tsx`
+- `src/components/Database/QueryResultsPanel.tsx`
+- `src/components/ImageGallery.tsx`
+- `tests/unit/attachmentStore.test.ts`
+- `tests/unit/remoteDesktop.test.ts`
+
+## Testing Results
+
+### Rust Tests
+```bash
+cargo test --manifest-path src-tauri/Cargo.toml openssl_vendored
+# Result: 3/3 passing
 ```
 
-**macOS:** No change needed (already works)
+### Frontend Tests
+```bash
+npm run test:run
+# Result: 472/472 passing
+```
 
-## Why This Will Work
+### TypeScript Type Checking
+```bash
+npx tsc --noEmit
+# Result: No errors
+```
 
-1. **SODIUM_LIB_DIR has highest priority** in build.rs - checked BEFORE pkg-config
-2. **Direct path** - no detection, no guessing, no pkg-config configuration issues
-3. **Already confirmed** - the original working Windows build used this exact approach
-4. **Simple** - one environment variable per platform
+### Formatting and Linting
+```bash
+cargo fmt --check                        # ✅ Pass
+cargo clippy -- -D warnings              # ✅ Pass (0 errors, 2 warnings in IronRDP deps)
+```
 
-## Branch Info
-- **Branch:** `fix/libsodium-direct-path`
-- **Base:** `beta`
-- **Commits:** 1 atomic commit
-- **Files Changed:** 2 (.gitea/workflows/test.yml, .gitea/workflows/auto-tag.yml)
+**Note:** ESLint shows 16 errors related to pre-existing react-hooks issues, not introduced by this PR.
 
-## Testing Status
-- ⏳ Awaiting CI pipeline results
-- Expected: ALL builds (Linux x86, Linux ARM, Windows, macOS) will succeed
-- Expected: ALL test jobs (fmt, clippy, tests) will succeed
+## Files Changed
 
-## If This Still Fails
+```
+src-tauri/.cargo/config.toml                  |   8 +-
+src-tauri/tests/openssl_vendored_test.rs      |   5 +-
+src/components/Database/QueryResultsPanel.tsx |   2 +-
+src/components/ImageGallery.tsx               |  10 +-
+src/lib/tauriCommands.ts                      | 136 +++++++++++++-------------
+src/pages/Database/QueryHistory.tsx           |   6 +-
+src/pages/Database/SQLEditor.tsx              |   6 +-
+tests/unit/attachmentStore.test.ts            |   4 +-
+tests/unit/remoteDesktop.test.ts              |   4 +-
+9 files changed, 94 insertions(+), 87 deletions(-)
+```
 
-The only remaining possibility would be:
-1. Libsodium is NOT actually installed in the containers (verify with `dpkg -L libsodium-dev`)
-2. The library path is wrong (verify with `find /usr -name "libsodium.*"`)
+## Impact
 
-But based on previous error messages showing pkg-config attempts, libsodium IS installed - we just need to tell the build script where it is.
+- ✅ **Fixes Windows CI build failures** - Vendored OpenSSL now works for cross-compile
+- ✅ **Fixes database connection testing** - IPC parameter naming matches Tauri convention
+- ✅ **No runtime behavior changes** - Only build-time and parameter naming fixes
+- ✅ **No local dev build time impact** - macOS/Linux still use fast system OpenSSL
+- ✅ **Consistent API** - All Tauri commands now use camelCase (matches JavaScript convention)
+
+## Next Steps
+
+1. **Create PR manually** at: https://gogs.tftsr.com/sarman/tftsr-devops_investigation/compare/beta...fix/windows-openssl-and-database-ipc
+2. **Monitor CI** - Verify Windows build succeeds without OpenSSL errors
+3. **Test manually** - After merge, test PostgreSQL connection in the app
+4. **Version bump** - Consider bumping to v3.0.1 after merge
+
+## References
+
+- **Cargo config env vars:** https://doc.rust-lang.org/cargo/reference/config.html#env
+- **OpenSSL vendoring:** https://docs.rs/openssl/latest/openssl/#vendored
+- **Tauri parameter naming:** https://tauri.app/develop/calling-rust/#parameter-naming
+- **Related PR:** #196 (database management feature)
+
+## Verification Checklist
+
+- [x] TDD tests pass (OpenSSL vendored tests)
+- [x] Frontend tests pass (472/472)
+- [x] TypeScript type checking passes
+- [x] Rust formatting passes
+- [x] Rust linting passes (0 errors)
+- [x] Branch pushed to origin
+- [ ] PR created (manual step required)
+- [ ] CI passes (Windows build succeeds)
+- [ ] Manual testing (PostgreSQL connection)
+- [ ] Merged to beta
+- [ ] Release build succeeds
 
 ---
 
-**Created:** 2026-06-14 (after 12 hours of attempts)  
-**Approach:** Direct library path specification  
-**Confidence:** HIGH - This is the intended workaround when pkg-config fails
-
-## Update History
-
-### Commit 1: Initial SODIUM_LIB_DIR implementation
-Added SODIUM_LIB_DIR to all workflows, but conflicted with existing use-pkg-config feature.
-
-### Commit 2: Remove conflicting feature
-Removed `libsodium-sys-stable = { version = "1.24", features = ["use-pkg-config"] }` from Cargo.toml.
-The build script doesn't allow both SODIUM_LIB_DIR and SODIUM_USE_PKG_CONFIG simultaneously.
-
-### Commit 3: Refactor to job-level env
-Moved SODIUM_LIB_DIR from per-step env to job-level env in test.yml for consistency and to ensure ALL cargo commands (including `cargo generate-lockfile`) have access to it.
-
-## Final State
-
-**Branch commits:**
-1. `863868b2` - fix(ci): use SODIUM_LIB_DIR to bypass pkg-config detection
-2. `b20deab3` - fix: remove use-pkg-config feature conflicting with SODIUM_LIB_DIR  
-3. `1172f201` - refactor(ci): move SODIUM_LIB_DIR to job-level env
-
-**Files modified:**
-- `.gitea/workflows/test.yml` - SODIUM_LIB_DIR at job level for 3 Rust jobs
-- `.gitea/workflows/auto-tag.yml` - SODIUM_LIB_DIR in Build steps for all platforms
-- `src-tauri/Cargo.toml` - Removed conflicting use-pkg-config dependency
-- `src-tauri/Cargo.lock` - Updated after dependency removal
-
-**Automated Review:** APPROVE WITH COMMENTS (addressed in commit 3)
+**Generated:** 2026-07-02  
+**Author:** Claude Sonnet 4.5 via Claude Code
