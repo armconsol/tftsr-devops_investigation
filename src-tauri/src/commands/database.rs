@@ -1353,7 +1353,7 @@ pub(crate) async fn load_connection_config(
         ssh_hostname,
         ssh_port,
         ssh_username,
-        _ssh_auth_method,
+        ssh_auth_method,
         connection_options,
     ) = {
         let db = state
@@ -1417,6 +1417,7 @@ pub(crate) async fn load_connection_config(
         ssh_hostname,
         ssh_port,
         ssh_username,
+        ssh_auth_method,
         connection_options,
     }))
 }
@@ -1436,6 +1437,7 @@ struct ConnectionConfigParts {
     ssh_hostname: Option<String>,
     ssh_port: Option<i64>,
     ssh_username: Option<String>,
+    ssh_auth_method: Option<String>,
     connection_options: Option<String>,
 }
 
@@ -1460,6 +1462,7 @@ fn build_connection_config(parts: ConnectionConfigParts) -> ConnectionConfig {
             hostname: parts.ssh_hostname.unwrap_or_default(),
             port: parts.ssh_port.unwrap_or(22) as u16,
             username: parts.ssh_username.unwrap_or_default(),
+            auth_method: parts.ssh_auth_method,
             password: None,
             private_key_data: None,
             key_passphrase: None,
@@ -2446,6 +2449,7 @@ mod update_tests {
             ssh_hostname: Some("bastion.local".to_string()),
             ssh_port: Some(2222),
             ssh_username: Some("jumpuser".to_string()),
+            ssh_auth_method: Some("key".to_string()),
             connection_options: Some(r#"{"statement_timeout":"5000"}"#.to_string()),
         });
 
@@ -2459,6 +2463,7 @@ mod update_tests {
         assert_eq!(tunnel.hostname, "bastion.local");
         assert_eq!(tunnel.port, 2222);
         assert_eq!(tunnel.username, "jumpuser");
+        assert_eq!(tunnel.auth_method.as_deref(), Some("key"));
         assert_eq!(
             config.options.get("statement_timeout").map(String::as_str),
             Some("5000")

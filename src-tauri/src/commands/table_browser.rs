@@ -110,6 +110,7 @@ pub async fn browse_table_data(
     } else {
         (total_count as usize).div_ceil(pagination.limit)
     };
+    let page_number = pagination.offset.checked_div(pagination.limit).unwrap_or(0);
 
     let data_query = format!(
         "SELECT * FROM {table_ident}{where_clause}{order_clause} LIMIT {} OFFSET {}",
@@ -137,11 +138,7 @@ pub async fn browse_table_data(
     Ok(BrowseTableResponse {
         rows,
         total_count,
-        page_number: if pagination.limit == 0 {
-            0
-        } else {
-            pagination.offset / pagination.limit
-        },
+        page_number,
         page_size: pagination.limit,
         total_pages,
     })

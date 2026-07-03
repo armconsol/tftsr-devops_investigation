@@ -77,6 +77,7 @@ pub struct DbSshTunnelConfig {
     pub hostname: String,
     pub port: u16,
     pub username: String,
+    pub auth_method: Option<String>,
     pub password: Option<String>,
     pub private_key_data: Option<String>,
     pub key_passphrase: Option<String>,
