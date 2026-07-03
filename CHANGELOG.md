@@ -4,6 +4,19 @@ All notable changes to TRCAA are documented here.
 Commit types shown: feat, fix, perf, docs, refactor.
 CI, chore, and build changes are excluded.
 
+## [3.1.0] — 2026-07-03
+
+### Bug Fixes
+- Add missing ssh_tunnel_config fields
+- Restore saved ssh tunnel config
+- Preserve ssh auth method and clippy cleanup
+- **database-ui**: Restore ER diagram and table browser
+- **table-browser**: Align IPC payload keys
+
+### Documentation
+- Refresh v3 documentation
+- Refresh architecture docs
+
 ## [3.0.0] — 2026-07-03
 
 ### Bug Fixes
@@ -19,9 +32,17 @@ CI, chore, and build changes are excluded.
 - **ci**: Force vendored OpenSSL for Windows MinGW cross-compile
 - **database**: Surface PostgreSQL server error details instead of 'db error'
 - **postgres**: Format method chains to comply with rustfmt
+- **database**: Harden table browser SQL execution
+- **database**: Address PR review findings
+- **ci**: Align auto-tag Windows OpenSSL config
 
 ### Documentation
 - Add comprehensive PR #196 final summary
+
+### Features
+- **database**: Add SSH tunnel support for database connections
+- **database**: Add table browser commands with CRUD support
+- **database**: Add GUI table browser and SSH tunnel wiring
 
 ## [2.1.0] — 2026-07-02
 
