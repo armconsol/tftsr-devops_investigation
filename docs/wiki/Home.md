@@ -17,7 +17,11 @@
 | [IPC Commands](wiki/IPC-Commands) | Full list of Tauri backend commands |
 | [CI/CD Pipeline](wiki/CICD-Pipeline) | Gitea Actions setup, multi-platform builds, act_runner config |
 | [Security Model](wiki/Security-Model) | Encryption, audit trail, capabilities |
-| [Integrations](wiki/Integrations) | Confluence, ServiceNow, Azure DevOps (v0.2) |
+| [Integrations](wiki/Integrations) | Confluence, ServiceNow, Azure DevOps |
+| [Shell Execution](wiki/Shell-Execution) | Tiered shell safety, kubectl, kubeconfig, approvals |
+| [Kubernetes Management](wiki/Kubernetes-Management) | Lens-style cluster management and terminals |
+| [Database Management](wiki/Database-Management) | Connections, query history, bookmarks, import/export |
+| [MCP Servers](wiki/MCP-Servers) | Discovery, tools, resources, and connection state |
 | [Troubleshooting](wiki/Troubleshooting) | Known issues and fixes |
 
 ## Key Features
@@ -26,19 +30,20 @@
 - **PII Auto-Redaction** — Detects and redacts sensitive data before any AI send
 - **Multi-Provider AI** — OpenAI, Anthropic Claude, Google Gemini, Mistral, AWS Bedrock (via LiteLLM), Custom REST gateways, local Ollama (fully offline)
 - **Custom Provider Support** — Flexible authentication (Bearer, custom headers) and API formats (OpenAI-compatible, Custom REST)
-- **External Integrations** — Confluence, ServiceNow, Azure DevOps with OAuth2 PKCE flows
+- **Workflow Surfaces** — Confluence, ServiceNow, Azure DevOps, shell execution, Kubernetes, Proxmox, database management, and MCP
 - **SQLCipher AES-256** — All issue history and credentials encrypted at rest
 - **RCA + Post-Mortem Generation** — Auto-populated Markdown templates, exportable as MD/PDF
 - **Ollama Management** — Hardware detection, model recommendations, in-app model management
 - **Audit Trail** — Every external data send logged with SHA-256 hash
-- **Domain-Specific Prompts** — 8 IT domains: Linux, Windows, Network, Kubernetes, Databases, Virtualization, Hardware, Observability
+- **Domain-Specific Prompts** — 16 IT domains spanning infrastructure, security, automation, and identity
 - **Image Attachments** — Upload and manage image files with PII detection and mandatory user approval
 
 ## Releases
 
 | Version | Status | Highlights |
 |---------|--------|-----------|
-| v1.1.0 | 🚀 Latest | Kubernetes Management UI with PTY terminals, metrics, port forwarding, YAML editor |
+| v3.0.x | 🚀 Latest | Triage/RCA platform with integrations, shell execution, Kubernetes, Proxmox, database management, and MCP |
+| v1.1.0 | Released | Kubernetes Management UI with PTY terminals, metrics, port forwarding, YAML editor |
 | v1.0.1 | Released | Domain prompt fix, UI contrast improvements, ARM64 Linux build |
 | v1.0.0 | Released | Core application with PII detection, Shell Execution, 5-Whys AI triage |
 | v0.2.6 | Released | Custom REST AI gateway support, OAuth2 shell permissions, user ID tracking |
@@ -52,14 +57,11 @@ Download from [Releases](https://gogs.tftsr.com/sarman/tftsr-devops_investigatio
 
 ## Project Status
 
-| Phase | Status |
-|-------|--------|
-| Phases 1–8 (Core application) | ✅ Complete |
-| Phase 9 (History/Search) | 🔲 Pending |
-| Phase 10 (Integrations) | ✅ Complete — Confluence, ServiceNow, Azure DevOps fully implemented with OAuth2 |
-| Phase 11 (CI/CD) | ✅ Complete — Gitea Actions fully operational |
-| Phase 12 (Release packaging) | ✅ linux/amd64 · linux/arm64 (native) · windows/amd64 |
-| Phase 13 (Kubernetes Management) | ✅ Complete — PTY terminals, metrics, port forwarding, YAML editor |
+| Area | Status |
+|------|--------|
+| Core triage, history/search, integrations, shell, Kubernetes, Proxmox, database, MCP | ✅ Complete |
+| CI/CD | ✅ Complete — Gitea Actions fully operational |
+| Release packaging | ✅ linux/amd64 · linux/arm64 (native) · windows/amd64 |
 
 ## Tech Stack
 
