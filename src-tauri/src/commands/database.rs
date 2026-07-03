@@ -5,7 +5,7 @@ use crate::db::models::{
 };
 use crate::db_drivers::{
     import_export::{csv, json, sql, ImportOptions, ImportStats},
-    types::{ConnectionConfig, DataValue, DatabaseType, QueryResult, SslConfig},
+    types::{ConnectionConfig, DataValue, DatabaseType, DbSshTunnelConfig, QueryResult, SslConfig},
     visualization,
 };
 use crate::state::AppState;
@@ -1349,6 +1349,11 @@ pub(crate) async fn load_connection_config(
         ssl_ca_cert_path,
         ssl_client_cert_path,
         ssl_client_key_path,
+        ssh_enabled,
+        ssh_hostname,
+        ssh_port,
+        ssh_username,
+        ssh_auth_method,
         connection_options,
     ) = {
         let db = state
@@ -1358,7 +1363,7 @@ pub(crate) async fn load_connection_config(
 
         let mut stmt = db
             .prepare(
-                "SELECT db_type, host, port, database_name, username, encrypted_password, ssl_enabled, ssl_ca_cert_path, ssl_client_cert_path, ssl_client_key_path, connection_options
+                "SELECT db_type, host, port, database_name, username, encrypted_password, ssl_enabled, ssl_ca_cert_path, ssl_client_cert_path, ssl_client_key_path, ssh_enabled, ssh_hostname, ssh_port, ssh_username, ssh_auth_method, connection_options
                  FROM database_connections
                  WHERE id = ?1",
             )
@@ -1376,7 +1381,12 @@ pub(crate) async fn load_connection_config(
                 row.get::<_, Option<String>>(7)?,
                 row.get::<_, Option<String>>(8)?,
                 row.get::<_, Option<String>>(9)?,
-                row.get::<_, Option<String>>(10)?,
+                row.get::<_, i64>(10)?,
+                row.get::<_, Option<String>>(11)?,
+                row.get::<_, Option<i64>>(12)?,
+                row.get::<_, Option<String>>(13)?,
+                row.get::<_, Option<String>>(14)?,
+                row.get::<_, Option<String>>(15)?,
             ))
         })
         .optional()
@@ -1392,22 +1402,49 @@ pub(crate) async fn load_connection_config(
     let database_type = DatabaseType::parse(&db_type)
         .ok_or_else(|| format!("Unsupported database type: {}", db_type))?;
 
-    // Parse SSL config
-    let ssl_config = if ssl_enabled != 0 {
-        Some(SslConfig {
-            enabled: true,
-            ca_cert_path: ssl_ca_cert_path,
-            client_cert_path: ssl_client_cert_path,
-            client_key_path: ssl_client_key_path,
-            verify_server: true,
-        })
-    } else {
-        None
-    };
+    Ok(build_connection_config(ConnectionConfigParts {
+        database_type,
+        host,
+        port,
+        database: database_name,
+        username,
+        password,
+        ssl_enabled,
+        ssl_ca_cert_path,
+        ssl_client_cert_path,
+        ssl_client_key_path,
+        ssh_enabled,
+        ssh_hostname,
+        ssh_port,
+        ssh_username,
+        ssh_auth_method,
+        connection_options,
+    }))
+}
 
+struct ConnectionConfigParts {
+    database_type: DatabaseType,
+    host: String,
+    port: i64,
+    database: Option<String>,
+    username: String,
+    password: String,
+    ssl_enabled: i64,
+    ssl_ca_cert_path: Option<String>,
+    ssl_client_cert_path: Option<String>,
+    ssl_client_key_path: Option<String>,
+    ssh_enabled: i64,
+    ssh_hostname: Option<String>,
+    ssh_port: Option<i64>,
+    ssh_username: Option<String>,
+    ssh_auth_method: Option<String>,
+    connection_options: Option<String>,
+}
+
+fn build_connection_config(parts: ConnectionConfigParts) -> ConnectionConfig {
     // Parse connection options
     let mut options = HashMap::new();
-    if let Some(opts_str) = connection_options {
+    if let Some(opts_str) = parts.connection_options {
         if let Ok(opts_json) = serde_json::from_str::<serde_json::Value>(&opts_str) {
             if let Some(obj) = opts_json.as_object() {
                 for (key, value) in obj {
@@ -1419,16 +1456,42 @@ pub(crate) async fn load_connection_config(
         }
     }
 
-    Ok(ConnectionConfig {
-        database_type,
-        host,
-        port: port as u16,
-        database: database_name,
-        username,
-        password,
-        ssl_config,
+    let ssh_tunnel_config = if parts.ssh_enabled != 0 {
+        Some(DbSshTunnelConfig {
+            enabled: true,
+            hostname: parts.ssh_hostname.unwrap_or_default(),
+            port: parts.ssh_port.unwrap_or(22) as u16,
+            username: parts.ssh_username.unwrap_or_default(),
+            auth_method: parts.ssh_auth_method,
+            password: None,
+            private_key_data: None,
+            key_passphrase: None,
+        })
+    } else {
+        None
+    };
+
+    ConnectionConfig {
+        database_type: parts.database_type,
+        host: parts.host,
+        port: parts.port as u16,
+        database: parts.database,
+        username: parts.username,
+        password: parts.password,
+        ssl_config: if parts.ssl_enabled != 0 {
+            Some(SslConfig {
+                enabled: true,
+                ca_cert_path: parts.ssl_ca_cert_path,
+                client_cert_path: parts.ssl_client_cert_path,
+                client_key_path: parts.ssl_client_key_path,
+                verify_server: true,
+            })
+        } else {
+            None
+        },
+        ssh_tunnel_config,
         options,
-    })
+    }
 }
 
 /// Save query execution to history
@@ -2367,6 +2430,44 @@ mod update_tests {
     fn test_database_type_parse_unknown() {
         assert_eq!(DatabaseType::parse("unknown"), None);
         assert_eq!(DatabaseType::parse("sqlite"), None);
+    }
+
+    #[test]
+    fn test_build_connection_config_restores_ssh_tunnel() {
+        let config = build_connection_config(ConnectionConfigParts {
+            database_type: DatabaseType::PostgreSQL,
+            host: "db.local".to_string(),
+            port: 5432,
+            database: Some("app".to_string()),
+            username: "postgres".to_string(),
+            password: "secret".to_string(),
+            ssl_enabled: 1,
+            ssl_ca_cert_path: Some("/etc/ssl/ca.pem".to_string()),
+            ssl_client_cert_path: None,
+            ssl_client_key_path: None,
+            ssh_enabled: 1,
+            ssh_hostname: Some("bastion.local".to_string()),
+            ssh_port: Some(2222),
+            ssh_username: Some("jumpuser".to_string()),
+            ssh_auth_method: Some("key".to_string()),
+            connection_options: Some(r#"{"statement_timeout":"5000"}"#.to_string()),
+        });
+
+        assert_eq!(config.database_type, DatabaseType::PostgreSQL);
+        assert_eq!(config.database.as_deref(), Some("app"));
+        assert_eq!(config.ssl_config.as_ref().map(|s| s.enabled), Some(true));
+        let tunnel = config
+            .ssh_tunnel_config
+            .expect("ssh tunnel should be restored");
+        assert!(tunnel.enabled);
+        assert_eq!(tunnel.hostname, "bastion.local");
+        assert_eq!(tunnel.port, 2222);
+        assert_eq!(tunnel.username, "jumpuser");
+        assert_eq!(tunnel.auth_method.as_deref(), Some("key"));
+        assert_eq!(
+            config.options.get("statement_timeout").map(String::as_str),
+            Some("5000")
+        );
     }
 }
 
