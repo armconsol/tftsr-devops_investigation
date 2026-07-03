@@ -543,9 +543,9 @@ jobs:
           CXX_x86_64_pc_windows_gnu: x86_64-w64-mingw32-g++
           AR_x86_64_pc_windows_gnu: x86_64-w64-mingw32-ar
           CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER: x86_64-w64-mingw32-gcc
-          # Disable pkg-config for OpenSSL to force vendored build
+          # Match release-beta.yml: allow openssl-sys to use vendored OpenSSL
           OPENSSL_STATIC: "1"
-          OPENSSL_NO_PKG_CONFIG: "1"
+          OPENSSL_NO_VENDOR: "0"
         run: |
           CI=true npx tauri build --target x86_64-pc-windows-gnu
       - name: Upload artifacts

@@ -278,6 +278,7 @@ mod tests {
             username: String::new(),
             password: String::new(),
             ssl_config: None,
+            ssh_tunnel_config: None,
             options: std::collections::HashMap::new(),
         };
 
@@ -297,6 +298,7 @@ mod tests {
             username: String::new(),
             password: String::new(),
             ssl_config: None,
+            ssh_tunnel_config: None,
             options: std::collections::HashMap::new(),
         };
 
@@ -314,6 +316,7 @@ mod tests {
             username: "default".to_string(),
             password: "secret".to_string(),
             ssl_config: None,
+            ssh_tunnel_config: None,
             options: std::collections::HashMap::new(),
         };
 
@@ -331,6 +334,7 @@ mod tests {
             username: String::new(),
             password: String::new(),
             ssl_config: None,
+            ssh_tunnel_config: None,
             options: std::collections::HashMap::new(),
         };
 

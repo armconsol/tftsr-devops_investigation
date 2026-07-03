@@ -13,6 +13,8 @@ use rusqlite::OptionalExtension;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
+use std::net::{SocketAddr, TcpStream};
+use std::time::Duration;
 use tauri::{AppHandle, State};
 use uuid::Uuid;
 
@@ -321,6 +323,14 @@ pub struct CreateConnectionParams {
     pub ssl_client_cert_path: Option<String>,
     pub ssl_client_key_path: Option<String>,
     pub connection_options: Option<String>,
+    pub ssh_enabled: Option<bool>,
+    pub ssh_hostname: Option<String>,
+    pub ssh_port: Option<u16>,
+    pub ssh_username: Option<String>,
+    pub ssh_auth_method: Option<String>,
+    pub ssh_password: Option<String>,
+    pub ssh_private_key: Option<String>,
+    pub ssh_key_passphrase: Option<String>,
 }
 
 /// Create a new database connection
@@ -342,10 +352,42 @@ pub async fn create_database_connection(
         ssl_client_cert_path,
         ssl_client_key_path,
         connection_options,
+        ssh_enabled,
+        ssh_hostname,
+        ssh_port,
+        ssh_username,
+        ssh_auth_method,
+        ssh_password,
+        ssh_private_key,
+        ssh_key_passphrase,
     } = params;
     // Encrypt password
     let encrypted_password = crate::integrations::auth::encrypt_token(&password)
         .map_err(|e| format!("Failed to encrypt password: {}", e))?;
+
+    let ssh_enabled = ssh_enabled.unwrap_or(false);
+    let ssh_auth_method = ssh_auth_method.unwrap_or_else(|| "password".to_string());
+    let encrypted_ssh_password = match ssh_password.filter(|v| !v.is_empty()) {
+        Some(secret) => Some(
+            crate::integrations::auth::encrypt_token(&secret)
+                .map_err(|e| format!("Failed to encrypt SSH password: {}", e))?,
+        ),
+        None => None,
+    };
+    let encrypted_ssh_private_key = match ssh_private_key.filter(|v| !v.is_empty()) {
+        Some(secret) => Some(
+            crate::integrations::auth::encrypt_token(&secret)
+                .map_err(|e| format!("Failed to encrypt SSH private key: {}", e))?,
+        ),
+        None => None,
+    };
+    let encrypted_ssh_key_passphrase = match ssh_key_passphrase.filter(|v| !v.is_empty()) {
+        Some(secret) => Some(
+            crate::integrations::auth::encrypt_token(&secret)
+                .map_err(|e| format!("Failed to encrypt SSH key passphrase: {}", e))?,
+        ),
+        None => None,
+    };
 
     let connection = DatabaseConnection {
         id: Uuid::now_v7().to_string(),
@@ -360,6 +402,19 @@ pub async fn create_database_connection(
         ssl_client_cert_path: ssl_client_cert_path.clone(),
         ssl_client_key_path: ssl_client_key_path.clone(),
         connection_options: connection_options.clone(),
+        ssh_enabled,
+        ssh_hostname: ssh_hostname.filter(|v| !v.is_empty()),
+        ssh_port: if ssh_enabled {
+            ssh_port.or(Some(22))
+        } else {
+            None
+        },
+        ssh_username: ssh_username.filter(|v| !v.is_empty()),
+        ssh_auth_method: if ssh_enabled {
+            Some(ssh_auth_method)
+        } else {
+            None
+        },
         created_at: chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string(),
         updated_at: chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string(),
     };
@@ -372,8 +427,19 @@ pub async fn create_database_connection(
             .map_err(|e| format!("Failed to lock database: {}", e))?;
 
         db.execute(
-            "INSERT INTO database_connections (id, name, db_type, host, port, database_name, username, encrypted_password, ssl_enabled, ssl_ca_cert_path, ssl_client_cert_path, ssl_client_key_path, connection_options, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
+            "INSERT INTO database_connections (
+                id, name, db_type, host, port, database_name, username, encrypted_password,
+                ssl_enabled, ssl_ca_cert_path, ssl_client_cert_path, ssl_client_key_path, connection_options,
+                ssh_enabled, ssh_hostname, ssh_port, ssh_username, ssh_auth_method,
+                ssh_password_encrypted, ssh_private_key_encrypted, ssh_key_passphrase_encrypted,
+                created_at, updated_at
+            ) VALUES (
+                ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8,
+                ?9, ?10, ?11, ?12, ?13,
+                ?14, ?15, ?16, ?17, ?18,
+                ?19, ?20, ?21,
+                ?22, ?23
+            )",
             rusqlite::params![
                 connection.id,
                 connection.name,
@@ -388,6 +454,14 @@ pub async fn create_database_connection(
                 ssl_client_cert_path,
                 ssl_client_key_path,
                 connection_options,
+                if connection.ssh_enabled { 1 } else { 0 },
+                connection.ssh_hostname,
+                connection.ssh_port,
+                connection.ssh_username,
+                connection.ssh_auth_method,
+                encrypted_ssh_password,
+                encrypted_ssh_private_key,
+                encrypted_ssh_key_passphrase,
                 connection.created_at,
                 connection.updated_at,
             ],
@@ -434,6 +508,14 @@ pub struct UpdateConnectionParams {
     pub ssl_client_cert_path: Option<String>,
     pub ssl_client_key_path: Option<String>,
     pub connection_options: Option<String>,
+    pub ssh_enabled: Option<bool>,
+    pub ssh_hostname: Option<String>,
+    pub ssh_port: Option<u16>,
+    pub ssh_username: Option<String>,
+    pub ssh_auth_method: Option<String>,
+    pub ssh_password: Option<String>,
+    pub ssh_private_key: Option<String>,
+    pub ssh_key_passphrase: Option<String>,
 }
 
 /// Update an existing database connection
@@ -451,6 +533,14 @@ pub async fn update_database_connection(
         ssl_client_cert_path,
         ssl_client_key_path,
         connection_options,
+        ssh_enabled,
+        ssh_hostname,
+        ssh_port,
+        ssh_username,
+        ssh_auth_method,
+        ssh_password,
+        ssh_private_key,
+        ssh_key_passphrase,
     } = params;
     // Encrypt new password if provided
     let encrypted_password = if let Some(pwd) = password {
@@ -461,6 +551,32 @@ pub async fn update_database_connection(
     } else {
         None
     };
+    let encrypted_ssh_password = if let Some(secret) = ssh_password.filter(|v| !v.is_empty()) {
+        Some(
+            crate::integrations::auth::encrypt_token(&secret)
+                .map_err(|e| format!("Failed to encrypt SSH password: {}", e))?,
+        )
+    } else {
+        None
+    };
+    let encrypted_ssh_private_key = if let Some(secret) = ssh_private_key.filter(|v| !v.is_empty())
+    {
+        Some(
+            crate::integrations::auth::encrypt_token(&secret)
+                .map_err(|e| format!("Failed to encrypt SSH private key: {}", e))?,
+        )
+    } else {
+        None
+    };
+    let encrypted_ssh_key_passphrase =
+        if let Some(secret) = ssh_key_passphrase.filter(|v| !v.is_empty()) {
+            Some(
+                crate::integrations::auth::encrypt_token(&secret)
+                    .map_err(|e| format!("Failed to encrypt SSH key passphrase: {}", e))?,
+            )
+        } else {
+            None
+        };
 
     let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
 
@@ -502,6 +618,46 @@ pub async fn update_database_connection(
         if let Some(opts) = &connection_options {
             updates.push("connection_options = ?");
             params.push(Box::new(opts.clone()));
+        }
+        if let Some(ssh) = ssh_enabled {
+            updates.push("ssh_enabled = ?");
+            params.push(Box::new(if ssh { 1 } else { 0 }));
+        }
+        if let Some(hostname) = &ssh_hostname {
+            updates.push("ssh_hostname = ?");
+            params.push(Box::new(if hostname.is_empty() {
+                None::<String>
+            } else {
+                Some(hostname.clone())
+            }));
+        }
+        if let Some(port) = ssh_port {
+            updates.push("ssh_port = ?");
+            params.push(Box::new(port as i64));
+        }
+        if let Some(username) = &ssh_username {
+            updates.push("ssh_username = ?");
+            params.push(Box::new(if username.is_empty() {
+                None::<String>
+            } else {
+                Some(username.clone())
+            }));
+        }
+        if let Some(auth_method) = &ssh_auth_method {
+            updates.push("ssh_auth_method = ?");
+            params.push(Box::new(auth_method.clone()));
+        }
+        if let Some(secret) = &encrypted_ssh_password {
+            updates.push("ssh_password_encrypted = ?");
+            params.push(Box::new(secret.clone()));
+        }
+        if let Some(secret) = &encrypted_ssh_private_key {
+            updates.push("ssh_private_key_encrypted = ?");
+            params.push(Box::new(secret.clone()));
+        }
+        if let Some(secret) = &encrypted_ssh_key_passphrase {
+            updates.push("ssh_key_passphrase_encrypted = ?");
+            params.push(Box::new(secret.clone()));
         }
 
         if updates.is_empty() {
@@ -606,7 +762,7 @@ pub async fn list_database_connections(
 
     let mut stmt = db
         .prepare(
-            "SELECT id, name, db_type, host, port, database_name, username, ssl_enabled, ssl_ca_cert_path, ssl_client_cert_path, ssl_client_key_path, connection_options, created_at, updated_at
+            "SELECT id, name, db_type, host, port, database_name, username, ssl_enabled, ssl_ca_cert_path, ssl_client_cert_path, ssl_client_key_path, connection_options, ssh_enabled, ssh_hostname, ssh_port, ssh_username, ssh_auth_method, created_at, updated_at
              FROM database_connections",
         )
         .map_err(|e| format!("Failed to prepare query: {}", e))?;
@@ -626,8 +782,13 @@ pub async fn list_database_connections(
                 ssl_client_cert_path: row.get(9)?,
                 ssl_client_key_path: row.get(10)?,
                 connection_options: row.get(11)?,
-                created_at: row.get(12)?,
-                updated_at: row.get(13)?,
+                ssh_enabled: row.get::<_, i64>(12)? != 0,
+                ssh_hostname: row.get(13)?,
+                ssh_port: row.get::<_, Option<i64>>(14)?.map(|v| v as u16),
+                ssh_username: row.get(15)?,
+                ssh_auth_method: row.get(16)?,
+                created_at: row.get(17)?,
+                updated_at: row.get(18)?,
             })
         })
         .map_err(|e| format!("Failed to query connections: {}", e))?
@@ -1173,7 +1334,7 @@ pub async fn delete_query_bookmark(id: String, state: State<'_, AppState>) -> Re
 // ─── Helper Functions ───────────────────────────────────────────────────────
 
 /// Load connection config from database and decrypt password
-async fn load_connection_config(
+pub(crate) async fn load_connection_config(
     connection_id: &str,
     state: &State<'_, AppState>,
 ) -> Result<ConnectionConfig, String> {
@@ -1768,6 +1929,287 @@ fn validate_data_type(value: &DataValue, expected_type: &str) -> bool {
         DataValue::Array(_) => expected_lower.contains("array"),
         DataValue::Null => true,
     }
+}
+
+// ─── SSH Tunnel Support for Database Connections ────────────────────────────
+
+/// Setup SSH tunnel for a database connection
+/// Validates and configures SSH tunnel parameters (actual tunnel creation happens at connection time)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EstablishDbSshTunnelParams {
+    pub connection_id: String,
+    pub ssh_hostname: String,
+    pub ssh_port: u16,
+    pub ssh_username: String,
+    pub ssh_auth_method: String,
+    pub ssh_password: Option<String>,
+    pub ssh_private_key: Option<String>,
+    pub ssh_key_passphrase: Option<String>,
+}
+
+#[tauri::command]
+pub fn establish_db_ssh_tunnel(
+    params: EstablishDbSshTunnelParams,
+    state: State<'_, AppState>,
+) -> Result<ConnectionTestResult, String> {
+    let EstablishDbSshTunnelParams {
+        connection_id,
+        ssh_hostname,
+        ssh_port,
+        ssh_username,
+        ssh_auth_method,
+        ssh_password,
+        ssh_private_key,
+        ssh_key_passphrase,
+    } = params;
+
+    let db = state
+        .db
+        .lock()
+        .map_err(|e| format!("Failed to lock database: {}", e))?;
+
+    // Validate inputs
+    if ssh_hostname.is_empty() {
+        return Ok(ConnectionTestResult {
+            success: false,
+            message: "SSH hostname cannot be empty".to_string(),
+            latency_ms: None,
+        });
+    }
+
+    if ssh_username.is_empty() {
+        return Ok(ConnectionTestResult {
+            success: false,
+            message: "SSH username cannot be empty".to_string(),
+            latency_ms: None,
+        });
+    }
+
+    if ssh_auth_method != "password" && ssh_auth_method != "key" {
+        return Ok(ConnectionTestResult {
+            success: false,
+            message: "SSH auth method must be 'password' or 'key'".to_string(),
+            latency_ms: None,
+        });
+    }
+
+    let auth_check = match ssh_auth_method.as_str() {
+        "password" => {
+            if ssh_password.as_ref().map(|v| v.is_empty()).unwrap_or(true) {
+                return Ok(ConnectionTestResult {
+                    success: false,
+                    message: "SSH password is required for password authentication".to_string(),
+                    latency_ms: None,
+                });
+            }
+            Ok(())
+        }
+        "key" => {
+            if ssh_private_key
+                .as_ref()
+                .map(|v| v.is_empty())
+                .unwrap_or(true)
+            {
+                return Ok(ConnectionTestResult {
+                    success: false,
+                    message: "SSH private key is required for key authentication".to_string(),
+                    latency_ms: None,
+                });
+            }
+            Ok(())
+        }
+        _ => Err("Unsupported SSH auth method".to_string()),
+    };
+    if let Err(message) = auth_check {
+        return Ok(ConnectionTestResult {
+            success: false,
+            message,
+            latency_ms: None,
+        });
+    }
+
+    let started = std::time::Instant::now();
+    if let Err(message) = test_ssh_connectivity(
+        &ssh_hostname,
+        ssh_port,
+        &ssh_username,
+        &ssh_auth_method,
+        ssh_password.as_deref(),
+        ssh_private_key.as_deref(),
+        ssh_key_passphrase.as_deref(),
+    ) {
+        return Ok(ConnectionTestResult {
+            success: false,
+            message,
+            latency_ms: Some(started.elapsed().as_millis() as u64),
+        });
+    }
+
+    let ssh_password_encrypted = match ssh_password.filter(|v| !v.is_empty()) {
+        Some(secret) => Some(
+            crate::integrations::auth::encrypt_token(&secret)
+                .map_err(|e| format!("Failed to encrypt SSH password: {}", e))?,
+        ),
+        None => None,
+    };
+    let ssh_private_key_encrypted = match ssh_private_key.filter(|v| !v.is_empty()) {
+        Some(secret) => Some(
+            crate::integrations::auth::encrypt_token(&secret)
+                .map_err(|e| format!("Failed to encrypt SSH private key: {}", e))?,
+        ),
+        None => None,
+    };
+    let ssh_key_passphrase_encrypted = match ssh_key_passphrase.filter(|v| !v.is_empty()) {
+        Some(secret) => Some(
+            crate::integrations::auth::encrypt_token(&secret)
+                .map_err(|e| format!("Failed to encrypt SSH key passphrase: {}", e))?,
+        ),
+        None => None,
+    };
+
+    // Update SSH configuration in database
+    let update_query = "UPDATE database_connections 
+        SET ssh_enabled = 1,
+            ssh_hostname = ?2,
+            ssh_port = ?3,
+            ssh_username = ?4,
+            ssh_auth_method = ?5,
+            ssh_password_encrypted = ?6,
+            ssh_private_key_encrypted = ?7,
+            ssh_key_passphrase_encrypted = ?8,
+            updated_at = datetime('now')
+        WHERE id = ?1";
+
+    db.execute(
+        update_query,
+        rusqlite::params![
+            &connection_id,
+            &ssh_hostname,
+            &ssh_port,
+            &ssh_username,
+            &ssh_auth_method,
+            &ssh_password_encrypted,
+            &ssh_private_key_encrypted,
+            &ssh_key_passphrase_encrypted
+        ],
+    )
+    .map_err(|e| format!("Failed to update SSH config: {}", e))?;
+
+    Ok(ConnectionTestResult {
+        success: true,
+        message: "SSH tunnel configuration validated and saved successfully".to_string(),
+        latency_ms: Some(started.elapsed().as_millis() as u64),
+    })
+}
+
+fn test_ssh_connectivity(
+    hostname: &str,
+    port: u16,
+    username: &str,
+    auth_method: &str,
+    password: Option<&str>,
+    private_key: Option<&str>,
+    key_passphrase: Option<&str>,
+) -> Result<(), String> {
+    let addr: SocketAddr = format!("{hostname}:{port}")
+        .parse()
+        .map_err(|e| format!("Invalid SSH host/port: {}", e))?;
+    let tcp_stream = TcpStream::connect_timeout(&addr, Duration::from_secs(8))
+        .map_err(|e| format!("SSH TCP connection failed: {}", e))?;
+    tcp_stream
+        .set_read_timeout(Some(Duration::from_secs(8)))
+        .map_err(|e| format!("Failed to set SSH read timeout: {}", e))?;
+    tcp_stream
+        .set_write_timeout(Some(Duration::from_secs(8)))
+        .map_err(|e| format!("Failed to set SSH write timeout: {}", e))?;
+
+    let mut session =
+        ssh2::Session::new().map_err(|e| format!("Failed to create SSH session: {}", e))?;
+    session.set_tcp_stream(tcp_stream);
+    session
+        .handshake()
+        .map_err(|e| format!("SSH handshake failed: {}", e))?;
+
+    match auth_method {
+        "password" => {
+            let secret = password.ok_or_else(|| "SSH password is required".to_string())?;
+            session
+                .userauth_password(username, secret)
+                .map_err(|e| format!("SSH password authentication failed: {}", e))?;
+        }
+        "key" => {
+            let key = private_key.ok_or_else(|| "SSH private key is required".to_string())?;
+            session
+                .userauth_pubkey_memory(username, None, key, key_passphrase)
+                .map_err(|e| format!("SSH key authentication failed: {}", e))?;
+        }
+        _ => return Err("Unsupported SSH auth method".to_string()),
+    }
+
+    if !session.authenticated() {
+        return Err("SSH authentication failed".to_string());
+    }
+
+    Ok(())
+}
+
+/// Verify SSH tunnel is configured
+#[tauri::command]
+pub fn verify_db_ssh_tunnel(
+    connection_id: String,
+    state: State<'_, AppState>,
+) -> Result<bool, String> {
+    let db = state
+        .db
+        .lock()
+        .map_err(|e| format!("Failed to lock database: {}", e))?;
+
+    let mut stmt = db
+        .prepare("SELECT ssh_enabled FROM database_connections WHERE id = ?1")
+        .map_err(|e| format!("Failed to prepare query: {}", e))?;
+
+    stmt.query_row(rusqlite::params![&connection_id], |row| {
+        let ssh_enabled: bool = row.get::<_, i32>(0).map(|v| v != 0)?;
+        Ok(ssh_enabled)
+    })
+    .map_err(|e| format!("Connection not found or SSH not configured: {}", e))
+}
+
+/// Get SSH tunnel configuration for a connection
+#[tauri::command]
+pub fn get_db_ssh_config(
+    connection_id: String,
+    state: State<'_, AppState>,
+) -> Result<serde_json::Value, String> {
+    let db = state
+        .db
+        .lock()
+        .map_err(|e| format!("Failed to lock database: {}", e))?;
+
+    let mut stmt = db
+        .prepare(
+            "SELECT ssh_enabled, ssh_hostname, ssh_port, ssh_username, ssh_auth_method 
+             FROM database_connections 
+             WHERE id = ?1",
+        )
+        .map_err(|e| format!("Failed to prepare query: {}", e))?;
+
+    stmt.query_row(rusqlite::params![&connection_id], |row| {
+        let ssh_enabled: bool = row.get::<_, i32>(0).map(|v| v != 0)?;
+        let ssh_hostname: Option<String> = row.get(1)?;
+        let ssh_port: Option<u16> = row.get(2)?;
+        let ssh_username: Option<String> = row.get(3)?;
+        let ssh_auth_method: Option<String> = row.get(4)?;
+
+        Ok(serde_json::json!({
+            "ssh_enabled": ssh_enabled,
+            "ssh_hostname": ssh_hostname,
+            "ssh_port": ssh_port,
+            "ssh_username": ssh_username,
+            "ssh_auth_method": ssh_auth_method
+        }))
+    })
+    .map_err(|e| format!("Failed to get SSH config: {}", e))
 }
 
 #[cfg(test)]

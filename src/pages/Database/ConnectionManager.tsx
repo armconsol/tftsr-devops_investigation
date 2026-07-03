@@ -11,6 +11,7 @@ import {
   updateDatabaseConnectionCmd,
   deleteDatabaseConnectionCmd,
   testDatabaseConnectionCmd,
+  establishDbSshTunnelCmd,
   type DatabaseConnection,
 } from '@/lib/tauriCommands';
 import { toast } from 'sonner';
@@ -26,7 +27,7 @@ export function ConnectionManager() {
     loadConnections();
   }, []);
 
-  const loadConnections = async () => {
+  async function loadConnections() {
     setLoading(true);
     try {
       const conns = await listDatabaseConnectionsCmd();
@@ -37,11 +38,12 @@ export function ConnectionManager() {
     } finally {
       setLoading(false);
     }
-  };
+  }
 
   const handleCreate = async (data: ConnectionFormData) => {
     try {
-      await createDatabaseConnectionCmd(data);
+      const connection = await createDatabaseConnectionCmd(data);
+      await syncSshTunnelConfig(connection.id, data);
       toast.success('Connection created');
       setDialogOpen(false);
       loadConnections();
@@ -58,6 +60,7 @@ export function ConnectionManager() {
         id: editingConnection.id,
         ...data,
       });
+      await syncSshTunnelConfig(editingConnection.id, data);
       toast.success('Connection updated');
       setDialogOpen(false);
       setEditingConnection(null);
@@ -76,6 +79,27 @@ export function ConnectionManager() {
       loadConnections();
     } catch (error) {
       toast.error('Failed to delete connection: ' + String(error));
+    }
+  };
+
+  const syncSshTunnelConfig = async (connectionId: string, data: ConnectionFormData) => {
+    if (!data.ssh_enabled) {
+      return;
+    }
+
+    const result = await establishDbSshTunnelCmd(
+      connectionId,
+      data.ssh_hostname || '',
+      data.ssh_port || 22,
+      data.ssh_username || '',
+      data.ssh_auth_method || 'password',
+      data.ssh_auth_method === 'password' ? data.ssh_password : undefined,
+      data.ssh_auth_method === 'key' ? data.ssh_private_key : undefined,
+      data.ssh_auth_method === 'key' ? data.ssh_key_passphrase : undefined
+    );
+
+    if (!result.success) {
+      throw new Error(result.message);
     }
   };
 
@@ -138,6 +162,7 @@ export function ConnectionManager() {
                   </p>
                   <p className="text-xs text-muted-foreground mt-1">
                     {conn.username} • {conn.ssl_enabled ? 'SSL enabled' : 'No SSL'}
+                    {conn.ssh_enabled ? ' • SSH tunnel enabled' : ''}
                   </p>
                 </div>
                 <div className="flex gap-2">

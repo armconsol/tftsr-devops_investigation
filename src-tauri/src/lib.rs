@@ -226,6 +226,16 @@ pub fn run() {
             // Database Management - Inline CRUD & Query Plans
             commands::database::update_table_rows,
             commands::database::explain_query,
+            commands::database::establish_db_ssh_tunnel,
+            commands::database::verify_db_ssh_tunnel,
+            commands::database::get_db_ssh_config,
+            // Table browser
+            commands::table_browser::browse_table_data,
+            commands::table_browser::get_table_row_count,
+            commands::table_browser::get_table_metadata,
+            commands::table_browser::insert_table_row,
+            commands::table_browser::update_table_row,
+            commands::table_browser::delete_table_row,
             // Analysis / PII
             commands::analysis::upload_log_file,
             commands::analysis::upload_log_file_by_content,
