@@ -566,6 +566,14 @@ pub fn run_migrations(conn: &Connection) -> anyhow::Result<()> {
             );
             CREATE INDEX IF NOT EXISTS idx_query_bookmarks_connection ON query_bookmarks(connection_id);",
         ),
+        (
+            "041_add_database_ssh_tunnel_columns",
+            "ALTER TABLE database_connections ADD COLUMN ssh_enabled INTEGER DEFAULT 0;
+             ALTER TABLE database_connections ADD COLUMN ssh_hostname TEXT;
+             ALTER TABLE database_connections ADD COLUMN ssh_port INTEGER;
+             ALTER TABLE database_connections ADD COLUMN ssh_username TEXT;
+             ALTER TABLE database_connections ADD COLUMN ssh_auth_method TEXT;",
+        ),
     ];
 
     for (name, sql) in migrations {
@@ -587,17 +595,18 @@ pub fn run_migrations(conn: &Connection) -> anyhow::Result<()> {
                 || name.ends_with("_add_image_data")
                 || name.ends_with("_add_supports_tool_calling")
                 || name.ends_with("_add_proxmox_username_column")
+               || name.ends_with("_add_database_ssh_tunnel_columns")
             {
-                // Use execute for ALTER TABLE (SQLite only allows one statement per command)
-                // Skip error if column already exists (SQLITE_ERROR with "duplicate column name")
-                if let Err(e) = conn.execute(sql, []) {
-                    let err_str = e.to_string();
-                    if err_str.contains("duplicate column name") {
-                        tracing::info!("Column may already exist, skipping migration {name}: {e}");
-                    } else {
-                        return Err(e.into());
-                    }
-                }
+               // Use execute for ALTER TABLE (SQLite only allows one statement per command)
+               // Skip error if column already exists (SQLITE_ERROR with "duplicate column name")
+               if let Err(e) = conn.execute_batch(sql) {
+                   let err_str = e.to_string();
+                   if err_str.contains("duplicate column name") {
+                       tracing::info!("Column may already exist, skipping migration {name}: {e}");
+                   } else {
+                       return Err(e.into());
+                   }
+               }
             } else {
                 // Use execute_batch for other migrations (FTS5, CREATE TABLE, etc.)
                 if let Err(e) = conn.execute_batch(sql) {
