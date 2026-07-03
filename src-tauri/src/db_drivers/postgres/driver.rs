@@ -3,6 +3,7 @@
 use async_trait::async_trait;
 use std::sync::Arc;
 use tokio::sync::Mutex;
+use tokio_postgres::types::ToSql;
 use tokio_postgres::{Client, Config, NoTls};
 
 use crate::db_drivers::{
@@ -37,6 +38,29 @@ impl PostgresDriver {
             .as_ref()
             .cloned()
             .ok_or(DriverError::NotConnected)
+    }
+
+    fn bind_params(params: Vec<DataValue>) -> DriverResult<Vec<Box<dyn ToSql + Sync + Send>>> {
+        params
+            .into_iter()
+            .map(|param| match param {
+                DataValue::Boolean(v) => Ok(Box::new(v) as Box<dyn ToSql + Sync + Send>),
+                DataValue::Integer(v) => Ok(Box::new(v) as Box<dyn ToSql + Sync + Send>),
+                DataValue::Float(v) => Ok(Box::new(v) as Box<dyn ToSql + Sync + Send>),
+                DataValue::String(v) => Ok(Box::new(v) as Box<dyn ToSql + Sync + Send>),
+                DataValue::Bytes(v) => Ok(Box::new(v) as Box<dyn ToSql + Sync + Send>),
+                DataValue::Date(v) | DataValue::DateTime(v) => {
+                    Ok(Box::new(v) as Box<dyn ToSql + Sync + Send>)
+                }
+                DataValue::Json(v) => Ok(Box::new(v.to_string()) as Box<dyn ToSql + Sync + Send>),
+                DataValue::Null => {
+                    Ok(Box::new(Option::<String>::None) as Box<dyn ToSql + Sync + Send>)
+                }
+                DataValue::Array(_) => Err(DriverError::QueryExecutionFailed(
+                    "Array query parameters are not supported for PostgreSQL queries".to_string(),
+                )),
+            })
+            .collect()
     }
 }
 
@@ -171,17 +195,35 @@ impl DatabaseDriver for PostgresDriver {
     async fn execute_query(
         &self,
         query: &str,
-        _params: Vec<DataValue>,
+        params: Vec<DataValue>,
     ) -> DriverResult<QueryResult> {
         let client_arc = self.ensure_connected().await?;
         let client = client_arc.lock().await;
 
         let start = std::time::Instant::now();
+        let bound_params = Self::bind_params(params)?;
+        let query_params: Vec<&(dyn ToSql + Sync)> = bound_params
+            .iter()
+            .map(|p| p.as_ref() as &(dyn ToSql + Sync))
+            .collect();
 
-        let rows = client
-            .query(query, &[])
-            .await
-            .map_err(|e| DriverError::QueryExecutionFailed(e.to_string()))?;
+        let rows = client.query(query, &query_params).await.map_err(|e| {
+            let detail = if let Some(db_err) = e.as_db_error() {
+                format!(
+                    "{}: {} (code: {}{})",
+                    db_err.severity(),
+                    db_err.message(),
+                    db_err.code().code(),
+                    db_err
+                        .hint()
+                        .map(|h| format!(", hint: {}", h))
+                        .unwrap_or_default()
+                )
+            } else {
+                e.to_string()
+            };
+            DriverError::QueryExecutionFailed(detail)
+        })?;
 
         let execution_time_ms = start.elapsed().as_millis() as u64;
 
@@ -314,6 +356,7 @@ mod tests {
             username: "postgres".to_string(),
             password: "password".to_string(),
             ssl_config: None,
+            ssh_tunnel_config: None,
             options: std::collections::HashMap::new(),
         };
 

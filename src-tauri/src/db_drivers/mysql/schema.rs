@@ -48,6 +48,7 @@ impl<'a> MySQLSchemaIntrospector<'a> {
 
     /// Get list of table names in the database
     async fn get_table_names(&self, database: &str) -> DriverResult<Vec<String>> {
+        let database = validate_identifier(database)?;
         let query = format!(
             "SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA = '{}' AND TABLE_TYPE = 'BASE TABLE' ORDER BY TABLE_NAME",
             database
@@ -87,6 +88,8 @@ impl<'a> MySQLSchemaIntrospector<'a> {
 
     /// Get column information for a table
     async fn get_columns(&self, database: &str, table_name: &str) -> DriverResult<Vec<Column>> {
+        let database = validate_identifier(database)?;
+        let table_name = validate_identifier(table_name)?;
         let query = format!(
             r#"
             SELECT
@@ -169,6 +172,8 @@ impl<'a> MySQLSchemaIntrospector<'a> {
 
     /// Get index information for a table
     async fn get_indexes(&self, database: &str, table_name: &str) -> DriverResult<Vec<Index>> {
+        let database = validate_identifier(database)?;
+        let table_name = validate_identifier(table_name)?;
         let query = format!(
             r#"
             SELECT
@@ -259,6 +264,8 @@ impl<'a> MySQLSchemaIntrospector<'a> {
         database: &str,
         table_name: &str,
     ) -> DriverResult<Vec<ForeignKey>> {
+        let database = validate_identifier(database)?;
+        let table_name = validate_identifier(table_name)?;
         let query = format!(
             r#"
             SELECT
@@ -373,6 +380,8 @@ impl<'a> MySQLSchemaIntrospector<'a> {
 
     /// Get exact row count for a table
     async fn get_row_count(&self, database: &str, table_name: &str) -> DriverResult<usize> {
+        let database = validate_identifier(database)?;
+        let table_name = validate_identifier(table_name)?;
         // Use information_schema for fast approximate count
         let query = format!(
             "SELECT TABLE_ROWS FROM information_schema.TABLES WHERE TABLE_SCHEMA = '{}' AND TABLE_NAME = '{}'",
@@ -410,6 +419,23 @@ impl<'a> MySQLSchemaIntrospector<'a> {
     }
 }
 
+fn validate_identifier(value: &str) -> DriverResult<&str> {
+    if value.is_empty() {
+        return Err(DriverError::ValidationError(
+            "Identifier cannot be empty".to_string(),
+        ));
+    }
+
+    if !value.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+        return Err(DriverError::ValidationError(format!(
+            "Invalid identifier: {}",
+            value
+        )));
+    }
+
+    Ok(value)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -426,6 +452,7 @@ mod tests {
             username: "root".to_string(),
             password: "password".to_string(),
             ssl_config: None,
+            ssh_tunnel_config: None,
             options: HashMap::new(),
         };
 

@@ -2,7 +2,7 @@
 
 ## Overview
 
-TRCAA uses **SQLite** via `rusqlite` with the `bundled-sqlcipher` feature for AES-256 encryption in production. 22 versioned migrations are tracked in the `_migrations` table.
+TRCAA uses **SQLite** via `rusqlite` with the `bundled-sqlcipher` feature for AES-256 encryption in production. Versioned migrations are tracked in the `_migrations` table.
 
 **DB file location:** `{app_data_dir}/tftsr.db`
 
@@ -38,7 +38,7 @@ pub fn init_db(data_dir: &Path) -> anyhow::Result<Connection> {
 
 ---
 
-## Schema (18 Migrations)
+## Schema Highlights
 
 ### 001 — issues
 
@@ -443,3 +443,48 @@ pub struct TimelineEvent {
     pub created_at: String,
 }
 ```
+
+---
+
+## Database GUI Table Browser (v3.0)
+
+Schema Explorer now provides a built-in table browser so users can inspect data in rows/columns without writing SQL manually.
+
+### Frontend behavior
+
+- `SchemaExplorer` shows **View Data** for selected table nodes.
+- Clicking **View Data** opens a modal with `TableBrowser`.
+- `TableBrowser` supports:
+  - pagination (10/25/50/100)
+  - per-column sorting (ASC/DESC)
+  - column filtering (`LIKE`)
+  - CRUD operations (insert/update/delete)
+  - metadata display (row count + primary key)
+
+### Backend flow
+
+- Row browsing: `browse_table_data`
+- Metadata + PK discovery: `get_table_metadata`
+- CRUD: `insert_table_row`, `update_table_row`, `delete_table_row`
+
+All commands are wrapped in `src/lib/tauriCommands.ts` and consumed by the table browser UI.
+The frontend wrappers send camelCase invoke keys (`connectionId`, `rowData`, `primaryKeyCol`, `primaryKeyValue`) to match Tauri's command contract.
+
+## Database SSH Tunneling (v3.0)
+
+Database connections now support SSH tunnel configuration metadata:
+
+- `ssh_enabled`
+- `ssh_hostname`
+- `ssh_port`
+- `ssh_username`
+- `ssh_auth_method` (`password` or `key`)
+
+`ConnectionForm` captures SSH fields and `ConnectionManager` persists them via `establish_db_ssh_tunnel`.
+
+### SSH tunnel security notes
+
+- SSH credentials are encrypted before storage (`ssh_password_encrypted`, `ssh_private_key_encrypted`, `ssh_key_passphrase_encrypted`).
+- `establish_db_ssh_tunnel` validates connectivity/authentication before persisting SSH settings.
+- `get_db_ssh_config` only returns non-secret SSH metadata; encrypted secrets are never returned to the frontend.
+- Disabling SSH (`close_db_ssh_tunnel`) clears active SSH metadata for the connection.

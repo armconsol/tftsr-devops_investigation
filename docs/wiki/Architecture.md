@@ -52,10 +52,16 @@ All command handlers receive `State<'_, AppState>` as a Tauri-injected parameter
 | `commands/docs.rs` | RCA and post-mortem generation, document export |
 | `commands/system.rs` | Ollama management, hardware probe, settings, audit log |
 | `commands/image.rs` | Image attachment upload, list, delete, paste |
-| `commands/integrations.rs` | Confluence / ServiceNow / ADO — v0.2 stubs |
+| `commands/database.rs` | Database connections, query history, bookmarks, import/export |
+| `commands/kube.rs` | Kubernetes clusters, resources, port forwards, events |
+| `commands/metrics.rs` | Shared metrics and telemetry helpers |
+| `commands/remote.rs` | RDP and remote session management |
+| `commands/shell.rs` | Shell execution, approvals, kubeconfig handling |
+| `commands/table_browser.rs` | Table browser and data exploration |
+| `commands/integrations.rs` | Confluence / ServiceNow / ADO integration handlers |
 | `ai/provider.rs` | `Provider` trait + `create_provider()` factory |
 | `pii/detector.rs` | Multi-pattern PII scanner with overlap resolution |
-| `db/migrations.rs` | Versioned schema (15 migrations in `_migrations` table) |
+| `db/migrations.rs` | Versioned schema (23 migrations in `_migrations` table) |
 | `db/models.rs` | All DB types — see `IssueDetail` note below |
 | `docs/rca.rs` + `docs/postmortem.rs` | Markdown template builders |
 | `audit/log.rs` | `write_audit_event()` — called before every external send |
@@ -86,7 +92,13 @@ src-tauri/src/
 │   ├── docs.rs
 │   ├── system.rs
 │   ├── image.rs
-│   └── integrations.rs
+│   ├── integrations.rs
+│   ├── database.rs
+│   ├── kube.rs
+│   ├── metrics.rs
+│   ├── remote.rs
+│   ├── shell.rs
+│   └── table_browser.rs
 ├── pii/
 │   ├── patterns.rs
 │   ├── detector.rs
@@ -106,6 +118,19 @@ src-tauri/src/
 │   ├── manager.rs
 │   ├── recommender.rs
 │   └── hardware.rs
+├── mcp/
+│   ├── discovery.rs
+│   ├── servers.rs
+│   └── tools.rs
+├── ollama/
+│   ├── installer.rs
+│   ├── manager.rs
+│   ├── recommender.rs
+│   └── hardware.rs
+├── proxmox/
+├── remote/
+├── shell/
+├── database/
 └── integrations/
     ├── confluence.rs
     ├── servicenow.rs

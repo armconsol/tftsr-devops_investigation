@@ -131,9 +131,15 @@ impl DatabaseDriver for CassandraDriver {
     async fn execute_query(
         &self,
         query: &str,
-        _params: Vec<DataValue>,
+        params: Vec<DataValue>,
     ) -> DriverResult<QueryResult> {
         let session = self.ensure_connected()?;
+
+        if !params.is_empty() {
+            return Err(DriverError::UnsupportedOperation(
+                "Parameterized CQL queries are not supported by this driver path yet".to_string(),
+            ));
+        }
 
         let start = std::time::Instant::now();
 
@@ -249,6 +255,7 @@ mod tests {
             username: "cassandra".to_string(),
             password: "cassandra".to_string(),
             ssl_config: None,
+            ssh_tunnel_config: None,
             options: std::collections::HashMap::new(),
         };
 
@@ -268,6 +275,7 @@ mod tests {
             username: String::new(),
             password: String::new(),
             ssl_config: None,
+            ssh_tunnel_config: None,
             options: std::collections::HashMap::new(),
         };
 

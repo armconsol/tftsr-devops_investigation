@@ -564,6 +564,7 @@ mod tests {
             username: String::new(),
             password: String::new(),
             ssl_config: None,
+            ssh_tunnel_config: None,
             options: HashMap::new(),
         };
 
@@ -581,6 +582,7 @@ mod tests {
             username: "admin".to_string(),
             password: "secret".to_string(),
             ssl_config: None,
+            ssh_tunnel_config: None,
             options: HashMap::new(),
         };
 
@@ -598,6 +600,7 @@ mod tests {
             username: "user@domain".to_string(),
             password: "p@ss:word".to_string(),
             ssl_config: None,
+            ssh_tunnel_config: None,
             options: HashMap::new(),
         };
 
@@ -623,6 +626,7 @@ mod tests {
                 client_key_path: None,
                 verify_server: false,
             }),
+            ssh_tunnel_config: None,
             options: HashMap::new(),
         };
 
@@ -685,6 +689,7 @@ mod tests {
             username: String::new(),
             password: String::new(),
             ssl_config: None,
+            ssh_tunnel_config: None,
             options: HashMap::new(),
         };
 

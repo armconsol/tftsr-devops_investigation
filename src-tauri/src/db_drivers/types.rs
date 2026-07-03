@@ -70,6 +70,19 @@ pub struct SslConfig {
     pub verify_server: bool,
 }
 
+/// SSH tunnel configuration for database connections
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DbSshTunnelConfig {
+    pub enabled: bool,
+    pub hostname: String,
+    pub port: u16,
+    pub username: String,
+    pub auth_method: Option<String>,
+    pub password: Option<String>,
+    pub private_key_data: Option<String>,
+    pub key_passphrase: Option<String>,
+}
+
 /// Database connection configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConnectionConfig {
@@ -80,6 +93,7 @@ pub struct ConnectionConfig {
     pub username: String,
     pub password: String, // Will be encrypted before storage
     pub ssl_config: Option<SslConfig>,
+    pub ssh_tunnel_config: Option<DbSshTunnelConfig>,
     pub options: HashMap<String, String>,
 }
 

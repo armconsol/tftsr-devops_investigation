@@ -543,9 +543,9 @@ jobs:
           CXX_x86_64_pc_windows_gnu: x86_64-w64-mingw32-g++
           AR_x86_64_pc_windows_gnu: x86_64-w64-mingw32-ar
           CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER: x86_64-w64-mingw32-gcc
-          # Disable pkg-config for OpenSSL to force vendored build
+          # Match release-beta.yml: allow openssl-sys to use vendored OpenSSL
           OPENSSL_STATIC: "1"
-          OPENSSL_NO_PKG_CONFIG: "1"
+          OPENSSL_NO_VENDOR: "0"
         run: |
           CI=true npx tauri build --target x86_64-pc-windows-gnu
       - name: Upload artifacts
@@ -607,6 +607,7 @@ jobs:
   build-macos-arm64:
     needs: autotag
     runs-on: macos-arm64
+    timeout-minutes: 120
     env:
       RELEASE_TAG: ${{ needs.autotag.outputs.release_tag }}
     steps:
@@ -616,6 +617,30 @@ jobs:
           git remote add origin http://172.0.0.29:3000/sarman/tftsr-devops_investigation.git
           git fetch --depth=1 origin "refs/tags/${RELEASE_TAG}"
           git checkout FETCH_HEAD
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+          key: ${{ runner.os }}-cargo-macos-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-macos-
+      - name: Cache cargo target
+        uses: actions/cache@v4
+        with:
+          path: src-tauri/target/aarch64-apple-darwin
+          key: ${{ runner.os }}-cargo-macos-target-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-macos-target-
+      - name: Cache npm
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-npm-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-npm-
       - name: Clean up previous IronRDP patch
         run: |
           # macOS runners are persistent, so clean up from previous builds

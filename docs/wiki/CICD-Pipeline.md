@@ -90,13 +90,13 @@ actual registry host configured for this environment.
 
 ## Cargo and npm Caching
 
-All Rust and build jobs use `actions/cache@v3` to cache downloaded package artifacts.
+All Rust and build jobs use `actions/cache@v4` to cache downloaded package artifacts.
 Gitea 1.22 implements the Gitea Actions cache API natively.
 
 **Cargo cache** (Rust jobs):
 ```yaml
 - name: Cache cargo registry
-  uses: actions/cache@v3
+  uses: actions/cache@v4
   with:
     path: |
       ~/.cargo/registry/index
@@ -110,7 +110,7 @@ Gitea 1.22 implements the Gitea Actions cache API natively.
 **npm cache** (frontend and build jobs):
 ```yaml
 - name: Cache npm
-  uses: actions/cache@v3
+  uses: actions/cache@v4
   with:
     path: ~/.npm
     key: ${{ runner.os }}-npm-${{ hashFiles('**/package-lock.json') }}
@@ -121,6 +121,10 @@ Gitea 1.22 implements the Gitea Actions cache API natively.
 Cache keys for cross-compile jobs use a suffix to avoid collisions:
 - Windows build: `${{ runner.os }}-cargo-windows-${{ hashFiles('**/Cargo.lock') }}`
 - arm64 build: `${{ runner.os }}-cargo-arm64-${{ hashFiles('**/Cargo.lock') }}`
+- macOS build: `${{ runner.os }}-cargo-macos-${{ hashFiles('**/Cargo.lock') }}`
+
+The macOS release build also caches `src-tauri/target/aarch64-apple-darwin` and runs with
+`timeout-minutes: 120` so the full Rust compile has room to complete on a cold cache.
 
 ---
 
@@ -164,7 +168,8 @@ Jobs (run in parallel after autotag):
                          → cargo tauri build (aarch64-unknown-linux-gnu)
                          → {.deb, .rpm, .AppImage} uploaded to Gitea release
                          → fails fast if no Linux artifacts are produced
-  build-macos-arm64   → cargo tauri build (aarch64-apple-darwin) — runs on local Mac
+  build-macos-arm64   → timeout-minutes: 120 + cargo/npm + target cache
+                         → cargo tauri build (aarch64-apple-darwin) — runs on local Mac
                          → {.dmg} uploaded to Gitea release
                          → existing same-name assets are deleted before upload (rerun-safe)
                          → unsigned; after install run: xattr -cr /Applications/TRCAA.app

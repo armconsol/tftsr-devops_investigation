@@ -1,6 +1,6 @@
 # Integrations
 
-> **Status: ✅ Fully Implemented (v0.2.6)** — All three integrations (Confluence, ServiceNow, Azure DevOps) are production-ready with complete OAuth2/authentication flows and REST API clients.
+> **Status: ✅ Fully Implemented (v3.0.x)** — All three integrations (Confluence, ServiceNow, Azure DevOps) are production-ready with complete OAuth2/authentication flows and REST API clients.
 
 ---
 
@@ -8,7 +8,7 @@
 
 **Purpose:** Publish RCA and post-mortem documents to Confluence spaces.
 
-**Status:** ✅ **Implemented** (v0.2.3)
+**Status:** ✅ **Implemented**
 
 ### Features
 - OAuth2 authentication with PKCE flow
@@ -53,7 +53,7 @@ Default Space:    PROJ
 
 **Purpose:** Create and manage incident records in ServiceNow.
 
-**Status:** ✅ **Implemented** (v0.2.3)
+**Status:** ✅ **Implemented**
 
 ### Features
 - Basic authentication (username/password)
@@ -93,7 +93,7 @@ Password:         (encrypted with AES-256-GCM)
 
 **Purpose:** Create and manage work items (bugs/tasks) in Azure DevOps.
 
-**Status:** ✅ **Implemented** (v0.2.3)
+**Status:** ✅ **Implemented**
 
 ### Features
 - OAuth2 authentication with PKCE flow

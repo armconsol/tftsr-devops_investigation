@@ -17,6 +17,17 @@ function makeStorage() {
 Object.defineProperty(globalThis, "localStorage", { value: makeStorage(), writable: true });
 Object.defineProperty(globalThis, "sessionStorage", { value: makeStorage(), writable: true });
 
+class ResizeObserverMock {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+}
+
+Object.defineProperty(globalThis, "ResizeObserver", {
+  value: ResizeObserverMock,
+  writable: true,
+});
+
 // Mock Tauri core API
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),

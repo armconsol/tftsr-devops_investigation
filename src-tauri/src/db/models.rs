@@ -878,6 +878,12 @@ pub struct DatabaseConnection {
     pub ssl_client_cert_path: Option<String>,
     pub ssl_client_key_path: Option<String>,
     pub connection_options: Option<String>,
+    // SSH tunnel configuration (non-sensitive)
+    pub ssh_enabled: bool,
+    pub ssh_hostname: Option<String>,
+    pub ssh_port: Option<u16>,
+    pub ssh_username: Option<String>,
+    pub ssh_auth_method: Option<String>, // "password" or "key"
     pub created_at: String,
     pub updated_at: String,
 }
@@ -907,9 +913,30 @@ impl DatabaseConnection {
             ssl_client_cert_path: None,
             ssl_client_key_path: None,
             connection_options: None,
+            ssh_enabled: false,
+            ssh_hostname: None,
+            ssh_port: None,
+            ssh_username: None,
+            ssh_auth_method: None,
             created_at: now.clone(),
             updated_at: now,
         }
+    }
+
+    /// Enable SSH tunnel for this connection
+    pub fn with_ssh_tunnel(
+        mut self,
+        ssh_hostname: String,
+        ssh_port: u16,
+        ssh_username: String,
+        auth_method: String,
+    ) -> Self {
+        self.ssh_enabled = true;
+        self.ssh_hostname = Some(ssh_hostname);
+        self.ssh_port = Some(ssh_port);
+        self.ssh_username = Some(ssh_username);
+        self.ssh_auth_method = Some(auth_method);
+        self
     }
 }
 

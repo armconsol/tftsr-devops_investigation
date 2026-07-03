@@ -1823,6 +1823,12 @@ export interface DatabaseConnection {
   database_name?: string;
   username: string;
   ssl_enabled: boolean;
+  // SSH tunnel configuration
+  ssh_enabled?: boolean;
+  ssh_hostname?: string;
+  ssh_port?: number;
+  ssh_username?: string;
+  ssh_auth_method?: 'password' | 'key';
   created_at: string;
   updated_at: string;
 }
@@ -1938,6 +1944,14 @@ export const createDatabaseConnectionCmd = (params: {
   ssl_client_cert_path?: string;
   ssl_client_key_path?: string;
   connection_options?: string;
+  ssh_enabled?: boolean;
+  ssh_hostname?: string;
+  ssh_port?: number;
+  ssh_username?: string;
+  ssh_auth_method?: 'password' | 'key';
+  ssh_password?: string;
+  ssh_private_key?: string;
+  ssh_key_passphrase?: string;
 }) => invoke<DatabaseConnection>("create_database_connection", { params });
 
 export const updateDatabaseConnectionCmd = (params: {
@@ -1949,6 +1963,14 @@ export const updateDatabaseConnectionCmd = (params: {
   ssl_client_cert_path?: string;
   ssl_client_key_path?: string;
   connection_options?: string;
+  ssh_enabled?: boolean;
+  ssh_hostname?: string;
+  ssh_port?: number;
+  ssh_username?: string;
+  ssh_auth_method?: 'password' | 'key';
+  ssh_password?: string;
+  ssh_private_key?: string;
+  ssh_key_passphrase?: string;
 }) => invoke<DatabaseConnection>("update_database_connection", { params });
 
 export const deleteDatabaseConnectionCmd = (id: string) =>
@@ -1959,6 +1981,47 @@ export const listDatabaseConnectionsCmd = () =>
 
 export const testDatabaseConnectionCmd = (connectionId: string) =>
   invoke<ConnectionTestResult>("test_database_connection", { connectionId });
+
+// SSH Tunnel Configuration
+export interface DbSshTunnelConfig {
+  ssh_enabled: boolean;
+  ssh_hostname?: string;
+  ssh_port?: number;
+  ssh_username?: string;
+  ssh_auth_method?: 'password' | 'key';
+  ssh_password?: string;
+  ssh_private_key?: string;
+  ssh_key_passphrase?: string;
+}
+
+export const establishDbSshTunnelCmd = (
+  connection_id: string,
+  ssh_hostname: string,
+  ssh_port: number,
+  ssh_username: string,
+  ssh_auth_method: 'password' | 'key',
+  ssh_password?: string,
+  ssh_private_key?: string,
+  ssh_key_passphrase?: string
+) =>
+  invoke<ConnectionTestResult>("establish_db_ssh_tunnel", {
+    params: {
+      connection_id,
+      ssh_hostname,
+      ssh_port,
+      ssh_username,
+      ssh_auth_method,
+      ssh_password,
+      ssh_private_key,
+      ssh_key_passphrase,
+    },
+  });
+
+export const verifyDbSshTunnelCmd = (connection_id: string) =>
+  invoke<boolean>("verify_db_ssh_tunnel", { connection_id });
+
+export const getDbSshConfigCmd = (connection_id: string) =>
+  invoke<DbSshTunnelConfig>("get_db_ssh_config", { connection_id });
 
 // Query Execution
 export const executeDatabaseQueryCmd = (
@@ -1989,6 +2052,124 @@ export const getTableSchemaCmd = (
   table: string
 ) =>
   invoke<Table>("get_table_schema", { connectionId, database, table });
+
+// Table Browser - GUI Data Viewing and Editing
+export type DataValue =
+  | { type: 'Null' }
+  | { type: 'Boolean'; value: boolean }
+  | { type: 'Integer'; value: number }
+  | { type: 'Float'; value: number }
+  | { type: 'String'; value: string }
+  | { type: 'Bytes'; value: number[] }
+  | { type: 'Date'; value: string }
+  | { type: 'DateTime'; value: string }
+  | { type: 'Json'; value: Record<string, unknown> }
+  | { type: 'Array'; value: DataValue[] };
+
+export interface TableColumnMetadata {
+  name: string;
+  data_type: string;
+  nullable: boolean;
+  primary_key: boolean;
+}
+
+export interface TableMetadata {
+  table_name: string;
+  row_count: number;
+  columns: TableColumnMetadata[];
+  primary_key?: string;
+  estimated_size_bytes?: number;
+}
+
+export type TableRow = Record<string, DataValue>;
+
+export interface BrowseTableResponse {
+  rows: TableRow[];
+  total_count: number;
+  page_number: number;
+  page_size: number;
+  total_pages: number;
+}
+
+export interface PaginationParams {
+  limit: number;
+  offset: number;
+}
+
+export interface SortParams {
+  column: string;
+  direction: 'ASC' | 'DESC';
+}
+
+export interface FilterCondition {
+  column: string;
+  operator: '=' | '!=' | '>' | '<' | '>=' | '<=' | 'LIKE';
+  value: string | number | boolean;
+}
+
+export interface BrowseTableParams {
+  connectionId: string;
+  database: string;
+  table: string;
+  pagination?: PaginationParams;
+  sort?: SortParams;
+  filters?: FilterCondition[];
+}
+
+export interface RowData {
+  values: Record<string, DataValue>;
+}
+
+export const browseTableDataCmd = (params: BrowseTableParams) =>
+  invoke<BrowseTableResponse>("browse_table_data", {
+    connectionId: params.connectionId,
+    database: params.database,
+    table: params.table,
+    pagination: params.pagination,
+    sort: params.sort,
+    filters: params.filters,
+  });
+
+export const getTableRowCountCmd = (connectionId: string, database: string, table: string) =>
+  invoke<number>("get_table_row_count", { connectionId, database, table });
+
+export const getTableMetadataCmd = (connectionId: string, database: string, table: string) =>
+  invoke<TableMetadata>("get_table_metadata", { connectionId, database, table });
+
+export const insertTableRowCmd = (connectionId: string, database: string, table: string, rowData: RowData) =>
+  invoke<RowData>("insert_table_row", { connectionId, database, table, rowData });
+
+export const updateTableRowCmd = (
+  connectionId: string,
+  database: string,
+  table: string,
+  primaryKeyCol: string,
+  primaryKeyValue: DataValue,
+  rowData: RowData
+) =>
+  invoke<RowData>("update_table_row", {
+    connectionId,
+    database,
+    table,
+    primaryKeyCol,
+    primaryKeyValue,
+    rowData,
+  });
+
+export const deleteTableRowCmd = (
+  connectionId: string,
+  database: string,
+  table: string,
+  primaryKeyCol: string,
+  primaryKeyValue: DataValue
+) =>
+  invoke<void>("delete_table_row", {
+    connectionId,
+    database,
+    table,
+    primaryKeyCol,
+    primaryKeyValue,
+  });
 
 // Transaction Management
 export const beginTransactionCmd = (connectionId: string) =>

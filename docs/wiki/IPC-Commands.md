@@ -258,6 +258,71 @@ Exports document to file. Returns the absolute path of the written file. PDF gen
 ```typescript
 checkOllamaInstalledCmd() → OllamaStatus
 ```
+
+---
+
+## Database Tooling Commands (v3.0)
+
+### SSH Tunnel Commands
+
+```typescript
+establishDbSshTunnelCmd(
+  connection_id: string,
+  ssh_hostname: string,
+  ssh_port: number,
+  ssh_username: string,
+  ssh_auth_method: 'password' | 'key',
+  ssh_password?: string,
+  ssh_private_key?: string,
+  ssh_key_passphrase?: string
+) → ConnectionTestResult
+```
+
+Validates SSH connectivity/authentication and stores encrypted SSH tunnel configuration for a database connection.
+
+```typescript
+verifyDbSshTunnelCmd(connection_id: string) → boolean
+```
+
+Returns whether SSH tunneling is enabled for the connection.
+
+```typescript
+getDbSshConfigCmd(connection_id: string) → DbSshTunnelConfig
+```
+
+Returns persisted SSH tunnel metadata (`ssh_enabled`, `ssh_hostname`, `ssh_port`, `ssh_username`, `ssh_auth_method`).
+
+### Table Browser / GUI Data Grid Commands
+
+```typescript
+browseTableDataCmd(params: {
+  connection_id: string;
+  database: string;
+  table: string;
+  pagination?: { limit: number; offset: number };
+  sort?: { column: string; direction: 'ASC' | 'DESC' };
+  filters?: Array<{ column: string; operator: '=' | '!=' | '>' | '<' | '>=' | '<=' | 'LIKE'; value: string | number | boolean }>;
+}) → BrowseTableResponse
+```
+
+Returns paginated rows and page metadata for the selected table.
+For `LIKE`, `%` and `_` are SQL wildcards. Escape literal wildcard characters in input where needed.
+
+```typescript
+getTableMetadataCmd(connection_id: string, database: string, table: string) → TableMetadata
+getTableRowCountCmd(connection_id: string, database: string, table: string) → number
+```
+
+Fetches table schema/primary-key metadata and row counts used by the table browser UI.
+
+```typescript
+insertTableRowCmd(connection_id: string, database: string, table: string, row_data: RowData) → RowData
+updateTableRowCmd(connection_id: string, database: string, table: string, primary_key_col: string, primary_key_value: DataValue, row_data: RowData) → RowData
+deleteTableRowCmd(connection_id: string, database: string, table: string, primary_key_col: string, primary_key_value: DataValue) → void
+```
+
+CRUD primitives used by the Schema Explorer table browser dialog.
+`deleteTableRowCmd` returns `void` on success and fails with an error when the target row does not exist or cannot be deleted.
 Checks if Ollama is running on the configured URL (default: `localhost:11434`).
 
 ### `get_ollama_install_guide`

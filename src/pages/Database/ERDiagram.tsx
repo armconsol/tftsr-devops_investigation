@@ -8,9 +8,8 @@ import ReactFlow, {
   addEdge,
   useNodesState,
   useEdgesState,
-  useReactFlow,
-  getRectOfNodes,
-  getTransformForBounds,
+  getNodesBounds,
+  getViewportForBounds,
   type Node,
   type Edge,
   type Connection,
@@ -30,7 +29,6 @@ const nodeTypes = {
 
 export function ERDiagram() {
   const { activeConnectionId } = useDatabaseStore();
-  const { getNodes } = useReactFlow();
   const diagramRef = useRef<HTMLDivElement>(null);
   const [databases, setDatabases] = useState<string[]>([]);
   const [selectedDatabase, setSelectedDatabase] = useState<string>('');
@@ -38,13 +36,7 @@ export function ERDiagram() {
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
 
-  useEffect(() => {
-    if (activeConnectionId) {
-      loadDatabases();
-    }
-  }, [activeConnectionId]);
-
-  const loadDatabases = async () => {
+  const loadDatabases = useCallback(async () => {
     if (!activeConnectionId) return;
 
     try {
@@ -56,7 +48,13 @@ export function ERDiagram() {
     } catch (error) {
       toast.error('Failed to load databases: ' + String(error));
     }
-  };
+  }, [activeConnectionId]);
+
+  useEffect(() => {
+    if (activeConnectionId) {
+      void loadDatabases();
+    }
+  }, [activeConnectionId, loadDatabases]);
 
   const loadDiagram = async () => {
     if (!activeConnectionId || !selectedDatabase) {
@@ -106,29 +104,32 @@ export function ERDiagram() {
   );
 
   const handleExport = async () => {
-    if (!diagramRef.current || nodes.length === 0) {
+    const viewportElement = diagramRef.current?.querySelector('.react-flow__viewport') as HTMLElement | null;
+    if (!diagramRef.current || !viewportElement || nodes.length === 0) {
       toast.error('No diagram to export');
       return;
     }
 
     try {
-      const nodesBounds = getRectOfNodes(getNodes());
-      const transform = getTransformForBounds(
+      const nodesBounds = getNodesBounds(nodes);
+      const exportWidth = 1024;
+      const exportHeight = 768;
+      const viewport = getViewportForBounds(
         nodesBounds,
-        nodesBounds.width,
-        nodesBounds.height,
+        exportWidth,
+        exportHeight,
         0.5,
         2
       );
 
-      const dataUrl = await toPng(diagramRef.current, {
+      const dataUrl = await toPng(viewportElement, {
         backgroundColor: '#ffffff',
-        width: nodesBounds.width,
-        height: nodesBounds.height,
+        width: exportWidth,
+        height: exportHeight,
         style: {
-          width: String(nodesBounds.width),
-          height: String(nodesBounds.height),
-          transform: `translate(${transform[0]}px, ${transform[1]}px) scale(${transform[2]})`,
+          width: `${exportWidth}px`,
+          height: `${exportHeight}px`,
+          transform: `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.zoom})`,
         },
       });
 

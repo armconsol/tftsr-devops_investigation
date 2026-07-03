@@ -87,6 +87,7 @@ impl<'a> PostgresSchemaIntrospector<'a> {
 
     /// Get column information for a table
     async fn get_columns(&self, table_name: &str) -> DriverResult<Vec<Column>> {
+        let table_name = validate_identifier(table_name)?;
         let query = r#"
             SELECT
                 c.column_name,
@@ -115,8 +116,6 @@ impl<'a> PostgresSchemaIntrospector<'a> {
             ORDER BY c.ordinal_position
         "#;
 
-        // Note: We can't use parameters with execute_query as-is, so we'll use string interpolation
-        // In production, this should use proper parameterized queries
         let query_with_param = query.replace("$1", &format!("'{}'", table_name));
 
         let result = self
@@ -182,6 +181,7 @@ impl<'a> PostgresSchemaIntrospector<'a> {
 
     /// Get index information for a table
     async fn get_indexes(&self, table_name: &str) -> DriverResult<Vec<Index>> {
+        let table_name = validate_identifier(table_name)?;
         let query = r#"
             SELECT
                 i.indexname as index_name,
@@ -279,6 +279,7 @@ impl<'a> PostgresSchemaIntrospector<'a> {
 
     /// Get foreign key relationships for a table
     async fn get_foreign_keys(&self, table_name: &str) -> DriverResult<Vec<ForeignKey>> {
+        let table_name = validate_identifier(table_name)?;
         let query = r#"
             SELECT
                 tc.constraint_name,
@@ -372,6 +373,7 @@ impl<'a> PostgresSchemaIntrospector<'a> {
 
     /// Get approximate row count for a table
     async fn get_row_count(&self, table_name: &str) -> DriverResult<usize> {
+        let table_name = validate_identifier(table_name)?;
         // Use pg_class for fast approximate count
         let query = format!(
             "SELECT reltuples::bigint FROM pg_class WHERE relname = '{}'",
@@ -407,6 +409,23 @@ impl<'a> PostgresSchemaIntrospector<'a> {
 
         Ok(0)
     }
+}
+
+fn validate_identifier(value: &str) -> DriverResult<&str> {
+    if value.is_empty() {
+        return Err(DriverError::ValidationError(
+            "Identifier cannot be empty".to_string(),
+        ));
+    }
+
+    if !value.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+        return Err(DriverError::ValidationError(format!(
+            "Invalid identifier: {}",
+            value
+        )));
+    }
+
+    Ok(value)
 }
 
 #[cfg(test)]
@@ -479,6 +498,7 @@ mod tests {
             username: "postgres".to_string(),
             password: "password".to_string(),
             ssl_config: None,
+            ssh_tunnel_config: None,
             options: HashMap::new(),
         };
 

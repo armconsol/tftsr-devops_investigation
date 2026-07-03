@@ -201,7 +201,7 @@ TRCAA sends HTTP POST to `/mcp` with `Authorization: Bearer eyJ...` header.
 ## Related Decisions
 
 - **ADR-007**: Three-Tier Shell Safety (MCP tools bypass shell classification — server responsibility)
-- Future: **ADR-010**: MCP Tool Approval System (extend three-tier safety to MCP tools)
+- Future safety policy changes for MCP tools should be captured in a separate decision record if the approval model expands beyond server-side controls.
 
 ---
 
