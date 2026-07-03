@@ -2108,7 +2108,7 @@ export interface FilterCondition {
 }
 
 export interface BrowseTableParams {
-  connection_id: string;
+  connectionId: string;
   database: string;
   table: string;
   pagination?: PaginationParams;
@@ -2122,7 +2122,7 @@ export interface RowData {
 
 export const browseTableDataCmd = (params: BrowseTableParams) =>
   invoke<BrowseTableResponse>("browse_table_data", {
-    connection_id: params.connection_id,
+    connectionId: params.connectionId,
     database: params.database,
     table: params.table,
     pagination: params.pagination,
@@ -2130,56 +2130,45 @@ export const browseTableDataCmd = (params: BrowseTableParams) =>
     filters: params.filters,
   });
 
-export const getTableRowCountCmd = (
-  connection_id: string,
-  database: string,
-  table: string
-) => invoke<number>("get_table_row_count", { connection_id, database, table });
+export const getTableRowCountCmd = (connectionId: string, database: string, table: string) =>
+  invoke<number>("get_table_row_count", { connectionId, database, table });
 
-export const getTableMetadataCmd = (
-  connection_id: string,
-  database: string,
-  table: string
-) =>
-  invoke<TableMetadata>("get_table_metadata", { connection_id, database, table });
+export const getTableMetadataCmd = (connectionId: string, database: string, table: string) =>
+  invoke<TableMetadata>("get_table_metadata", { connectionId, database, table });
 
-export const insertTableRowCmd = (
-  connection_id: string,
-  database: string,
-  table: string,
-  row_data: RowData
-) => invoke<RowData>("insert_table_row", { connection_id, database, table, row_data });
+export const insertTableRowCmd = (connectionId: string, database: string, table: string, rowData: RowData) =>
+  invoke<RowData>("insert_table_row", { connectionId, database, table, rowData });
 
 export const updateTableRowCmd = (
-  connection_id: string,
+  connectionId: string,
   database: string,
   table: string,
-  primary_key_col: string,
-  primary_key_value: DataValue,
-  row_data: RowData
+  primaryKeyCol: string,
+  primaryKeyValue: DataValue,
+  rowData: RowData
 ) =>
   invoke<RowData>("update_table_row", {
-    connection_id,
+    connectionId,
     database,
     table,
-    primary_key_col,
-    primary_key_value,
-    row_data,
+    primaryKeyCol,
+    primaryKeyValue,
+    rowData,
   });
 
 export const deleteTableRowCmd = (
-  connection_id: string,
+  connectionId: string,
   database: string,
   table: string,
-  primary_key_col: string,
-  primary_key_value: DataValue
+  primaryKeyCol: string,
+  primaryKeyValue: DataValue
 ) =>
   invoke<void>("delete_table_row", {
-    connection_id,
+    connectionId,
     database,
     table,
-    primary_key_col,
-    primary_key_value,
+    primaryKeyCol,
+    primaryKeyValue,
   });
 
 // Transaction Management
