@@ -45,7 +45,7 @@ We implemented a complete Kubernetes Management UI following the existing archit
 ### Dependencies Added
 
 - **Frontend**: xterm, xterm-addon-fit, xterm-addon-web-links (terminal), @monaco-editor/react (YAML editor), react-chartjs-2, chart.js (metrics)
-- **Backend**: k8s-openapi with watch feature (for real watchers)
+- **Backend**: k8s-openapi with watch feature for live watcher streams
 
 ## Consequences
 
@@ -60,15 +60,13 @@ We implemented a complete Kubernetes Management UI following the existing archit
 ### Negative
 
 - Large dependency footprint (xterm, monaco-editor, chart.js)
-- Watcher implementation requires k8s-openapi with watch feature (future work)
 - Build size increased (~584 KB JS bundle)
 
-### Ongoing
+### Operational Notes
 
-- Metrics charts need actual data from backend
-- Terminal needs xterm dependencies for full functionality
-- YAML editor needs @monaco-editor/react for full functionality
-- Watchers need k8s-openapi watch feature for real-time updates
+- Metrics charts are backed by live cluster data
+- Terminal and YAML editor rely on their bundled frontend libraries
+- Watchers deliver real-time updates through the backend event bus
 
 ## References
 

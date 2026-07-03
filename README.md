@@ -6,6 +6,8 @@ A structured, AI-backed desktop tool for IT incident triage, 5-Whys root cause a
 
 Built with **Tauri 2** (Rust + WebView), **React 18**, **TypeScript**, and **SQLCipher AES-256** encrypted storage.
 
+**Current release line:** v3.0.x
+
 **CI status:** ![CI](http://172.0.0.29:3000/sarman/tftsr-devops_investigation/actions/workflows/test.yml/badge.svg) — all checks green (rustfmt · clippy · 64 Rust tests · tsc · vitest)
 
 ---
@@ -13,15 +15,15 @@ Built with **Tauri 2** (Rust + WebView), **React 18**, **TypeScript**, and **SQL
 ## Features
 
 - **5-Whys AI Triage** — Guided root cause analysis via AI chat, with auto-detection of why levels 1–5
-- **PII Sanitization** — Automatic detection and redaction of IPv4/IPv6, emails, tokens, passwords, SSNs, and more before any data leaves the machine
-- **Multi-Provider AI** — OpenAI, Anthropic Claude, Google Gemini, Mistral, and local [Ollama](https://ollama.com) (offline)
-- **Encrypted Database** — SQLCipher AES-256 encrypted SQLite; all issue history stays local
+- **PII Sanitization** — Automatic detection and redaction before any data leaves the machine
+- **Multi-Provider AI** — OpenAI-compatible, Anthropic, Gemini, Mistral, custom REST gateways, LiteLLM/Bedrock, and local [Ollama](https://ollama.com)
+- **Workflow Surfaces** — History/search, image attachments, integrations, shell execution, Kubernetes, Proxmox, database management, and MCP servers
+- **Encrypted Storage** — SQLCipher AES-256 for incident data plus AES-256-GCM for secrets
 - **RCA + Post-Mortem Generation** — Auto-populated Markdown templates, exportable to `.md` and `.pdf`
 - **Ollama Management** — Hardware detection, model recommendations, pull/delete models in-app
 - **Audit Trail** — Every external data send logged with SHA-256 hash
-- **Domain System Prompts** — Pre-built expert context for 8 IT domains (Linux, Windows, Network, Kubernetes, Databases, Virtualization, Hardware, Observability)
-- **Image Attachments** — Upload and manage image files with PII detection and mandatory user approval
-- **Integrations** *(v0.2, coming soon)* — Confluence, ServiceNow, Azure DevOps
+- **Domain System Prompts** — Pre-built expert context for 16 IT domains
+- **Integrations** — Confluence, ServiceNow, Azure DevOps
 
 ---
 
@@ -38,14 +40,22 @@ Built with **Tauri 2** (Rust + WebView), **React 18**, **TypeScript**, and **SQL
 
 | Domain | Coverage |
 |---|---|
-| Linux | RHEL/OEL, systemd, journald, SELinux, kernel panics |
-| Windows | Event IDs, WinRM, BSOD codes, Server 2019/2022 |
-| Network | Fortigate, Cisco IOS, Aruba AOS-CX, Nokia SR-OS, VoIP SIP/RTP |
-| Kubernetes | k3s, OpenShift, CrashLoopBackOff, OOMKill, etcd, Rancher |
-| Databases | PostgreSQL WAL, Redis AOF/RDB, RabbitMQ, MSSQL |
-| Virtualization | Proxmox VE/PBS, VDI sessions |
-| Hardware | HPE Synergy 12000, DL-20/320/360/380, iLO event logs |
-| Observability | Kibana/ECK, Elasticsearch shard failures |
+| Linux | RHEL/OEL, Debian/Ubuntu, systemd, journald, SELinux |
+| Windows | Event IDs, WinRM, AD, IIS, Server 2019/2022 |
+| Network | Fortigate, Cisco, Aruba, Nokia, VoIP SIP/RTP |
+| Kubernetes | k3s, RKE2, Rancher, OpenShift, Helm |
+| Databases | PostgreSQL, MSSQL, Redis, RabbitMQ, Patroni |
+| Virtualization | Proxmox VE/PBS, VMware, Hyper-V, KVM/QEMU |
+| Hardware | HPE, Dell, RAID, SMART, ECC, BIOS/firmware |
+| Observability | Grafana, Kibana, Prometheus, Beats, Zabbix |
+| Telephony | Asterisk, SBCs, SIP, RTP, VoIP |
+| Security / Vault | Vault, PKI, EDR, CIS hardening, secrets |
+| Public Safety | NENA, NG911, CTC, i3 services |
+| Application | Java, JVM, Spring, Tomcat, app server issues |
+| Automation / CI-CD | Ansible, Jenkins, Helm pipelines |
+| HPE Infrastructure | OneView, iLO, Synergy, DL servers |
+| Dell Hardware | iDRAC, RACADM, Lifecycle Controller |
+| Identity & Access | Keycloak, Boundary, SSSD, SSO |
 
 ---
 
@@ -220,20 +230,25 @@ For detailed setup including multiple AWS accounts and Claude Code integration, 
 ```
 tftsr/
 ├── src-tauri/src/
-│   ├── ai/           # AI provider clients (OpenAI, Anthropic, Gemini, Mistral, Ollama)
-│   ├── pii/          # PII detection + redaction engine
-│   ├── db/           # SQLCipher connection, migrations, models
-│   ├── ollama/       # Hardware detection, model recommendations, download manager
-│   ├── docs/         # RCA + post-mortem generators, PDF/MD exporters
-│   ├── integrations/ # Confluence, ServiceNow, Azure DevOps (v0.2 stubs)
+│   ├── ai/           # AI provider clients (OpenAI, Anthropic, Gemini, Mistral, Ollama, custom)
 │   ├── audit/        # Audit log writer
 │   ├── commands/     # Tauri IPC command handlers
+│   ├── database/     # Database management, query history, bookmarks
+│   ├── db/           # SQLCipher connection, migrations, models
+│   ├── docs/         # RCA + post-mortem generators, PDF/MD exporters
+│   ├── integrations/ # Confluence, ServiceNow, Azure DevOps
+│   ├── kube/         # Kubernetes clusters, resources, port forwards, events
+│   ├── mcp/          # MCP servers, tools, and resources
+│   ├── ollama/       # Hardware detection, model recommendations, download manager
+│   ├── proxmox/      # Proxmox cluster, VM, PBS, and resource management
+│   ├── remote/       # Remote desktop and SSH/RDP helpers
+│   ├── shell/        # Shell execution, approvals, kubeconfig handling
 │   ├── lib.rs        # App builder, plugin registration, command handler registration
-│   └── state.rs      # AppState (DB connection, settings)
+│   └── state.rs      # AppState (DB, settings, MCP, Proxmox, shell, remote state)
 ├── src/
-│   ├── pages/        # Dashboard, NewIssue, LogUpload, Triage, Resolution, RCA, Postmortem, History, Settings, Kubernetes
-│   ├── components/   # ChatWindow, TriageProgress, PiiDiffViewer, DocEditor, HardwareReport, ModelSelector, UI, Kubernetes (26 components)
-│   ├── stores/       # sessionStore, settingsStore (persisted), historyStore, kubernetesStore
+│   ├── pages/        # Dashboard, NewIssue, LogUpload, Triage, Resolution, RCA, Postmortem, History, Settings, Kubernetes, Proxmox, Database, Shell, MCP
+│   ├── components/   # ChatWindow, TriageProgress, PiiDiffViewer, DocEditor, HardwareReport, ModelSelector, UI, Kubernetes, Proxmox, Database
+│   ├── stores/       # sessionStore, settingsStore (persisted), historyStore, kubernetesStore, proxmoxStore
 │   ├── lib/          # tauriCommands.ts (typed IPC wrappers), domainPrompts.ts, eventBus.ts
 │   └── styles/       # Tailwind + CSS custom properties
 ├── tests/
@@ -334,20 +349,18 @@ Override with the `TRCAA_DATA_DIR` (or legacy `TRCAA_DATA_DIR`) environment vari
 
 ## Implementation Status
 
-| Phase | Description | Status |
-|---|---|---|
-| 1 | Scaffold & Foundation | ✅ Complete |
-| 2 | Security & Database Layer | ✅ Complete |
-| 3 | PII Sanitization Engine | ✅ Complete |
-| 4 | AI Provider Layer | ✅ Complete |
-| 5 | Ollama Integration | ✅ Complete |
-| 6 | Log Upload & Analysis | ✅ Complete |
-| 7 | 5-Whys Triage Engine | ✅ Complete |
-| 8 | RCA & Post-Mortem Generation | ✅ Complete |
-| 9 | History & Search | 🔲 Pending |
-| 10 | Integrations (Confluence, ServiceNow, ADO) | 🔲 v0.2 |
-| 11 | CI/CD Pipeline | ✅ Complete — Gitea Actions, all checks green |
-| 12 | Release Packaging | ✅ linux/amd64 · linux/arm64 (native) · windows/amd64 |
+| Area | Status |
+|---|---|
+| Core triage, PII, AI, RCA, post-mortem | Complete |
+| History and search | Complete |
+| Integrations | Complete |
+| Shell execution | Complete |
+| Kubernetes management | Complete |
+| Proxmox management | Complete |
+| Database management | Complete |
+| MCP servers | Complete |
+| CI/CD pipeline | Complete |
+| Release packaging | Complete |
 
 ---
 
