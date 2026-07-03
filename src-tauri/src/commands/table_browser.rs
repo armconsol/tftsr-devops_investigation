@@ -3,6 +3,7 @@
 
 use crate::db_drivers::types::{ColumnMetadata, DataValue, DatabaseType};
 use crate::state::AppState;
+use rusqlite::{params_from_iter, types::Value, types::ValueRef};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tauri::State;
@@ -101,47 +102,44 @@ pub async fn browse_table_data(
     let db_type = DatabaseType::parse(&db_type_str)
         .ok_or_else(|| format!("Unknown database type: {}", db_type_str))?;
 
+    let table_ident = sanitize_identifier(&table)?;
+
     // Build SQL query
     let mut where_clauses = Vec::new();
+    let mut filter_params: Vec<Value> = Vec::new();
 
     if let Some(filter_list) = &filters {
         for filter in filter_list {
+            let col_ident = sanitize_identifier(&filter.column)?;
             match filter.operator.as_str() {
-                "=" => where_clauses.push(format!(
-                    "`{}` = '{}'",
-                    filter.column,
-                    filter.value.replace('\'', "''")
-                )),
-                "!=" => where_clauses.push(format!(
-                    "`{}` != '{}'",
-                    filter.column,
-                    filter.value.replace('\'', "''")
-                )),
-                ">" => where_clauses.push(format!(
-                    "`{}` > '{}'",
-                    filter.column,
-                    filter.value.replace('\'', "''")
-                )),
-                "<" => where_clauses.push(format!(
-                    "`{}` < '{}'",
-                    filter.column,
-                    filter.value.replace('\'', "''")
-                )),
-                ">=" => where_clauses.push(format!(
-                    "`{}` >= '{}'",
-                    filter.column,
-                    filter.value.replace('\'', "''")
-                )),
-                "<=" => where_clauses.push(format!(
-                    "`{}` <= '{}'",
-                    filter.column,
-                    filter.value.replace('\'', "''")
-                )),
-                "LIKE" => where_clauses.push(format!(
-                    "`{}` LIKE '%{}%'",
-                    filter.column,
-                    filter.value.replace('\'', "''")
-                )),
+                "=" => {
+                    where_clauses.push(format!("{col_ident} = ?"));
+                    filter_params.push(Value::Text(filter.value.clone()));
+                }
+                "!=" => {
+                    where_clauses.push(format!("{col_ident} != ?"));
+                    filter_params.push(Value::Text(filter.value.clone()));
+                }
+                ">" => {
+                    where_clauses.push(format!("{col_ident} > ?"));
+                    filter_params.push(Value::Text(filter.value.clone()));
+                }
+                "<" => {
+                    where_clauses.push(format!("{col_ident} < ?"));
+                    filter_params.push(Value::Text(filter.value.clone()));
+                }
+                ">=" => {
+                    where_clauses.push(format!("{col_ident} >= ?"));
+                    filter_params.push(Value::Text(filter.value.clone()));
+                }
+                "<=" => {
+                    where_clauses.push(format!("{col_ident} <= ?"));
+                    filter_params.push(Value::Text(filter.value.clone()));
+                }
+                "LIKE" => {
+                    where_clauses.push(format!("{col_ident} LIKE ?"));
+                    filter_params.push(Value::Text(format!("%{}%", filter.value)));
+                }
                 _ => return Err(format!("Unsupported operator: {}", filter.operator)),
             }
         }
@@ -156,11 +154,11 @@ pub async fn browse_table_data(
     // Count total rows
     let count_query = match db_type {
         DatabaseType::PostgreSQL | DatabaseType::MySQL => {
-            format!("SELECT COUNT(*) as count FROM `{}`{}", table, where_clause)
+            format!("SELECT COUNT(*) as count FROM {table_ident}{where_clause}")
         }
         DatabaseType::Redis => {
             // Redis: count keys
-            format!("SELECT COUNT(*) as count FROM `{}`", table)
+            format!("SELECT COUNT(*) as count FROM {table_ident}")
         }
         _ => {
             return Err(format!(
@@ -172,35 +170,34 @@ pub async fn browse_table_data(
 
     // Get total count
     let total_count: i64 = db
-        .query_row(&count_query, [], |row| row.get(0))
+        .query_row(
+            &count_query,
+            params_from_iter(filter_params.iter()),
+            |row| row.get(0),
+        )
         .unwrap_or(0);
 
     let total_pages = (total_count as usize).div_ceil(pagination.limit);
 
     // Build main query with pagination
     let order_by = if let Some(sort_params) = &sort {
+        let sort_col = sanitize_identifier(&sort_params.column)?;
         let direction = if sort_params.direction.to_uppercase() == "DESC" {
             "DESC"
         } else {
             "ASC"
         };
-        format!(" ORDER BY `{}` {}", sort_params.column, direction)
+        format!(" ORDER BY {sort_col} {direction}")
     } else {
         String::new()
     };
 
     let query = match db_type {
         DatabaseType::PostgreSQL | DatabaseType::MySQL => {
-            format!(
-                "SELECT * FROM `{}`{}{} LIMIT {} OFFSET {}",
-                table, where_clause, order_by, pagination.limit, pagination.offset
-            )
+            format!("SELECT * FROM {table_ident}{where_clause}{order_by} LIMIT ? OFFSET ?")
         }
         DatabaseType::Redis => {
-            format!(
-                "SELECT * FROM `{}` LIMIT {} OFFSET {}",
-                table, pagination.limit, pagination.offset
-            )
+            format!("SELECT * FROM {table_ident} LIMIT ? OFFSET ?")
         }
         _ => {
             return Err(format!(
@@ -221,12 +218,27 @@ pub async fn browse_table_data(
         .map(|s| s.to_string())
         .collect::<Vec<_>>();
 
+    let query_params: Vec<Value> = filter_params
+        .iter()
+        .cloned()
+        .chain([
+            Value::Integer(pagination.limit as i64),
+            Value::Integer(pagination.offset as i64),
+        ])
+        .collect();
+
     let rows: Vec<TableRow> = stmt
-        .query_map([], |row| {
+        .query_map(params_from_iter(query_params.iter()), |row| {
             let mut row_map = HashMap::new();
             for (idx, col_name) in column_names.iter().enumerate() {
-                let value: String = row.get::<_, String>(idx).unwrap_or_default();
-                row_map.insert(col_name.clone(), DataValue::String(value));
+                let value = match row.get_ref(idx)? {
+                    ValueRef::Null => DataValue::Null,
+                    ValueRef::Integer(i) => DataValue::Integer(i),
+                    ValueRef::Real(f) => DataValue::Float(f),
+                    ValueRef::Text(t) => DataValue::String(String::from_utf8_lossy(t).to_string()),
+                    ValueRef::Blob(b) => DataValue::Bytes(b.to_vec()),
+                };
+                row_map.insert(col_name.clone(), value);
             }
             Ok(row_map)
         })
@@ -258,7 +270,8 @@ pub async fn get_table_row_count(
         .lock()
         .map_err(|e| format!("Failed to lock database: {}", e))?;
 
-    let query = format!("SELECT COUNT(*) as count FROM `{}`", table);
+    let table_ident = sanitize_identifier(&table)?;
+    let query = format!("SELECT COUNT(*) as count FROM {table_ident}");
     db.query_row(&query, [], |row| row.get(0))
         .map_err(|e| format!("Failed to count rows: {}", e))
 }
@@ -276,8 +289,9 @@ pub async fn get_table_metadata(
         .lock()
         .map_err(|e| format!("Failed to lock database: {}", e))?;
 
+    let table_ident = sanitize_identifier(&table)?;
     // Get column information using SQLite PRAGMA
-    let pragma_query = format!("PRAGMA table_info(`{}`)", table);
+    let pragma_query = format!("PRAGMA table_info({table_ident})");
     let mut stmt = db
         .prepare(&pragma_query)
         .map_err(|e| format!("Failed to prepare pragma: {}", e))?;
@@ -296,7 +310,7 @@ pub async fn get_table_metadata(
         .map_err(|e| format!("Failed to collect columns: {}", e))?;
 
     let row_count = db
-        .query_row(&format!("SELECT COUNT(*) FROM `{}`", table), [], |row| {
+        .query_row(&format!("SELECT COUNT(*) FROM {table_ident}"), [], |row| {
             row.get(0)
         })
         .unwrap_or(0);
@@ -333,46 +347,31 @@ pub async fn insert_table_row(
         .lock()
         .map_err(|e| format!("Failed to lock database: {}", e))?;
 
+    let table_ident = sanitize_identifier(&table)?;
     let columns: Vec<String> = row_data.values.keys().cloned().collect();
-    let placeholders = vec!["?"; columns.len()].join(",");
+    let mut ordered_columns = columns;
+    ordered_columns.sort();
+    let placeholders = vec!["?"; ordered_columns.len()].join(",");
+    let quoted_columns = ordered_columns
+        .iter()
+        .map(|c| sanitize_identifier(c))
+        .collect::<Result<Vec<_>, _>>()?;
 
     let insert_query = format!(
-        "INSERT INTO `{}` ({}) VALUES ({})",
-        table,
-        columns
-            .iter()
-            .map(|c| format!("`{}`", c))
-            .collect::<Vec<_>>()
-            .join(","),
+        "INSERT INTO {table_ident} ({}) VALUES ({})",
+        quoted_columns.join(","),
         placeholders
     );
 
     // Build parameters
-    let mut params: Vec<String> = Vec::new();
-    for col in &columns {
+    let mut params: Vec<Value> = Vec::new();
+    for col in &ordered_columns {
         if let Some(val) = row_data.values.get(col) {
-            params.push(format!(
-                "'{}'",
-                match val {
-                    DataValue::String(s) => s.replace('\'', "''"),
-                    DataValue::Integer(i) => i.to_string(),
-                    DataValue::Float(f) => f.to_string(),
-                    DataValue::Boolean(b) => if *b { "1" } else { "0" }.to_string(),
-                    DataValue::Null => "NULL".to_string(),
-                    _ => return Err(format!("Unsupported value type for column: {}", col)),
-                }
-            ));
+            params.push(data_value_to_sql_value(val)?);
         }
     }
 
-    let final_query = insert_query.replace("?", "{}");
-    let formatted_query = if !params.is_empty() {
-        format_args_into_string(&final_query, &params)
-    } else {
-        final_query
-    };
-
-    db.execute(&formatted_query, [])
+    db.execute(&insert_query, params_from_iter(params.iter()))
         .map_err(|e| format!("Failed to insert row: {}", e))?;
 
     Ok(row_data)
@@ -393,55 +392,39 @@ pub async fn update_table_row(
         return Err("No values provided for update".to_string());
     }
 
+    let table_ident = sanitize_identifier(&table)?;
+    let pk_ident = sanitize_identifier(&primary_key_col)?;
     let db = state
         .db
         .lock()
         .map_err(|e| format!("Failed to lock database: {}", e))?;
 
-    let set_clauses: Vec<String> = row_data
-        .values
-        .keys()
-        .enumerate()
-        .map(|(i, col)| format!("`{}` = ?{}", col, i + 1))
-        .collect();
+    let mut columns: Vec<String> = row_data.values.keys().cloned().collect();
+    columns.sort();
+    let set_clauses: Vec<String> = columns
+        .iter()
+        .map(|col| sanitize_identifier(col).map(|ident| format!("{ident} = ?")))
+        .collect::<Result<Vec<_>, _>>()?;
+
+    if set_clauses.is_empty() {
+        return Err("No valid columns provided for update".to_string());
+    }
 
     let update_query = format!(
-        "UPDATE `{}` SET {} WHERE `{}` = ?{}",
-        table,
+        "UPDATE {table_ident} SET {} WHERE {pk_ident} = ?",
         set_clauses.join(","),
-        primary_key_col,
-        row_data.values.len() + 1
     );
 
-    // Build parameter string - simplified for now
-    let mut params: Vec<String> = Vec::new();
-    for col in row_data.values.keys() {
-        if let Some(val) = row_data.values.get(col) {
-            params.push(match val {
-                DataValue::String(s) => format!("'{}'", s.replace('\'', "''")),
-                DataValue::Integer(i) => i.to_string(),
-                DataValue::Float(f) => f.to_string(),
-                DataValue::Boolean(b) => if *b { "1" } else { "0" }.to_string(),
-                DataValue::Null => "NULL".to_string(),
-                _ => return Err(format!("Unsupported value type for column: {}", col)),
-            });
+    let mut params: Vec<Value> = Vec::new();
+    for col in columns {
+        if let Some(val) = row_data.values.get(&col) {
+            params.push(data_value_to_sql_value(val)?);
         }
     }
 
-    params.push(match primary_key_value {
-        DataValue::String(s) => format!("'{}'", s.replace('\'', "''")),
-        DataValue::Integer(i) => i.to_string(),
-        DataValue::Float(f) => f.to_string(),
-        _ => return Err("Unsupported primary key value type".to_string()),
-    });
+    params.push(data_value_to_sql_value(&primary_key_value)?);
 
-    // Simple parameter replacement - in production use proper parameterized queries
-    let mut final_query = update_query.clone();
-    for (i, param) in params.iter().enumerate() {
-        final_query = final_query.replacen(&format!("?{}", i + 1), param, 1);
-    }
-
-    db.execute(&final_query, [])
+    db.execute(&update_query, params_from_iter(params.iter()))
         .map_err(|e| format!("Failed to update row: {}", e))?;
 
     Ok(row_data)
@@ -457,35 +440,50 @@ pub async fn delete_table_row(
     primary_key_value: DataValue,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
+    let table_ident = sanitize_identifier(&table)?;
+    let pk_ident = sanitize_identifier(&primary_key_col)?;
     let db = state
         .db
         .lock()
         .map_err(|e| format!("Failed to lock database: {}", e))?;
 
-    let delete_query = format!("DELETE FROM `{}` WHERE `{}` = ?", table, primary_key_col);
+    let delete_query = format!("DELETE FROM {table_ident} WHERE {pk_ident} = ?");
+    let pk_value = data_value_to_sql_value(&primary_key_value)?;
 
-    let pk_str = match primary_key_value {
-        DataValue::String(s) => format!("'{}'", s.replace('\'', "''")),
-        DataValue::Integer(i) => i.to_string(),
-        DataValue::Float(f) => f.to_string(),
-        _ => return Err("Unsupported primary key value type".to_string()),
-    };
-
-    let final_query = delete_query.replace("?", &pk_str);
-
-    db.execute(&final_query, [])
+    db.execute(&delete_query, params_from_iter([&pk_value]))
         .map_err(|e| format!("Failed to delete row: {}", e))?;
 
     Ok(())
 }
 
-// Helper function for string formatting
-fn format_args_into_string(template: &str, args: &[String]) -> String {
-    let mut result = template.to_string();
-    for arg in args {
-        result = result.replacen("{}", arg, 1);
+fn sanitize_identifier(identifier: &str) -> Result<String, String> {
+    if identifier.is_empty() {
+        return Err("Identifier cannot be empty".to_string());
     }
-    result
+
+    if !identifier
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '_')
+    {
+        return Err(format!("Invalid identifier: {identifier}"));
+    }
+
+    Ok(format!("`{identifier}`"))
+}
+
+fn data_value_to_sql_value(value: &DataValue) -> Result<Value, String> {
+    match value {
+        DataValue::Null => Ok(Value::Null),
+        DataValue::Boolean(v) => Ok(Value::Integer(if *v { 1 } else { 0 })),
+        DataValue::Integer(v) => Ok(Value::Integer(*v)),
+        DataValue::Float(v) => Ok(Value::Real(*v)),
+        DataValue::String(v) => Ok(Value::Text(v.clone())),
+        DataValue::Bytes(v) => Ok(Value::Blob(v.clone())),
+        DataValue::Date(v) => Ok(Value::Text(v.clone())),
+        DataValue::DateTime(v) => Ok(Value::Text(v.clone())),
+        DataValue::Json(v) => Ok(Value::Text(v.to_string())),
+        DataValue::Array(_) => Err("Array values are not supported for this operation".to_string()),
+    }
 }
 
 #[cfg(test)]
@@ -534,10 +532,14 @@ mod tests {
     }
 
     #[test]
-    fn test_format_args_into_string() {
-        let template = "SELECT * FROM {} WHERE id = {}";
-        let args = vec!["users".to_string(), "123".to_string()];
-        let result = format_args_into_string(template, &args);
-        assert_eq!(result, "SELECT * FROM users WHERE id = 123");
+    fn test_sanitize_identifier() {
+        assert_eq!(sanitize_identifier("users").unwrap(), "`users`");
+        assert!(sanitize_identifier("users-table").is_err());
+    }
+
+    #[test]
+    fn test_data_value_to_sql_value() {
+        let value = data_value_to_sql_value(&DataValue::Integer(42)).unwrap();
+        assert_eq!(value, Value::Integer(42));
     }
 }
