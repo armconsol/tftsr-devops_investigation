@@ -249,6 +249,7 @@ mod tests {
             username: "cassandra".to_string(),
             password: "cassandra".to_string(),
             ssl_config: None,
+            ssh_tunnel_config: None,
             options: std::collections::HashMap::new(),
         };
 
@@ -268,6 +269,7 @@ mod tests {
             username: String::new(),
             password: String::new(),
             ssl_config: None,
+            ssh_tunnel_config: None,
             options: std::collections::HashMap::new(),
         };
 

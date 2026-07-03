@@ -479,6 +479,7 @@ mod tests {
             username: "postgres".to_string(),
             password: "password".to_string(),
             ssl_config: None,
+            ssh_tunnel_config: None,
             options: HashMap::new(),
         };
 

@@ -75,7 +75,7 @@ pub struct RowData {
 #[tauri::command]
 pub async fn browse_table_data(
     connection_id: String,
-    database: String,
+    _database: String,
     table: String,
     pagination: Option<PaginationParams>,
     sort: Option<SortParams>,
@@ -441,7 +441,7 @@ pub async fn delete_table_row(
 // Helper function for string formatting
 fn format_args_into_string(template: &str, args: &[String]) -> String {
     let mut result = template.to_string();
-    for (i, arg) in args.iter().enumerate() {
+    for (_i, arg) in args.iter().enumerate() {
         result = result.replacen("{}", arg, 1);
     }
     result

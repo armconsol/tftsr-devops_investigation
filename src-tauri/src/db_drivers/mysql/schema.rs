@@ -426,6 +426,7 @@ mod tests {
             username: "root".to_string(),
             password: "password".to_string(),
             ssl_config: None,
+            ssh_tunnel_config: None,
             options: HashMap::new(),
         };
 
