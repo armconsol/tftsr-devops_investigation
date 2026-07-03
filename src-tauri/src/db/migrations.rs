@@ -515,6 +515,57 @@ pub fn run_migrations(conn: &Connection) -> anyhow::Result<()> {
                 updated_at TEXT NOT NULL DEFAULT (datetime('now'))
             );",
         ),
+        (
+            "038_create_database_connections",
+            "CREATE TABLE IF NOT EXISTS database_connections (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                db_type TEXT NOT NULL,
+                host TEXT NOT NULL,
+                port INTEGER NOT NULL,
+                database_name TEXT,
+                username TEXT,
+                encrypted_password TEXT,
+                ssl_enabled INTEGER DEFAULT 0,
+                ssl_ca_cert_path TEXT,
+                ssl_client_cert_path TEXT,
+                ssl_client_key_path TEXT,
+                connection_options TEXT,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+            CREATE INDEX IF NOT EXISTS idx_db_connections_type ON database_connections(db_type);",
+        ),
+        (
+            "039_create_query_history",
+            "CREATE TABLE IF NOT EXISTS query_history (
+                id TEXT PRIMARY KEY,
+                connection_id TEXT NOT NULL,
+                query_text TEXT NOT NULL,
+                row_count INTEGER,
+                execution_time_ms INTEGER,
+                status TEXT NOT NULL,
+                error_message TEXT,
+                executed_at TEXT NOT NULL DEFAULT (datetime('now')),
+                FOREIGN KEY (connection_id) REFERENCES database_connections(id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_query_history_connection ON query_history(connection_id);
+            CREATE INDEX IF NOT EXISTS idx_query_history_executed ON query_history(executed_at DESC);",
+        ),
+        (
+            "040_create_query_bookmarks",
+            "CREATE TABLE IF NOT EXISTS query_bookmarks (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                query_text TEXT NOT NULL,
+                connection_id TEXT,
+                tags TEXT,
+                description TEXT,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                FOREIGN KEY (connection_id) REFERENCES database_connections(id) ON DELETE SET NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_query_bookmarks_connection ON query_bookmarks(connection_id);",
+        ),
     ];
 
     for (name, sql) in migrations {

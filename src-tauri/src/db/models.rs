@@ -860,3 +860,96 @@ pub struct RemoteCredentialsUpdate {
     pub ssh_key: Option<String>,
     pub ssh_key_passphrase: Option<String>,
 }
+
+// ─── Database Management ────────────────────────────────────────────────────
+
+/// Represents a database connection configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DatabaseConnection {
+    pub id: String,
+    pub name: String,
+    pub db_type: String,
+    pub host: String,
+    pub port: u16,
+    pub database_name: Option<String>,
+    pub username: String,
+    pub ssl_enabled: bool,
+    pub ssl_ca_cert_path: Option<String>,
+    pub ssl_client_cert_path: Option<String>,
+    pub ssl_client_key_path: Option<String>,
+    pub connection_options: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+impl DatabaseConnection {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        name: String,
+        db_type: String,
+        host: String,
+        port: u16,
+        database_name: Option<String>,
+        username: String,
+        ssl_enabled: bool,
+    ) -> Self {
+        let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+        DatabaseConnection {
+            id: Uuid::now_v7().to_string(),
+            name,
+            db_type,
+            host,
+            port,
+            database_name,
+            username,
+            ssl_enabled,
+            ssl_ca_cert_path: None,
+            ssl_client_cert_path: None,
+            ssl_client_key_path: None,
+            connection_options: None,
+            created_at: now.clone(),
+            updated_at: now,
+        }
+    }
+}
+
+/// Connection test result
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConnectionTestResult {
+    pub success: bool,
+    pub message: String,
+    pub latency_ms: Option<u64>,
+}
+
+/// Query execution result with metadata
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QueryExecutionResult {
+    pub query_result: crate::db_drivers::types::QueryResult,
+    pub execution_time_ms: u64,
+    pub row_count: usize,
+}
+
+/// Query history entry
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QueryHistory {
+    pub id: String,
+    pub connection_id: String,
+    pub query_text: String,
+    pub row_count: Option<i64>,
+    pub execution_time_ms: Option<i64>,
+    pub status: String,
+    pub error_message: Option<String>,
+    pub executed_at: String,
+}
+
+/// Query bookmark
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QueryBookmark {
+    pub id: String,
+    pub name: String,
+    pub query_text: String,
+    pub connection_id: Option<String>,
+    pub tags: Option<String>,
+    pub description: Option<String>,
+    pub created_at: String,
+}

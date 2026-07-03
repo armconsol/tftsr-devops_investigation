@@ -30,3 +30,4 @@ docs/images/user-guide/
 .logs/
 *.log
 plans/
+*.backup

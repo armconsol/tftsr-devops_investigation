@@ -145,7 +145,7 @@ export interface LogFile {
   id: string;
   issue_id: string;
   file_name: string;
-  file_path: string;
+  filePath: string;
   file_size: number;
   mime_type: string;
   content_hash: string;
@@ -157,7 +157,7 @@ export interface ImageAttachment {
   id: string;
   issue_id: string;
   file_name: string;
-  file_path: string;
+  filePath: string;
   file_size: number;
   mime_type: string;
   upload_hash: string;
@@ -670,7 +670,7 @@ export interface LogFileSummary {
   issue_id: string;
   issue_title: string;
   file_name: string;
-  file_path: string;
+  filePath: string;
   file_size: number;
   mime_type: string;
   content_hash: string;
@@ -683,7 +683,7 @@ export interface ImageAttachmentSummary {
   issue_id: string;
   issue_title: string;
   file_name: string;
-  file_path: string;
+  filePath: string;
   file_size: number;
   mime_type: string;
   upload_hash: string;
@@ -1710,7 +1710,7 @@ export interface RemoteConnectionUpdate {
 
 export interface RemoteCredentials {
   id: string;
-  connection_id: string;
+  connectionId: string;
   rdp_password_encrypted?: string;
   ssh_password_encrypted?: string;
   ssh_key_encrypted?: string;
@@ -1761,7 +1761,7 @@ export const deleteRemoteConnectionCmd = (connectionId: string) =>
 
 export interface RdpSession {
   id: string;
-  connection_id: string;
+  connectionId: string;
   hostname: string;
   port: number;
   username: string;
@@ -1811,3 +1811,327 @@ export const getRdpDiagnostics = (sessionId: string) =>
 
 export const getRemoteConnections = (filter?: RemoteConnectionFilter) =>
   listRemoteConnectionsCmd(filter);
+
+// ─── Database Management Commands ─────────────────────────────────────────────
+
+export interface DatabaseConnection {
+  id: string;
+  name: string;
+  db_type: string;
+  host: string;
+  port: number;
+  database_name?: string;
+  username: string;
+  ssl_enabled: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ConnectionTestResult {
+  success: boolean;
+  message: string;
+  latency_ms: number;
+}
+
+export interface QueryResult {
+  columns: Array<{
+    name: string;
+    data_type: string;
+    nullable: boolean;
+    primary_key: boolean;
+  }>;
+  rows: any[][];
+  total_rows: number;
+  execution_time_ms: number;
+}
+
+export interface QueryExecutionResult extends QueryResult {
+  page: number;
+  page_size: number;
+}
+
+export interface Schema {
+  database_name: string;
+  tables: Table[];
+}
+
+export interface Table {
+  name: string;
+  columns: Column[];
+  indexes: Index[];
+  foreign_keys: ForeignKey[];
+}
+
+export interface Column {
+  name: string;
+  data_type: string;
+  nullable: boolean;
+  primary_key: boolean;
+  default_value?: string;
+}
+
+export interface Index {
+  name: string;
+  columns: string[];
+  is_unique: boolean;
+}
+
+export interface ForeignKey {
+  name: string;
+  from_column: string;
+  to_table: string;
+  to_column: string;
+}
+
+export interface QueryHistory {
+  id: string;
+  connectionId: string;
+  queryText: string;
+  row_count: number | null;
+  execution_time_ms: number | null;
+  status: string;
+  error_message: string | null;
+  executed_at: string;
+}
+
+export interface QueryBookmark {
+  id: string;
+  name: string;
+  queryText: string;
+  connectionId: string | null;
+  tags: string | null;
+  description: string | null;
+  created_at: string;
+}
+
+export interface ERDiagram {
+  tables: Array<{
+    name: string;
+    columns: Column[];
+    position?: { x: number; y: number };
+  }>;
+  relationships: Array<{
+    from_table: string;
+    from_column: string;
+    to_table: string;
+    to_column: string;
+  }>;
+}
+
+export interface ImportResult {
+  rows_imported: number;
+  rows_failed: number;
+  errors: string[];
+}
+
+// Connection Management
+export const createDatabaseConnectionCmd = (params: {
+  name: string;
+  db_type: string;
+  host: string;
+  port: number;
+  database_name?: string;
+  username: string;
+  password: string;
+  ssl_enabled: boolean;
+  ssl_ca_cert_path?: string;
+  ssl_client_cert_path?: string;
+  ssl_client_key_path?: string;
+  connection_options?: string;
+}) => invoke<DatabaseConnection>("create_database_connection", { params });
+
+export const updateDatabaseConnectionCmd = (params: {
+  id: string;
+  name?: string;
+  password?: string;
+  ssl_enabled?: boolean;
+  ssl_ca_cert_path?: string;
+  ssl_client_cert_path?: string;
+  ssl_client_key_path?: string;
+  connection_options?: string;
+}) => invoke<DatabaseConnection>("update_database_connection", { params });
+
+export const deleteDatabaseConnectionCmd = (id: string) =>
+  invoke<void>("delete_database_connection", { id });
+
+export const listDatabaseConnectionsCmd = () =>
+  invoke<DatabaseConnection[]>("list_database_connections");
+
+export const testDatabaseConnectionCmd = (connectionId: string) =>
+  invoke<ConnectionTestResult>("test_database_connection", { connectionId });
+
+// Query Execution
+export const executeDatabaseQueryCmd = (
+  connectionId: string,
+  query: string,
+  page: number,
+  pageSize: number
+) =>
+  invoke<QueryExecutionResult>("execute_database_query", {
+    connectionId,
+    query,
+    page,
+    pageSize,
+  });
+
+export const getDatabasesCmd = (connectionId: string) =>
+  invoke<string[]>("get_databases", { connectionId });
+
+export const getSchemaCmd = (connectionId: string, database: string) =>
+  invoke<Schema>("get_schema", { connectionId, database });
+
+export const getTablesCmd = (connectionId: string, database: string) =>
+  invoke<string[]>("get_tables", { connectionId, database });
+
+export const getTableSchemaCmd = (
+  connectionId: string,
+  database: string,
+  table: string
+) =>
+  invoke<Table>("get_table_schema", { connectionId, database, table });
+
+// Transaction Management
+export const beginTransactionCmd = (connectionId: string) =>
+  invoke<string>("begin_transaction", { connectionId });
+
+export const commitTransactionCmd = (connectionId: string, transactionId: string) =>
+  invoke<void>("commit_transaction", { connectionId, transactionId });
+
+export const rollbackTransactionCmd = (connectionId: string, transactionId: string) =>
+  invoke<void>("rollback_transaction", { connectionId, transactionId });
+
+// Query History
+export const getQueryHistoryCmd = (connectionId: string, limit: number) =>
+  invoke<QueryHistory[]>("get_query_history", { connectionId, limit });
+
+export const searchQueryHistoryCmd = (
+  connectionId: string,
+  searchTerm: string,
+  limit: number
+) =>
+  invoke<QueryHistory[]>("search_query_history", {
+    connectionId,
+    searchTerm,
+    limit,
+  });
+
+// Query Bookmarks
+export const createQueryBookmarkCmd = (params: {
+  name: string;
+  queryText: string;
+  connectionId?: string;
+  tags?: string;
+  description?: string;
+}) => invoke<QueryBookmark>("create_query_bookmark", params);
+
+export const listQueryBookmarksCmd = (connectionId?: string) =>
+  invoke<QueryBookmark[]>("list_query_bookmarks", { connectionId });
+
+export const deleteQueryBookmarkCmd = (id: string) =>
+  invoke<void>("delete_query_bookmark", { id });
+
+// Import/Export
+export const importCsvDataCmd = (
+  connectionId: string,
+  filePath: string,
+  targetTable: string,
+  columnMappings: Array<{ sourceColumn: string; targetColumn: string }>
+) =>
+  invoke<ImportResult>("import_csv_data", {
+    connectionId,
+    filePath,
+    targetTable,
+    columnMappings,
+  });
+
+export const importJsonDataCmd = (
+  connectionId: string,
+  filePath: string,
+  targetTable: string,
+  columnMappings: Array<{ sourceColumn: string; targetColumn: string }>
+) =>
+  invoke<ImportResult>("import_json_data", {
+    connectionId,
+    filePath,
+    targetTable,
+    columnMappings,
+  });
+
+export const exportQueryResultsCmd = (
+  results: QueryResult,
+  filePath: string,
+  format: string
+) =>
+  invoke<void>("export_query_results", { results, filePath, format });
+
+export const previewCsvFileCmd = (filePath: string, limit: number) =>
+  invoke<{
+    columns: string[];
+    rows: any[][];
+    totalRows: number;
+  }>("preview_csv_file", { filePath, limit });
+
+export const previewJsonFileCmd = (filePath: string, limit: number) =>
+  invoke<{
+    columns: string[];
+    rows: any[][];
+    totalRows: number;
+  }>("preview_json_file", { filePath, limit });
+
+// ER Diagram
+export const generateErDiagramCmd = (connectionId: string, database: string) =>
+  invoke<ERDiagram>("generate_er_diagram", { connectionId, database });
+
+// ─── Table Row Updates (Inline CRUD) ────────────────────────────────────────
+
+export interface UpdateResult {
+  rows_updated: number;
+  rows_failed: number;
+  errors: string[];
+}
+
+export interface RowUpdate {
+  primary_keys: Record<string, unknown>;
+  column_updates: Record<string, unknown>;
+}
+
+/**
+ * Update rows in a database table.
+ * `updates` is an array of objects with `primary_keys` and `column_updates`.
+ */
+export const updateTableRowsCmd = (
+  connectionId: string,
+  database: string,
+  table_name: string,
+  updates: RowUpdate[]
+) =>
+  invoke<UpdateResult>("update_table_rows", {
+    connectionId: connectionId,
+    database,
+    tableName: table_name,
+    updates,
+  });
+
+// ─── Query Execution Plan (EXPLAIN) ─────────────────────────────────────────
+
+export interface ExplainNode {
+  node_type: string;
+  relation_name?: string | null;
+  index_name?: string | null;
+  cost?: number | null;
+  rows?: number | null;
+  actual_time_ms?: number | null;
+  extra?: string | null;
+  children: ExplainNode[];
+}
+
+export interface ExplainResult {
+  database_type: string;
+  plan: ExplainNode | null;
+  total_cost?: number | null;
+  execution_time_ms?: number | null;
+  raw_output: string;
+}
+
+export const explainQueryCmd = (connectionId: string, query: string) =>
+  invoke<ExplainResult>("explain_query", { connectionId: connectionId, query });
