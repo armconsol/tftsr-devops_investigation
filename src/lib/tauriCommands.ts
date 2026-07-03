@@ -1944,6 +1944,14 @@ export const createDatabaseConnectionCmd = (params: {
   ssl_client_cert_path?: string;
   ssl_client_key_path?: string;
   connection_options?: string;
+  ssh_enabled?: boolean;
+  ssh_hostname?: string;
+  ssh_port?: number;
+  ssh_username?: string;
+  ssh_auth_method?: 'password' | 'key';
+  ssh_password?: string;
+  ssh_private_key?: string;
+  ssh_key_passphrase?: string;
 }) => invoke<DatabaseConnection>("create_database_connection", { params });
 
 export const updateDatabaseConnectionCmd = (params: {
@@ -1955,6 +1963,14 @@ export const updateDatabaseConnectionCmd = (params: {
   ssl_client_cert_path?: string;
   ssl_client_key_path?: string;
   connection_options?: string;
+  ssh_enabled?: boolean;
+  ssh_hostname?: string;
+  ssh_port?: number;
+  ssh_username?: string;
+  ssh_auth_method?: 'password' | 'key';
+  ssh_password?: string;
+  ssh_private_key?: string;
+  ssh_key_passphrase?: string;
 }) => invoke<DatabaseConnection>("update_database_connection", { params });
 
 export const deleteDatabaseConnectionCmd = (id: string) =>
@@ -1973,6 +1989,9 @@ export interface DbSshTunnelConfig {
   ssh_port?: number;
   ssh_username?: string;
   ssh_auth_method?: 'password' | 'key';
+  ssh_password?: string;
+  ssh_private_key?: string;
+  ssh_key_passphrase?: string;
 }
 
 export const establishDbSshTunnelCmd = (
@@ -1980,14 +1999,22 @@ export const establishDbSshTunnelCmd = (
   ssh_hostname: string,
   ssh_port: number,
   ssh_username: string,
-  ssh_auth_method: 'password' | 'key'
+  ssh_auth_method: 'password' | 'key',
+  ssh_password?: string,
+  ssh_private_key?: string,
+  ssh_key_passphrase?: string
 ) =>
   invoke<ConnectionTestResult>("establish_db_ssh_tunnel", {
-    connection_id,
-    ssh_hostname,
-    ssh_port,
-    ssh_username,
-    ssh_auth_method,
+    params: {
+      connection_id,
+      ssh_hostname,
+      ssh_port,
+      ssh_username,
+      ssh_auth_method,
+      ssh_password,
+      ssh_private_key,
+      ssh_key_passphrase,
+    },
   });
 
 export const verifyDbSshTunnelCmd = (connection_id: string) =>
@@ -2077,7 +2104,7 @@ export interface SortParams {
 export interface FilterCondition {
   column: string;
   operator: '=' | '!=' | '>' | '<' | '>=' | '<=' | 'LIKE';
-  value: string;
+  value: string | number | boolean;
 }
 
 export interface BrowseTableParams {

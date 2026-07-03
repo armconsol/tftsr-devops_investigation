@@ -92,7 +92,10 @@ export function ConnectionManager() {
       data.ssh_hostname || '',
       data.ssh_port || 22,
       data.ssh_username || '',
-      data.ssh_auth_method || 'password'
+      data.ssh_auth_method || 'password',
+      data.ssh_auth_method === 'password' ? data.ssh_password : undefined,
+      data.ssh_auth_method === 'key' ? data.ssh_private_key : undefined,
+      data.ssh_auth_method === 'key' ? data.ssh_key_passphrase : undefined
     );
 
     if (!result.success) {

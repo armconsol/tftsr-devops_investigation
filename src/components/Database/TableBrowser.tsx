@@ -67,7 +67,11 @@ export function TableBrowser({ connectionId, database, table }: TableBrowserProp
   const loadMetadata = useCallback(async () => {
     const md = await getTableMetadataCmd(connectionId, database, table);
     setMetadata(md);
-    setFilterColumn((prev) => prev || md.columns[0]?.name);
+    if (md.columns.length > 0) {
+      setFilterColumn((prev) => prev || md.columns[0].name);
+    } else {
+      setFilterColumn(undefined);
+    }
   }, [connectionId, database, table]);
 
   const loadRows = useCallback(async () => {
@@ -303,8 +307,12 @@ export function TableBrowser({ connectionId, database, table }: TableBrowserProp
               rows.map((row, idx) => (
                 <TableRow key={rowKey(row, primaryKey, idx)}>
                   {columns.map((col) => (
-                    <TableCell key={col.name} className="max-w-[280px] truncate" title={dataValueToText(row[col.name])}>
-                      {dataValueToText(row[col.name])}
+                    <TableCell
+                      key={col.name}
+                      className="max-w-[280px] truncate"
+                      title={dataValueToText(row[col.name] ?? undefined)}
+                    >
+                      {dataValueToText(row[col.name] ?? undefined)}
                     </TableCell>
                   ))}
                   <TableCell>
@@ -408,7 +416,9 @@ export function TableBrowser({ connectionId, database, table }: TableBrowserProp
 function rowKey(row: BrowserTableRow, primaryKey: string | undefined, idx: number) {
   if (primaryKey) {
     const value = row[primaryKey];
-    if (value) return `${primaryKey}-${dataValueToText(value)}`;
+    if (value !== undefined && value !== null) {
+      return `${primaryKey}-${dataValueToText(value)}`;
+    }
   }
   return `row-${idx}`;
 }

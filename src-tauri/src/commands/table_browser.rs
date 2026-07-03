@@ -1,14 +1,12 @@
-// Table browser commands for viewing and modifying database table data
-// Supports pagination, sorting, filtering, and CRUD operations
+// Table browser commands for viewing and modifying database table data.
+// Uses the configured database driver (PostgreSQL/MySQL) instead of local SQLite metadata.
 
+use crate::commands::database::load_connection_config;
 use crate::db_drivers::types::{ColumnMetadata, DataValue, DatabaseType};
 use crate::state::AppState;
-use rusqlite::{params_from_iter, types::Value, types::ValueRef};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tauri::State;
-
-// ─── Types ──────────────────────────────────────────────────────────────────
 
 /// Pagination parameters
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -38,7 +36,7 @@ pub struct SortParams {
 pub struct FilterCondition {
     pub column: String,
     pub operator: String, // "=", "!=", ">", "<", ">=", "<=", "LIKE"
-    pub value: String,
+    pub value: serde_json::Value,
 }
 
 /// Table metadata
@@ -70,9 +68,6 @@ pub struct RowData {
     pub values: HashMap<String, DataValue>,
 }
 
-// ─── Commands ───────────────────────────────────────────────────────────────
-
-/// Browse table data with pagination and optional sorting/filtering
 #[tauri::command]
 pub async fn browse_table_data(
     connection_id: String,
@@ -84,244 +79,167 @@ pub async fn browse_table_data(
     state: State<'_, AppState>,
 ) -> Result<BrowseTableResponse, String> {
     let pagination = pagination.unwrap_or_default();
-
-    let db = state
-        .db
-        .lock()
-        .map_err(|e| format!("Failed to lock database: {}", e))?;
-
-    // Load connection config
-    let mut stmt = db
-        .prepare("SELECT db_type FROM database_connections WHERE id = ?1")
-        .map_err(|e| format!("Failed to prepare query: {}", e))?;
-
-    let db_type_str: String = stmt
-        .query_row(rusqlite::params![&connection_id], |row| row.get(0))
-        .map_err(|e| format!("Connection not found: {}", e))?;
-
-    let db_type = DatabaseType::parse(&db_type_str)
-        .ok_or_else(|| format!("Unknown database type: {}", db_type_str))?;
-
     let table_ident = sanitize_identifier(&table)?;
 
-    // Build SQL query
-    let mut where_clauses = Vec::new();
-    let mut filter_params: Vec<Value> = Vec::new();
+    let config = load_connection_config(&connection_id, &state).await?;
+    ensure_sql_table_browser_supported(config.database_type)?;
 
-    if let Some(filter_list) = &filters {
-        for filter in filter_list {
-            let col_ident = sanitize_identifier(&filter.column)?;
-            match filter.operator.as_str() {
-                "=" => {
-                    where_clauses.push(format!("{col_ident} = ?"));
-                    filter_params.push(Value::Text(filter.value.clone()));
-                }
-                "!=" => {
-                    where_clauses.push(format!("{col_ident} != ?"));
-                    filter_params.push(Value::Text(filter.value.clone()));
-                }
-                ">" => {
-                    where_clauses.push(format!("{col_ident} > ?"));
-                    filter_params.push(Value::Text(filter.value.clone()));
-                }
-                "<" => {
-                    where_clauses.push(format!("{col_ident} < ?"));
-                    filter_params.push(Value::Text(filter.value.clone()));
-                }
-                ">=" => {
-                    where_clauses.push(format!("{col_ident} >= ?"));
-                    filter_params.push(Value::Text(filter.value.clone()));
-                }
-                "<=" => {
-                    where_clauses.push(format!("{col_ident} <= ?"));
-                    filter_params.push(Value::Text(filter.value.clone()));
-                }
-                "LIKE" => {
-                    where_clauses.push(format!("{col_ident} LIKE ?"));
-                    filter_params.push(Value::Text(format!("%{}%", filter.value)));
-                }
-                _ => return Err(format!("Unsupported operator: {}", filter.operator)),
-            }
-        }
-    }
+    let where_clause = build_where_clause(filters)?;
+    let order_clause = build_order_clause(sort)?;
 
-    let where_clause = if !where_clauses.is_empty() {
-        format!(" WHERE {}", where_clauses.join(" AND "))
-    } else {
-        String::new()
-    };
+    let pool = state.db_pool_manager.lock().await;
+    let driver_arc = pool
+        .get_or_create_driver(&connection_id, &config)
+        .await
+        .map_err(|e| format!("Failed to get driver: {}", e))?;
+    let driver = driver_arc.read().await;
 
-    // Count total rows
-    let count_query = match db_type {
-        DatabaseType::PostgreSQL | DatabaseType::MySQL => {
-            format!("SELECT COUNT(*) as count FROM {table_ident}{where_clause}")
-        }
-        DatabaseType::Redis => {
-            // Redis: count keys
-            format!("SELECT COUNT(*) as count FROM {table_ident}")
-        }
-        _ => {
-            return Err(format!(
-                "Unsupported database type for table browsing: {}",
-                db_type
-            ))
-        }
-    };
-
-    // Get total count
-    let total_count: i64 = db
-        .query_row(
-            &count_query,
-            params_from_iter(filter_params.iter()),
-            |row| row.get(0),
-        )
+    let count_query = format!("SELECT COUNT(*) AS count FROM {table_ident}{where_clause}");
+    let count_result = driver
+        .execute_query(&count_query, Vec::new())
+        .await
+        .map_err(|e| format!("Failed to count rows: {}", e))?;
+    let total_count = count_result
+        .rows
+        .first()
+        .and_then(|r| r.first())
+        .and_then(data_value_as_i64)
         .unwrap_or(0);
-
-    let total_pages = (total_count as usize).div_ceil(pagination.limit);
-
-    // Build main query with pagination
-    let order_by = if let Some(sort_params) = &sort {
-        let sort_col = sanitize_identifier(&sort_params.column)?;
-        let direction = if sort_params.direction.to_uppercase() == "DESC" {
-            "DESC"
-        } else {
-            "ASC"
-        };
-        format!(" ORDER BY {sort_col} {direction}")
+    let total_pages = if pagination.limit == 0 {
+        0
     } else {
-        String::new()
+        (total_count as usize).div_ceil(pagination.limit)
     };
 
-    let query = match db_type {
-        DatabaseType::PostgreSQL | DatabaseType::MySQL => {
-            format!("SELECT * FROM {table_ident}{where_clause}{order_by} LIMIT ? OFFSET ?")
-        }
-        DatabaseType::Redis => {
-            format!("SELECT * FROM {table_ident} LIMIT ? OFFSET ?")
-        }
-        _ => {
-            return Err(format!(
-                "Unsupported database type for table browsing: {}",
-                db_type
-            ))
-        }
-    };
+    let data_query = format!(
+        "SELECT * FROM {table_ident}{where_clause}{order_clause} LIMIT {} OFFSET {}",
+        pagination.limit, pagination.offset
+    );
+    let result = driver
+        .execute_query(&data_query, Vec::new())
+        .await
+        .map_err(|e| format!("Failed to query table data: {}", e))?;
 
-    // Execute query
-    let mut stmt = db
-        .prepare(&query)
-        .map_err(|e| format!("Failed to prepare query: {}", e))?;
-
-    let column_names = stmt
-        .column_names()
-        .iter()
-        .map(|s| s.to_string())
-        .collect::<Vec<_>>();
-
-    let query_params: Vec<Value> = filter_params
-        .iter()
-        .cloned()
-        .chain([
-            Value::Integer(pagination.limit as i64),
-            Value::Integer(pagination.offset as i64),
-        ])
-        .collect();
-
-    let rows: Vec<TableRow> = stmt
-        .query_map(params_from_iter(query_params.iter()), |row| {
-            let mut row_map = HashMap::new();
-            for (idx, col_name) in column_names.iter().enumerate() {
-                let value = match row.get_ref(idx)? {
-                    ValueRef::Null => DataValue::Null,
-                    ValueRef::Integer(i) => DataValue::Integer(i),
-                    ValueRef::Real(f) => DataValue::Float(f),
-                    ValueRef::Text(t) => DataValue::String(String::from_utf8_lossy(t).to_string()),
-                    ValueRef::Blob(b) => DataValue::Bytes(b.to_vec()),
-                };
-                row_map.insert(col_name.clone(), value);
+    let rows = result
+        .rows
+        .into_iter()
+        .map(|row_values| {
+            let mut row = HashMap::new();
+            for (idx, col) in result.columns.iter().enumerate() {
+                if let Some(value) = row_values.get(idx) {
+                    row.insert(col.name.clone(), value.clone());
+                }
             }
-            Ok(row_map)
+            row
         })
-        .map_err(|e| format!("Failed to query table: {}", e))?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|e| format!("Failed to collect rows: {}", e))?;
-
-    let page_number = pagination.offset / pagination.limit;
+        .collect::<Vec<_>>();
 
     Ok(BrowseTableResponse {
         rows,
         total_count,
-        page_number,
+        page_number: if pagination.limit == 0 {
+            0
+        } else {
+            pagination.offset / pagination.limit
+        },
         page_size: pagination.limit,
         total_pages,
     })
 }
 
-/// Get total row count for a table
 #[tauri::command]
 pub async fn get_table_row_count(
-    _connection_id: String,
+    connection_id: String,
     _database: String,
     table: String,
     state: State<'_, AppState>,
 ) -> Result<i64, String> {
-    let db = state
-        .db
-        .lock()
-        .map_err(|e| format!("Failed to lock database: {}", e))?;
-
     let table_ident = sanitize_identifier(&table)?;
-    let query = format!("SELECT COUNT(*) as count FROM {table_ident}");
-    db.query_row(&query, [], |row| row.get(0))
-        .map_err(|e| format!("Failed to count rows: {}", e))
+    let config = load_connection_config(&connection_id, &state).await?;
+    ensure_sql_table_browser_supported(config.database_type)?;
+
+    let pool = state.db_pool_manager.lock().await;
+    let driver_arc = pool
+        .get_or_create_driver(&connection_id, &config)
+        .await
+        .map_err(|e| format!("Failed to get driver: {}", e))?;
+    let driver = driver_arc.read().await;
+
+    let query = format!("SELECT COUNT(*) AS count FROM {table_ident}");
+    let result = driver
+        .execute_query(&query, Vec::new())
+        .await
+        .map_err(|e| format!("Failed to count rows: {}", e))?;
+
+    Ok(result
+        .rows
+        .first()
+        .and_then(|r| r.first())
+        .and_then(data_value_as_i64)
+        .unwrap_or(0))
 }
 
-/// Get table metadata (columns, primary key, etc.)
 #[tauri::command]
 pub async fn get_table_metadata(
-    _connection_id: String,
-    _database: String,
+    connection_id: String,
+    database: String,
     table: String,
     state: State<'_, AppState>,
 ) -> Result<TableMetadata, String> {
-    let db = state
-        .db
-        .lock()
-        .map_err(|e| format!("Failed to lock database: {}", e))?;
+    let config = load_connection_config(&connection_id, &state).await?;
+    ensure_sql_table_browser_supported(config.database_type)?;
 
-    let table_ident = sanitize_identifier(&table)?;
-    // Get column information using SQLite PRAGMA
-    let pragma_query = format!("PRAGMA table_info({table_ident})");
-    let mut stmt = db
-        .prepare(&pragma_query)
-        .map_err(|e| format!("Failed to prepare pragma: {}", e))?;
+    let pool = state.db_pool_manager.lock().await;
+    let driver_arc = pool
+        .get_or_create_driver(&connection_id, &config)
+        .await
+        .map_err(|e| format!("Failed to get driver: {}", e))?;
+    let driver = driver_arc.read().await;
 
-    let columns: Vec<ColumnMetadata> = stmt
-        .query_map([], |row| {
-            Ok(ColumnMetadata {
-                name: row.get(1)?,
-                data_type: row.get(2)?,
-                nullable: row.get::<_, i32>(3).map(|v| v == 0).unwrap_or(true),
-                primary_key: row.get::<_, i32>(5).map(|v| v != 0).unwrap_or(false),
-            })
+    let schema = driver
+        .get_schema(&database)
+        .await
+        .map_err(|e| format!("Failed to get schema: {}", e))?;
+    let table_schema = schema
+        .tables
+        .iter()
+        .find(|t| t.name == table)
+        .ok_or_else(|| format!("Table '{}' not found in database '{}'", table, database))?;
+
+    let columns = table_schema
+        .columns
+        .iter()
+        .map(|c| ColumnMetadata {
+            name: c.name.clone(),
+            data_type: c.data_type.clone(),
+            nullable: c.nullable,
+            primary_key: c.primary_key,
         })
-        .map_err(|e| format!("Failed to query columns: {}", e))?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|e| format!("Failed to collect columns: {}", e))?;
-
-    let row_count = db
-        .query_row(&format!("SELECT COUNT(*) FROM {table_ident}"), [], |row| {
-            row.get(0)
-        })
-        .unwrap_or(0);
-
+        .collect::<Vec<_>>();
     let primary_key = columns
         .iter()
         .find(|c| c.primary_key)
         .map(|c| c.name.clone());
 
+    let row_count = if let Some(count) = table_schema.row_count {
+        count as i64
+    } else {
+        let table_ident = sanitize_identifier(&table)?;
+        let count_query = format!("SELECT COUNT(*) AS count FROM {table_ident}");
+        let count_result = driver
+            .execute_query(&count_query, Vec::new())
+            .await
+            .map_err(|e| format!("Failed to count rows: {}", e))?;
+        count_result
+            .rows
+            .first()
+            .and_then(|r| r.first())
+            .and_then(data_value_as_i64)
+            .unwrap_or(0)
+    };
+
     Ok(TableMetadata {
-        table_name: table.clone(),
+        table_name: table,
         row_count,
         columns,
         primary_key,
@@ -329,10 +247,9 @@ pub async fn get_table_metadata(
     })
 }
 
-/// Insert a new row into a table
 #[tauri::command]
 pub async fn insert_table_row(
-    _connection_id: String,
+    connection_id: String,
     _database: String,
     table: String,
     row_data: RowData,
@@ -342,45 +259,50 @@ pub async fn insert_table_row(
         return Err("No values provided for insert".to_string());
     }
 
-    let db = state
-        .db
-        .lock()
-        .map_err(|e| format!("Failed to lock database: {}", e))?;
-
     let table_ident = sanitize_identifier(&table)?;
-    let columns: Vec<String> = row_data.values.keys().cloned().collect();
-    let mut ordered_columns = columns;
-    ordered_columns.sort();
-    let placeholders = vec!["?"; ordered_columns.len()].join(",");
-    let quoted_columns = ordered_columns
+    let config = load_connection_config(&connection_id, &state).await?;
+    ensure_sql_table_browser_supported(config.database_type)?;
+
+    let mut columns = row_data.values.keys().cloned().collect::<Vec<_>>();
+    columns.sort();
+    let columns_ident = columns
         .iter()
         .map(|c| sanitize_identifier(c))
         .collect::<Result<Vec<_>, _>>()?;
+    let values = columns
+        .iter()
+        .map(|c| {
+            row_data
+                .values
+                .get(c)
+                .ok_or_else(|| format!("Missing value for column '{}'", c))
+                .and_then(data_value_to_sql_literal)
+        })
+        .collect::<Result<Vec<_>, _>>()?;
 
-    let insert_query = format!(
+    let query = format!(
         "INSERT INTO {table_ident} ({}) VALUES ({})",
-        quoted_columns.join(","),
-        placeholders
+        columns_ident.join(", "),
+        values.join(", ")
     );
 
-    // Build parameters
-    let mut params: Vec<Value> = Vec::new();
-    for col in &ordered_columns {
-        if let Some(val) = row_data.values.get(col) {
-            params.push(data_value_to_sql_value(val)?);
-        }
-    }
-
-    db.execute(&insert_query, params_from_iter(params.iter()))
+    let pool = state.db_pool_manager.lock().await;
+    let driver_arc = pool
+        .get_or_create_driver(&connection_id, &config)
+        .await
+        .map_err(|e| format!("Failed to get driver: {}", e))?;
+    let driver = driver_arc.read().await;
+    driver
+        .execute_query(&query, Vec::new())
+        .await
         .map_err(|e| format!("Failed to insert row: {}", e))?;
 
     Ok(row_data)
 }
 
-/// Update an existing row in a table
 #[tauri::command]
 pub async fn update_table_row(
-    _connection_id: String,
+    connection_id: String,
     _database: String,
     table: String,
     primary_key_col: String,
@@ -394,46 +316,47 @@ pub async fn update_table_row(
 
     let table_ident = sanitize_identifier(&table)?;
     let pk_ident = sanitize_identifier(&primary_key_col)?;
-    let db = state
-        .db
-        .lock()
-        .map_err(|e| format!("Failed to lock database: {}", e))?;
+    let config = load_connection_config(&connection_id, &state).await?;
+    ensure_sql_table_browser_supported(config.database_type)?;
 
-    let mut columns: Vec<String> = row_data.values.keys().cloned().collect();
+    let mut columns = row_data.values.keys().cloned().collect::<Vec<_>>();
     columns.sort();
-    let set_clauses: Vec<String> = columns
+    let set_clause = columns
         .iter()
-        .map(|col| sanitize_identifier(col).map(|ident| format!("{ident} = ?")))
+        .map(|c| {
+            let ident = sanitize_identifier(c)?;
+            let literal = row_data
+                .values
+                .get(c)
+                .ok_or_else(|| format!("Missing value for column '{}'", c))
+                .and_then(data_value_to_sql_literal)?;
+            Ok::<String, String>(format!("{ident} = {literal}"))
+        })
         .collect::<Result<Vec<_>, _>>()?;
+    let pk_literal = data_value_to_sql_literal(&primary_key_value)?;
 
-    if set_clauses.is_empty() {
-        return Err("No valid columns provided for update".to_string());
-    }
-
-    let update_query = format!(
-        "UPDATE {table_ident} SET {} WHERE {pk_ident} = ?",
-        set_clauses.join(","),
+    let query = format!(
+        "UPDATE {table_ident} SET {} WHERE {pk_ident} = {pk_literal}",
+        set_clause.join(", ")
     );
 
-    let mut params: Vec<Value> = Vec::new();
-    for col in columns {
-        if let Some(val) = row_data.values.get(&col) {
-            params.push(data_value_to_sql_value(val)?);
-        }
-    }
-
-    params.push(data_value_to_sql_value(&primary_key_value)?);
-
-    db.execute(&update_query, params_from_iter(params.iter()))
+    let pool = state.db_pool_manager.lock().await;
+    let driver_arc = pool
+        .get_or_create_driver(&connection_id, &config)
+        .await
+        .map_err(|e| format!("Failed to get driver: {}", e))?;
+    let driver = driver_arc.read().await;
+    driver
+        .execute_query(&query, Vec::new())
+        .await
         .map_err(|e| format!("Failed to update row: {}", e))?;
 
     Ok(row_data)
 }
 
-/// Delete a row from a table
 #[tauri::command]
 pub async fn delete_table_row(
-    _connection_id: String,
+    connection_id: String,
     _database: String,
     table: String,
     primary_key_col: String,
@@ -442,18 +365,94 @@ pub async fn delete_table_row(
 ) -> Result<(), String> {
     let table_ident = sanitize_identifier(&table)?;
     let pk_ident = sanitize_identifier(&primary_key_col)?;
-    let db = state
-        .db
-        .lock()
-        .map_err(|e| format!("Failed to lock database: {}", e))?;
+    let pk_literal = data_value_to_sql_literal(&primary_key_value)?;
 
-    let delete_query = format!("DELETE FROM {table_ident} WHERE {pk_ident} = ?");
-    let pk_value = data_value_to_sql_value(&primary_key_value)?;
+    let config = load_connection_config(&connection_id, &state).await?;
+    ensure_sql_table_browser_supported(config.database_type)?;
 
-    db.execute(&delete_query, params_from_iter([&pk_value]))
+    let exists_query =
+        format!("SELECT COUNT(*) AS count FROM {table_ident} WHERE {pk_ident} = {pk_literal}");
+    let pool = state.db_pool_manager.lock().await;
+    let driver_arc = pool
+        .get_or_create_driver(&connection_id, &config)
+        .await
+        .map_err(|e| format!("Failed to get driver: {}", e))?;
+    let driver = driver_arc.read().await;
+    let exists_result = driver
+        .execute_query(&exists_query, Vec::new())
+        .await
+        .map_err(|e| format!("Failed to check row existence: {}", e))?;
+    let exists = exists_result
+        .rows
+        .first()
+        .and_then(|r| r.first())
+        .and_then(data_value_as_i64)
+        .unwrap_or(0)
+        > 0;
+    if !exists {
+        return Err("Row not found for delete operation".to_string());
+    }
+
+    let query = format!("DELETE FROM {table_ident} WHERE {pk_ident} = {pk_literal}");
+
+    driver
+        .execute_query(&query, Vec::new())
+        .await
         .map_err(|e| format!("Failed to delete row: {}", e))?;
 
     Ok(())
+}
+
+fn ensure_sql_table_browser_supported(database_type: DatabaseType) -> Result<(), String> {
+    match database_type {
+        DatabaseType::PostgreSQL | DatabaseType::MySQL => Ok(()),
+        DatabaseType::Redis => {
+            Err("Redis key browsing is not available in SQL table browser mode".to_string())
+        }
+        other => Err(format!(
+            "Table browser is not supported for database type: {}",
+            other
+        )),
+    }
+}
+
+fn build_where_clause(filters: Option<Vec<FilterCondition>>) -> Result<String, String> {
+    let Some(filters) = filters else {
+        return Ok(String::new());
+    };
+    if filters.is_empty() {
+        return Ok(String::new());
+    }
+
+    let mut clauses = Vec::with_capacity(filters.len());
+    for filter in filters {
+        let column = sanitize_identifier(&filter.column)?;
+        let operator = match filter.operator.as_str() {
+            "=" | "!=" | ">" | "<" | ">=" | "<=" | "LIKE" => filter.operator,
+            _ => return Err(format!("Unsupported filter operator: {}", filter.operator)),
+        };
+
+        let value_literal = filter_value_to_sql_literal(&filter.value, operator == "LIKE")?;
+
+        clauses.push(format!("{column} {operator} {value_literal}"));
+    }
+
+    Ok(format!(" WHERE {}", clauses.join(" AND ")))
+}
+
+fn build_order_clause(sort: Option<SortParams>) -> Result<String, String> {
+    let Some(sort) = sort else {
+        return Ok(String::new());
+    };
+
+    let column = sanitize_identifier(&sort.column)?;
+    let direction = match sort.direction.to_ascii_uppercase().as_str() {
+        "ASC" => "ASC",
+        "DESC" => "DESC",
+        _ => return Err(format!("Unsupported sort direction: {}", sort.direction)),
+    };
+
+    Ok(format!(" ORDER BY {column} {direction}"))
 }
 
 fn sanitize_identifier(identifier: &str) -> Result<String, String> {
@@ -468,21 +467,55 @@ fn sanitize_identifier(identifier: &str) -> Result<String, String> {
         return Err(format!("Invalid identifier: {identifier}"));
     }
 
-    Ok(format!("`{identifier}`"))
+    Ok(identifier.to_string())
 }
 
-fn data_value_to_sql_value(value: &DataValue) -> Result<Value, String> {
+fn data_value_as_i64(value: &DataValue) -> Option<i64> {
     match value {
-        DataValue::Null => Ok(Value::Null),
-        DataValue::Boolean(v) => Ok(Value::Integer(if *v { 1 } else { 0 })),
-        DataValue::Integer(v) => Ok(Value::Integer(*v)),
-        DataValue::Float(v) => Ok(Value::Real(*v)),
-        DataValue::String(v) => Ok(Value::Text(v.clone())),
-        DataValue::Bytes(v) => Ok(Value::Blob(v.clone())),
-        DataValue::Date(v) => Ok(Value::Text(v.clone())),
-        DataValue::DateTime(v) => Ok(Value::Text(v.clone())),
-        DataValue::Json(v) => Ok(Value::Text(v.to_string())),
+        DataValue::Integer(v) => Some(*v),
+        DataValue::Float(v) => Some(*v as i64),
+        DataValue::String(v) => v.parse::<i64>().ok(),
+        _ => None,
+    }
+}
+
+fn data_value_to_sql_literal(value: &DataValue) -> Result<String, String> {
+    match value {
+        DataValue::Null => Ok("NULL".to_string()),
+        DataValue::Boolean(v) => Ok(if *v { "TRUE" } else { "FALSE" }.to_string()),
+        DataValue::Integer(v) => Ok(v.to_string()),
+        DataValue::Float(v) => Ok(v.to_string()),
+        DataValue::String(v) => Ok(format!("'{}'", v.replace('\'', "''"))),
+        DataValue::Bytes(v) => {
+            let hex = v
+                .iter()
+                .map(|b| format!("{b:02x}"))
+                .collect::<Vec<_>>()
+                .join("");
+            Ok(format!("X'{hex}'"))
+        }
+        DataValue::Date(v) | DataValue::DateTime(v) => Ok(format!("'{}'", v.replace('\'', "''"))),
+        DataValue::Json(v) => Ok(format!("'{}'", v.to_string().replace('\'', "''"))),
         DataValue::Array(_) => Err("Array values are not supported for this operation".to_string()),
+    }
+}
+
+fn filter_value_to_sql_literal(
+    value: &serde_json::Value,
+    for_like: bool,
+) -> Result<String, String> {
+    match value {
+        serde_json::Value::String(v) => Ok(format!("'{}'", v.replace('\'', "''"))),
+        serde_json::Value::Number(v) => Ok(v.to_string()),
+        serde_json::Value::Bool(v) => Ok(if *v { "TRUE" } else { "FALSE" }.to_string()),
+        serde_json::Value::Null => {
+            if for_like {
+                Err("LIKE filters do not support NULL values".to_string())
+            } else {
+                Ok("NULL".to_string())
+            }
+        }
+        _ => Err("Filter values must be string, number, boolean, or null".to_string()),
     }
 }
 
@@ -502,11 +535,11 @@ mod tests {
         let filter = FilterCondition {
             column: "name".to_string(),
             operator: "=".to_string(),
-            value: "test".to_string(),
+            value: serde_json::Value::String("test".to_string()),
         };
         assert_eq!(filter.column, "name");
         assert_eq!(filter.operator, "=");
-        assert_eq!(filter.value, "test");
+        assert_eq!(filter.value, serde_json::Value::String("test".to_string()));
     }
 
     #[test]
@@ -518,28 +551,34 @@ mod tests {
     }
 
     #[test]
-    fn test_table_metadata_creation() {
-        let metadata = TableMetadata {
-            table_name: "users".to_string(),
-            row_count: 100,
-            columns: vec![],
-            primary_key: Some("id".to_string()),
-            estimated_size_bytes: None,
-        };
-        assert_eq!(metadata.table_name, "users");
-        assert_eq!(metadata.row_count, 100);
-        assert_eq!(metadata.primary_key, Some("id".to_string()));
-    }
-
-    #[test]
     fn test_sanitize_identifier() {
-        assert_eq!(sanitize_identifier("users").unwrap(), "`users`");
+        assert_eq!(sanitize_identifier("users").unwrap(), "users");
         assert!(sanitize_identifier("users-table").is_err());
     }
 
     #[test]
-    fn test_data_value_to_sql_value() {
-        let value = data_value_to_sql_value(&DataValue::Integer(42)).unwrap();
-        assert_eq!(value, Value::Integer(42));
+    fn test_build_where_clause_like_escapes_quotes() {
+        let where_clause = build_where_clause(Some(vec![FilterCondition {
+            column: "name".to_string(),
+            operator: "LIKE".to_string(),
+            value: serde_json::Value::String("o'hara%".to_string()),
+        }]))
+        .unwrap();
+        assert_eq!(where_clause, " WHERE name LIKE 'o''hara%'");
+    }
+
+    #[test]
+    fn test_build_order_clause_validates_direction() {
+        let order_clause = build_order_clause(Some(SortParams {
+            column: "created_at".to_string(),
+            direction: "DESC".to_string(),
+        }))
+        .unwrap();
+        assert_eq!(order_clause, " ORDER BY created_at DESC");
+        assert!(build_order_clause(Some(SortParams {
+            column: "created_at".to_string(),
+            direction: "INVALID".to_string(),
+        }))
+        .is_err());
     }
 }

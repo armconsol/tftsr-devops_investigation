@@ -271,11 +271,14 @@ establishDbSshTunnelCmd(
   ssh_hostname: string,
   ssh_port: number,
   ssh_username: string,
-  ssh_auth_method: 'password' | 'key'
+  ssh_auth_method: 'password' | 'key',
+  ssh_password?: string,
+  ssh_private_key?: string,
+  ssh_key_passphrase?: string
 ) → ConnectionTestResult
 ```
 
-Stores SSH tunnel configuration for a database connection. Validation is performed server-side.
+Validates SSH connectivity/authentication and stores encrypted SSH tunnel configuration for a database connection.
 
 ```typescript
 verifyDbSshTunnelCmd(connection_id: string) → boolean
@@ -298,11 +301,12 @@ browseTableDataCmd(params: {
   table: string;
   pagination?: { limit: number; offset: number };
   sort?: { column: string; direction: 'ASC' | 'DESC' };
-  filters?: Array<{ column: string; operator: '=' | '!=' | '>' | '<' | '>=' | '<=' | 'LIKE'; value: string }>;
+  filters?: Array<{ column: string; operator: '=' | '!=' | '>' | '<' | '>=' | '<=' | 'LIKE'; value: string | number | boolean }>;
 }) → BrowseTableResponse
 ```
 
 Returns paginated rows and page metadata for the selected table.
+For `LIKE`, `%` and `_` are SQL wildcards. Escape literal wildcard characters in input where needed.
 
 ```typescript
 getTableMetadataCmd(connection_id: string, database: string, table: string) → TableMetadata
@@ -318,6 +322,7 @@ deleteTableRowCmd(connection_id: string, database: string, table: string, primar
 ```
 
 CRUD primitives used by the Schema Explorer table browser dialog.
+`deleteTableRowCmd` returns `void` on success and fails with an error when the target row does not exist or cannot be deleted.
 Checks if Ollama is running on the configured URL (default: `localhost:11434`).
 
 ### `get_ollama_install_guide`

@@ -2,7 +2,7 @@
 
 ## Overview
 
-TRCAA uses **SQLite** via `rusqlite` with the `bundled-sqlcipher` feature for AES-256 encryption in production. 22 versioned migrations are tracked in the `_migrations` table.
+TRCAA uses **SQLite** via `rusqlite` with the `bundled-sqlcipher` feature for AES-256 encryption in production. Versioned migrations are tracked in the `_migrations` table.
 
 **DB file location:** `{app_data_dir}/tftsr.db`
 
@@ -38,7 +38,7 @@ pub fn init_db(data_dir: &Path) -> anyhow::Result<Connection> {
 
 ---
 
-## Schema (18 Migrations)
+## Schema Highlights
 
 ### 001 — issues
 
@@ -480,3 +480,10 @@ Database connections now support SSH tunnel configuration metadata:
 - `ssh_auth_method` (`password` or `key`)
 
 `ConnectionForm` captures SSH fields and `ConnectionManager` persists them via `establish_db_ssh_tunnel`.
+
+### SSH tunnel security notes
+
+- SSH credentials are encrypted before storage (`ssh_password_encrypted`, `ssh_private_key_encrypted`, `ssh_key_passphrase_encrypted`).
+- `establish_db_ssh_tunnel` validates connectivity/authentication before persisting SSH settings.
+- `get_db_ssh_config` only returns non-secret SSH metadata; encrypted secrets are never returned to the frontend.
+- Disabling SSH (`close_db_ssh_tunnel`) clears active SSH metadata for the connection.

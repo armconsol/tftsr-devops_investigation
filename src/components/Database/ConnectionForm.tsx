@@ -53,7 +53,7 @@ export function ConnectionForm({ connection, onSubmit, onCancel, isLoading }: Co
     ssh_hostname: connection?.ssh_hostname || '',
     ssh_port: connection?.ssh_port || 22,
     ssh_username: connection?.ssh_username || '',
-    ssh_auth_method: connection?.ssh_auth_method as 'password' | 'key' || 'password',
+    ssh_auth_method: connection?.ssh_auth_method || 'password',
     ssh_password: '',
     ssh_private_key: '',
     ssh_key_passphrase: '',
