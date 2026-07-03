@@ -1831,7 +1831,13 @@ pub fn establish_db_ssh_tunnel(
 
     db.execute(
         update_query,
-        rusqlite::params![&connection_id, &ssh_hostname, &ssh_port, &ssh_username, &ssh_auth_method],
+        rusqlite::params![
+            &connection_id,
+            &ssh_hostname,
+            &ssh_port,
+            &ssh_username,
+            &ssh_auth_method
+        ],
     )
     .map_err(|e| format!("Failed to update SSH config: {}", e))?;
 
@@ -1844,7 +1850,10 @@ pub fn establish_db_ssh_tunnel(
 
 /// Verify SSH tunnel is configured
 #[tauri::command]
-pub fn verify_db_ssh_tunnel(connection_id: String, state: State<'_, AppState>) -> Result<bool, String> {
+pub fn verify_db_ssh_tunnel(
+    connection_id: String,
+    state: State<'_, AppState>,
+) -> Result<bool, String> {
     let db = state
         .db
         .lock()

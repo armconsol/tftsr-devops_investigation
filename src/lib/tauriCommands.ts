@@ -1968,32 +1968,33 @@ export const testDatabaseConnectionCmd = (connectionId: string) =>
 
 // SSH Tunnel Configuration
 export interface DbSshTunnelConfig {
-  hostname: string;
-  port: number;
-  username: string;
-  auth_method: 'password' | 'key';
-  password?: string;
-  private_key?: string;
-  key_passphrase?: string;
+  ssh_enabled: boolean;
+  ssh_hostname?: string;
+  ssh_port?: number;
+  ssh_username?: string;
+  ssh_auth_method?: 'password' | 'key';
 }
 
-export interface DbSshTunnelStatus {
-  connection_id: string;
-  is_active: boolean;
-  established_at?: string;
-  remote_bind_port?: number;
-}
+export const establishDbSshTunnelCmd = (
+  connection_id: string,
+  ssh_hostname: string,
+  ssh_port: number,
+  ssh_username: string,
+  ssh_auth_method: 'password' | 'key'
+) =>
+  invoke<ConnectionTestResult>("establish_db_ssh_tunnel", {
+    connection_id,
+    ssh_hostname,
+    ssh_port,
+    ssh_username,
+    ssh_auth_method,
+  });
 
-export const establishDbSshTunnelCmd = (params: {
-  connection_id: string;
-  config: DbSshTunnelConfig;
-}) => invoke<DbSshTunnelStatus>("establish_db_ssh_tunnel", { params });
+export const verifyDbSshTunnelCmd = (connection_id: string) =>
+  invoke<boolean>("verify_db_ssh_tunnel", { connection_id });
 
-export const verifyDbSshTunnelCmd = (connectionId: string) =>
-  invoke<DbSshTunnelStatus>("verify_db_ssh_tunnel", { connectionId });
-
-export const getDbSshConfigCmd = (connectionId: string) =>
-  invoke<DbSshTunnelConfig>("get_db_ssh_config", { connectionId });
+export const getDbSshConfigCmd = (connection_id: string) =>
+  invoke<DbSshTunnelConfig>("get_db_ssh_config", { connection_id });
 
 // Query Execution
 export const executeDatabaseQueryCmd = (
@@ -2027,16 +2028,16 @@ export const getTableSchemaCmd = (
 
 // Table Browser - GUI Data Viewing and Editing
 export type DataValue =
-  | { type: 'null' }
-  | { type: 'boolean'; value: boolean }
-  | { type: 'integer'; value: number }
-  | { type: 'float'; value: number }
-  | { type: 'string'; value: string }
-  | { type: 'bytes'; value: string }
-  | { type: 'date'; value: string }
-  | { type: 'datetime'; value: string }
-  | { type: 'json'; value: Record<string, unknown> }
-  | { type: 'array'; value: DataValue[] };
+  | { type: 'Null' }
+  | { type: 'Boolean'; value: boolean }
+  | { type: 'Integer'; value: number }
+  | { type: 'Float'; value: number }
+  | { type: 'String'; value: string }
+  | { type: 'Bytes'; value: number[] }
+  | { type: 'Date'; value: string }
+  | { type: 'DateTime'; value: string }
+  | { type: 'Json'; value: Record<string, unknown> }
+  | { type: 'Array'; value: DataValue[] };
 
 export interface TableColumnMetadata {
   name: string;
@@ -2089,17 +2090,18 @@ export interface BrowseTableParams {
 }
 
 export interface RowData {
-  [column: string]: DataValue;
-}
-
-export interface OperationResult {
-  success: boolean;
-  message: string;
-  affected_rows?: number;
+  values: Record<string, DataValue>;
 }
 
 export const browseTableDataCmd = (params: BrowseTableParams) =>
-  invoke<BrowseTableResponse>("browse_table_data", { params });
+  invoke<BrowseTableResponse>("browse_table_data", {
+    connection_id: params.connection_id,
+    database: params.database,
+    table: params.table,
+    pagination: params.pagination,
+    sort: params.sort,
+    filters: params.filters,
+  });
 
 export const getTableRowCountCmd = (
   connection_id: string,
@@ -2114,27 +2116,44 @@ export const getTableMetadataCmd = (
 ) =>
   invoke<TableMetadata>("get_table_metadata", { connection_id, database, table });
 
-export const insertTableRowCmd = (params: {
-  connection_id: string;
-  database: string;
-  table: string;
-  row_data: RowData;
-}) => invoke<OperationResult>("insert_table_row", { params });
+export const insertTableRowCmd = (
+  connection_id: string,
+  database: string,
+  table: string,
+  row_data: RowData
+) => invoke<RowData>("insert_table_row", { connection_id, database, table, row_data });
 
-export const updateTableRowCmd = (params: {
-  connection_id: string;
-  database: string;
-  table: string;
-  primary_key_value: DataValue;
-  row_data: RowData;
-}) => invoke<OperationResult>("update_table_row", { params });
+export const updateTableRowCmd = (
+  connection_id: string,
+  database: string,
+  table: string,
+  primary_key_col: string,
+  primary_key_value: DataValue,
+  row_data: RowData
+) =>
+  invoke<RowData>("update_table_row", {
+    connection_id,
+    database,
+    table,
+    primary_key_col,
+    primary_key_value,
+    row_data,
+  });
 
-export const deleteTableRowCmd = (params: {
-  connection_id: string;
-  database: string;
-  table: string;
-  primary_key_value: DataValue;
-}) => invoke<OperationResult>("delete_table_row", { params });
+export const deleteTableRowCmd = (
+  connection_id: string,
+  database: string,
+  table: string,
+  primary_key_col: string,
+  primary_key_value: DataValue
+) =>
+  invoke<void>("delete_table_row", {
+    connection_id,
+    database,
+    table,
+    primary_key_col,
+    primary_key_value,
+  });
 
 // Transaction Management
 export const beginTransactionCmd = (connectionId: string) =>

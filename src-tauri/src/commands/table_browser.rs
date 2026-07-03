@@ -1,7 +1,7 @@
 // Table browser commands for viewing and modifying database table data
 // Supports pagination, sorting, filtering, and CRUD operations
 
-use crate::db_drivers::types::{DatabaseType, DataValue, ColumnMetadata};
+use crate::db_drivers::types::{ColumnMetadata, DataValue, DatabaseType};
 use crate::state::AppState;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -83,7 +83,7 @@ pub async fn browse_table_data(
     state: State<'_, AppState>,
 ) -> Result<BrowseTableResponse, String> {
     let pagination = pagination.unwrap_or_default();
-    
+
     let db = state
         .db
         .lock()
@@ -91,15 +91,11 @@ pub async fn browse_table_data(
 
     // Load connection config
     let mut stmt = db
-        .prepare(
-            "SELECT db_type FROM database_connections WHERE id = ?1",
-        )
+        .prepare("SELECT db_type FROM database_connections WHERE id = ?1")
         .map_err(|e| format!("Failed to prepare query: {}", e))?;
 
     let db_type_str: String = stmt
-        .query_row(rusqlite::params![&connection_id], |row| {
-            row.get(0)
-        })
+        .query_row(rusqlite::params![&connection_id], |row| row.get(0))
         .map_err(|e| format!("Connection not found: {}", e))?;
 
     let db_type = DatabaseType::parse(&db_type_str)
@@ -111,13 +107,41 @@ pub async fn browse_table_data(
     if let Some(filter_list) = &filters {
         for filter in filter_list {
             match filter.operator.as_str() {
-                "=" => where_clauses.push(format!("`{}` = '{}'", filter.column, filter.value.replace('\'', "''"))),
-                "!=" => where_clauses.push(format!("`{}` != '{}'", filter.column, filter.value.replace('\'', "''"))),
-                ">" => where_clauses.push(format!("`{}` > '{}'", filter.column, filter.value.replace('\'', "''"))),
-                "<" => where_clauses.push(format!("`{}` < '{}'", filter.column, filter.value.replace('\'', "''"))),
-                ">=" => where_clauses.push(format!("`{}` >= '{}'", filter.column, filter.value.replace('\'', "''"))),
-                "<=" => where_clauses.push(format!("`{}` <= '{}'", filter.column, filter.value.replace('\'', "''"))),
-                "LIKE" => where_clauses.push(format!("`{}` LIKE '%{}%'", filter.column, filter.value.replace('\'', "''"))),
+                "=" => where_clauses.push(format!(
+                    "`{}` = '{}'",
+                    filter.column,
+                    filter.value.replace('\'', "''")
+                )),
+                "!=" => where_clauses.push(format!(
+                    "`{}` != '{}'",
+                    filter.column,
+                    filter.value.replace('\'', "''")
+                )),
+                ">" => where_clauses.push(format!(
+                    "`{}` > '{}'",
+                    filter.column,
+                    filter.value.replace('\'', "''")
+                )),
+                "<" => where_clauses.push(format!(
+                    "`{}` < '{}'",
+                    filter.column,
+                    filter.value.replace('\'', "''")
+                )),
+                ">=" => where_clauses.push(format!(
+                    "`{}` >= '{}'",
+                    filter.column,
+                    filter.value.replace('\'', "''")
+                )),
+                "<=" => where_clauses.push(format!(
+                    "`{}` <= '{}'",
+                    filter.column,
+                    filter.value.replace('\'', "''")
+                )),
+                "LIKE" => where_clauses.push(format!(
+                    "`{}` LIKE '%{}%'",
+                    filter.column,
+                    filter.value.replace('\'', "''")
+                )),
                 _ => return Err(format!("Unsupported operator: {}", filter.operator)),
             }
         }
@@ -138,7 +162,12 @@ pub async fn browse_table_data(
             // Redis: count keys
             format!("SELECT COUNT(*) as count FROM `{}`", table)
         }
-        _ => return Err(format!("Unsupported database type for table browsing: {}", db_type)),
+        _ => {
+            return Err(format!(
+                "Unsupported database type for table browsing: {}",
+                db_type
+            ))
+        }
     };
 
     // Get total count
@@ -146,7 +175,7 @@ pub async fn browse_table_data(
         .query_row(&count_query, [], |row| row.get(0))
         .unwrap_or(0);
 
-    let total_pages = (total_count as usize + pagination.limit - 1) / pagination.limit;
+    let total_pages = (total_count as usize).div_ceil(pagination.limit);
 
     // Build main query with pagination
     let order_by = if let Some(sort_params) = &sort {
@@ -173,7 +202,12 @@ pub async fn browse_table_data(
                 table, pagination.limit, pagination.offset
             )
         }
-        _ => return Err(format!("Unsupported database type for table browsing: {}", db_type)),
+        _ => {
+            return Err(format!(
+                "Unsupported database type for table browsing: {}",
+                db_type
+            ))
+        }
     };
 
     // Execute query
@@ -305,7 +339,11 @@ pub async fn insert_table_row(
     let insert_query = format!(
         "INSERT INTO `{}` ({}) VALUES ({})",
         table,
-        columns.iter().map(|c| format!("`{}`", c)).collect::<Vec<_>>().join(","),
+        columns
+            .iter()
+            .map(|c| format!("`{}`", c))
+            .collect::<Vec<_>>()
+            .join(","),
         placeholders
     );
 
@@ -313,14 +351,17 @@ pub async fn insert_table_row(
     let mut params: Vec<String> = Vec::new();
     for col in &columns {
         if let Some(val) = row_data.values.get(col) {
-            params.push(format!("'{}'", match val {
-                DataValue::String(s) => s.replace('\'', "''"),
-                DataValue::Integer(i) => i.to_string(),
-                DataValue::Float(f) => f.to_string(),
-                DataValue::Boolean(b) => if *b { "1" } else { "0" }.to_string(),
-                DataValue::Null => "NULL".to_string(),
-                _ => return Err(format!("Unsupported value type for column: {}", col)),
-            }));
+            params.push(format!(
+                "'{}'",
+                match val {
+                    DataValue::String(s) => s.replace('\'', "''"),
+                    DataValue::Integer(i) => i.to_string(),
+                    DataValue::Float(f) => f.to_string(),
+                    DataValue::Boolean(b) => if *b { "1" } else { "0" }.to_string(),
+                    DataValue::Null => "NULL".to_string(),
+                    _ => return Err(format!("Unsupported value type for column: {}", col)),
+                }
+            ));
         }
     }
 
@@ -441,7 +482,7 @@ pub async fn delete_table_row(
 // Helper function for string formatting
 fn format_args_into_string(template: &str, args: &[String]) -> String {
     let mut result = template.to_string();
-    for (_i, arg) in args.iter().enumerate() {
+    for arg in args {
         result = result.replacen("{}", arg, 1);
     }
     result

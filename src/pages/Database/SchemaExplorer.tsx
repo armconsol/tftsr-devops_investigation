@@ -1,20 +1,24 @@
 // Schema Explorer Page with Tree View
 
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Button } from '@/components/ui';
+import { Button, Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui';
 import { RefreshCw, Table, Eye } from 'lucide-react';
 import { SchemaTree, type TreeNode } from '@/components/Database/SchemaTree';
+import { TableBrowser } from '@/components/Database/TableBrowser';
 import { useDatabaseStore } from '@/stores/databaseStore';
 import { getDatabasesCmd, getTablesCmd, getTableSchemaCmd } from '@/lib/tauriCommands';
 import { toast } from 'sonner';
 
 export function SchemaExplorer() {
-  const navigate = useNavigate();
-  const { activeConnectionId, setSelectedDatabase, setSelectedTable, updateTabQuery, getActiveTab } = useDatabaseStore();
+  const { activeConnectionId, setSelectedDatabase, setSelectedTable } = useDatabaseStore();
   const [treeNodes, setTreeNodes] = useState<TreeNode[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedNode, setSelectedNode] = useState<TreeNode | null>(null);
+  const [browserOpen, setBrowserOpen] = useState(false);
+  const [selectedTableContext, setSelectedTableContext] = useState<{
+    database: string;
+    table: string;
+  } | null>(null);
 
   useEffect(() => {
     if (activeConnectionId) {
@@ -22,7 +26,7 @@ export function SchemaExplorer() {
     }
   }, [activeConnectionId]);
 
-  const loadDatabases = async () => {
+  async function loadDatabases() {
     if (!activeConnectionId) {
       toast.error('No active connection');
       return;
@@ -42,7 +46,7 @@ export function SchemaExplorer() {
     } finally {
       setLoading(false);
     }
-  };
+  }
 
   const handleNodeExpand = async (nodeId: string): Promise<TreeNode[]> => {
     if (!activeConnectionId) return [];
@@ -92,29 +96,21 @@ export function SchemaExplorer() {
       setSelectedDatabase(dbName);
     } else if (node.type === 'table') {
       const parts = node.id.split('-');
+      const dbName = parts[1];
       const tableName = parts.slice(2).join('-');
+      setSelectedDatabase(dbName);
       setSelectedTable(tableName);
+      setSelectedTableContext({ database: dbName, table: tableName });
     }
   };
 
   const handleViewData = () => {
-    if (!selectedNode || selectedNode.type !== 'table') {
+    if (!selectedNode || selectedNode.type !== 'table' || !selectedTableContext) {
       toast.error('Please select a table');
       return;
     }
 
-    const parts = selectedNode.id.split('-');
-    const tableName = parts.slice(2).join('-');
-    const query = `SELECT * FROM ${tableName} LIMIT 100;`;
-
-    const activeTab = getActiveTab();
-    if (activeTab) {
-      updateTabQuery(activeTab.id, query);
-      navigate('/database/editor');
-      toast.success(`Query loaded: ${tableName}`);
-    } else {
-      toast.error('No active editor tab');
-    }
+    setBrowserOpen(true);
   };
 
   return (
@@ -171,6 +167,28 @@ export function SchemaExplorer() {
           )}
         </div>
       )}
+
+      <Dialog open={browserOpen} onOpenChange={setBrowserOpen}>
+        <DialogContent className="max-w-7xl h-[85vh] overflow-hidden flex flex-col">
+          <DialogHeader>
+            <DialogTitle>
+              Table Data
+              {selectedTableContext
+                ? ` — ${selectedTableContext.database}.${selectedTableContext.table}`
+                : ''}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="flex-1 overflow-auto">
+            {activeConnectionId && selectedTableContext ? (
+              <TableBrowser
+                connectionId={activeConnectionId}
+                database={selectedTableContext.database}
+                table={selectedTableContext.table}
+              />
+            ) : null}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
