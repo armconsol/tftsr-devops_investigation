@@ -83,6 +83,7 @@ import { RouteErrorBoundary } from "@/components/RouteErrorBoundary";
 import { ConnectionManager } from "@/pages/Database/ConnectionManager";
 import { SQLEditor } from "@/pages/Database/SQLEditor";
 import { SchemaExplorer } from "@/pages/Database/SchemaExplorer";
+import { TableBrowserPage } from "@/pages/Database/TableBrowserPage";
 import { QueryHistoryPage } from "@/pages/Database/QueryHistory";
 import { ImportExport } from "@/pages/Database/ImportExport";
 import { ERDiagram } from "@/pages/Database/ERDiagram";
@@ -127,6 +128,7 @@ const navItems = [
       { to: "/database/editor", label: "SQL Editor" },
       { to: "/database/query-builder", label: "Query Builder" },
       { to: "/database/schema", label: "Schema Explorer" },
+      { to: "/database/browser", label: "Table Browser" },
       { to: "/database/history", label: "Query History" },
       { to: "/database/import-export", label: "Import/Export" },
       { to: "/database/er-diagram", label: "ER Diagram" },
@@ -395,6 +397,7 @@ export default function App() {
             <Route path="/database/editor" element={<SQLEditor />} />
             <Route path="/database/query-builder" element={<QueryBuilder />} />
             <Route path="/database/schema" element={<SchemaExplorer />} />
+            <Route path="/database/browser" element={<TableBrowserPage />} />
             <Route path="/database/history" element={<QueryHistoryPage />} />
             <Route path="/database/import-export" element={<ImportExport />} />
             <Route path="/database/er-diagram" element={<ERDiagram />} />
