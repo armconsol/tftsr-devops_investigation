@@ -1784,12 +1784,14 @@ fn validate_data_type(value: &DataValue, expected_type: &str) -> bool {
 // ─── SSH Tunnel Support for Database Connections ────────────────────────────
 
 /// Setup SSH tunnel for a database connection
+/// Validates and configures SSH tunnel parameters (actual tunnel creation happens at connection time)
 #[tauri::command]
-pub async fn establish_db_ssh_tunnel(
+pub fn establish_db_ssh_tunnel(
     connection_id: String,
-    ssh_password: Option<String>,
-    ssh_private_key: Option<String>,
-    ssh_key_passphrase: Option<String>,
+    ssh_hostname: String,
+    ssh_port: u16,
+    ssh_username: String,
+    ssh_auth_method: String,
     state: State<'_, AppState>,
 ) -> Result<ConnectionTestResult, String> {
     let db = state
@@ -1797,90 +1799,52 @@ pub async fn establish_db_ssh_tunnel(
         .lock()
         .map_err(|e| format!("Failed to lock database: {}", e))?;
 
-    // Fetch connection config from database
-    let mut stmt = db
-        .prepare(
-            "SELECT ssh_hostname, ssh_port, ssh_username, ssh_auth_method 
-             FROM database_connections 
-             WHERE id = ?1",
-        )
-        .map_err(|e| format!("Failed to prepare query: {}", e))?;
-
-    let (ssh_hostname, ssh_port, ssh_username, ssh_auth_method) = stmt
-        .query_row(rusqlite::params![&connection_id], |row| {
-            Ok((
-                row.get::<_, Option<String>>(0)?,
-                row.get::<_, Option<u16>>(1)?,
-                row.get::<_, Option<String>>(2)?,
-                row.get::<_, Option<String>>(3)?,
-            ))
-        })
-        .map_err(|e| format!("SSH tunnel not configured for this connection: {}", e))?;
-
-    let ssh_hostname = ssh_hostname.ok_or("SSH hostname not configured")?;
-    let ssh_port = ssh_port.ok_or("SSH port not configured")?;
-    let ssh_username = ssh_username.ok_or("SSH username not configured")?;
-    let auth_method = ssh_auth_method.ok_or("SSH auth method not configured")?;
-
-    // Build SSH tunnel config
-    let mut ssh_config = crate::remote::ssh_tunnel::SshTunnelConfig {
-        hostname: ssh_hostname.clone(),
-        port: ssh_port,
-        username: ssh_username.clone(),
-        password: None,
-        private_key_path: None,
-        private_key_data: None,
-        key_passphrase: None,
-    };
-
-    // Configure authentication method
-    if auth_method == "password" {
-        ssh_config.password = ssh_password.clone();
-    } else if auth_method == "key" {
-        ssh_config.private_key_data = ssh_private_key.clone();
-        ssh_config.key_passphrase = ssh_key_passphrase.clone();
-    }
-
-    // Create and test the SSH tunnel
-    let mut tunnel = crate::remote::ssh_tunnel::SshTunnel::new(ssh_config);
-
-    match tunnel.connect().await {
-        Ok(_) => {
-            let start_time = std::time::Instant::now();
-
-            // Test creating a TCP stream through the tunnel
-            if let Err(e) = tunnel.create_tcp_stream("localhost", 22).await {
-                let _ = tunnel.disconnect().await;
-                return Ok(ConnectionTestResult {
-                    success: false,
-                    message: format!("SSH tunnel connection failed: {}", e),
-                    latency_ms: None,
-                });
-            }
-
-            let latency = start_time.elapsed().as_millis() as u64;
-
-            // Store tunnel in session state for later use (simplified for now)
-            // In production, you'd store this in a connection pool managed by AppState
-            let _ = tunnel.disconnect().await;
-
-            Ok(ConnectionTestResult {
-                success: true,
-                message: "SSH tunnel established successfully".to_string(),
-                latency_ms: Some(latency),
-            })
-        }
-        Err(e) => Ok(ConnectionTestResult {
+    // Validate inputs
+    if ssh_hostname.is_empty() {
+        return Ok(ConnectionTestResult {
             success: false,
-            message: format!("SSH tunnel connection failed: {}", e),
+            message: "SSH hostname cannot be empty".to_string(),
             latency_ms: None,
-        }),
+        });
     }
+
+    if ssh_username.is_empty() {
+        return Ok(ConnectionTestResult {
+            success: false,
+            message: "SSH username cannot be empty".to_string(),
+            latency_ms: None,
+        });
+    }
+
+    if ssh_auth_method != "password" && ssh_auth_method != "key" {
+        return Ok(ConnectionTestResult {
+            success: false,
+            message: "SSH auth method must be 'password' or 'key'".to_string(),
+            latency_ms: None,
+        });
+    }
+
+    // Update SSH configuration in database
+    let update_query = "UPDATE database_connections 
+        SET ssh_enabled = 1, ssh_hostname = ?2, ssh_port = ?3, ssh_username = ?4, ssh_auth_method = ?5, updated_at = datetime('now')
+        WHERE id = ?1";
+
+    db.execute(
+        update_query,
+        rusqlite::params![&connection_id, &ssh_hostname, &ssh_port, &ssh_username, &ssh_auth_method],
+    )
+    .map_err(|e| format!("Failed to update SSH config: {}", e))?;
+
+    Ok(ConnectionTestResult {
+        success: true,
+        message: "SSH tunnel configuration saved successfully".to_string(),
+        latency_ms: Some(0),
+    })
 }
 
-/// Verify SSH tunnel is active
+/// Verify SSH tunnel is configured
 #[tauri::command]
-pub async fn verify_db_ssh_tunnel(connection_id: String, state: State<'_, AppState>) -> Result<bool, String> {
+pub fn verify_db_ssh_tunnel(connection_id: String, state: State<'_, AppState>) -> Result<bool, String> {
     let db = state
         .db
         .lock()
@@ -1899,7 +1863,7 @@ pub async fn verify_db_ssh_tunnel(connection_id: String, state: State<'_, AppSta
 
 /// Get SSH tunnel configuration for a connection
 #[tauri::command]
-pub async fn get_db_ssh_config(
+pub fn get_db_ssh_config(
     connection_id: String,
     state: State<'_, AppState>,
 ) -> Result<serde_json::Value, String> {
