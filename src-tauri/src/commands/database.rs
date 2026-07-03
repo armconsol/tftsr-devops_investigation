@@ -1427,6 +1427,7 @@ pub(crate) async fn load_connection_config(
         username,
         password,
         ssl_config,
+        ssh_tunnel_config: None,
         options,
     })
 }
