@@ -148,6 +148,23 @@ src-tauri/src/
 | `sessionStore.ts` | Not persisted (ephemeral) | currentIssue, messages, piiSpans, approvedRedactions, whyLevel (0–5), loading state |
 | `settingsStore.ts` | `localStorage` as `"trcaa-settings"` | AI providers, theme, Ollama URL, active provider, debug logging toggle |
 | `historyStore.ts` | Not persisted (cache) | Past issues list, search query |
+| `proxmoxStore.ts` | `localStorage` as `"tftsr-proxmox"` | Selected Proxmox cluster id + selected node per cluster (`Record<clusterId, node>`), shared across every Proxmox subpage so switching pages no longer resets the host dropdown back to the default |
+
+### Shared Proxmox frontend utilities
+
+- `src/lib/format.ts` — `formatBytes` (B → PB, used by Ceph pool/OSD tables so Used/Available
+  render as e.g. `1.5 TB` instead of raw byte counts) and `formatUptime`.
+- `src/hooks/usePolling.ts` — fires a callback immediately then on a fixed interval while
+  enabled; used to auto-load and periodically refresh the Ceph Monitors/Managers/CephFS/Flags
+  tabs (they previously only loaded once via a manual "Load" button).
+- `src/hooks/useProxmoxClusters.ts` / `src/hooks/useProxmoxNodes.ts` — load the cluster/node
+  list and restore the selection from `proxmoxStore` (falling back to the first entry if the
+  persisted id/name is no longer present), instead of every page defaulting back to index 0.
+- `src/components/SidebarNav.tsx` — recursive sidebar renderer (groups with `children` are
+  collapsible buttons, leaves are `NavLink`s) backing the top-level **Tools** group
+  (Kubernetes, Proxmox, Database, Remote Desktop — collapsed by default) and the **Settings**
+  group (also collapsed by default), replacing the previous single-level, always-expanded
+  Settings list in `App.tsx`.
 
 ### Page Flow
 

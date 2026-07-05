@@ -446,17 +446,43 @@ When `Cargo.toml` is bumped (e.g. `1.3.0` → `1.4.0`), the counter resets to `.
 2. Open a PR from `beta → master` and merge it.
 3. `auto-tag.yml` fires, creates tag `v1.3.0`, builds all platforms, marks release stable.
 
-### In-app updater channel switching
+### In-app updater: no channel selection
 
-Users select their channel in **Settings → Updates**. The selection is stored in
-`AppSettings.update_channel` (persisted via the frontend settings store).
+There is no channel picker in Settings → Updater anymore — `AppSettings.update_channel`
+and the `get_update_channel`/`set_update_channel` commands have been removed. Installs may
+themselves come from a beta prerelease, so filtering `check_app_updates` down to only
+`stable` (non-prerelease) releases could hide a genuinely newer prerelease build. Instead,
+`check_app_updates` fetches `GET /releases?limit=20` and picks the **highest-versioned
+non-draft release**, prereleases included, using a prerelease-aware comparison
+(`3.1.0` > `3.1.0-beta.9` > `3.0.0`). Old settings JSON with a leftover `update_channel`
+key still deserializes fine — the field is just ignored.
 
-`check_app_updates` queries `GET /releases?limit=20` and returns the first release
-matching the active channel:
-- `stable` → first entry where `prerelease == false`
-- `beta` → first entry where `prerelease == true`
+### Version embedding at build time
 
-Draft releases are always skipped.
+Every `cargo tauri build` runs `beforeBuildCommand: "npm run version:update && npm run build"`
+(`src-tauri/tauri.conf.json`), which invokes `scripts/update-version.mjs`. That script
+resolves the version to embed in this order: an explicit CLI argument → `$RELEASE_TAG`
+(set as job-level `env:` on every build job in `auto-tag.yml` and `release-beta.yml`) →
+`git describe --tags` → `package.json` as a last-resort fallback.
+
+**Bug fixed:** the `autotag` job in `auto-tag.yml` runs in a plain `alpine:latest`
+container (BusyBox `sed`, not GNU `sed`). Its version-bump step used to rewrite
+`package.json` / `Cargo.toml` / `tauri.conf.json` with the GNU-only
+`sed -i "0,/re/s//repl/"` range-addressing form, which BusyBox `sed` silently accepts and
+turns into a no-op — no error, no substitution. Only the `Cargo.lock` line (written with a
+POSIX-compatible `/pattern/{n;s/.../}` form) actually updated. The result: a release could
+tag and build as (say) `v3.1.0` while `get_app_version` — and the three JSON/TOML files —
+still reported `3.0.0`. Fixed by having that step call
+`node scripts/update-version.mjs "${NEW_VERSION}"` (the same well-tested script used for
+local dev bumps and the build-time hook) instead of hand-rolled `sed`, with `nodejs`
+added to the job's `apk add` line, followed by a verification step that greps every
+version-bearing file for the expected version and fails the job (`exit 1`) if any file
+wasn't actually updated.
+
+Separately, `get_app_version` itself used to read the `APP_VERSION`/`CARGO_PKG_VERSION`
+**environment variables**, which are never set in a packaged build — it now reads
+`app.package_info().version`, sourced from `tauri.conf.json` at build time, matching what
+`check_app_updates` already used.
 
 ### Branch protection for `beta`
 
