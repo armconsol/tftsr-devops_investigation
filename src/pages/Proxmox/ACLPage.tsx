@@ -7,8 +7,8 @@ import { Label } from '@/components/ui/index';
 import { Badge } from '@/components/ui/index';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/index';
 import { AclList, UserList, RealmList } from '@/components/Proxmox';
+import { useProxmoxClusters } from '@/hooks/useProxmoxClusters';
 import {
-  listProxmoxClusters,
   listAcls,
   listUsers,
   listRealms,
@@ -35,12 +35,10 @@ import type {
   UserToken,
   UserTokenCreateResult,
 } from '@/lib/proxmoxClient';
-import { ClusterInfo } from '@/lib/domain';
 import { toast } from 'sonner';
 
 export function ProxmoxACLPage() {
-  const [clusters, setClusters] = useState<ClusterInfo[]>([]);
-  const [selectedClusterId, setSelectedClusterId] = useState<string>('');
+  const { clusters, selectedClusterId, setSelectedClusterId } = useProxmoxClusters();
   const [activeTab, setActiveTab] = useState<string>('acl');
 
   const [acls, setAcls] = useState<AclEntry[]>([]);
@@ -86,18 +84,6 @@ export function ProxmoxACLPage() {
   const [tokenPrivsep, setTokenPrivsep] = useState(true);
   const [createdToken, setCreatedToken] = useState<UserTokenCreateResult | null>(null);
   const [tokenResultDialogOpen, setTokenResultDialogOpen] = useState(false);
-
-  useEffect(() => {
-    listProxmoxClusters()
-      .then((cls) => {
-        setClusters(cls);
-        if (cls.length > 0) setSelectedClusterId(cls[0].id);
-      })
-      .catch((err) => {
-        console.error('Failed to load clusters:', err);
-        toast.error('Failed to load clusters');
-      });
-  }, []);
 
   const loadAcls = useCallback(async (clusterId: string) => {
     if (!clusterId) return;

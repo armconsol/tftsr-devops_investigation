@@ -461,15 +461,16 @@ export async function listAptUpdates(
 }
 
 /**
- * Update APT repositories
+ * Refresh the APT package index on a node (apt-get update).
  * @param clusterId - Cluster identifier
  * @param nodeId - Node identifier
+ * @returns UPID of the PVE task running the refresh
  */
-export async function updateAptRepos(
+export async function refreshAptCache(
   clusterId: string,
   nodeId: string
-): Promise<void> {
-  await invoke("update_apt_repos", { clusterId, node: nodeId });
+): Promise<string> {
+  return await invoke<string>("refresh_apt_cache", { clusterId, node: nodeId });
 }
 
 /**
@@ -480,8 +481,8 @@ export async function updateAptRepos(
 export async function listAptRepositories(
   clusterId: string,
   nodeId: string
-): Promise<any[]> {
-  return await invoke<any[]>("list_apt_repositories", { clusterId, node: nodeId });
+): Promise<AptRepository[]> {
+  return await invoke<AptRepository[]>("list_apt_repositories", { clusterId, node: nodeId });
 }
 
 // ─── Remote Shell ─────────────────────────────────────────────────────────────
@@ -1076,7 +1077,6 @@ export interface AptRepository {
 export interface SyslogEntry {
   n: number;
   t: string;
-  msg: string;
 }
 
 /**
@@ -1290,6 +1290,43 @@ export const listClusterTasks = async (
     clusterId,
     limit: limit ?? 50,
   });
+
+/** One line of a PVE task log ({n}=line number, {t}=line text). */
+export interface TaskLogEntry {
+  n: number;
+  t: string;
+}
+
+/** Get the full log of a single task. */
+export const getProxmoxTaskLog = async (
+  clusterId: string,
+  node: string,
+  upid: string
+): Promise<TaskLogEntry[]> =>
+  invoke<TaskLogEntry[]>("get_proxmox_task_log", { clusterId, node, upid });
+
+export interface TaskLogTarget {
+  node: string;
+  upid: string;
+}
+
+export interface TaskLogSearchResult {
+  node: string;
+  upid: string;
+  matches: TaskLogEntry[];
+  error?: string;
+}
+
+/**
+ * Search the logs of multiple tasks for a case-insensitive substring.
+ * Limited to 100 targets per call; query must be at least 2 characters.
+ */
+export const searchTaskLogs = async (
+  clusterId: string,
+  query: string,
+  targets: TaskLogTarget[]
+): Promise<TaskLogSearchResult[]> =>
+  invoke<TaskLogSearchResult[]>("search_task_logs", { clusterId, query, targets });
 
 // ─── Storage Per-Node ─────────────────────────────────────────────────────────
 
@@ -1852,12 +1889,17 @@ export interface NodeShellSession {
   user: string;
 }
 
-/** Open a host (node) shell for a stored remote (PVE=noVNC, PBS=xterm). */
+/**
+ * Open a host (node) shell for a stored remote (PVE=noVNC, PBS=xterm).
+ * `cmd` selects the shell command PVE runs: "login" (default) or "upgrade"
+ * (runs pveupgrade, like the official PVE UI's node Upgrade button).
+ */
 export const openNodeShell = (
   clusterId: string,
-  node: string
+  node: string,
+  cmd?: 'login' | 'upgrade'
 ): Promise<NodeShellSession> =>
-  invoke("open_node_shell", { clusterId, node });
+  invoke("open_node_shell", { clusterId, node, cmd: cmd ?? null });
 
 // ─── Container (LXC) ──────────────────────────────────────────────────────────
 
@@ -1941,6 +1983,53 @@ export const getCephFlags = (
   node: string
 ): Promise<CephFlag[]> =>
   invoke("get_ceph_flags", { clusterId, node });
+
+/** Set (or clear) a cluster-level Ceph runtime flag (e.g. "noout"). */
+export const setCephFlag = (
+  clusterId: string,
+  flag: string,
+  value: boolean
+): Promise<void> => invoke("set_ceph_flag", { clusterId, flag, value });
+
+/** Create a Ceph monitor on a node. Returns the PVE task UPID. */
+export const createCephMonitor = (
+  clusterId: string,
+  node: string,
+  monid: string
+): Promise<string> => invoke("create_ceph_monitor", { clusterId, node, monid });
+
+/** Destroy a Ceph monitor. Returns the PVE task UPID. */
+export const deleteCephMonitor = (
+  clusterId: string,
+  node: string,
+  monid: string
+): Promise<string> => invoke("delete_ceph_monitor", { clusterId, node, monid });
+
+/** Create a Ceph manager on a node. Returns the PVE task UPID. */
+export const createCephManager = (
+  clusterId: string,
+  node: string,
+  id: string
+): Promise<string> => invoke("create_ceph_manager", { clusterId, node, id });
+
+/** Destroy a Ceph manager. Returns the PVE task UPID. */
+export const deleteCephManager = (
+  clusterId: string,
+  node: string,
+  id: string
+): Promise<string> => invoke("delete_ceph_manager", { clusterId, node, id });
+
+/**
+ * Start, stop, or restart a Ceph mon/mgr service (e.g. service="mon.vmhost1").
+ * Returns the PVE task UPID.
+ */
+export const cephServiceAction = (
+  clusterId: string,
+  node: string,
+  service: string,
+  action: 'start' | 'stop' | 'restart'
+): Promise<string> =>
+  invoke("ceph_service_action", { clusterId, node, service, action });
 
 // ─── Firewall (cluster + guest) ───────────────────────────────────────────────
 

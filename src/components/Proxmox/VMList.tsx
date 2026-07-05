@@ -13,10 +13,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Label } from '@/components/ui/index';
 import { Checkbox as UICheckbox } from '@/components/ui/index';
 import { Input } from '@/components/ui/index';
-import { AlertCircle } from 'lucide-react';
+import { AlertCircle, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/index';
 import type { ClusterInfo } from '@/lib/domain';
 import type { ProxmoxSnapshot } from '@/lib/proxmoxClient';
+import { formatBytes } from '@/lib/format';
+import { filterAndSortVms, type VmSortKey, type SortDirection } from './vmTableUtils';
 import {
   cloneVm,
   deleteVm,
@@ -98,14 +100,6 @@ function formatUptime(seconds: number): string {
   return parts.join(' ');
 }
 
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return '0 B';
-  const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-}
-
 export function VMList({
   vms: rawVms,
   clusterId,
@@ -144,6 +138,11 @@ export function VMList({
   const [cloneVmid, setCloneVmid] = useState('');
   const [cloneName, setCloneName] = useState('');
   const [cloneSubmitting, setCloneSubmitting] = useState(false);
+  const [search, setSearch] = useState('');
+  const [nodeFilter, setNodeFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+  const [sortKey, setSortKey] = useState<VmSortKey | null>(null);
+  const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
 
   const vms: VMInfo[] = React.useMemo(() => {
     return rawVms.map((vm) => ({
@@ -159,6 +158,46 @@ export function VMList({
       tags: vm.tags,
     }));
   }, [rawVms]);
+
+  const nodeOptions = React.useMemo(
+    () => Array.from(new Set(vms.map((vm) => vm.node))).sort((a, b) => a.localeCompare(b)),
+    [vms]
+  );
+
+  const visibleVms = React.useMemo(
+    () =>
+      filterAndSortVms(vms, {
+        search,
+        filters: {
+          node: nodeFilter || undefined,
+          status: statusFilter || undefined,
+        },
+        sortKey,
+        sortDirection,
+      }),
+    [vms, search, nodeFilter, statusFilter, sortKey, sortDirection]
+  );
+
+  const toggleSort = useCallback(
+    (key: VmSortKey) => {
+      setSortKey((prevKey) => {
+        if (prevKey === key) {
+          setSortDirection((prevDir) => (prevDir === 'asc' ? 'desc' : 'asc'));
+          return key;
+        }
+        setSortDirection('asc');
+        return key;
+      });
+    },
+    []
+  );
+
+  const sortIcon = (key: VmSortKey) => {
+    if (sortKey !== key) return <ArrowUpDown className="ml-1 inline h-3 w-3 text-muted-foreground/50" />;
+    return sortDirection === 'asc'
+      ? <ArrowUp className="ml-1 inline h-3 w-3" />
+      : <ArrowDown className="ml-1 inline h-3 w-3" />;
+  };
 
   // clusterId comes from props (not captured via closure over state), so it is always
   // current when an action fires even if the user switches clusters mid-session.
@@ -467,6 +506,8 @@ export function VMList({
     }
   }, [clusterId, onRefresh]);
 
+  const sortableHeaderClass = 'cursor-pointer select-none hover:text-foreground';
+
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -478,34 +519,88 @@ export function VMList({
         </div>
       </CardHeader>
       <CardContent>
+        <div className="flex flex-wrap items-center gap-3 pb-4">
+          <Input
+            placeholder="Search by name or VM ID..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="max-w-xs"
+          />
+          <div className="flex items-center gap-1">
+            <Label htmlFor="vm-node-filter" className="sr-only">
+              Filter by Node
+            </Label>
+            <select
+              id="vm-node-filter"
+              aria-label="Filter by Node"
+              className="rounded-md border px-3 py-1.5 text-sm bg-background"
+              value={nodeFilter}
+              onChange={(e) => setNodeFilter(e.target.value)}
+            >
+              <option value="">All Nodes</option>
+              {nodeOptions.map((node) => (
+                <option key={node} value={node}>{node}</option>
+              ))}
+            </select>
+          </div>
+          <div className="flex items-center gap-1">
+            <Label htmlFor="vm-status-filter" className="sr-only">
+              Filter by Status
+            </Label>
+            <select
+              id="vm-status-filter"
+              aria-label="Filter by Status"
+              className="rounded-md border px-3 py-1.5 text-sm bg-background"
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+            >
+              <option value="">All Statuses</option>
+              <option value="running">Running</option>
+              <option value="stopped">Stopped</option>
+              <option value="paused">Paused</option>
+            </select>
+          </div>
+        </div>
         <div className="overflow-auto">
           <Table>
             <TableHeader>
               <TableRow>
                 <TableHead className="w-[40px]">
                   <Checkbox
-                    checked={vms.length > 0 && vms.every((vm) => selectedVMs.has(vm.id))}
+                    checked={visibleVms.length > 0 && visibleVms.every((vm) => selectedVMs.has(vm.id))}
                     onCheckedChange={(checked) => {
                       if (checked) {
-                        vms.forEach((vm) => selectedVMs.add(vm.id));
+                        visibleVms.forEach((vm) => selectedVMs.add(vm.id));
                       } else {
-                        vms.forEach((vm) => selectedVMs.delete(vm.id));
+                        visibleVms.forEach((vm) => selectedVMs.delete(vm.id));
                       }
                     }}
                   />
                 </TableHead>
-                <TableHead>Name</TableHead>
-                <TableHead>VM ID</TableHead>
-                <TableHead>Node</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>CPU</TableHead>
-                <TableHead>Memory</TableHead>
+                <TableHead className={sortableHeaderClass} onClick={() => toggleSort('name')}>
+                  Name{sortIcon('name')}
+                </TableHead>
+                <TableHead className={sortableHeaderClass} onClick={() => toggleSort('vmid')}>
+                  VM ID{sortIcon('vmid')}
+                </TableHead>
+                <TableHead className={sortableHeaderClass} onClick={() => toggleSort('node')}>
+                  Node{sortIcon('node')}
+                </TableHead>
+                <TableHead className={sortableHeaderClass} onClick={() => toggleSort('status')}>
+                  Status{sortIcon('status')}
+                </TableHead>
+                <TableHead className={sortableHeaderClass} onClick={() => toggleSort('cpu')}>
+                  CPU{sortIcon('cpu')}
+                </TableHead>
+                <TableHead className={sortableHeaderClass} onClick={() => toggleSort('memory')}>
+                  Memory{sortIcon('memory')}
+                </TableHead>
                 <TableHead>Uptime</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {vms.map((vm) => {
+              {visibleVms.map((vm) => {
                 const cpuPercent = vm.cpu > 0 ? Math.min(vm.cpu * 100, 100) : 0;
                 const memoryPercent = vm.memoryTotal > 0 ? (vm.memory / vm.memoryTotal) * 100 : 0;
 

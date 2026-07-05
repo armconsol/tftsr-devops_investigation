@@ -7,12 +7,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/index';
 import { RefreshCw, Upload, ShieldCheck } from 'lucide-react';
 import { CertificateList } from '@/components/Proxmox';
-import { listProxmoxClusters, listCertificates } from '@/lib/proxmoxClient';
-import { ClusterInfo, Certificate } from '@/lib/domain';
+import { listCertificates } from '@/lib/proxmoxClient';
+import { Certificate } from '@/lib/domain';
+import { useProxmoxClusters } from '@/hooks/useProxmoxClusters';
 
 export function ProxmoxCertificatesPage() {
-  const [clusters, setClusters] = useState<ClusterInfo[]>([]);
-  const [selectedClusterId, setSelectedClusterId] = useState<string>('');
+  const { clusters, selectedClusterId, setSelectedClusterId } = useProxmoxClusters();
   const [nodeId, setNodeId] = useState<string>('pve');
   const [certificates, setCertificates] = useState<Certificate[]>([]);
   const [loading, setLoading] = useState(false);
@@ -27,20 +27,6 @@ export function ProxmoxCertificatesPage() {
   // ACME dialog state
   const [acmeOpen, setAcmeOpen] = useState(false);
   const [acmeDomain, setAcmeDomain] = useState('');
-
-  useEffect(() => {
-    void (async () => {
-      try {
-        const cls = await listProxmoxClusters();
-        setClusters(cls);
-        if (cls.length > 0) {
-          setSelectedClusterId(cls[0].id);
-        }
-      } catch (err) {
-        setError(String(err));
-      }
-    })();
-  }, []);
 
   useEffect(() => {
     if (!selectedClusterId) return;

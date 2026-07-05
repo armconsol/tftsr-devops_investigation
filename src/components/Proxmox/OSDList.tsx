@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/index'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/index';
 import { Button } from '@/components/ui/index';
 import { MoreHorizontal } from 'lucide-react';
+import { formatBytes } from '@/lib/format';
 
 interface OSDInfo {
   id: number;
@@ -84,9 +85,9 @@ export function OSDList({
                     </span>
                   </TableCell>
                   <TableCell>{osd.weight}</TableCell>
-                  <TableCell>{osd.size}</TableCell>
-                  <TableCell>{osd.used}</TableCell>
-                  <TableCell>{osd.avail}</TableCell>
+                  <TableCell>{formatBytes(osd.size)}</TableCell>
+                  <TableCell>{formatBytes(osd.used)}</TableCell>
+                  <TableCell>{formatBytes(osd.avail)}</TableCell>
                   <TableCell>
                     <div className="flex items-center space-x-2">
                       <div className="h-2 w-24 bg-slate-200 rounded-full overflow-hidden">

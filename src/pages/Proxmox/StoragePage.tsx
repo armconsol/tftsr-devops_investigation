@@ -7,19 +7,17 @@ import { Label } from '@/components/ui/index';
 import { StorageList } from '@/components/Proxmox';
 import type { StorageInfo } from '@/components/Proxmox/StorageList';
 import {
-  listProxmoxClusters,
   listProxmoxDatastores,
   updateProxmoxStorage,
   deleteProxmoxStorage,
 } from '@/lib/proxmoxClient';
-import type { ClusterInfo } from '@/lib/domain';
+import { useProxmoxClusters } from '@/hooks/useProxmoxClusters';
 import { toast } from 'sonner';
 
 type StorageRow = StorageInfo;
 
 export function ProxmoxStoragePage() {
-  const [clusters, setClusters] = useState<ClusterInfo[]>([]);
-  const [selectedClusterId, setSelectedClusterId] = useState<string>('');
+  const { clusters, selectedClusterId, setSelectedClusterId } = useProxmoxClusters();
   const [storages, setStorages] = useState<StorageRow[]>([]);
   const [isLoading, setIsLoading] = useState(false);
 
@@ -29,18 +27,6 @@ export function ProxmoxStoragePage() {
   const [editContent, setEditContent] = useState('');
   const [editNodes, setEditNodes] = useState('');
   const [editDisabled, setEditDisabled] = useState(false);
-
-  useEffect(() => {
-    listProxmoxClusters()
-      .then((cls) => {
-        setClusters(cls);
-        if (cls.length > 0) setSelectedClusterId(cls[0].id);
-      })
-      .catch((err) => {
-        console.error('Failed to load clusters:', err);
-        toast.error('Failed to load clusters');
-      });
-  }, []);
 
   const loadStorages = useCallback(async (clusterId: string) => {
     if (!clusterId) return;

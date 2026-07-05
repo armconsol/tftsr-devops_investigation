@@ -6,7 +6,6 @@ import { Input } from '@/components/ui/index';
 import { Label } from '@/components/ui/index';
 import { HAGroupsList, HAResourcesList } from '@/components/Proxmox';
 import {
-  listProxmoxClusters,
   listHaGroups,
   listHaResources,
   createHaGroup,
@@ -18,12 +17,11 @@ import {
   HaGroup,
   HaResource,
 } from '@/lib/proxmoxClient';
-import { ClusterInfo } from '@/lib/domain';
+import { useProxmoxClusters } from '@/hooks/useProxmoxClusters';
 import { toast } from 'sonner';
 
 export function ProxmoxHAPage() {
-  const [clusters, setClusters] = useState<ClusterInfo[]>([]);
-  const [selectedClusterId, setSelectedClusterId] = useState<string>('');
+  const { clusters, selectedClusterId, setSelectedClusterId } = useProxmoxClusters();
   const [groups, setGroups] = useState<HaGroup[]>([]);
   const [resources, setResources] = useState<HaResource[]>([]);
   const [isLoadingGroups, setIsLoadingGroups] = useState(false);
@@ -48,20 +46,6 @@ export function ProxmoxHAPage() {
   const [editResourceMaxRelocate, setEditResourceMaxRelocate] = useState('');
   const [editResourceComment, setEditResourceComment] = useState('');
 
-  // Load clusters on mount and auto-select the first one
-  useEffect(() => {
-    listProxmoxClusters()
-      .then((cls) => {
-        setClusters(cls);
-        if (cls.length > 0 && !selectedClusterId) {
-          setSelectedClusterId(cls[0].id);
-        }
-      })
-      .catch((err) => {
-        console.error('Failed to load clusters:', err);
-        toast.error('Failed to load clusters');
-      });
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadGroups = useCallback(async (clusterId: string) => {
     if (!clusterId) return;

@@ -14,6 +14,8 @@ interface NodeShellConsoleProps {
   clusterId: string;
   node: string;
   title?: string;
+  /** Shell command PVE should run: "login" (default) or "upgrade" (pveupgrade). */
+  cmd?: 'login' | 'upgrade';
 }
 
 /**
@@ -23,7 +25,7 @@ interface NodeShellConsoleProps {
  *  - a graphical noVNC canvas (PVE `vncshell`), or
  *  - an xterm.js terminal (PBS `termproxy`).
  */
-export function NodeShellConsole({ clusterId, node, title }: NodeShellConsoleProps) {
+export function NodeShellConsole({ clusterId, node, title, cmd }: NodeShellConsoleProps) {
   const screenRef = useRef<HTMLDivElement>(null);
   const rfbRef = useRef<RFB | null>(null);
   const [session, setSession] = useState<NodeShellSession | null>(null);
@@ -54,19 +56,19 @@ export function NodeShellConsole({ clusterId, node, title }: NodeShellConsolePro
     }
 
     try {
-      const s = await openNodeShell(clusterId, node);
+      const s = await openNodeShell(clusterId, node, cmd);
       setSession(s);
     } catch (err) {
       setStatus('error');
       setError(`Failed to open shell: ${err}`);
     }
-  }, [clusterId, node, cleanupRfb]);
+  }, [clusterId, node, cmd, cleanupRfb]);
 
   useEffect(() => {
     connect();
     return cleanupRfb;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [clusterId, node]);
+  }, [clusterId, node, cmd]);
 
   // Host → guest paste for the graphical (noVNC) shell. The xterm branch wires
   // its own paste handler. Bound to a button and Ctrl/Cmd+Shift+V.
