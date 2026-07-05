@@ -18,12 +18,45 @@ pub struct TaskInfo {
     pub description: String,
 }
 
-/// Task log entry
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// One line of a PVE task log. Entries only ever carry a line number `n` and
+/// the full line text `t` — there is no separate level/message split.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TaskLogEntry {
-    pub timestamp: String,
-    pub level: String,
-    pub message: String,
+    pub n: u64,
+    pub t: String,
+}
+
+/// Validate a Proxmox task UPID (`UPID:<node>:...`). Rejects anything that
+/// could be used for path traversal or injection when interpolated into a
+/// request path.
+pub fn validate_upid(upid: &str) -> Result<(), String> {
+    if !upid.starts_with("UPID:") {
+        return Err(format!(
+            "Invalid task UPID '{upid}': must start with 'UPID:'"
+        ));
+    }
+    if upid.len() > 256 {
+        return Err("Invalid task UPID: too long".to_string());
+    }
+    let valid_chars = upid
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, ':' | '-' | '_' | '.' | '@'));
+    if !valid_chars {
+        return Err(format!(
+            "Invalid task UPID '{upid}': contains illegal characters"
+        ));
+    }
+    Ok(())
+}
+
+/// Case-insensitive substring search over task log lines.
+pub fn filter_log_lines(entries: &[TaskLogEntry], query: &str) -> Vec<TaskLogEntry> {
+    let needle = query.to_lowercase();
+    entries
+        .iter()
+        .filter(|e| e.t.to_lowercase().contains(&needle))
+        .cloned()
+        .collect()
 }
 
 /// List tasks for a node
@@ -192,6 +225,21 @@ pub async fn stop_task(
     Ok(())
 }
 
+/// Parse the (envelope-unwrapped) response of
+/// GET /nodes/{node}/tasks/{upid}/log, an array of `{n, t}` objects.
+pub fn parse_task_log_entries(response: &serde_json::Value) -> Result<Vec<TaskLogEntry>, String> {
+    let arr = response
+        .as_array()
+        .ok_or_else(|| "Invalid task log response format".to_string())?;
+
+    arr.iter()
+        .map(|entry| {
+            serde_json::from_value::<TaskLogEntry>(entry.clone())
+                .map_err(|e| format!("Failed to parse task log entry: {e}"))
+        })
+        .collect()
+}
+
 /// Get task log
 pub async fn get_task_log(
     client: &crate::proxmox::client::ProxmoxClient,
@@ -199,44 +247,14 @@ pub async fn get_task_log(
     task_id: &str,
     ticket: &str,
 ) -> Result<Vec<TaskLogEntry>, String> {
+    validate_upid(task_id)?;
     let path = format!("nodes/{node}/tasks/{task_id}/log");
     let response: serde_json::Value = client
         .get(&path, Some(ticket))
         .await
         .map_err(|e| format!("Failed to get task log for {task_id}: {e}"))?;
 
-    if let Some(log_entries) = response.as_array() {
-        let log_list: Vec<TaskLogEntry> = log_entries
-            .iter()
-            .map(|entry| {
-                let timestamp = entry
-                    .get("t")
-                    .and_then(|t| t.as_str())
-                    .unwrap_or("")
-                    .to_string();
-                let level = entry
-                    .get("l")
-                    .and_then(|l| l.as_str())
-                    .unwrap_or("info")
-                    .to_string();
-                let message = entry
-                    .get("m")
-                    .and_then(|m| m.as_str())
-                    .unwrap_or("")
-                    .to_string();
-
-                TaskLogEntry {
-                    timestamp,
-                    level,
-                    message,
-                }
-            })
-            .collect();
-
-        Ok(log_list)
-    } else {
-        Ok(vec![])
-    }
+    parse_task_log_entries(&response)
 }
 
 /// Forward task to remote
@@ -283,5 +301,94 @@ pub async fn forward_task(
             exit_status: None,
             description: format!("Forwarded to {target_node}"),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_validate_upid_accepts_well_formed() {
+        assert!(
+            validate_upid("UPID:vmhost1:00001234:0000ABCD:00000000:aptupdate::root@pam:").is_ok()
+        );
+    }
+
+    #[test]
+    fn test_validate_upid_rejects_bad_prefix_and_traversal() {
+        for upid in [
+            "not-a-upid",
+            "",
+            "UPID:vmhost1/../etc/passwd",
+            "UPID:vmhost1; rm -rf /",
+        ] {
+            assert!(
+                validate_upid(upid).is_err(),
+                "upid {upid:?} must be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn test_parse_task_log_entries_basic() {
+        let response = serde_json::json!([
+            {"n": 1, "t": "starting update"},
+            {"n": 2, "t": "update complete"}
+        ]);
+        let entries = parse_task_log_entries(&response).unwrap();
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].n, 1);
+        assert_eq!(entries[1].t, "update complete");
+    }
+
+    #[test]
+    fn test_parse_task_log_entries_rejects_non_array() {
+        assert!(parse_task_log_entries(&serde_json::json!({})).is_err());
+    }
+
+    #[test]
+    fn test_parse_task_log_entries_missing_field_errors() {
+        assert!(parse_task_log_entries(&serde_json::json!([{"n": 1}])).is_err());
+    }
+
+    #[test]
+    fn test_filter_log_lines_case_insensitive_substring() {
+        let entries = vec![
+            TaskLogEntry {
+                n: 1,
+                t: "Starting APT update".to_string(),
+            },
+            TaskLogEntry {
+                n: 2,
+                t: "Nothing to do".to_string(),
+            },
+            TaskLogEntry {
+                n: 3,
+                t: "update complete".to_string(),
+            },
+        ];
+        let matches = filter_log_lines(&entries, "UPDATE");
+        assert_eq!(matches.len(), 2);
+        assert_eq!(matches[0].n, 1);
+        assert_eq!(matches[1].n, 3);
+    }
+
+    #[test]
+    fn test_filter_log_lines_no_match() {
+        let entries = vec![TaskLogEntry {
+            n: 1,
+            t: "hello".to_string(),
+        }];
+        assert!(filter_log_lines(&entries, "xyz").is_empty());
+    }
+
+    #[test]
+    fn test_filter_log_lines_unicode() {
+        let entries = vec![TaskLogEntry {
+            n: 1,
+            t: "café is running".to_string(),
+        }];
+        assert_eq!(filter_log_lines(&entries, "CAFÉ").len(), 1);
     }
 }

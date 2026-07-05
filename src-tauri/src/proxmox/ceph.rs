@@ -599,10 +599,34 @@ pub struct CephFs {
     pub data_pool: Option<String>,
 }
 
+/// Extract `data_pool` from a CephFS entry, accepting either a single
+/// `data_pool` string (older PVE) or a `data_pools` array (current PVE, since
+/// a filesystem can have more than one data pool) — joined with ", " when
+/// there are multiple. Array elements may be pool names (strings) or numeric
+/// pool ids.
+fn extract_data_pool(fs: &serde_json::Value) -> Option<String> {
+    if let Some(s) = fs.get("data_pool").and_then(|v| v.as_str()) {
+        return Some(s.to_string());
+    }
+    let pools = fs.get("data_pools")?.as_array()?;
+    let names: Vec<String> = pools
+        .iter()
+        .filter_map(|p| {
+            p.as_str()
+                .map(str::to_string)
+                .or_else(|| p.as_i64().map(|n| n.to_string()))
+        })
+        .collect();
+    if names.is_empty() {
+        None
+    } else {
+        Some(names.join(", "))
+    }
+}
+
 /// Parse an (already `data`-unwrapped) `nodes/{node}/ceph/fs` response.
 ///
-/// PVE returns an array of `{ name, metadata_pool, data_pool }` (the first data
-/// pool is surfaced as `data_pool`).
+/// PVE returns an array of `{ name, metadata_pool, data_pool | data_pools }`.
 pub fn parse_cephfs(response: &serde_json::Value) -> Result<Vec<CephFs>, String> {
     let filesystems = response
         .as_array()
@@ -616,10 +640,7 @@ pub fn parse_cephfs(response: &serde_json::Value) -> Result<Vec<CephFs>, String>
                 .get("metadata_pool")
                 .and_then(|v| v.as_str())
                 .map(|s| s.to_string());
-            let data_pool = fs
-                .get("data_pool")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string());
+            let data_pool = extract_data_pool(fs);
             Some(CephFs {
                 name,
                 metadata_pool,
@@ -661,6 +682,183 @@ pub async fn get_ceph_flags(
         .get("cluster/ceph/flags", Some(ticket))
         .await
         .map_err(|e| format!("Failed to get Ceph flags: {e}"))
+}
+
+/// Every runtime flag PVE/Ceph exposes via `/cluster/ceph/flags`. Used to
+/// whitelist mutation requests so only known flags can be toggled.
+pub const CEPH_FLAGS: &[&str] = &[
+    "noout",
+    "noin",
+    "nodown",
+    "noup",
+    "norebalance",
+    "norecover",
+    "noscrub",
+    "nodeep-scrub",
+    "nobackfill",
+    "notieragent",
+    "pause",
+];
+
+/// Validate a Ceph flag name against the known whitelist.
+pub fn validate_ceph_flag(flag: &str) -> Result<(), String> {
+    if CEPH_FLAGS.contains(&flag) {
+        Ok(())
+    } else {
+        Err(format!(
+            "Invalid Ceph flag '{flag}': must be one of {CEPH_FLAGS:?}"
+        ))
+    }
+}
+
+/// Set (or clear) a cluster-level Ceph runtime flag.
+/// PUT /cluster/ceph/flags/{flag} { value: bool }
+pub async fn set_ceph_flag(
+    client: &crate::proxmox::client::ProxmoxClient,
+    flag: &str,
+    value: bool,
+    ticket: &str,
+) -> Result<(), String> {
+    validate_ceph_flag(flag)?;
+    let path = format!("cluster/ceph/flags/{flag}");
+    let body = serde_json::json!({ "value": value });
+    let _response: serde_json::Value = client
+        .put(&path, &body, Some(ticket))
+        .await
+        .map_err(|e| format!("Failed to set Ceph flag {flag}: {e}"))?;
+    Ok(())
+}
+
+/// Validate a Ceph mon/mgr service id: alphanumeric, hyphens, dots, max 64.
+pub fn validate_ceph_service_id(id: &str) -> Result<(), String> {
+    if id.is_empty() || id.len() > 64 {
+        return Err("Service id must be between 1 and 64 characters".to_string());
+    }
+    if !id
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '.')
+    {
+        return Err(format!(
+            "Invalid service id '{id}': only alphanumeric characters, hyphens and dots are allowed"
+        ));
+    }
+    Ok(())
+}
+
+/// Create a Ceph monitor on a node. POST /nodes/{node}/ceph/mon/{monid}.
+/// Returns the task UPID.
+pub async fn create_mon(
+    client: &crate::proxmox::client::ProxmoxClient,
+    node: &str,
+    monid: &str,
+    ticket: &str,
+) -> Result<String, String> {
+    validate_node(node)?;
+    validate_ceph_service_id(monid)?;
+    let path = format!("nodes/{node}/ceph/mon/{monid}");
+    let response: serde_json::Value = client
+        .post_form(&path, &[], Some(ticket))
+        .await
+        .map_err(|e| format!("Failed to create Ceph monitor {monid}: {e}"))?;
+    Ok(response.as_str().unwrap_or_default().to_string())
+}
+
+/// Destroy a Ceph monitor. DELETE /nodes/{node}/ceph/mon/{monid}.
+/// Returns the task UPID.
+pub async fn destroy_mon(
+    client: &crate::proxmox::client::ProxmoxClient,
+    node: &str,
+    monid: &str,
+    ticket: &str,
+) -> Result<String, String> {
+    validate_node(node)?;
+    validate_ceph_service_id(monid)?;
+    let path = format!("nodes/{node}/ceph/mon/{monid}");
+    let response: serde_json::Value = client
+        .delete(&path, Some(ticket))
+        .await
+        .map_err(|e| format!("Failed to destroy Ceph monitor {monid}: {e}"))?;
+    Ok(response.as_str().unwrap_or_default().to_string())
+}
+
+/// Create a Ceph manager on a node. POST /nodes/{node}/ceph/mgr/{id}.
+/// Returns the task UPID.
+pub async fn create_mgr(
+    client: &crate::proxmox::client::ProxmoxClient,
+    node: &str,
+    id: &str,
+    ticket: &str,
+) -> Result<String, String> {
+    validate_node(node)?;
+    validate_ceph_service_id(id)?;
+    let path = format!("nodes/{node}/ceph/mgr/{id}");
+    let response: serde_json::Value = client
+        .post_form(&path, &[], Some(ticket))
+        .await
+        .map_err(|e| format!("Failed to create Ceph manager {id}: {e}"))?;
+    Ok(response.as_str().unwrap_or_default().to_string())
+}
+
+/// Destroy a Ceph manager. DELETE /nodes/{node}/ceph/mgr/{id}.
+/// Returns the task UPID.
+pub async fn destroy_mgr(
+    client: &crate::proxmox::client::ProxmoxClient,
+    node: &str,
+    id: &str,
+    ticket: &str,
+) -> Result<String, String> {
+    validate_node(node)?;
+    validate_ceph_service_id(id)?;
+    let path = format!("nodes/{node}/ceph/mgr/{id}");
+    let response: serde_json::Value = client
+        .delete(&path, Some(ticket))
+        .await
+        .map_err(|e| format!("Failed to destroy Ceph manager {id}: {e}"))?;
+    Ok(response.as_str().unwrap_or_default().to_string())
+}
+
+/// Actions supported by `POST /nodes/{node}/ceph/{action}`.
+const CEPH_SERVICE_ACTIONS: &[&str] = &["start", "stop", "restart"];
+
+/// Validate a `mon.<id>` or `mgr.<id>` service identifier as accepted by the
+/// PVE `service` form parameter for start/stop/restart.
+pub fn validate_ceph_service(service: &str) -> Result<(), String> {
+    let Some((kind, id)) = service.split_once('.') else {
+        return Err(format!(
+            "Invalid Ceph service '{service}': expected 'mon.<id>' or 'mgr.<id>'"
+        ));
+    };
+    if kind != "mon" && kind != "mgr" {
+        return Err(format!(
+            "Invalid Ceph service '{service}': kind must be 'mon' or 'mgr'"
+        ));
+    }
+    validate_ceph_service_id(id)
+}
+
+/// Start, stop, or restart a Ceph mon/mgr service.
+/// POST /nodes/{node}/ceph/{start|stop|restart} { service: "mon.<id>" | "mgr.<id>" }
+/// Returns the task UPID.
+pub async fn ceph_service_action(
+    client: &crate::proxmox::client::ProxmoxClient,
+    node: &str,
+    service: &str,
+    action: &str,
+    ticket: &str,
+) -> Result<String, String> {
+    validate_node(node)?;
+    validate_ceph_service(service)?;
+    if !CEPH_SERVICE_ACTIONS.contains(&action) {
+        return Err(format!(
+            "Invalid Ceph service action '{action}': must be one of {CEPH_SERVICE_ACTIONS:?}"
+        ));
+    }
+    let path = format!("nodes/{node}/ceph/{action}");
+    let response: serde_json::Value = client
+        .post_form(&path, &[("service", service)], Some(ticket))
+        .await
+        .map_err(|e| format!("Failed to {action} Ceph service {service}: {e}"))?;
+    Ok(response.as_str().unwrap_or_default().to_string())
 }
 
 /// Parse an (already `data`-unwrapped) `nodes/{node}/ceph/mon` response.
@@ -1244,5 +1442,120 @@ mod tests {
         assert!(!create_pool_path.contains("cluster/"));
         assert!(!set_osd_weight_path.contains("cluster/"));
         assert!(!rbd_resize_path.contains("cluster/"));
+    }
+
+    // ── CephFS data_pool / data_pools ────────────────────────────────────────
+
+    #[test]
+    fn test_parse_cephfs_single_data_pool_string() {
+        let response = serde_json::json!([
+            { "name": "cephfs", "metadata_pool": "cephfs_metadata", "data_pool": "cephfs_data" }
+        ]);
+        let fs_list = parse_cephfs(&response).unwrap();
+        assert_eq!(fs_list.len(), 1);
+        assert_eq!(fs_list[0].data_pool.as_deref(), Some("cephfs_data"));
+    }
+
+    #[test]
+    fn test_parse_cephfs_data_pools_array_of_names() {
+        let response = serde_json::json!([
+            { "name": "cephfs", "metadata_pool": "cephfs_metadata", "data_pools": ["cephfs_data", "cephfs_data2"] }
+        ]);
+        let fs_list = parse_cephfs(&response).unwrap();
+        assert_eq!(
+            fs_list[0].data_pool.as_deref(),
+            Some("cephfs_data, cephfs_data2")
+        );
+    }
+
+    #[test]
+    fn test_parse_cephfs_data_pools_array_of_numeric_ids() {
+        let response = serde_json::json!([
+            { "name": "cephfs", "data_pools": [3, 4] }
+        ]);
+        let fs_list = parse_cephfs(&response).unwrap();
+        assert_eq!(fs_list[0].data_pool.as_deref(), Some("3, 4"));
+    }
+
+    #[test]
+    fn test_parse_cephfs_no_pool_info() {
+        let response = serde_json::json!([{ "name": "cephfs" }]);
+        let fs_list = parse_cephfs(&response).unwrap();
+        assert_eq!(fs_list[0].data_pool, None);
+    }
+
+    // ── Ceph flags ────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_validate_ceph_flag_accepts_known_flags() {
+        for flag in CEPH_FLAGS {
+            assert!(validate_ceph_flag(flag).is_ok());
+        }
+    }
+
+    #[test]
+    fn test_validate_ceph_flag_rejects_unknown() {
+        for flag in ["noout; rm -rf", "bogus_flag", "", "NOOUT"] {
+            assert!(
+                validate_ceph_flag(flag).is_err(),
+                "flag {flag:?} must be rejected"
+            );
+        }
+    }
+
+    // ── Ceph service id / mon.mgr service validation ─────────────────────────
+
+    #[test]
+    fn test_validate_ceph_service_id_accepts_valid() {
+        assert!(validate_ceph_service_id("vmhost1").is_ok());
+        assert!(validate_ceph_service_id("node-1.example").is_ok());
+    }
+
+    #[test]
+    fn test_validate_ceph_service_id_rejects_invalid() {
+        for id in [
+            "",
+            "a".repeat(65).as_str(),
+            "vmhost1; rm -rf",
+            "vmhost1/../etc",
+        ] {
+            assert!(
+                validate_ceph_service_id(id).is_err(),
+                "id {id:?} must be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn test_validate_ceph_service_accepts_mon_and_mgr() {
+        assert!(validate_ceph_service("mon.vmhost1").is_ok());
+        assert!(validate_ceph_service("mgr.vmhost1").is_ok());
+    }
+
+    #[test]
+    fn test_validate_ceph_service_rejects_bad_kind_or_shape() {
+        for service in [
+            "osd.0",
+            "vmhost1",
+            "mon",
+            "mon.",
+            ".vmhost1",
+            "mon.vmhost1; rm",
+        ] {
+            assert!(
+                validate_ceph_service(service).is_err(),
+                "service {service:?} must be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn test_ceph_service_action_rejects_bad_action() {
+        // Path construction happens after validation — action whitelist test
+        // covers the constant directly since the async fn needs a live client.
+        assert!(CEPH_SERVICE_ACTIONS.contains(&"start"));
+        assert!(CEPH_SERVICE_ACTIONS.contains(&"stop"));
+        assert!(CEPH_SERVICE_ACTIONS.contains(&"restart"));
+        assert!(!CEPH_SERVICE_ACTIONS.contains(&"delete"));
     }
 }
