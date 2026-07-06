@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, waitFor, act } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
 import { useProxmoxNodes } from "@/hooks/useProxmoxNodes";
+import { useProxmoxStore } from "@/stores/proxmoxStore";
 
 vi.mock("@tauri-apps/api/core");
 
@@ -14,6 +15,8 @@ const mockInvoke = invoke as MockedInvoke;
 
 beforeEach(() => {
   mockInvoke.mockReset();
+  localStorage.clear();
+  useProxmoxStore.setState({ selectedClusterId: "", selectedNodeByCluster: {} });
 });
 
 describe("useProxmoxNodes", () => {
@@ -51,5 +54,45 @@ describe("useProxmoxNodes", () => {
     await waitFor(() => expect(result.current.loading).toBe(false));
     act(() => result.current.setSelectedNode("b"));
     expect(result.current.selectedNode).toBe("b");
+  });
+
+  it("persists a manually selected node to the proxmox store", async () => {
+    mockInvoke.mockResolvedValue([{ node: "a" }, { node: "b" }]);
+    const { result } = renderHook(() => useProxmoxNodes("cluster-a"));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    act(() => result.current.setSelectedNode("b"));
+    expect(useProxmoxStore.getState().getSelectedNode("cluster-a")).toBe("b");
+  });
+
+  it("restores a previously persisted node selection for the cluster", async () => {
+    useProxmoxStore.getState().setSelectedNode("cluster-a", "vmhost2");
+    mockInvoke.mockResolvedValue([
+      { node: "vmhost1", status: "online" },
+      { node: "vmhost2", status: "online" },
+    ]);
+
+    const { result } = renderHook(() => useProxmoxNodes("cluster-a"));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.selectedNode).toBe("vmhost2");
+  });
+
+  it("falls back to the first node when the persisted node no longer exists", async () => {
+    useProxmoxStore.getState().setSelectedNode("cluster-a", "gone-node");
+    mockInvoke.mockResolvedValue([{ node: "vmhost1" }, { node: "vmhost2" }]);
+
+    const { result } = renderHook(() => useProxmoxNodes("cluster-a"));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.selectedNode).toBe("vmhost1");
+  });
+
+  it("persists the auto-selected default node, not just manual picks", async () => {
+    mockInvoke.mockResolvedValue([{ node: "vmhost1" }, { node: "vmhost2" }]);
+    const { result } = renderHook(() => useProxmoxNodes("cluster-a"));
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.selectedNode).toBe("vmhost1");
+    // The implicit default (never explicitly picked) must still land in the
+    // shared store, or another page for the same cluster won't see it.
+    expect(useProxmoxStore.getState().getSelectedNode("cluster-a")).toBe("vmhost1");
   });
 });

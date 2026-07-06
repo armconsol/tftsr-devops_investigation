@@ -257,7 +257,6 @@ export interface AppSettings {
   default_model: string;
   ollama_url: string;
   debug_logging_enabled: boolean;
-  update_channel: string;
 }
 
 // ─── TriageMessage (for UI store, not a DB type) ──────────────────────────────
@@ -656,12 +655,6 @@ export const checkAppUpdatesCmd = async (): Promise<UpdateCheckResult> =>
 
 export const installAppUpdatesCmd = async (): Promise<void> =>
   invoke<void>("install_app_updates");
-
-export const getUpdateChannelCmd = async (): Promise<string> =>
-  invoke<string>("get_update_channel");
-
-export const setUpdateChannelCmd = async (channel: string): Promise<void> =>
-  invoke<void>("set_update_channel", { channel });
 
 // ─── Attachment cross-incident types ─────────────────────────────────────────
 

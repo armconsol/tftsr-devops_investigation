@@ -7,7 +7,6 @@ import { Card, CardContent } from '@/components/ui/index';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/index';
 import { RefreshCw, Plus, Trash2 } from 'lucide-react';
 import {
-  listProxmoxClusters,
   listSdnZones,
   listSdnVnets,
   listSdnControllers,
@@ -16,12 +15,11 @@ import {
   createSdnVnet,
   deleteSdnVnet,
 } from '@/lib/proxmoxClient';
-import type { ClusterInfo } from '@/lib/domain';
+import { useProxmoxClusters } from '@/hooks/useProxmoxClusters';
 import { toast } from 'sonner';
 
 export function ProxmoxSDNPage() {
-  const [clusters, setClusters] = useState<ClusterInfo[]>([]);
-  const [selectedClusterId, setSelectedClusterId] = useState<string>('');
+  const { clusters, selectedClusterId, setSelectedClusterId } = useProxmoxClusters();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [zones, setZones] = useState<any[]>([]);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -40,18 +38,6 @@ export function ProxmoxSDNPage() {
   const [vnetId, setVnetId] = useState('');
   const [vnetZone, setVnetZone] = useState('');
   const [vnetL2vni, setVnetL2vni] = useState('10000');
-
-  useEffect(() => {
-    listProxmoxClusters()
-      .then((cls) => {
-        setClusters(cls);
-        if (cls.length > 0) setSelectedClusterId(cls[0].id);
-      })
-      .catch((err) => {
-        console.error('Failed to load clusters:', err);
-        toast.error('Failed to load clusters');
-      });
-  }, []);
 
   const loadAll = useCallback(async (clusterId: string) => {
     if (!clusterId) return;

@@ -4,22 +4,20 @@ import { RefreshCw, Plus } from 'lucide-react';
 import { BackupJobList } from '@/components/Proxmox';
 import type { BackupJobInfo } from '@/components/Proxmox/BackupJobList';
 import {
-  listProxmoxClusters,
   listProxmoxBackupJobs,
   createProxmoxBackupJob,
   updateProxmoxBackupJob,
   deleteProxmoxBackupJob,
   triggerProxmoxBackupJob,
 } from '@/lib/proxmoxClient';
-import type { ClusterInfo } from '@/lib/domain';
 import { toast } from 'sonner';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/index';
 import { Input } from '@/components/ui/index';
 import { Label } from '@/components/ui/index';
+import { useProxmoxClusters } from '@/hooks/useProxmoxClusters';
 
 export function ProxmoxBackupPage() {
-  const [clusters, setClusters] = useState<ClusterInfo[]>([]);
-  const [selectedClusterId, setSelectedClusterId] = useState<string>('');
+  const { clusters, selectedClusterId, setSelectedClusterId } = useProxmoxClusters();
   const [jobs, setJobs] = useState<BackupJobInfo[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [showNewJobDialog, setShowNewJobDialog] = useState(false);
@@ -30,18 +28,6 @@ export function ProxmoxBackupPage() {
   const [jobSchedule, setJobSchedule] = useState('0 2 * * *');
   const [jobVms, setJobVms] = useState('all');
   const [jobMode, setJobMode] = useState('snapshot');
-
-  useEffect(() => {
-    listProxmoxClusters()
-      .then((cls) => {
-        setClusters(cls);
-        if (cls.length > 0) setSelectedClusterId(cls[0].id);
-      })
-      .catch((err) => {
-        console.error('Failed to load clusters:', err);
-        toast.error('Failed to load clusters');
-      });
-  }, []);
 
   const loadJobs = useCallback(async (clusterId: string) => {
     if (!clusterId) return;

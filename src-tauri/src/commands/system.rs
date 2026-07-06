@@ -4,7 +4,6 @@ use crate::ollama::{
     OllamaStatus,
 };
 use crate::state::{AppSettings, AppState, ProviderConfig};
-use std::env;
 use tauri_plugin_opener::OpenerExt;
 
 // --- Ollama commands ---
@@ -67,12 +66,9 @@ fn apply_partial_settings(
     {
         settings.active_provider = Some(active_provider.to_string());
     }
-    if let Some(ch) = partial_settings
-        .get("update_channel")
-        .and_then(|v| v.as_str())
-    {
-        settings.update_channel = ch.to_string();
-    }
+    // `update_channel` is intentionally not read here: the channel concept
+    // was removed, but old clients/persisted payloads may still send the key
+    // — it is silently ignored rather than erroring.
     if let Some(enabled) = partial_settings
         .get("debug_logging_enabled")
         .and_then(|v| v.as_bool())
@@ -310,12 +306,13 @@ pub async fn delete_ai_provider(
     Ok(())
 }
 
-/// Get the application version from build-time environment
+/// Get the application version. Read from the Tauri package info (populated
+/// from `tauri.conf.json` at build time) rather than environment variables —
+/// packaged builds don't have `APP_VERSION`/`CARGO_PKG_VERSION` set at
+/// runtime, so reading them here always reported a stale/wrong version.
 #[tauri::command]
-pub async fn get_app_version() -> Result<String, String> {
-    env::var("APP_VERSION")
-        .or_else(|_| env::var("CARGO_PKG_VERSION"))
-        .map_err(|e| format!("Failed to get version: {e}"))
+pub async fn get_app_version(app: tauri::AppHandle) -> Result<String, String> {
+    Ok(app.package_info().version.to_string())
 }
 
 // --- Sudo credential commands ---
@@ -495,42 +492,86 @@ mod sudo_tests {
 
 // --- Updater commands ---
 
-fn is_newer_version(latest: &str, current: &str) -> bool {
-    if latest.is_empty() || current.is_empty() {
-        return false;
+/// Parse a (possibly `v`-prefixed) semver-ish string into
+/// `(major, minor, patch, prerelease)`. Returns `None` for empty input.
+fn parse_version(v: &str) -> Option<(u64, u64, u64, Option<String>)> {
+    if v.is_empty() {
+        return None;
     }
-    let parse_version =
-        |v: &str| -> Vec<u64> { v.split('.').filter_map(|p| p.parse().ok()).collect() };
-    let latest_parts = parse_version(latest);
-    let current_parts = parse_version(current);
-    for i in 0..latest_parts.len().max(current_parts.len()) {
-        let l = latest_parts.get(i).copied().unwrap_or(0);
-        let c = current_parts.get(i).copied().unwrap_or(0);
-        if l > c {
-            return true;
+    let v = v.trim_start_matches('v');
+    let (core, prerelease) = match v.split_once('-') {
+        Some((core, pre)) => (core, Some(pre.to_string())),
+        None => (v, None),
+    };
+    let mut parts = core.split('.').map(|p| p.parse::<u64>().unwrap_or(0));
+    let major = parts.next().unwrap_or(0);
+    let minor = parts.next().unwrap_or(0);
+    let patch = parts.next().unwrap_or(0);
+    Some((major, minor, patch, prerelease))
+}
+
+/// Compare two version strings. A release with no prerelease suffix is
+/// considered newer than a prerelease of the same core version (matching
+/// semver precedence: `3.1.0` > `3.1.0-beta.9`). Prerelease suffixes on
+/// otherwise-equal cores are compared as their trailing numeric component
+/// when present, falling back to a plain string comparison.
+fn compare_versions(a: &str, b: &str) -> std::cmp::Ordering {
+    use std::cmp::Ordering;
+
+    let (a_core, a_pre) = match parse_version(a) {
+        Some((maj, min, pat, pre)) => ((maj, min, pat), pre),
+        None => {
+            return if parse_version(b).is_some() {
+                Ordering::Less
+            } else {
+                Ordering::Equal
+            }
         }
-        if l < c {
-            return false;
-        }
+    };
+    let (b_core, b_pre) = match parse_version(b) {
+        Some((maj, min, pat, pre)) => ((maj, min, pat), pre),
+        None => return Ordering::Greater,
+    };
+
+    match a_core.cmp(&b_core) {
+        Ordering::Equal => match (&a_pre, &b_pre) {
+            (None, None) => Ordering::Equal,
+            (None, Some(_)) => Ordering::Greater,
+            (Some(_), None) => Ordering::Less,
+            (Some(ap), Some(bp)) => {
+                let a_num = ap.rsplit('.').next().and_then(|n| n.parse::<u64>().ok());
+                let b_num = bp.rsplit('.').next().and_then(|n| n.parse::<u64>().ok());
+                match (a_num, b_num) {
+                    (Some(an), Some(bn)) => an.cmp(&bn),
+                    _ => ap.cmp(bp),
+                }
+            }
+        },
+        other => other,
     }
-    false
+}
+
+/// Pick the highest-versioned non-draft release from a Gitea releases API
+/// response. Prereleases are included — installs may come from a beta
+/// prerelease, so the channel concept (and its filtering) has been removed;
+/// callers always get the newest thing that was actually published.
+fn pick_latest_release(releases: &[serde_json::Value]) -> Option<&serde_json::Value> {
+    releases
+        .iter()
+        .filter(|r| !r["draft"].as_bool().unwrap_or(false))
+        .max_by(|a, b| {
+            let a_tag = a["tag_name"].as_str().unwrap_or("");
+            let b_tag = b["tag_name"].as_str().unwrap_or("");
+            compare_versions(a_tag, b_tag)
+        })
 }
 
 #[tauri::command]
 pub async fn check_app_updates(
     app: tauri::AppHandle,
-    state: tauri::State<'_, AppState>,
+    _state: tauri::State<'_, AppState>,
 ) -> Result<serde_json::Value, String> {
     let current_version = app.package_info().version.to_string();
-
-    let channel = {
-        state
-            .settings
-            .lock()
-            .map_err(|e| e.to_string())?
-            .update_channel
-            .clone()
-    };
 
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(10))
@@ -558,20 +599,7 @@ pub async fn check_app_updates(
         .await
         .map_err(|e| format!("Failed to parse update response: {e}"))?;
 
-    let release = releases
-        .iter()
-        .find(|r| {
-            let is_pre = r["prerelease"].as_bool().unwrap_or(false);
-            let is_draft = r["draft"].as_bool().unwrap_or(false);
-            if is_draft {
-                return false;
-            }
-            match channel.as_str() {
-                "beta" => is_pre,
-                _ => !is_pre,
-            }
-        })
-        .ok_or_else(|| format!("No release found for channel: {channel}"))?;
+    let release = pick_latest_release(&releases).ok_or_else(|| "No releases found".to_string())?;
 
     let latest_tag = release["tag_name"]
         .as_str()
@@ -579,7 +607,7 @@ pub async fn check_app_updates(
         .trim_start_matches('v')
         .to_string();
 
-    let update_available = is_newer_version(&latest_tag, &current_version);
+    let update_available = compare_versions(&latest_tag, &current_version).is_gt();
 
     let release_url = release["html_url"]
         .as_str()
@@ -607,59 +635,70 @@ pub async fn install_app_updates(app: tauri::AppHandle) -> Result<(), String> {
         .map_err(|e| format!("Failed to open browser: {e}"))
 }
 
-#[tauri::command]
-pub async fn get_update_channel(state: tauri::State<'_, AppState>) -> Result<String, String> {
-    state
-        .settings
-        .lock()
-        .map(|s| s.update_channel.clone())
-        .map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub async fn set_update_channel(
-    channel: String,
-    state: tauri::State<'_, AppState>,
-) -> Result<(), String> {
-    state
-        .settings
-        .lock()
-        .map_err(|e| e.to_string())?
-        .update_channel = channel;
-    Ok(())
-}
-
 #[cfg(test)]
 mod updater_tests {
     use super::*;
 
     #[test]
-    fn test_is_newer_version() {
-        assert!(is_newer_version("1.3.0", "1.2.2"));
-        assert!(is_newer_version("2.0.0", "1.9.9"));
-        assert!(!is_newer_version("1.2.2", "1.2.2"));
-        assert!(!is_newer_version("1.2.1", "1.2.2"));
-        assert!(!is_newer_version("0.9.0", "1.0.0"));
-        assert!(is_newer_version("1.2.3", "1.2.2"));
+    fn test_compare_versions_core_numeric() {
+        assert!(compare_versions("1.3.0", "1.2.2").is_gt());
+        assert!(compare_versions("2.0.0", "1.9.9").is_gt());
+        assert!(compare_versions("1.2.2", "1.2.2").is_eq());
+        assert!(compare_versions("1.2.1", "1.2.2").is_lt());
+        assert!(compare_versions("0.9.0", "1.0.0").is_lt());
+        assert!(compare_versions("1.2.3", "1.2.2").is_gt());
     }
 
     #[test]
-    fn test_is_newer_version_empty() {
-        assert!(!is_newer_version("", "1.0.0"));
-        assert!(!is_newer_version("1.0.0", ""));
+    fn test_compare_versions_empty() {
+        assert!(compare_versions("", "1.0.0").is_lt());
+        assert!(compare_versions("1.0.0", "").is_gt());
     }
 
     #[test]
-    fn test_update_channel_default() {
-        let settings = AppSettings::default();
-        assert_eq!(settings.update_channel, "stable");
+    fn test_compare_versions_release_beats_prerelease_of_same_core() {
+        assert!(compare_versions("3.1.0", "3.1.0-beta.9").is_gt());
+        assert!(compare_versions("3.1.0-beta.9", "3.1.0").is_lt());
     }
 
     #[test]
-    fn test_update_channel_serialization() {
-        let settings = AppSettings::default();
-        let json = serde_json::to_string(&settings).unwrap();
-        assert!(json.contains("\"stable\""));
+    fn test_compare_versions_prerelease_ordering() {
+        assert!(compare_versions("3.1.0-beta.9", "3.1.0-beta.2").is_gt());
+        assert!(compare_versions("3.1.0-beta.2", "3.1.0-beta.9").is_lt());
+    }
+
+    #[test]
+    fn test_compare_versions_prerelease_vs_older_stable() {
+        // A beta of the next release is still newer than the last stable.
+        assert!(compare_versions("3.1.0-beta.2", "3.0.0").is_gt());
+    }
+
+    #[test]
+    fn test_pick_latest_release_skips_drafts_includes_prereleases() {
+        let releases = vec![
+            serde_json::json!({"tag_name": "v3.0.0", "prerelease": false, "draft": false}),
+            serde_json::json!({"tag_name": "v3.2.0", "prerelease": false, "draft": true}),
+            serde_json::json!({"tag_name": "v3.1.0-beta.9", "prerelease": true, "draft": false}),
+        ];
+        let picked = pick_latest_release(&releases).unwrap();
+        assert_eq!(picked["tag_name"].as_str().unwrap(), "v3.1.0-beta.9");
+    }
+
+    #[test]
+    fn test_pick_latest_release_prefers_stable_over_older_prerelease_tag() {
+        let releases = vec![
+            serde_json::json!({"tag_name": "v3.1.0-beta.2", "prerelease": true, "draft": false}),
+            serde_json::json!({"tag_name": "v3.1.0", "prerelease": false, "draft": false}),
+        ];
+        let picked = pick_latest_release(&releases).unwrap();
+        assert_eq!(picked["tag_name"].as_str().unwrap(), "v3.1.0");
+    }
+
+    #[test]
+    fn test_pick_latest_release_empty_or_all_drafts() {
+        assert!(pick_latest_release(&[]).is_none());
+        let releases = vec![serde_json::json!({"tag_name": "v1.0.0", "draft": true})];
+        assert!(pick_latest_release(&releases).is_none());
     }
 
     #[test]
@@ -672,5 +711,18 @@ mod updater_tests {
         let update = apply_partial_settings(&mut settings, &partial);
         assert_eq!(update, Some(true));
         assert!(settings.debug_logging_enabled);
+    }
+
+    #[test]
+    fn test_apply_partial_settings_ignores_legacy_update_channel_key() {
+        // Old persisted settings/partial payloads may still send update_channel
+        // from a pre-upgrade client; it must be silently ignored, not error.
+        let mut settings = AppSettings::default();
+        let partial = serde_json::json!({
+            "update_channel": "beta",
+            "theme": "light"
+        });
+        apply_partial_settings(&mut settings, &partial);
+        assert_eq!(settings.theme, "light");
     }
 }

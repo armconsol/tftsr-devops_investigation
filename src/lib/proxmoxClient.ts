@@ -352,6 +352,16 @@ export async function listCephPools(clusterId: string, node: string): Promise<Ce
   return await invoke<CephPool[]>("list_ceph_pools", { clusterId, node });
 }
 
+/** Create a Ceph pool. */
+export async function createCephPool(
+  clusterId: string,
+  node: string,
+  pool: string,
+  pgNum: number
+): Promise<void> {
+  await invoke("create_ceph_pool", { clusterId, node, pool, pgNum });
+}
+
 /**
  * List Ceph OSDs
  * @param clusterId - Cluster identifier
@@ -427,23 +437,44 @@ export async function listAcmeAccounts(clusterId: string): Promise<any[]> {
 }
 
 /**
- * Register ACME account
+ * Register an ACME account
  * @param clusterId - Cluster identifier
- * @param account - Account configuration
+ * @param email - Contact email for the ACME account
+ * @param termsOfServiceAgreed - Whether the CA's terms of service are accepted
  */
 export async function registerAcmeAccount(
   clusterId: string,
-  account: any
-): Promise<void> {
-  await invoke("register_acme_account", { clusterId, account });
+  email: string,
+  termsOfServiceAgreed: boolean
+): Promise<any> {
+  return await invoke<any>("register_acme_account", {
+    clusterId,
+    email,
+    termsOfServiceAgreed,
+  });
 }
 
 /**
- * Get ACME challenges
+ * Get ACME challenges for a domain
  * @param clusterId - Cluster identifier
+ * @param domain - Domain to check challenges for
  */
-export async function getAcmeChallenges(clusterId: string): Promise<any[]> {
-  return await invoke<any[]>("get_acme_challenges", { clusterId });
+export async function getAcmeChallenges(clusterId: string, domain: string): Promise<any[]> {
+  return await invoke<any[]>("get_acme_challenges", { clusterId, domain });
+}
+
+/**
+ * Order a new certificate via ACME for a domain, using the given ACME account.
+ * @param clusterId - Cluster identifier
+ * @param domain - Domain to request the certificate for
+ * @param accountId - ACME account id to order the certificate under
+ */
+export async function requestAcmeCertificate(
+  clusterId: string,
+  domain: string,
+  accountId: string
+): Promise<any> {
+  return await invoke<any>("request_acme_certificate", { clusterId, domain, accountId });
 }
 
 // ─── APT Repository Management ────────────────────────────────────────────────
@@ -461,15 +492,16 @@ export async function listAptUpdates(
 }
 
 /**
- * Update APT repositories
+ * Refresh the APT package index on a node (apt-get update).
  * @param clusterId - Cluster identifier
  * @param nodeId - Node identifier
+ * @returns UPID of the PVE task running the refresh
  */
-export async function updateAptRepos(
+export async function refreshAptCache(
   clusterId: string,
   nodeId: string
-): Promise<void> {
-  await invoke("update_apt_repos", { clusterId, node: nodeId });
+): Promise<string> {
+  return await invoke<string>("refresh_apt_cache", { clusterId, node: nodeId });
 }
 
 /**
@@ -480,8 +512,8 @@ export async function updateAptRepos(
 export async function listAptRepositories(
   clusterId: string,
   nodeId: string
-): Promise<any[]> {
-  return await invoke<any[]>("list_apt_repositories", { clusterId, node: nodeId });
+): Promise<AptRepository[]> {
+  return await invoke<AptRepository[]>("list_apt_repositories", { clusterId, node: nodeId });
 }
 
 // ─── Remote Shell ─────────────────────────────────────────────────────────────
@@ -513,17 +545,19 @@ export async function listCertificates(
 }
 
 /**
- * Upload a certificate
+ * Upload a custom certificate
  * @param clusterId - Cluster identifier
- * @param nodeId - Node identifier
- * @param cert - Certificate data
+ * @param certificate - PEM-encoded certificate
+ * @param privateKey - PEM-encoded private key
+ * @param name - Optional certificate name
  */
 export async function uploadCertificate(
   clusterId: string,
-  nodeId: string,
-  cert: any
-): Promise<void> {
-  await invoke("upload_certificate", { clusterId, nodeId, cert });
+  certificate: string,
+  privateKey: string,
+  name?: string
+): Promise<any> {
+  return await invoke<any>("upload_certificate", { clusterId, certificate, privateKey, name });
 }
 
 /**
@@ -1076,7 +1110,6 @@ export interface AptRepository {
 export interface SyslogEntry {
   n: number;
   t: string;
-  msg: string;
 }
 
 /**
@@ -1290,6 +1323,43 @@ export const listClusterTasks = async (
     clusterId,
     limit: limit ?? 50,
   });
+
+/** One line of a PVE task log ({n}=line number, {t}=line text). */
+export interface TaskLogEntry {
+  n: number;
+  t: string;
+}
+
+/** Get the full log of a single task. */
+export const getProxmoxTaskLog = async (
+  clusterId: string,
+  node: string,
+  upid: string
+): Promise<TaskLogEntry[]> =>
+  invoke<TaskLogEntry[]>("get_proxmox_task_log", { clusterId, node, upid });
+
+export interface TaskLogTarget {
+  node: string;
+  upid: string;
+}
+
+export interface TaskLogSearchResult {
+  node: string;
+  upid: string;
+  matches: TaskLogEntry[];
+  error?: string;
+}
+
+/**
+ * Search the logs of multiple tasks for a case-insensitive substring.
+ * Limited to 100 targets per call; query must be at least 2 characters.
+ */
+export const searchTaskLogs = async (
+  clusterId: string,
+  query: string,
+  targets: TaskLogTarget[]
+): Promise<TaskLogSearchResult[]> =>
+  invoke<TaskLogSearchResult[]>("search_task_logs", { clusterId, query, targets });
 
 // ─── Storage Per-Node ─────────────────────────────────────────────────────────
 
@@ -1852,12 +1922,17 @@ export interface NodeShellSession {
   user: string;
 }
 
-/** Open a host (node) shell for a stored remote (PVE=noVNC, PBS=xterm). */
+/**
+ * Open a host (node) shell for a stored remote (PVE=noVNC, PBS=xterm).
+ * `cmd` selects the shell command PVE runs: "login" (default) or "upgrade"
+ * (runs pveupgrade, like the official PVE UI's node Upgrade button).
+ */
 export const openNodeShell = (
   clusterId: string,
-  node: string
+  node: string,
+  cmd?: 'login' | 'upgrade'
 ): Promise<NodeShellSession> =>
-  invoke("open_node_shell", { clusterId, node });
+  invoke("open_node_shell", { clusterId, node, cmd: cmd ?? null });
 
 // ─── Container (LXC) ──────────────────────────────────────────────────────────
 
@@ -1941,6 +2016,53 @@ export const getCephFlags = (
   node: string
 ): Promise<CephFlag[]> =>
   invoke("get_ceph_flags", { clusterId, node });
+
+/** Set (or clear) a cluster-level Ceph runtime flag (e.g. "noout"). */
+export const setCephFlag = (
+  clusterId: string,
+  flag: string,
+  value: boolean
+): Promise<void> => invoke("set_ceph_flag", { clusterId, flag, value });
+
+/** Create a Ceph monitor on a node. Returns the PVE task UPID. */
+export const createCephMonitor = (
+  clusterId: string,
+  node: string,
+  monid: string
+): Promise<string> => invoke("create_ceph_monitor", { clusterId, node, monid });
+
+/** Destroy a Ceph monitor. Returns the PVE task UPID. */
+export const deleteCephMonitor = (
+  clusterId: string,
+  node: string,
+  monid: string
+): Promise<string> => invoke("delete_ceph_monitor", { clusterId, node, monid });
+
+/** Create a Ceph manager on a node. Returns the PVE task UPID. */
+export const createCephManager = (
+  clusterId: string,
+  node: string,
+  id: string
+): Promise<string> => invoke("create_ceph_manager", { clusterId, node, id });
+
+/** Destroy a Ceph manager. Returns the PVE task UPID. */
+export const deleteCephManager = (
+  clusterId: string,
+  node: string,
+  id: string
+): Promise<string> => invoke("delete_ceph_manager", { clusterId, node, id });
+
+/**
+ * Start, stop, or restart a Ceph mon/mgr service (e.g. service="mon.vmhost1").
+ * Returns the PVE task UPID.
+ */
+export const cephServiceAction = (
+  clusterId: string,
+  node: string,
+  service: string,
+  action: 'start' | 'stop' | 'restart'
+): Promise<string> =>
+  invoke("ceph_service_action", { clusterId, node, service, action });
 
 // ─── Firewall (cluster + guest) ───────────────────────────────────────────────
 

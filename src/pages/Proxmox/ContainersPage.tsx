@@ -7,7 +7,6 @@ import { Label } from '@/components/ui/index';
 import { RefreshCw, Plus, Settings } from 'lucide-react';
 import { ContainerOverview } from '@/components/Proxmox';
 import {
-  listProxmoxClusters,
   listProxmoxContainers,
   listProxmoxNodes,
   startProxmoxContainer,
@@ -18,7 +17,7 @@ import {
   createProxmoxContainer,
 } from '@/lib/proxmoxClient';
 import type { ContainerCreateParams } from '@/lib/proxmoxClient';
-import type { ClusterInfo } from '@/lib/domain';
+import { useProxmoxClusters } from '@/hooks/useProxmoxClusters';
 import { toast } from 'sonner';
 
 const defaultCreateParams: ContainerCreateParams = {
@@ -35,8 +34,7 @@ const defaultCreateParams: ContainerCreateParams = {
 };
 
 export function ProxmoxContainersPage() {
-  const [clusters, setClusters] = useState<ClusterInfo[]>([]);
-  const [selectedClusterId, setSelectedClusterId] = useState<string>('');
+  const { clusters, selectedClusterId, setSelectedClusterId } = useProxmoxClusters();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [containers, setContainers] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -54,18 +52,6 @@ export function ProxmoxContainersPage() {
   const [availableNodes, setAvailableNodes] = useState<string[]>([]);
   const [createParams, setCreateParams] = useState<ContainerCreateParams>(defaultCreateParams);
   const [creating, setCreating] = useState(false);
-
-  useEffect(() => {
-    listProxmoxClusters()
-      .then((cls) => {
-        setClusters(cls);
-        if (cls.length > 0) setSelectedClusterId(cls[0].id);
-      })
-      .catch((err) => {
-        console.error('Failed to load clusters:', err);
-        toast.error('Failed to load clusters');
-      });
-  }, []);
 
   // Load node list whenever cluster changes
   useEffect(() => {

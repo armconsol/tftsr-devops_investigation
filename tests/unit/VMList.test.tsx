@@ -314,3 +314,76 @@ describe("VMList — empty state", () => {
     expect(screen.getByText("Virtual Machines")).toBeDefined();
   });
 });
+
+describe("VMList — search, filter, sort", () => {
+  const allVms = [stoppedVm, runningVm, pausedVm];
+
+  it("renders a search input for name or VM ID", () => {
+    renderVMList(allVms);
+    expect(screen.getByPlaceholderText(/search by name or vm id/i)).toBeDefined();
+  });
+
+  it("filters rows by name via the search input", () => {
+    renderVMList(allVms);
+    const search = screen.getByPlaceholderText(/search by name or vm id/i);
+    fireEvent.change(search, { target: { value: "docker" } });
+    expect(screen.getByText("docker-01")).toBeDefined();
+    expect(screen.queryByText("nginx")).toBeNull();
+    expect(screen.queryByText("test-vm")).toBeNull();
+  });
+
+  it("filters rows by VM ID via the search input", () => {
+    renderVMList(allVms);
+    const search = screen.getByPlaceholderText(/search by name or vm id/i);
+    fireEvent.change(search, { target: { value: "103" } });
+    expect(screen.getByText("test-vm")).toBeDefined();
+    expect(screen.queryByText("nginx")).toBeNull();
+  });
+
+  it("filters rows by status", () => {
+    renderVMList(allVms);
+    const statusFilter = screen.getByLabelText(/filter by status/i);
+    fireEvent.change(statusFilter, { target: { value: "running" } });
+    expect(screen.getByText("docker-01")).toBeDefined();
+    expect(screen.queryByText("nginx")).toBeNull();
+    expect(screen.queryByText("test-vm")).toBeNull();
+  });
+
+  it("filters rows by node", () => {
+    renderVMList([
+      stoppedVm,
+      { ...runningVm, id: 999, name: "other-node-vm", node: "vmhost5" },
+    ]);
+    const nodeFilter = screen.getByLabelText(/filter by node/i);
+    fireEvent.change(nodeFilter, { target: { value: "vmhost5" } });
+    expect(screen.getByText("other-node-vm")).toBeDefined();
+    expect(screen.queryByText("nginx")).toBeNull();
+  });
+
+  it("sorts rows by Name when the Name header is clicked", () => {
+    renderVMList(allVms);
+    fireEvent.click(screen.getByText("Name"));
+    const nameCells = screen.getAllByRole("row").slice(1).map((row) => row.textContent);
+    // Ascending alpha: docker-01, nginx, test-vm
+    expect(nameCells[0]).toContain("docker-01");
+    expect(nameCells[2]).toContain("test-vm");
+  });
+
+  it("reverses sort direction on a second click of the same header", () => {
+    renderVMList(allVms);
+    const nameHeader = screen.getByText("Name");
+    fireEvent.click(nameHeader);
+    fireEvent.click(nameHeader);
+    const nameCells = screen.getAllByRole("row").slice(1).map((row) => row.textContent);
+    expect(nameCells[0]).toContain("test-vm");
+  });
+
+  it("sorts rows numerically by VM ID", () => {
+    renderVMList([pausedVm, stoppedVm, runningVm]);
+    fireEvent.click(screen.getByText("VM ID"));
+    const rows = screen.getAllByRole("row").slice(1).map((row) => row.textContent);
+    expect(rows[0]).toContain("101");
+    expect(rows[1]).toContain("102");
+    expect(rows[2]).toContain("103");
+  });
+});

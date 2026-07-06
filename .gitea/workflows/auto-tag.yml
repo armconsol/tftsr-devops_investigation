@@ -28,7 +28,7 @@ jobs:
           RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
         run: |
           set -eu
-          apk add --no-cache curl jq git
+          apk add --no-cache curl jq git nodejs
 
           API="http://172.0.0.29:3000/api/v1/repos/$GITHUB_REPOSITORY"
 
@@ -82,17 +82,27 @@ jobs:
           if [ "$NEW_VERSION" != "$CARGO_VERSION" ]; then
             echo "Updating version files: $CARGO_VERSION → $NEW_VERSION"
 
-            # src-tauri/Cargo.toml — first 'version = "..."' (the [package] one)
-            sed -i "0,/^version = \".*\"/s//version = \"${NEW_VERSION}\"/" src-tauri/Cargo.toml
-
-            # package.json — top-level "version": "..."
-            sed -i "0,/\"version\": \".*\"/s//\"version\": \"${NEW_VERSION}\"/" package.json
-
-            # src-tauri/tauri.conf.json — top-level "version": "..."
-            sed -i "0,/\"version\": \".*\"/s//\"version\": \"${NEW_VERSION}\"/" src-tauri/tauri.conf.json
+            # Rewrite package.json / Cargo.toml / tauri.conf.json via the
+            # shared version script. GNU-only "0,/re/s//repl/" sed range
+            # addressing silently no-ops under BusyBox sed (this alpine
+            # image's default), which is why prior releases bumped only
+            # Cargo.lock (updated below with a POSIX-compatible sed form)
+            # and left these three files stale.
+            node scripts/update-version.mjs "${NEW_VERSION}"
 
             # src-tauri/Cargo.lock — the version line for the trcaa crate entry
             sed -i "/^name = \"trcaa\"/{n;s/^version = \".*\"/version = \"${NEW_VERSION}\"/}" src-tauri/Cargo.lock
+
+            # Verify every version-bearing file actually reflects $NEW_VERSION
+            # — fail loudly instead of silently shipping a stale version.
+            for f in package.json src-tauri/tauri.conf.json; do
+              grep -q "\"version\": \"${NEW_VERSION}\"" "$f" \
+                || { echo "ERROR: $f was not updated to ${NEW_VERSION}"; exit 1; }
+            done
+            for f in src-tauri/Cargo.toml src-tauri/Cargo.lock; do
+              grep -q "version = \"${NEW_VERSION}\"" "$f" \
+                || { echo "ERROR: $f was not updated to ${NEW_VERSION}"; exit 1; }
+            done
 
             # Unshallow so pushing a new commit to master is accepted (Gitea
             # rejects branch updates from a shallow clone).

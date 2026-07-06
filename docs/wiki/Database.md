@@ -391,6 +391,25 @@ Used by `list_all_log_files` and `list_all_image_attachments` to power the cross
 
 ---
 
+### 042 — database_connections SSH credential columns
+
+```sql
+ALTER TABLE database_connections ADD COLUMN ssh_password_encrypted TEXT;
+ALTER TABLE database_connections ADD COLUMN ssh_private_key_encrypted TEXT;
+ALTER TABLE database_connections ADD COLUMN ssh_key_passphrase_encrypted TEXT;
+```
+
+Migration 038 created `database_connections` and migration 041 added the SSH tunnel
+*config* columns (`ssh_enabled`, `ssh_hostname`, `ssh_port`, `ssh_username`,
+`ssh_auth_method`) — but never added the encrypted *credential* columns that
+`create_database_connection`'s `INSERT` already referenced. Any database created between
+041 and 042 hit `table database_connections has no column named ssh_password_encrypted`
+on every attempt to save a connection with an SSH tunnel enabled (e.g. connecting to a
+PSQL database over SSH). All three columns store ciphertext only, via
+`integrations::auth::encrypt_token` (AES-256-GCM) — see [Security Model](Security-Model.md).
+
+---
+
 ## Key Design Notes
 
 - All primary keys are **UUID v7** (time-sortable)

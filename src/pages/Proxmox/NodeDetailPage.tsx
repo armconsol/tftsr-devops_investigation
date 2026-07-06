@@ -13,7 +13,6 @@ import {
   DialogFooter,
 } from '@/components/ui/index';
 import {
-  listProxmoxClusters,
   getNodeStatus,
   getNodeDns,
   updateNodeDns,
@@ -25,14 +24,13 @@ import {
   shutdownNode,
 } from '@/lib/proxmoxClient';
 import type { NodeStatus, NodeDns, NodeTime } from '@/lib/proxmoxClient';
-import type { ClusterInfo } from '@/lib/domain';
+import { useProxmoxClusters } from '@/hooks/useProxmoxClusters';
 import { toast } from 'sonner';
 
 type ConfirmAction = 'reboot' | 'shutdown' | null;
 
 export function ProxmoxNodeDetailPage() {
-  const [clusters, setClusters] = useState<ClusterInfo[]>([]);
-  const [clusterId, setClusterId] = useState('');
+  const { clusters, selectedClusterId: clusterId, setSelectedClusterId: setClusterId } = useProxmoxClusters();
   const [nodeInputValue, setNodeInputValue] = useState('localhost');
   const [nodeId, setNodeId] = useState('localhost');
   const [activeTab, setActiveTab] = useState('status');
@@ -64,18 +62,6 @@ export function ProxmoxNodeDetailPage() {
   // Admin confirm dialog
   const [confirmAction, setConfirmAction] = useState<ConfirmAction>(null);
   const [isExecutingAction, setIsExecutingAction] = useState(false);
-
-  useEffect(() => {
-    listProxmoxClusters()
-      .then((cls) => {
-        setClusters(cls);
-        if (cls.length > 0) setClusterId(cls[0].id);
-      })
-      .catch((err: unknown) => {
-        console.error('Failed to load clusters:', err);
-        toast.error('Failed to load clusters');
-      });
-  }, []);
 
   const applyNodeId = () => {
     setNodeId(nodeInputValue.trim() || 'localhost');

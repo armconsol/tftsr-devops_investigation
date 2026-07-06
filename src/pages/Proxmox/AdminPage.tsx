@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/index';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/index';
 import { Button } from '@/components/ui/index';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/index';
-import { RefreshCw, Power, RotateCcw } from 'lucide-react';
+import { RefreshCw, Power, RotateCcw, ArrowUpCircle } from 'lucide-react';
+import { confirm } from '@tauri-apps/plugin-dialog';
 import {
-  listProxmoxClusters,
   getNodeStatus,
   listAptUpdates,
   listAptRepositories,
@@ -15,6 +16,7 @@ import {
   getNodeReport,
   rebootNode,
   shutdownNode,
+  refreshAptCache,
 } from '@/lib/proxmoxClient';
 import type {
   NodeStatus,
@@ -23,13 +25,13 @@ import type {
   SyslogEntry,
   ClusterTask,
 } from '@/lib/proxmoxClient';
-import type { ClusterInfo } from '@/lib/domain';
 import { toast } from 'sonner';
 import { useProxmoxNodes } from '@/hooks/useProxmoxNodes';
+import { useProxmoxClusters } from '@/hooks/useProxmoxClusters';
 
 export function ProxmoxAdminPage() {
-  const [clusters, setClusters] = useState<ClusterInfo[]>([]);
-  const [clusterId, setClusterId] = useState('');
+  const navigate = useNavigate();
+  const { clusters, selectedClusterId: clusterId, setSelectedClusterId: setClusterId } = useProxmoxClusters();
   const [nodeStatus, setNodeStatus] = useState<NodeStatus | null>(null);
   const [aptUpdates, setAptUpdates] = useState<AptPackage[]>([]);
   const [aptRepos, setAptRepos] = useState<AptRepository[]>([]);
@@ -40,17 +42,9 @@ export function ProxmoxAdminPage() {
   const [activeTab, setActiveTab] = useState('status');
   const [tabError, setTabError] = useState<string | null>(null);
   const [confirmAction, setConfirmAction] = useState<'reboot' | 'shutdown' | null>(null);
+  const [refreshingAptCache, setRefreshingAptCache] = useState(false);
 
   const { nodeNames, selectedNode, setSelectedNode } = useProxmoxNodes(clusterId);
-
-  useEffect(() => {
-    listProxmoxClusters()
-      .then((cls) => {
-        setClusters(cls);
-        if (cls.length > 0) setClusterId(cls[0].id);
-      })
-      .catch((err: unknown) => console.error('Failed to load clusters:', err));
-  }, []);
 
   const loadTabData = useCallback(
     async (tab: string, cId: string, nId: string) => {
@@ -106,6 +100,30 @@ export function ProxmoxAdminPage() {
     } finally {
       setConfirmAction(null);
     }
+  };
+
+  const handleRefreshAptCache = async () => {
+    if (!clusterId || !selectedNode) return;
+    setRefreshingAptCache(true);
+    try {
+      const upid = await refreshAptCache(clusterId, selectedNode);
+      toast.success(`APT cache refresh started: ${upid}`);
+      await loadTabData('updates', clusterId, selectedNode);
+    } catch (e) {
+      toast.error(`Failed to refresh APT cache: ${e}`);
+    } finally {
+      setRefreshingAptCache(false);
+    }
+  };
+
+  const handleUpgradeNode = async () => {
+    if (!clusterId || !selectedNode) return;
+    const confirmed = await confirm(
+      `Open a shell on ${selectedNode} and run the full package upgrade (pveupgrade)?`,
+      { title: 'Upgrade Node', kind: 'warning' }
+    );
+    if (!confirmed) return;
+    navigate(`/proxmox/shell/${encodeURIComponent(clusterId)}/${encodeURIComponent(selectedNode)}?cmd=upgrade`);
   };
 
   const formatBytes = (bytes: number | undefined | null) => {
@@ -252,8 +270,28 @@ export function ProxmoxAdminPage() {
 
         <TabsContent value="updates">
           <Card>
-            <CardHeader>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0">
               <CardTitle>Available Updates ({aptUpdates.length})</CardTitle>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void handleRefreshAptCache()}
+                  disabled={refreshingAptCache || !selectedNode}
+                >
+                  <RefreshCw className={`mr-2 h-4 w-4 ${refreshingAptCache ? 'animate-spin' : ''}`} />
+                  Refresh APT Cache
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void handleUpgradeNode()}
+                  disabled={!selectedNode}
+                >
+                  <ArrowUpCircle className="mr-2 h-4 w-4" />
+                  Upgrade Node…
+                </Button>
+              </div>
             </CardHeader>
             <CardContent>
               {aptUpdates.length === 0 ? (
@@ -296,8 +334,8 @@ export function ProxmoxAdminPage() {
                   {aptRepos.map((repo, i) => (
                     <div key={i} className="p-3 border rounded text-sm">
                       <div className="font-mono text-xs">
-                        {repo.types.join(' ')} {repo.uris.join(' ')} {repo.suites.join(' ')}{' '}
-                        {repo.components.join(' ')}
+                        {(repo.types ?? []).join(' ')} {(repo.uris ?? []).join(' ')}{' '}
+                        {(repo.suites ?? []).join(' ')} {(repo.components ?? []).join(' ')}
                       </div>
                       <div className="flex items-center gap-2 mt-1">
                         <span
@@ -341,7 +379,7 @@ export function ProxmoxAdminPage() {
                 ) : (
                   syslog.map((entry) => (
                     <div key={entry.n} className="text-muted-foreground">
-                      {entry.t} {entry.msg}
+                      {entry.t}
                     </div>
                   ))
                 )}

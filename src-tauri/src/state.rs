@@ -62,12 +62,6 @@ pub struct AppSettings {
     pub ollama_url: String,
     #[serde(default)]
     pub debug_logging_enabled: bool,
-    #[serde(default = "default_update_channel")]
-    pub update_channel: String,
-}
-
-fn default_update_channel() -> String {
-    "stable".to_string()
 }
 
 impl Default for AppSettings {
@@ -80,7 +74,6 @@ impl Default for AppSettings {
             default_model: "llama3.2:3b".to_string(),
             ollama_url: "http://localhost:11434".to_string(),
             debug_logging_enabled: false,
-            update_channel: "stable".to_string(),
         }
     }
 }
@@ -223,7 +216,6 @@ mod tests {
         assert_eq!(settings.theme, "dark");
         assert_eq!(settings.default_provider, "ollama");
         assert!(!settings.debug_logging_enabled);
-        assert_eq!(settings.update_channel, "stable");
     }
 
     #[test]
@@ -239,6 +231,24 @@ mod tests {
         let settings: AppSettings =
             serde_json::from_str(json).expect("settings should deserialize");
         assert!(!settings.debug_logging_enabled);
+    }
+
+    #[test]
+    fn test_app_settings_deserialize_ignores_legacy_update_channel_field() {
+        // Settings persisted by a pre-upgrade client still have `update_channel`
+        // in the JSON; it must be ignored rather than causing a deserialize error.
+        let json = r#"{
+            "theme":"dark",
+            "ai_providers":[],
+            "default_provider":"ollama",
+            "default_model":"llama3.2:3b",
+            "ollama_url":"http://localhost:11434",
+            "update_channel":"beta"
+        }"#;
+
+        let settings: AppSettings = serde_json::from_str(json)
+            .expect("settings with legacy update_channel should deserialize");
+        assert_eq!(settings.theme, "dark");
     }
 
     #[test]

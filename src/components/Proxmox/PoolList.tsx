@@ -2,7 +2,8 @@ import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/index';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/index';
 import { Button } from '@/components/ui/index';
-import { MoreHorizontal, Trash2 } from 'lucide-react';
+import { Trash2 } from 'lucide-react';
+import { formatBytes } from '@/lib/format';
 
 interface PoolInfo {
   id: string;
@@ -23,6 +24,7 @@ interface PoolListProps {
   onSetQuota?: (pool: PoolInfo) => void;
   onDelete?: (pool: PoolInfo) => void;
   onEdit?: (pool: PoolInfo) => void;
+  onCreate?: () => void;
 }
 
 export function PoolList({
@@ -32,6 +34,7 @@ export function PoolList({
   onSetQuota,
   onDelete,
   onEdit,
+  onCreate,
 }: PoolListProps) {
   return (
     <Card>
@@ -41,7 +44,7 @@ export function PoolList({
           <Button variant="outline" size="sm" onClick={onRefresh} disabled={isLoading}>
             Refresh
           </Button>
-          <Button size="sm">
+          <Button size="sm" onClick={onCreate}>
             <span className="mr-2 h-4 w-4">+</span>
             New Pool
           </Button>
@@ -69,8 +72,8 @@ export function PoolList({
                   <TableCell>{pool.type}</TableCell>
                   <TableCell>{pool.size}</TableCell>
                   <TableCell>{pool.minSize}</TableCell>
-                  <TableCell>{pool.used}</TableCell>
-                  <TableCell>{pool.available}</TableCell>
+                  <TableCell>{formatBytes(pool.used)}</TableCell>
+                  <TableCell>{formatBytes(pool.available)}</TableCell>
                   <TableCell>
                     <div className="flex items-center space-x-2">
                       <div className="h-2 w-24 bg-slate-200 rounded-full overflow-hidden">
@@ -108,12 +111,6 @@ export function PoolList({
                         title="Delete"
                       >
                         <Trash2 className="h-4 w-4" />
-                      </button>
-                      <button
-                        className="rounded-md p-1 hover:bg-accent"
-                        title="More"
-                      >
-                        <MoreHorizontal className="h-4 w-4" />
                       </button>
                     </div>
                   </TableCell>

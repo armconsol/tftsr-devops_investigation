@@ -183,7 +183,33 @@ pub async fn shutdown_node(
         .ok_or_else(|| "Unexpected response format for shutdown UPID".to_string())
 }
 
-/// Get journal log entries for a node
+/// One line of node syslog. PVE's `/nodes/{node}/syslog` entries only ever
+/// carry a line number `n` and the full log line text `t` — there is no
+/// separate message field.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SyslogEntry {
+    pub n: u64,
+    pub t: String,
+}
+
+/// Parse the (envelope-unwrapped) response of GET /nodes/{node}/syslog, which
+/// is a JSON array of `{"n": <line>, "t": "<text>"}` objects.
+pub fn parse_syslog_entries(response: &serde_json::Value) -> Result<Vec<SyslogEntry>, String> {
+    let arr = response
+        .as_array()
+        .ok_or_else(|| "Invalid syslog response format".to_string())?;
+
+    arr.iter()
+        .map(|entry| {
+            serde_json::from_value::<SyslogEntry>(entry.clone())
+                .map_err(|e| format!("Failed to parse syslog entry: {e}"))
+        })
+        .collect()
+}
+
+/// Get journal log entries for a node. PVE normally returns an array of
+/// strings, but some versions/proxies wrap each line as `{"n":.., "t":".."}`
+/// like syslog — accept both shapes.
 pub async fn get_node_journal(
     client: &ProxmoxClient,
     node: &str,
@@ -191,14 +217,37 @@ pub async fn get_node_journal(
     ticket: &str,
 ) -> Result<Vec<String>, String> {
     validate_node_name(node)?;
-    let path = format!("nodes/{node}/journal?lastentries={lastentries}");
+    let path = format!("nodes/{node}/journal");
     let response: serde_json::Value = client
-        .get(&path, Some(ticket))
+        .get_with_params(
+            &path,
+            &[("lastentries", &lastentries.to_string())],
+            Some(ticket),
+        )
         .await
         .map_err(|e| format!("Failed to get journal for node {node}: {e}"))?;
 
-    serde_json::from_value::<Vec<String>>(response)
-        .map_err(|e| format!("Failed to deserialize journal entries: {e}"))
+    parse_journal_entries(&response)
+}
+
+/// Parse the (envelope-unwrapped) response of GET /nodes/{node}/journal,
+/// tolerating both a plain array of strings and an array of `{n,t}` objects.
+pub fn parse_journal_entries(response: &serde_json::Value) -> Result<Vec<String>, String> {
+    let arr = response
+        .as_array()
+        .ok_or_else(|| "Invalid journal response format".to_string())?;
+
+    arr.iter()
+        .map(|entry| {
+            if let Some(s) = entry.as_str() {
+                Ok(s.to_string())
+            } else if let Some(t) = entry.get("t").and_then(|t| t.as_str()) {
+                Ok(t.to_string())
+            } else {
+                Err(format!("Unrecognized journal entry shape: {entry}"))
+            }
+        })
+        .collect()
 }
 
 /// Get a full diagnostic report for a node
@@ -223,6 +272,69 @@ pub async fn get_node_report(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ── Syslog / Journal parsing ──────────────────────────────────────────────
+
+    #[test]
+    fn test_parse_syslog_entries_basic() {
+        let response = serde_json::json!([
+            {"n": 1, "t": "Jul 04 00:00:01 vmhost1 pvedaemon[123]: starting"},
+            {"n": 2, "t": "Jul 04 00:00:02 vmhost1 pveproxy[456]: listening"}
+        ]);
+        let entries = parse_syslog_entries(&response).unwrap();
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].n, 1);
+        assert_eq!(
+            entries[1].t,
+            "Jul 04 00:00:02 vmhost1 pveproxy[456]: listening"
+        );
+    }
+
+    #[test]
+    fn test_parse_syslog_entries_empty() {
+        let entries = parse_syslog_entries(&serde_json::json!([])).unwrap();
+        assert!(entries.is_empty());
+    }
+
+    #[test]
+    fn test_parse_syslog_entries_rejects_non_array() {
+        assert!(parse_syslog_entries(&serde_json::json!({"data": []})).is_err());
+    }
+
+    #[test]
+    fn test_parse_syslog_entries_missing_field_errors() {
+        let response = serde_json::json!([{"n": 1}]);
+        assert!(parse_syslog_entries(&response).is_err());
+    }
+
+    #[test]
+    fn test_parse_journal_entries_string_array() {
+        let response = serde_json::json!(["line one", "line two"]);
+        let entries = parse_journal_entries(&response).unwrap();
+        assert_eq!(
+            entries,
+            vec!["line one".to_string(), "line two".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_parse_journal_entries_object_array() {
+        let response = serde_json::json!([
+            {"n": 1, "t": "line one"},
+            {"n": 2, "t": "line two"}
+        ]);
+        let entries = parse_journal_entries(&response).unwrap();
+        assert_eq!(
+            entries,
+            vec!["line one".to_string(), "line two".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_parse_journal_entries_mixed_shapes_not_required_but_unknown_errors() {
+        let response = serde_json::json!([{"foo": "bar"}]);
+        assert!(parse_journal_entries(&response).is_err());
+    }
 
     // ── NodeInfo (existing struct) ───────────────────────────────────────────
 

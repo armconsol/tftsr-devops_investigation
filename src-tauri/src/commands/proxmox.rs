@@ -1,6 +1,7 @@
 use crate::proxmox::{ClusterInfo, ClusterType, ProxmoxClient};
 use crate::state::AppState;
 use chrono::Utc;
+use futures::stream::StreamExt;
 use rusqlite::OptionalExtension;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -237,23 +238,11 @@ pub async fn get_proxmox_cluster(
     Ok(cluster)
 }
 
-/// Helper function to get or create a Proxmox client for a cluster
-/// This will:
-/// 1. Check if client exists in memory pool
-/// 2. If not, load credentials from database and create/authenticate client
-async fn get_proxmox_client_for_cluster(
+/// Load a cluster's connection details and decrypted password from the DB.
+fn load_cluster_credentials(
     cluster_id: &str,
     state: &State<'_, AppState>,
-) -> Result<Arc<Mutex<crate::proxmox::ProxmoxClient>>, String> {
-    // First, try to get from in-memory pool
-    {
-        let clusters = state.proxmox_clusters.lock().await;
-        if let Some(client) = clusters.get(cluster_id) {
-            return Ok(client.clone());
-        }
-    }
-
-    // Not in memory - load from database and create client
+) -> Result<(String, u16, String, String), String> {
     let (url, port, username, encrypted_credentials) = {
         let db = state
             .db
@@ -279,7 +268,6 @@ async fn get_proxmox_client_for_cluster(
         .ok_or_else(|| format!("Cluster {cluster_id} not found in database"))?
     };
 
-    // Decrypt credentials
     let credentials_json = crate::integrations::auth::decrypt_token(&encrypted_credentials)
         .map_err(|e| format!("Failed to decrypt credentials: {e}"))?;
 
@@ -289,18 +277,53 @@ async fn get_proxmox_client_for_cluster(
     let password = credentials
         .get("password")
         .and_then(|v| v.as_str())
-        .ok_or_else(|| "Password not found in credentials".to_string())?;
+        .ok_or_else(|| "Password not found in credentials".to_string())?
+        .to_string();
+
+    Ok((url, port, username, password))
+}
+
+/// Get or create a Proxmox client for a cluster.
+/// 1. Check if a client already exists in the in-memory pool.
+/// 2. If not, load credentials from the database and create/authenticate a client.
+async fn get_proxmox_client_for_cluster(
+    cluster_id: &str,
+    state: &State<'_, AppState>,
+) -> Result<Arc<Mutex<crate::proxmox::ProxmoxClient>>, String> {
+    // First, try to get from in-memory pool
+    let cached = {
+        let clusters = state.proxmox_clusters.lock().await;
+        clusters.get(cluster_id).cloned()
+    };
+    if let Some(client) = cached {
+        // PVE tickets expire after ~2h; cached clients live for the whole app
+        // session, so refresh the ticket proactively before it lapses.
+        let needs_refresh = { client.lock().await.ticket_needs_refresh() };
+        if needs_refresh {
+            let (_url, _port, _username, password) = load_cluster_credentials(cluster_id, state)?;
+            let mut guard = client.lock().await;
+            // Re-check under the write lock: another task may have refreshed.
+            if guard.ticket_needs_refresh() {
+                guard
+                    .authenticate(&password)
+                    .await
+                    .map_err(|e| format!("Failed to re-authenticate with Proxmox: {e}"))?;
+            }
+        }
+        return Ok(client);
+    }
+
+    // Not in memory - load from database and create client
+    let (url, port, username, password) = load_cluster_credentials(cluster_id, state)?;
 
     // Create new client
     let mut client = crate::proxmox::ProxmoxClient::new(&url, port, &username);
 
     // Authenticate to get ticket
-    let ticket = client
-        .authenticate(password)
+    client
+        .authenticate(&password)
         .await
         .map_err(|e| format!("Failed to authenticate with Proxmox: {e}"))?;
-
-    client.set_ticket(&ticket);
 
     let client_arc = Arc::new(Mutex::new(client));
     {
@@ -1146,6 +1169,27 @@ pub async fn list_ceph_pools(
     Ok(json_pools)
 }
 
+/// Create a Ceph pool.
+#[tauri::command]
+pub async fn create_ceph_pool(
+    cluster_id: String,
+    node: String,
+    pool: String,
+    pg_num: u32,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+    crate::proxmox::ceph::create_pool(
+        &client_guard,
+        &node,
+        &pool,
+        pg_num,
+        client_guard.ticket.as_deref().unwrap_or(""),
+    )
+    .await
+}
+
 /// List Ceph OSDs
 #[tauri::command]
 pub async fn list_ceph_osd(
@@ -1414,6 +1458,29 @@ pub async fn get_acme_challenges(
     Ok(json_challenges)
 }
 
+/// Order a new certificate via ACME for a domain, using the given ACME account.
+#[tauri::command]
+pub async fn request_acme_certificate(
+    cluster_id: String,
+    domain: String,
+    account_id: String,
+    state: State<'_, AppState>,
+) -> Result<serde_json::Value, String> {
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+
+    let cert = crate::proxmox::acme::request_certificate(
+        &client_guard,
+        &[domain.as_str()],
+        &account_id,
+        client_guard.ticket.as_deref().unwrap_or(""),
+    )
+    .await
+    .map_err(|e| format!("Failed to request ACME certificate: {e}"))?;
+
+    serde_json::to_value(cert).map_err(|e| format!("Failed to serialize certificate: {e}"))
+}
+
 /// List APT updates
 #[tauri::command]
 pub async fn list_apt_updates(
@@ -1440,23 +1507,25 @@ pub async fn list_apt_updates(
     Ok(json_updates)
 }
 
-/// Update APT repositories
+/// Refresh the APT package index on a node (apt-get update). Returns the UPID
+/// of the PVE task so the frontend can surface progress.
 #[tauri::command]
-pub async fn update_apt_repos(
+pub async fn refresh_apt_cache(
     cluster_id: String,
     node: String,
     state: State<'_, AppState>,
-) -> Result<(), String> {
+) -> Result<String, String> {
+    validate_pve_identifier(&node, "node")?;
     let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
 
-    crate::proxmox::apt::update_apt_repos(
+    crate::proxmox::apt::refresh_apt_cache(
         &client_guard,
         &node,
         client_guard.ticket.as_deref().unwrap_or(""),
     )
     .await
-    .map_err(|e| format!("Failed to update APT repos: {e}"))
+    .map_err(|e| format!("Failed to refresh APT cache: {e}"))
 }
 
 /// List APT repositories
@@ -2081,6 +2150,112 @@ pub async fn stop_task(
     .map_err(|e| format!("Failed to stop task {task_id}: {e}"))
 }
 
+/// Get the full log of a single task.
+#[tauri::command]
+pub async fn get_proxmox_task_log(
+    cluster_id: String,
+    node: String,
+    upid: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<crate::proxmox::tasks::TaskLogEntry>, String> {
+    validate_pve_identifier(&node, "node")?;
+    crate::proxmox::tasks::validate_upid(&upid)?;
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+
+    crate::proxmox::tasks::get_task_log(
+        &client_guard,
+        &node,
+        &upid,
+        client_guard.ticket.as_deref().unwrap_or(""),
+    )
+    .await
+}
+
+/// A single task to search the log of.
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct TaskLogTarget {
+    pub node: String,
+    pub upid: String,
+}
+
+/// Search result for one task: matching log lines, or an error if the log
+/// could not be fetched (degrades gracefully rather than failing the whole
+/// search).
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct TaskLogSearchResult {
+    pub node: String,
+    pub upid: String,
+    pub matches: Vec<crate::proxmox::tasks::TaskLogEntry>,
+    pub error: Option<String>,
+}
+
+/// Maximum number of tasks searchable in a single request — keeps this
+/// endpoint from being used to fan out unbounded concurrent PVE requests.
+const MAX_TASK_LOG_SEARCH_TARGETS: usize = 100;
+
+/// Search the logs of multiple tasks for a case-insensitive substring.
+/// Fetches each task's log concurrently (capped) and returns per-task
+/// matches; a failure fetching one task's log does not fail the others.
+#[tauri::command]
+pub async fn search_task_logs(
+    cluster_id: String,
+    query: String,
+    targets: Vec<TaskLogTarget>,
+    state: State<'_, AppState>,
+) -> Result<Vec<TaskLogSearchResult>, String> {
+    if query.trim().chars().count() < 2 {
+        return Err("Search query must be at least 2 characters".to_string());
+    }
+    if targets.len() > MAX_TASK_LOG_SEARCH_TARGETS {
+        return Err(format!(
+            "Too many tasks to search: max {MAX_TASK_LOG_SEARCH_TARGETS}, got {}",
+            targets.len()
+        ));
+    }
+    for target in &targets {
+        validate_pve_identifier(&target.node, "node")?;
+        crate::proxmox::tasks::validate_upid(&target.upid)?;
+    }
+
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+
+    let results = futures::stream::iter(targets.into_iter().map(|target| {
+        let client = client.clone();
+        let query = query.clone();
+        async move {
+            let client_guard = client.lock().await;
+            let ticket = client_guard.ticket.as_deref().unwrap_or("").to_string();
+            match crate::proxmox::tasks::get_task_log(
+                &client_guard,
+                &target.node,
+                &target.upid,
+                &ticket,
+            )
+            .await
+            {
+                Ok(entries) => TaskLogSearchResult {
+                    node: target.node,
+                    upid: target.upid,
+                    matches: crate::proxmox::tasks::filter_log_lines(&entries, &query),
+                    error: None,
+                },
+                Err(e) => TaskLogSearchResult {
+                    node: target.node,
+                    upid: target.upid,
+                    matches: vec![],
+                    error: Some(e),
+                },
+            }
+        }
+    }))
+    .buffer_unordered(5)
+    .collect::<Vec<_>>()
+    .await;
+
+    Ok(results)
+}
+
 // ─── Phase 5 - Infrastructure ─────────────────────────────────────────────────
 
 // Metric Collection (extended from existing)
@@ -2515,21 +2690,23 @@ pub async fn get_syslog(
     node_id: String,
     limit: Option<u32>,
     state: State<'_, AppState>,
-) -> Result<Vec<serde_json::Value>, String> {
+) -> Result<Vec<crate::proxmox::node::SyslogEntry>, String> {
+    validate_pve_identifier(&node_id, "node_id")?;
     let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
     let client_guard = client.lock().await;
 
-    let limit_val = limit.unwrap_or(500);
-    let path = format!("nodes/{node_id}/syslog?limit={limit_val}");
+    let limit_val = limit.unwrap_or(500).to_string();
+    let path = format!("nodes/{node_id}/syslog");
     let response: serde_json::Value = client_guard
-        .get(&path, Some(client_guard.ticket.as_deref().unwrap_or("")))
+        .get_with_params(
+            &path,
+            &[("limit", limit_val.as_str())],
+            Some(client_guard.ticket.as_deref().unwrap_or("")),
+        )
         .await
         .map_err(|e| format!("Failed to get syslog: {e}"))?;
 
-    response
-        .as_array()
-        .map(|arr| arr.to_vec())
-        .ok_or_else(|| "Invalid response format".to_string())
+    crate::proxmox::node::parse_syslog_entries(&response)
 }
 
 // ─── Phase 12 - Network Interfaces ───────────────────────────────────────────
@@ -4081,8 +4258,13 @@ pub struct NodeShellSession {
 pub async fn open_node_shell(
     cluster_id: String,
     node: String,
+    cmd: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<NodeShellSession, String> {
+    validate_pve_identifier(&node, "node")?;
+    if let Some(cmd) = cmd.as_deref() {
+        crate::proxmox::console::validate_shell_cmd(cmd)?;
+    }
     // Resolve the cluster type so we know which shell API + cookie to use.
     let is_pbs = {
         let db = state
@@ -4109,9 +4291,11 @@ pub async fn open_node_shell(
             .clone()
             .ok_or_else(|| "No active session ticket for this remote".to_string())?;
         let proxy = if is_pbs {
-            crate::proxmox::console::termproxy_node(&guard, &node, &auth_ticket).await?
+            crate::proxmox::console::termproxy_node(&guard, &node, cmd.as_deref(), &auth_ticket)
+                .await?
         } else {
-            crate::proxmox::console::vncshell_node(&guard, &node, &auth_ticket).await?
+            crate::proxmox::console::vncshell_node(&guard, &node, cmd.as_deref(), &auth_ticket)
+                .await?
         };
         let user = if proxy.user.is_empty() {
             guard.username().to_string()
@@ -4339,6 +4523,123 @@ pub async fn get_ceph_flags(
     crate::proxmox::ceph::get_ceph_flags(
         &client_guard,
         &node,
+        client_guard.ticket.as_deref().unwrap_or(""),
+    )
+    .await
+}
+
+/// Set (or clear) a cluster-level Ceph runtime flag.
+#[tauri::command]
+pub async fn set_ceph_flag(
+    cluster_id: String,
+    flag: String,
+    value: bool,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+    crate::proxmox::ceph::set_ceph_flag(
+        &client_guard,
+        &flag,
+        value,
+        client_guard.ticket.as_deref().unwrap_or(""),
+    )
+    .await
+}
+
+/// Create a Ceph monitor on a node. Returns the task UPID.
+#[tauri::command]
+pub async fn create_ceph_monitor(
+    cluster_id: String,
+    node: String,
+    monid: String,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+    crate::proxmox::ceph::create_mon(
+        &client_guard,
+        &node,
+        &monid,
+        client_guard.ticket.as_deref().unwrap_or(""),
+    )
+    .await
+}
+
+/// Destroy a Ceph monitor. Returns the task UPID.
+#[tauri::command]
+pub async fn delete_ceph_monitor(
+    cluster_id: String,
+    node: String,
+    monid: String,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+    crate::proxmox::ceph::destroy_mon(
+        &client_guard,
+        &node,
+        &monid,
+        client_guard.ticket.as_deref().unwrap_or(""),
+    )
+    .await
+}
+
+/// Create a Ceph manager on a node. Returns the task UPID.
+#[tauri::command]
+pub async fn create_ceph_manager(
+    cluster_id: String,
+    node: String,
+    id: String,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+    crate::proxmox::ceph::create_mgr(
+        &client_guard,
+        &node,
+        &id,
+        client_guard.ticket.as_deref().unwrap_or(""),
+    )
+    .await
+}
+
+/// Destroy a Ceph manager. Returns the task UPID.
+#[tauri::command]
+pub async fn delete_ceph_manager(
+    cluster_id: String,
+    node: String,
+    id: String,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+    crate::proxmox::ceph::destroy_mgr(
+        &client_guard,
+        &node,
+        &id,
+        client_guard.ticket.as_deref().unwrap_or(""),
+    )
+    .await
+}
+
+/// Start, stop, or restart a Ceph mon/mgr service (e.g. "mon.vmhost1").
+/// Returns the task UPID.
+#[tauri::command]
+pub async fn ceph_service_action(
+    cluster_id: String,
+    node: String,
+    service: String,
+    action: String,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+    crate::proxmox::ceph::ceph_service_action(
+        &client_guard,
+        &node,
+        &service,
+        &action,
         client_guard.ticket.as_deref().unwrap_or(""),
     )
     .await

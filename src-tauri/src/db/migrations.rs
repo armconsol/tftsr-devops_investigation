@@ -574,6 +574,14 @@ pub fn run_migrations(conn: &Connection) -> anyhow::Result<()> {
              ALTER TABLE database_connections ADD COLUMN ssh_username TEXT;
              ALTER TABLE database_connections ADD COLUMN ssh_auth_method TEXT;",
         ),
+        (
+            // 041 added the SSH tunnel config columns but not the encrypted
+            // credential columns referenced by create/update_database_connection.
+            "042_add_database_ssh_credential_columns",
+            "ALTER TABLE database_connections ADD COLUMN ssh_password_encrypted TEXT;
+             ALTER TABLE database_connections ADD COLUMN ssh_private_key_encrypted TEXT;
+             ALTER TABLE database_connections ADD COLUMN ssh_key_passphrase_encrypted TEXT;",
+        ),
     ];
 
     for (name, sql) in migrations {
@@ -596,6 +604,7 @@ pub fn run_migrations(conn: &Connection) -> anyhow::Result<()> {
                 || name.ends_with("_add_supports_tool_calling")
                 || name.ends_with("_add_proxmox_username_column")
                 || name.ends_with("_add_database_ssh_tunnel_columns")
+                || name.ends_with("_add_database_ssh_credential_columns")
             {
                 // Use execute for ALTER TABLE (SQLite only allows one statement per command)
                 // Skip error if column already exists (SQLITE_ERROR with "duplicate column name")
@@ -1775,5 +1784,146 @@ users:
                 .unwrap();
             assert_eq!(count, 1, "{migration} should be recorded exactly once");
         }
+    }
+
+    fn database_connections_columns(conn: &Connection) -> Vec<String> {
+        let mut stmt = conn
+            .prepare("PRAGMA table_info(database_connections)")
+            .unwrap();
+        stmt.query_map([], |row| row.get::<_, String>(1))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap()
+    }
+
+    #[test]
+    fn test_042_database_connections_has_ssh_credential_columns() {
+        let conn = setup_test_db();
+        let columns = database_connections_columns(&conn);
+
+        for col in [
+            "ssh_password_encrypted",
+            "ssh_private_key_encrypted",
+            "ssh_key_passphrase_encrypted",
+        ] {
+            assert!(
+                columns.contains(&col.to_string()),
+                "database_connections should have column {col}, got: {columns:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_042_idempotent_rerun() {
+        let conn = Connection::open_in_memory().unwrap();
+        run_migrations(&conn).unwrap();
+        run_migrations(&conn).unwrap();
+
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM _migrations WHERE name = ?1",
+                ["042_add_database_ssh_credential_columns"],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 1, "migration 042 should be recorded exactly once");
+    }
+
+    #[test]
+    fn test_042_applies_to_existing_v041_database() {
+        // Simulate an existing installation: table created by 038 + columns from
+        // 041, with both migrations recorded, then run_migrations must add the
+        // credential columns without error.
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE _migrations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                applied_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );",
+        )
+        .unwrap();
+        run_migrations(&conn).unwrap();
+        // Drop the credential columns to mimic a DB that predates migration 042
+        conn.execute_batch(
+            "ALTER TABLE database_connections DROP COLUMN ssh_password_encrypted;
+             ALTER TABLE database_connections DROP COLUMN ssh_private_key_encrypted;
+             ALTER TABLE database_connections DROP COLUMN ssh_key_passphrase_encrypted;
+             DELETE FROM _migrations WHERE name = '042_add_database_ssh_credential_columns';",
+        )
+        .unwrap();
+        assert!(
+            !database_connections_columns(&conn).contains(&"ssh_password_encrypted".to_string())
+        );
+
+        run_migrations(&conn).unwrap();
+
+        let columns = database_connections_columns(&conn);
+        for col in [
+            "ssh_password_encrypted",
+            "ssh_private_key_encrypted",
+            "ssh_key_passphrase_encrypted",
+        ] {
+            assert!(
+                columns.contains(&col.to_string()),
+                "missing {col} after re-migration"
+            );
+        }
+    }
+
+    #[test]
+    fn test_042_insert_with_ssh_credentials_succeeds() {
+        // Mirrors the INSERT in commands/database.rs::create_database_connection
+        let conn = setup_test_db();
+        conn.execute(
+            "INSERT INTO database_connections (
+                id, name, db_type, host, port, database_name, username, encrypted_password,
+                ssl_enabled, ssl_ca_cert_path, ssl_client_cert_path, ssl_client_key_path, connection_options,
+                ssh_enabled, ssh_hostname, ssh_port, ssh_username, ssh_auth_method,
+                ssh_password_encrypted, ssh_private_key_encrypted, ssh_key_passphrase_encrypted,
+                created_at, updated_at
+            ) VALUES (
+                ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8,
+                ?9, ?10, ?11, ?12, ?13,
+                ?14, ?15, ?16, ?17, ?18,
+                ?19, ?20, ?21,
+                ?22, ?23
+            )",
+            rusqlite::params![
+                "conn-1",
+                "Test PSQL",
+                "postgresql",
+                "db.example.com",
+                5432,
+                "appdb",
+                "app",
+                "enc:password",
+                0,
+                Option::<String>::None,
+                Option::<String>::None,
+                Option::<String>::None,
+                Option::<String>::None,
+                1,
+                "bastion.example.com",
+                22,
+                "tunnel",
+                "password",
+                "enc:sshpw",
+                Option::<String>::None,
+                Option::<String>::None,
+                "2026-07-04 00:00:00",
+                "2026-07-04 00:00:00",
+            ],
+        )
+        .expect("INSERT with ssh credential columns must succeed");
+
+        let stored: String = conn
+            .query_row(
+                "SELECT ssh_password_encrypted FROM database_connections WHERE id = 'conn-1'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(stored, "enc:sshpw");
     }
 }

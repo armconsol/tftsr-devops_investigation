@@ -28,7 +28,6 @@ export const useSettingsStore = create<SettingsState>()(
       default_model: "llama3.2:3b",
       ollama_url: "http://localhost:11434",
       debug_logging_enabled: false,
-      update_channel: "stable",
 
       addProvider: (provider) =>
         set((state) => ({ ai_providers: [...state.ai_providers, provider] })),

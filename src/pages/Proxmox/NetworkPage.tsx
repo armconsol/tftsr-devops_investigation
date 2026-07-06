@@ -15,12 +15,11 @@ import {
   createNetworkInterface,
   updateNetworkInterface,
   deleteNetworkInterface,
-  listProxmoxClusters,
   reloadNetworkConfig,
   NetworkInterface,
   NetworkInterfaceConfig,
 } from '@/lib/proxmoxClient';
-import type { ClusterInfo } from '@/lib/domain';
+import { useProxmoxClusters } from '@/hooks/useProxmoxClusters';
 import { toast } from 'sonner';
 
 interface FormState {
@@ -45,8 +44,7 @@ const defaultForm: FormState = {
 
 export function ProxmoxNetworkPage() {
   const [interfaces, setInterfaces] = useState<NetworkInterface[]>([]);
-  const [clusters, setClusters] = useState<ClusterInfo[]>([]);
-  const [clusterId, setClusterId] = useState('');
+  const { clusters, selectedClusterId: clusterId, setSelectedClusterId: setClusterId } = useProxmoxClusters();
   const { nodeNames, selectedNode: nodeId, setSelectedNode, loading: nodesLoading } =
     useProxmoxNodes(clusterId);
   const [loading, setLoading] = useState(false);
@@ -70,17 +68,6 @@ export function ProxmoxNetworkPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
-
-  useEffect(() => {
-    listProxmoxClusters()
-      .then((cls) => {
-        setClusters(cls);
-        if (cls.length > 0) {
-          setClusterId(cls[0].id);
-        }
-      })
-      .catch(console.error);
   }, []);
 
   // Auto-load interfaces whenever the selected datacenter/node changes.

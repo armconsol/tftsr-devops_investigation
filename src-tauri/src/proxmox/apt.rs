@@ -2,6 +2,7 @@
 // Provides operations for managing package updates and repositories
 
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 /// APT package update information
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -13,15 +14,17 @@ pub struct APTUpdate {
     pub release: String,
 }
 
-/// APT repository information
+/// One repository entry from an APT sources file, shaped as the frontend
+/// `AptRepository` interface expects: the raw PVE arrays, not a flattened
+/// first-element-only view.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct APTRepository {
-    pub repository_id: String,
-    pub url: String,
-    pub distribution: String,
-    pub component: String,
+    pub types: Vec<String>,
+    pub uris: Vec<String>,
+    pub suites: Vec<String>,
+    pub components: Vec<String>,
     pub enabled: bool,
-    pub type_: String,
+    pub comment: Option<String>,
 }
 
 /// List APT updates
@@ -70,18 +73,79 @@ pub async fn list_apt_updates(
     Ok(updates)
 }
 
-/// Update APT repositories
-pub async fn update_apt_repos(
+/// API path used to refresh the APT package index on a node.
+pub fn apt_refresh_path(node: &str) -> String {
+    format!("nodes/{node}/apt/update")
+}
+
+/// Refresh the APT package index on a node (equivalent to `apt-get update`).
+/// PVE runs this as a task; the returned string is the task UPID.
+pub async fn refresh_apt_cache(
     client: &crate::proxmox::client::ProxmoxClient,
     node: &str,
     ticket: &str,
-) -> Result<(), String> {
-    let path = format!("nodes/{node}/apt/sources");
-    let _response: serde_json::Value = client
-        .post_form(&path, &[], Some(ticket))
+) -> Result<String, String> {
+    let response: serde_json::Value = client
+        .post_form(&apt_refresh_path(node), &[], Some(ticket))
         .await
-        .map_err(|e| format!("Failed to update APT repositories: {e}"))?;
-    Ok(())
+        .map_err(|e| format!("Failed to refresh APT cache: {e}"))?;
+    Ok(response.as_str().unwrap_or_default().to_string())
+}
+
+fn string_array(value: Option<&Value>) -> Vec<String> {
+    value
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|item| item.as_str().map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn parse_repository_entry(entry: &Value) -> APTRepository {
+    // PVE encodes Enabled as 1/0; older shapes use a boolean.
+    let enabled = entry
+        .get("Enabled")
+        .map(|e| e.as_bool().unwrap_or_else(|| e.as_i64().unwrap_or(1) != 0))
+        .unwrap_or(true);
+
+    APTRepository {
+        types: string_array(entry.get("Types")),
+        uris: string_array(entry.get("URIs")),
+        suites: string_array(entry.get("Suites")),
+        components: string_array(entry.get("Components")),
+        enabled,
+        comment: entry
+            .get("Comment")
+            .and_then(|c| c.as_str())
+            .map(str::trim)
+            .filter(|c| !c.is_empty())
+            .map(str::to_string),
+    }
+}
+
+/// Parse the (envelope-unwrapped) response of GET /nodes/{node}/apt/repositories.
+/// Real PVE nests entries under `files[].repositories[]`; a flat `files[]` shape
+/// with the repository fields directly on the file object is accepted as fallback.
+pub fn parse_apt_repositories(response: &Value) -> Vec<APTRepository> {
+    let files = match response.get("files").and_then(|f| f.as_array()) {
+        Some(f) => f,
+        None => return vec![],
+    };
+
+    files
+        .iter()
+        .flat_map(|file| {
+            if let Some(repos) = file.get("repositories").and_then(|r| r.as_array()) {
+                repos.iter().map(parse_repository_entry).collect::<Vec<_>>()
+            } else if file.get("Types").is_some() || file.get("URIs").is_some() {
+                vec![parse_repository_entry(file)]
+            } else {
+                vec![]
+            }
+        })
+        .collect()
 }
 
 /// List APT repositories
@@ -96,121 +160,7 @@ pub async fn list_apt_repositories(
         .await
         .map_err(|e| format!("Failed to list APT repositories: {e}"))?;
 
-    // response IS already the data object (handle_response unwrapped the envelope)
-    // GET /nodes/{node}/apt/repositories returns {"files": [...], "infos": [...], ...}
-    let files = match response.get("files").and_then(|f| f.as_array()) {
-        Some(f) => f,
-        None => return Ok(vec![]),
-    };
-    let repo_list: Vec<APTRepository> = files
-        .iter()
-        .map(|file| {
-            let uris = file.get("URIs").and_then(|u| u.as_array());
-            let suites = file.get("Suites").and_then(|s| s.as_array());
-            let components = file.get("Components").and_then(|c| c.as_array());
-            let types = file.get("Types").and_then(|t| t.as_array());
-
-            let url = uris
-                .and_then(|u| u.first())
-                .and_then(|u| u.as_str())
-                .unwrap_or("")
-                .to_string();
-            let distribution = suites
-                .and_then(|s| s.first())
-                .and_then(|s| s.as_str())
-                .unwrap_or("")
-                .to_string();
-            let component = components
-                .and_then(|c| c.first())
-                .and_then(|c| c.as_str())
-                .unwrap_or("")
-                .to_string();
-            let type_ = types
-                .and_then(|t| t.first())
-                .and_then(|t| t.as_str())
-                .unwrap_or("deb")
-                .to_string();
-            let enabled = file
-                .get("Enabled")
-                .and_then(|e| e.as_bool())
-                .unwrap_or(true);
-            let repository_id = format!("{type_}-{url}");
-
-            APTRepository {
-                repository_id,
-                url,
-                distribution,
-                component,
-                enabled,
-                type_,
-            }
-        })
-        .collect();
-
-    Ok(repo_list)
-}
-
-/// Add APT repository
-pub async fn add_apt_repository(
-    client: &crate::proxmox::client::ProxmoxClient,
-    node: &str,
-    repo: &APTRepository,
-    ticket: &str,
-) -> Result<(), String> {
-    let path = format!("nodes/{node}/apt/sources");
-    let config = serde_json::json!({
-        "id": repo.repository_id,
-        "url": repo.url,
-        "distribution": repo.distribution,
-        "component": repo.component,
-        "enabled": repo.enabled,
-        "type": repo.type_
-    });
-
-    let _response: serde_json::Value = client
-        .post(&path, &config, Some(ticket))
-        .await
-        .map_err(|e| format!("Failed to add APT repository {}: {e}", repo.repository_id))?;
-    Ok(())
-}
-
-/// Update APT repository
-pub async fn update_apt_repository(
-    client: &crate::proxmox::client::ProxmoxClient,
-    node: &str,
-    repo_id: &str,
-    repo: &APTRepository,
-    ticket: &str,
-) -> Result<(), String> {
-    let path = format!("nodes/{node}/apt/sources/{repo_id}");
-    let config = serde_json::json!({
-        "url": repo.url,
-        "distribution": repo.distribution,
-        "component": repo.component,
-        "enabled": repo.enabled,
-        "type": repo.type_
-    });
-
-    let _response: serde_json::Value = client
-        .put(&path, &config, Some(ticket))
-        .await
-        .map_err(|e| format!("Failed to update APT repository {repo_id}: {e}"))?;
-    Ok(())
-}
-
-/// Delete APT repository
-pub async fn delete_apt_repository(
-    client: &crate::proxmox::client::ProxmoxClient,
-    node: &str,
-    repo_id: &str,
-    ticket: &str,
-) -> Result<(), String> {
-    let path = format!("nodes/{node}/apt/sources/{repo_id}");
-    let _response: serde_json::Value = client
-        .delete(&path, Some(ticket))
-        .await
-        .map_err(|e| format!("Failed to delete APT repository {repo_id}: {e}"))?;
-    Ok(())
+    Ok(parse_apt_repositories(&response))
 }
 
 #[cfg(test)]
@@ -246,21 +196,7 @@ mod tests {
             .get("Package")
             .and_then(|p| p.as_str())
             .unwrap();
-        let version = pve_response
-            .get("Version")
-            .and_then(|v| v.as_str())
-            .unwrap();
-        let old_version = pve_response
-            .get("OldVersion")
-            .and_then(|v| v.as_str())
-            .unwrap();
-        let origin = pve_response.get("Origin").and_then(|r| r.as_str()).unwrap();
         assert_eq!(package, "curl");
-        assert_eq!(version, "7.88.1-10+deb12u8");
-        assert_eq!(old_version, "7.88.1-10+deb12u7");
-        assert_eq!(origin, "Debian");
-
-        // Confirm lowercase fields don't exist in PVE response
         assert!(
             pve_response.get("package").is_none(),
             "PVE uses 'Package' not 'package'"
@@ -268,76 +204,118 @@ mod tests {
     }
 
     #[test]
-    fn test_apt_repository_list_reads_files_array() {
-        // PVE GET /nodes/{node}/apt/repositories returns {"files": [...], "infos": [...]}
-        // The list function reads from the "files" key, not the top-level array
-        let pve_response = serde_json::json!({
+    fn test_parse_apt_repositories_nested_repositories_shape() {
+        // Real PVE: entries live under files[].repositories[]
+        let response = serde_json::json!({
             "files": [
                 {
-                    "URIs": ["http://deb.debian.org/debian"],
-                    "Suites": ["bookworm"],
-                    "Components": ["main"],
-                    "Types": ["deb"],
-                    "Enabled": true
+                    "path": "/etc/apt/sources.list",
+                    "file-type": "list",
+                    "repositories": [
+                        {
+                            "Types": ["deb"],
+                            "URIs": ["http://deb.debian.org/debian"],
+                            "Suites": ["bookworm", "bookworm-updates"],
+                            "Components": ["main", "contrib"],
+                            "Enabled": 1,
+                            "Comment": " main repo"
+                        },
+                        {
+                            "Types": ["deb"],
+                            "URIs": ["http://security.debian.org/debian-security"],
+                            "Suites": ["bookworm-security"],
+                            "Components": ["main"],
+                            "Enabled": 0
+                        }
+                    ]
                 }
             ],
             "infos": [],
             "standard-repos": []
         });
-        let files = pve_response
-            .get("files")
-            .and_then(|f| f.as_array())
-            .unwrap();
-        assert_eq!(
-            files.len(),
-            1,
-            "must read from 'files' key not top-level array"
-        );
 
-        let first = &files[0];
-        let url = first
-            .get("URIs")
-            .and_then(|u| u.as_array())
-            .and_then(|u| u.first())
-            .and_then(|u| u.as_str())
-            .unwrap();
-        assert_eq!(url, "http://deb.debian.org/debian");
+        let repos = parse_apt_repositories(&response);
+        assert_eq!(repos.len(), 2);
+        assert_eq!(repos[0].types, vec!["deb"]);
+        assert_eq!(repos[0].uris, vec!["http://deb.debian.org/debian"]);
+        assert_eq!(repos[0].suites, vec!["bookworm", "bookworm-updates"]);
+        assert_eq!(repos[0].components, vec!["main", "contrib"]);
+        assert!(repos[0].enabled);
+        assert_eq!(repos[0].comment.as_deref(), Some("main repo"));
+        assert!(!repos[1].enabled);
+        assert_eq!(repos[1].comment, None);
     }
-}
 
-/// Install APT package
-pub async fn install_apt_package(
-    client: &crate::proxmox::client::ProxmoxClient,
-    node: &str,
-    package: &str,
-    ticket: &str,
-) -> Result<(), String> {
-    let path = format!("nodes/{node}/apt");
-    let config = serde_json::json!({
-        "packages": [package]
-    });
+    #[test]
+    fn test_parse_apt_repositories_flat_files_shape() {
+        // Fallback: fields directly on the file object
+        let response = serde_json::json!({
+            "files": [
+                {
+                    "Types": ["deb"],
+                    "URIs": ["http://deb.debian.org/debian"],
+                    "Suites": ["bookworm"],
+                    "Components": ["main"],
+                    "Enabled": true
+                }
+            ]
+        });
 
-    let _response: serde_json::Value = client
-        .post(&path, &config, Some(ticket))
-        .await
-        .map_err(|e| format!("Failed to install APT package {package}: {e}"))?;
-    Ok(())
-}
+        let repos = parse_apt_repositories(&response);
+        assert_eq!(repos.len(), 1);
+        assert_eq!(repos[0].uris, vec!["http://deb.debian.org/debian"]);
+        assert!(repos[0].enabled);
+    }
 
-/// Upgrade APT packages
-pub async fn upgrade_apt_packages(
-    client: &crate::proxmox::client::ProxmoxClient,
-    node: &str,
-    ticket: &str,
-) -> Result<(), String> {
-    let path = format!("nodes/{node}/apt");
-    let config = serde_json::json!({
-        "dist_upgrade": true
-    });
+    #[test]
+    fn test_parse_apt_repositories_missing_arrays_default_empty() {
+        // A malformed entry must never produce missing fields for the frontend
+        let response = serde_json::json!({
+            "files": [
+                {
+                    "repositories": [
+                        { "Enabled": 1 }
+                    ]
+                }
+            ]
+        });
 
-    let _response: serde_json::Value = client
-        .post(&path, &config, Some(ticket))
-        .await
-        .map_err(|e| format!("Failed to upgrade APT packages: {e}"))?;
-    Ok(())
+        let repos = parse_apt_repositories(&response);
+        assert_eq!(repos.len(), 1);
+        assert!(repos[0].types.is_empty());
+        assert!(repos[0].uris.is_empty());
+        assert!(repos[0].suites.is_empty());
+        assert!(repos[0].components.is_empty());
+    }
+
+    #[test]
+    fn test_parse_apt_repositories_no_files_key() {
+        assert!(parse_apt_repositories(&serde_json::json!({})).is_empty());
+        assert!(parse_apt_repositories(&serde_json::json!({"files": []})).is_empty());
+    }
+
+    #[test]
+    fn test_apt_repository_serializes_array_fields() {
+        // The frontend renders repo.types.join(' ') etc. — the JSON keys must be
+        // lowercase array fields, never absent.
+        let repo = APTRepository {
+            types: vec!["deb".into()],
+            uris: vec!["http://example.com".into()],
+            suites: vec!["bookworm".into()],
+            components: vec!["main".into()],
+            enabled: true,
+            comment: None,
+        };
+        let json: Value = serde_json::to_value(&repo).unwrap();
+        assert!(json.get("types").unwrap().is_array());
+        assert!(json.get("uris").unwrap().is_array());
+        assert!(json.get("suites").unwrap().is_array());
+        assert!(json.get("components").unwrap().is_array());
+        assert_eq!(json.get("enabled").unwrap(), &Value::Bool(true));
+    }
+
+    #[test]
+    fn test_apt_refresh_path() {
+        assert_eq!(apt_refresh_path("vmhost1"), "nodes/vmhost1/apt/update");
+    }
 }
