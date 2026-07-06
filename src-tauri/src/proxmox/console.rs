@@ -360,17 +360,39 @@ pub async fn vncproxy_lxc(
     parse_vncproxy_response(&response)
 }
 
+/// Shell commands PVE's vncshell/termproxy endpoints accept via the `cmd`
+/// parameter that we allow the frontend to request. `login` is the default
+/// interactive shell; `upgrade` runs `pveupgrade` exactly like the official
+/// PVE web UI's node "Upgrade" button.
+const ALLOWED_SHELL_CMDS: &[&str] = &["login", "upgrade"];
+
+/// Validate an optional shell `cmd` value against the whitelist.
+pub fn validate_shell_cmd(cmd: &str) -> Result<(), String> {
+    if ALLOWED_SHELL_CMDS.contains(&cmd) {
+        Ok(())
+    } else {
+        Err(format!(
+            "Invalid shell cmd '{cmd}': must be one of {ALLOWED_SHELL_CMDS:?}"
+        ))
+    }
+}
+
 /// Request a graphical VNC shell for a PVE node (host shell).
 /// POST /nodes/{node}/vncshell
 pub async fn vncshell_node(
     client: &crate::proxmox::client::ProxmoxClient,
     node: &str,
+    cmd: Option<&str>,
     ticket: &str,
 ) -> Result<VncProxyInfo, String> {
     let path = format!("nodes/{node}/vncshell");
-    let params: &[(&str, &str)] = &[("websocket", "1")];
+    let mut params: Vec<(&str, &str)> = vec![("websocket", "1")];
+    if let Some(cmd) = cmd {
+        validate_shell_cmd(cmd)?;
+        params.push(("cmd", cmd));
+    }
     let response: serde_json::Value = client
-        .post_form(&path, params, Some(ticket))
+        .post_form(&path, &params, Some(ticket))
         .await
         .map_err(|e| format!("Failed to open node shell for {node}: {e}"))?;
     parse_vncproxy_response(&response)
@@ -381,12 +403,17 @@ pub async fn vncshell_node(
 pub async fn termproxy_node(
     client: &crate::proxmox::client::ProxmoxClient,
     node: &str,
+    cmd: Option<&str>,
     ticket: &str,
 ) -> Result<VncProxyInfo, String> {
     let path = format!("nodes/{node}/termproxy");
-    let params: &[(&str, &str)] = &[];
+    let mut params: Vec<(&str, &str)> = vec![];
+    if let Some(cmd) = cmd {
+        validate_shell_cmd(cmd)?;
+        params.push(("cmd", cmd));
+    }
     let response: serde_json::Value = client
-        .post_form(&path, params, Some(ticket))
+        .post_form(&path, &params, Some(ticket))
         .await
         .map_err(|e| format!("Failed to open terminal proxy for {node}: {e}"))?;
     parse_vncproxy_response(&response)
@@ -396,6 +423,30 @@ pub async fn termproxy_node(
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn test_validate_shell_cmd_accepts_whitelisted() {
+        assert!(validate_shell_cmd("login").is_ok());
+        assert!(validate_shell_cmd("upgrade").is_ok());
+    }
+
+    #[test]
+    fn test_validate_shell_cmd_rejects_everything_else() {
+        for cmd in [
+            "rm -rf /",
+            "login; reboot",
+            "upgrade && true",
+            "ceph_install",
+            "",
+            "LOGIN",
+            "upgrade ",
+        ] {
+            assert!(
+                validate_shell_cmd(cmd).is_err(),
+                "cmd {cmd:?} must be rejected"
+            );
+        }
+    }
 
     /// The in-app noVNC/xterm consoles connect to the local proxy over
     /// `ws://127.0.0.1:<ephemeral-port>`. WebKitGTK throws

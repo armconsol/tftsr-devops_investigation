@@ -38,6 +38,13 @@ Release builds fail secure operations if `TRCAA_ENCRYPTION_KEY` (or legacy `TRCA
 
 The Stronghold plugin remains enabled and now uses a per-installation salt derived from the app data directory path hash instead of a fixed static salt.
 
+**Database connection SSH tunnel credentials:** `database_connections.ssh_password_encrypted`,
+`ssh_private_key_encrypted`, and `ssh_key_passphrase_encrypted` (added in migration 042 —
+see [Database](Database.md)) are encrypted with the same `integrations::auth::encrypt_token`
+AES-256-GCM helper used above. Decrypted values are only ever used in-process to establish
+the SSH tunnel; `commands/database.rs`'s list/get connection paths never return the
+decrypted secret to the frontend, only whether a credential is configured.
+
 ---
 
 ## PII Redaction

@@ -1,6 +1,6 @@
 {
   "productName": "Troubleshooting and RCA Assistant",
-  "version": "3.0.0",
+  "version": "3.1.0",
   "identifier": "com.trcaa.app",
   "build": {
     "frontendDist": "../dist",

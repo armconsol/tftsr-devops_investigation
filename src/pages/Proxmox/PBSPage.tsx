@@ -12,7 +12,10 @@ import {
 } from '@/lib/proxmoxClient';
 import type { PbsDatastore, PbsSnapshot, PbsTask } from '@/lib/proxmoxClient';
 import type { ClusterInfo } from '@/lib/domain';
+import { useProxmoxClusters } from '@/hooks/useProxmoxClusters';
 import { toast } from 'sonner';
+
+const isPbsCluster = (c: ClusterInfo) => c.clusterType === 'pbs';
 
 function formatBytes(bytes?: number): string {
   if (bytes === undefined || bytes === null) return '—';
@@ -24,8 +27,8 @@ function formatBytes(bytes?: number): string {
 
 export function ProxmoxPBSPage() {
   const [allClusters, setAllClusters] = useState<ClusterInfo[]>([]);
-  const [pbsClusters, setPbsClusters] = useState<ClusterInfo[]>([]);
-  const [selectedClusterId, setSelectedClusterId] = useState<string>('');
+  const { clusters: pbsClusters, selectedClusterId, setSelectedClusterId } =
+    useProxmoxClusters(isPbsCluster);
   const [node, setNode] = useState<string>('localhost');
   const [activeTab, setActiveTab] = useState<string>('datastores');
 
@@ -41,14 +44,11 @@ export function ProxmoxPBSPage() {
   const [tasks, setTasks] = useState<PbsTask[]>([]);
   const [tasksLoading, setTasksLoading] = useState(false);
 
+  // Fetched separately (unfiltered) only to distinguish "no clusters at all"
+  // from "clusters exist but none are PBS" in the empty-state message below.
   useEffect(() => {
     listProxmoxClusters()
-      .then((cls) => {
-        setAllClusters(cls);
-        const pbs = cls.filter((c) => c.clusterType === 'pbs');
-        setPbsClusters(pbs);
-        if (pbs.length > 0) setSelectedClusterId(pbs[0].id);
-      })
+      .then(setAllClusters)
       .catch((err) => {
         console.error('Failed to load clusters:', err);
         toast.error('Failed to load clusters');

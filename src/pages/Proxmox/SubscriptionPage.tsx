@@ -7,6 +7,7 @@ import { Label } from '@/components/ui/index';
 import { RefreshCw, Key, Check, AlertCircle, Clock } from 'lucide-react';
 import { getSubscriptionStatus, listProxmoxClusters, SubscriptionStatus } from '@/lib/proxmoxClient';
 import { ClusterInfo } from '@/lib/domain';
+import { useProxmoxStore } from '@/stores/proxmoxStore';
 
 interface ClusterSubscription {
   cluster: ClusterInfo;
@@ -51,7 +52,14 @@ export function ProxmoxSubscriptionPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [keyInput, setKeyInput] = useState('');
-  const [selectedClusterId, setSelectedClusterId] = useState<string>('');
+  const persistSelectedClusterId = useProxmoxStore((s) => s.setSelectedClusterId);
+  const [selectedClusterId, setSelectedClusterIdState] = useState<string>(
+    () => useProxmoxStore.getState().selectedClusterId
+  );
+  const setSelectedClusterId = (id: string) => {
+    setSelectedClusterIdState(id);
+    persistSelectedClusterId(id);
+  };
   const [activating, setActivating] = useState(false);
   const [activationMessage, setActivationMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
@@ -61,8 +69,13 @@ export function ProxmoxSubscriptionPage() {
     try {
       const cls = await listProxmoxClusters();
       setClusters(cls);
-      if (cls.length > 0 && !selectedClusterId) {
-        setSelectedClusterId(cls[0].id);
+      const persisted = useProxmoxStore.getState().selectedClusterId;
+      if (!selectedClusterId || !cls.some((c) => c.id === selectedClusterId)) {
+        if (persisted && cls.some((c) => c.id === persisted)) {
+          setSelectedClusterIdState(persisted);
+        } else if (cls.length > 0) {
+          setSelectedClusterId(cls[0].id);
+        }
       }
       const subs: Record<string, SubscriptionStatus> = {};
       await Promise.all(

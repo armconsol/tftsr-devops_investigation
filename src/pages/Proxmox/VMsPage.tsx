@@ -3,13 +3,12 @@ import { Button } from '@/components/ui/index';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/index';
 import { RefreshCw, Plus } from 'lucide-react';
 import { VMList, CreateVmDialog } from '@/components/Proxmox';
-import { listProxmoxClusters, listProxmoxVms, getVmConfig } from '@/lib/proxmoxClient';
-import type { ClusterInfo } from '@/lib/domain';
+import { listProxmoxVms, getVmConfig } from '@/lib/proxmoxClient';
+import { useProxmoxClusters } from '@/hooks/useProxmoxClusters';
 import { toast } from 'sonner';
 
 export function ProxmoxVMsPage() {
-  const [clusters, setClusters] = useState<ClusterInfo[]>([]);
-  const [selectedClusterId, setSelectedClusterId] = useState<string>('');
+  const { clusters, selectedClusterId, setSelectedClusterId } = useProxmoxClusters();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [vms, setVms] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -19,18 +18,6 @@ export function ProxmoxVMsPage() {
   const [configVm, setConfigVm] = useState<{ node: string; vmid: number } | null>(null);
   const [vmConfig, setVmConfig] = useState<Record<string, unknown> | null>(null);
   const [configLoading, setConfigLoading] = useState(false);
-
-  useEffect(() => {
-    listProxmoxClusters()
-      .then((cls) => {
-        setClusters(cls);
-        if (cls.length > 0) setSelectedClusterId(cls[0].id);
-      })
-      .catch((err) => {
-        console.error('Failed to load clusters:', err);
-        toast.error('Failed to load clusters');
-      });
-  }, []);
 
   const loadVms = useCallback(async (clusterId: string) => {
     if (!clusterId) return;

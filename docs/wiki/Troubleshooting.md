@@ -346,6 +346,62 @@ The in-app VM/LXC and node-shell consoles support clipboard via
   text before pasting it into a host shell/browser. Host→guest paste is always
   user-initiated (Paste button / Ctrl+Shift+V).
 
+### Administration → Repositories crashes with `e.types.join` is not a function
+
+```
+TypeError: undefined is not an object (evaluating 'e.types.join')
+```
+
+**Cause:** `AptRepository` was previously serialized as a flattened first-element view
+(`{repository_id, url, distribution, component, enabled, type_}`), but the frontend always
+rendered `repo.types.join(' ')`, `repo.uris.join(' ')`, etc., expecting arrays. Any
+repository entry crashed the tab. **Fix:** `AptRepository` now serializes the raw PVE
+arrays (`types`, `uris`, `suites`, `components`, `enabled`, `comment`), parsed from
+`files[].repositories[]` (PVE's actual nesting, with a flat-`files[]` fallback for older
+shapes). The render also defensively falls back to `[]` (`(repo.types ?? []).join(' ')`)
+so a malformed entry degrades instead of crashing the whole tab.
+
+### System Log / Journal tabs show nothing, or `Failed to get syslog: GET request failed`
+
+```
+Failed to get syslog: GET request failed: error sending request for url (https://.../syslog?limit=500)
+```
+
+**Cause:** The cached `ProxmoxClient` per cluster lives for the whole app session and never
+refreshed its login ticket (PVE tickets expire after ~2h) or its HTTP connection pool
+(`pveproxy` closes idle keep-alive connections aggressively) — the first request after a
+period of idle time, most often the low-traffic System Log/Journal tabs, would fail with an
+opaque `error sending request for url` with no further detail. **Fix:** the client now
+re-authenticates automatically once its ticket is older than ~90 minutes, sets a short
+`pool_idle_timeout`, and retries once on a transient transport error for idempotent GET
+requests; error messages also now include the full `source()` chain instead of just
+reqwest's generic top-level message. Separately, the frontend previously rendered a
+nonexistent `entry.msg` field — PVE syslog/task-log entries only ever have `{n, t}` (line
+number + full line text), no separate message field.
+
+### Ceph → CephFS tab shows no data
+
+**Cause:** `parse_cephfs` only read a single `data_pool` string field; current PVE versions
+return a `data_pools` **array** instead (a filesystem can have more than one data pool).
+**Fix:** the parser now accepts either shape, joining multiple pool names/ids with `", "`.
+The CephFS/Managers/Flags tabs also now autoload when selected and refresh every 30s (via
+`usePolling`) instead of requiring a manual **Load** click that previously existed for those
+three tabs only (Monitors already autoloaded).
+
+### Certificates page: Upload / Order via ACME / Renew silently did nothing
+
+**Cause:** `CertificatesPage.tsx`'s Upload and "Order via ACME" dialogs closed and refreshed
+the list on click without ever calling a Tauri command, and `handleRenew` discarded the
+certificate it was given. Separately, the `uploadCertificate` and `registerAcmeAccount`
+TS wrappers in `proxmoxClient.ts` didn't match their backend commands' actual parameter
+names (`cert`/`account` blobs vs. the backend's `certificate`/`privateKey`/`name` and
+`email`/`termsOfServiceAgreed`), so even a corrected call site would have failed at
+runtime. **Fix:** the wrappers now match their commands exactly; a new
+`request_acme_certificate` command/wrapper exposes the previously-unwired
+`proxmox::acme::request_certificate`; and the page now uploads real PEM content, resolves
+(or registers) an ACME account before ordering/renewing a certificate, and renews using the
+certificate's own domain (first SAN, falling back to its subject) instead of ignoring it.
+
 ---
 
 ## Gitea

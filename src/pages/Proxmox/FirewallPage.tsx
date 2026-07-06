@@ -8,7 +8,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/index';
 import { FirewallRuleList } from '@/components/Proxmox';
 import {
-  listProxmoxClusters,
   listFirewallRules,
   addFirewallRule,
   listClusterFirewallRules,
@@ -18,12 +17,11 @@ import {
   deleteGuestFirewallRule,
 } from '@/lib/proxmoxClient';
 import type { ClusterFirewallStatus } from '@/lib/proxmoxClient';
-import type { ClusterInfo } from '@/lib/domain';
+import { useProxmoxClusters } from '@/hooks/useProxmoxClusters';
 import { toast } from 'sonner';
 
 export function ProxmoxFirewallPage() {
-  const [clusters, setClusters] = useState<ClusterInfo[]>([]);
-  const [selectedClusterId, setSelectedClusterId] = useState<string>('');
+  const { clusters, selectedClusterId, setSelectedClusterId } = useProxmoxClusters();
   const [nodeInputValue, setNodeInputValue] = useState('localhost');
   const [nodeId, setNodeId] = useState('localhost');
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -63,18 +61,6 @@ export function ProxmoxFirewallPage() {
   const [ruleDest, setRuleDest] = useState('');
   const [ruleDport, setRuleDport] = useState('');
   const [ruleComment, setRuleComment] = useState('');
-
-  useEffect(() => {
-    listProxmoxClusters()
-      .then((cls) => {
-        setClusters(cls);
-        if (cls.length > 0) setSelectedClusterId(cls[0].id);
-      })
-      .catch((err) => {
-        console.error('Failed to load clusters:', err);
-        toast.error('Failed to load clusters');
-      });
-  }, []);
 
   const loadRules = useCallback(async (clusterId: string, nId: string) => {
     if (!clusterId) return;

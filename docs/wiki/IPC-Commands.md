@@ -261,6 +261,44 @@ checkOllamaInstalledCmd() → OllamaStatus
 
 ---
 
+## Updater Commands {#updater-commands}
+
+### `get_app_version`
+```typescript
+getAppVersionCmd() → string
+```
+Returns the running app version, read from `app.package_info().version` (populated from
+`tauri.conf.json` at build time). Previously read the `APP_VERSION`/`CARGO_PKG_VERSION`
+**environment variables**, which are never set in a packaged build — this made the sidebar
+and Updater page report a stale version (e.g. `3.0.0` after installing `3.1.0`). See
+[CI/CD Pipeline](CICD-Pipeline.md) for the matching fix to how the version is embedded at
+build time.
+
+### `check_app_updates`
+```typescript
+checkAppUpdatesCmd() → { updateAvailable, currentVersion, latestVersion, releaseUrl, releaseNotes }
+```
+Fetches releases from the Gitea API and picks the highest-versioned non-draft release,
+**including prereleases** — the update-channel concept (`stable` vs `beta`) has been
+removed, since installs may themselves come from a beta prerelease and the old channel
+filter could hide a genuinely newer prerelease. Version comparison is prerelease-aware
+(`3.1.0` > `3.1.0-beta.9` > `3.0.0`).
+
+### `install_app_updates`
+```typescript
+installAppUpdatesCmd() → void
+```
+Opens the Gitea releases page in the system browser.
+
+### Removed: `get_update_channel` / `set_update_channel`
+These commands (and the `update_channel` field on `AppSettings`) have been removed along
+with the Update Channel picker in Settings → Updater — there is no `stable`/`pre-release`
+distinction anymore, only "get the latest thing that was actually published." Old
+persisted settings JSON containing `update_channel` still deserializes fine; the field is
+simply ignored.
+
+---
+
 ## Database Tooling Commands (v3.0)
 
 ### SSH Tunnel Commands
@@ -377,7 +415,6 @@ Settings are not written to a dedicated settings table in this flow; frontend st
 
 `AppSettings` includes:
 - `debug_logging_enabled: boolean` (default `false`)
-- `update_channel: string`
 
 ### `update_settings`
 ```typescript
@@ -386,6 +423,8 @@ updateSettingsCmd(partial: Partial<AppSettings>) → AppSettings
 Merges partial settings in backend state. If `debug_logging_enabled` is provided,
 the backend tracing filter is updated live (`info` by default, `debug` when enabled).
 This command is the supported toggle path (it applies both state update and live log-level reload).
+A legacy `update_channel` key is silently ignored if a pre-upgrade client still sends it —
+see [Removed: `get_update_channel` / `set_update_channel`](#updater-commands) below.
 
 ### `get_audit_log`
 ```typescript
@@ -906,7 +945,23 @@ listProxmoxAptRepositories(clusterId, nodeId) → Array<APTRepository>
 ```
 Lists configured APT repositories via `GET nodes/{node}/apt/repositories`.
 
-**PVE API response structure:** Returns `{"files": [...], "infos": [...], "standard-repos": [...]}`. The implementation reads from the `files` array, where each entry has `URIs`, `Suites`, `Components`, `Types`, and `Enabled` as arrays/bool. The endpoint is `apt/repositories`, not `apt/sources`.
+**PVE API response structure:** Returns `{"files": [...], "infos": [...], "standard-repos": [...]}`. Each file object nests its actual repository entries under `files[].repositories[]` (with a flat fallback for older/alternate shapes); each entry has `URIs`, `Suites`, `Components`, `Types`, and `Enabled` as arrays/bool. The endpoint is `apt/repositories`, not `apt/sources`.
+
+`AptRepository` is now emitted with the raw array fields (`types`, `uris`, `suites`,
+`components`, `enabled`, `comment`) instead of a flattened first-element view — the
+previous flat shape caused the Administration → Repositories tab to crash with
+`TypeError: undefined is not an object (evaluating 'e.types.join')` since the frontend
+always expected arrays.
+
+### `refresh_apt_cache`
+```typescript
+refreshAptCache(clusterId: string, node: string) → string // task UPID
+```
+Refreshes the APT package index on a node (`apt-get update`) via `POST nodes/{node}/apt/update`.
+Renamed from the old `update_apt_repos`, which incorrectly POSTed to `apt/sources` (a
+repository-management endpoint, not a cache-refresh one). Surfaced in the UI as
+Administration → Updates → **Refresh APT Cache**, alongside an **Upgrade Node…** action
+that opens a confirmed node shell running `pveupgrade` (see `open_node_shell` below).
 
 ---
 
@@ -952,7 +1007,19 @@ Schedules a node shutdown via `POST nodes/{node}/status/shutdown`. Returns UPID.
 ```typescript
 getNodeJournal(clusterId: string, node: string, lastentries?: number) → string[]
 ```
-Retrieves systemd journal entries for a node via `GET nodes/{node}/journal`. Default `lastentries` is 200 if not specified.
+Retrieves systemd journal entries for a node via `GET nodes/{node}/journal`. Default `lastentries` is 200 if not specified. Tolerates both a plain array of strings and an array of `{n, t}` objects (some PVE versions/proxies wrap journal lines like syslog).
+
+### `get_syslog`
+```typescript
+getSyslog(clusterId: string, node: string, limit?: number) → SyslogEntry[]
+```
+Retrieves recent syslog lines for a node via `GET nodes/{node}/syslog` (default `limit` 500).
+`SyslogEntry` is `{ n: number, t: string }` — PVE syslog entries carry only a line number and
+the full line text, there is no separate message field. Requests to this and other Proxmox
+endpoints now retry once on a transient transport error (stale pooled keep-alive connection,
+connection reset) and re-authenticate automatically once the cached session ticket is older
+than ~90 minutes, fixing intermittent `Failed to get syslog: GET request failed: error sending
+request for url (...)` errors that grew more frequent the longer the app stayed open.
 
 ### `get_node_report`
 ```typescript
@@ -1082,7 +1149,10 @@ Lists Ceph manager daemons on a node via `GET nodes/{node}/ceph/mgr`. Managers h
 listCephfs(clusterId: string, node: string) → CephFs[]
 ```
 Lists CephFS filesystems on a node via `GET nodes/{node}/ceph/fs`. Returns
-`CephFs { name, metadataPool, dataPool }` (the first data pool is surfaced as `dataPool`).
+`CephFs { name, metadataPool, dataPool }`. `dataPool` accepts either the older single
+`data_pool` string PVE field or the current `data_pools` array (joined with `", "` when
+there is more than one data pool) — a version mismatch that previously caused CephFS to
+render no data at all.
 
 ### `get_ceph_flags`
 ```typescript
@@ -1091,6 +1161,79 @@ getCephFlags(clusterId: string, node: string) → CephFlag[]
 Retrieves Ceph cluster flags via `GET cluster/ceph/flags`. Flags are a **cluster-level**
 resource — the per-node `nodes/{node}/ceph/flags` path returns HTTP 501. Returns an array of
 `CephFlag { name, value, description }` (e.g. `noscrub`, `nodeep-scrub`, `noout`).
+
+### `set_ceph_flag`
+```typescript
+setCephFlag(clusterId: string, flag: string, value: boolean) → void
+```
+Sets or clears a cluster-level Ceph runtime flag via `PUT cluster/ceph/flags/{flag}`.
+`flag` is validated against the same whitelist `get_ceph_flags` surfaces (`noout`, `noin`,
+`nodown`, `noup`, `norebalance`, `norecover`, `noscrub`, `nodeep-scrub`, `nobackfill`,
+`notieragent`, `pause`).
+
+### `create_ceph_monitor` / `delete_ceph_monitor`
+```typescript
+createCephMonitor(clusterId: string, node: string, monid: string) → string // task UPID
+deleteCephMonitor(clusterId: string, node: string, monid: string) → string  // task UPID
+```
+Create/destroy a Ceph monitor via `POST`/`DELETE nodes/{node}/ceph/mon/{monid}`.
+
+### `create_ceph_manager` / `delete_ceph_manager`
+```typescript
+createCephManager(clusterId: string, node: string, id: string) → string // task UPID
+deleteCephManager(clusterId: string, node: string, id: string) → string  // task UPID
+```
+Create/destroy a Ceph manager via `POST`/`DELETE nodes/{node}/ceph/mgr/{id}`.
+
+### `ceph_service_action`
+```typescript
+cephServiceAction(clusterId: string, node: string, service: string, action: 'start' | 'stop' | 'restart') → string // task UPID
+```
+Starts, stops, or restarts a Ceph mon/mgr service via `POST nodes/{node}/ceph/{action}`
+with form field `service` (e.g. `mon.vmhost1`, `mgr.vmhost1`). `service` is validated
+against `^(mon|mgr)\.[A-Za-z0-9-]+$`.
+
+### `create_ceph_pool`
+```typescript
+createCephPool(clusterId: string, node: string, pool: string, pgNum: number) → void
+```
+Creates a Ceph pool via `POST nodes/{node}/ceph/pool`. `pool` is validated by
+`validate_ceph_pool_name` (alphanumeric, `-`, `_`, `.`, 1-128 chars) before being
+sent, guarding against path/command injection since the name is echoed back into
+later pool-scoped endpoints.
+
+---
+
+## Certificate & ACME Commands
+
+### `list_certificates` / `get_certificate` / `upload_certificate`
+```typescript
+listCertificates(clusterId: string, nodeId: string) → object[]
+getCertificate(clusterId: string, nodeId: string, certId: string) → object
+uploadCertificate(clusterId: string, certificate: string, privateKey: string, name?: string) → object
+```
+List/get/upload custom TLS certificates via `config/certificate`. `uploadCertificate`'s
+parameters were previously mismatched with the backend's `upload_certificate` command
+(which takes `certificate`/`privateKey`/`name`, not a free-form `cert` object) — the
+wrapper now matches the command signature exactly.
+
+### `list_acme_accounts` / `register_acme_account` / `get_acme_challenges`
+```typescript
+listAcmeAccounts(clusterId: string) → object[]
+registerAcmeAccount(clusterId: string, email: string, termsOfServiceAgreed: boolean) → object
+getAcmeChallenges(clusterId: string, domain: string) → object[]
+```
+Manage ACME accounts via `config/acme/accounts` and `config/acme/challenges/{domain}`.
+
+### `request_acme_certificate`
+```typescript
+requestAcmeCertificate(clusterId: string, domain: string, accountId: string) → object
+```
+Orders a new certificate for `domain` via `POST config/acme/certificates`, using the
+given ACME account. Used by the Certificates page's "Order via ACME" action and by
+per-certificate "Renew" (which re-derives the domain from the certificate's subject/SAN
+and reuses the cluster's first registered ACME account, registering one on the fly from
+an operator-supplied email if none exists yet).
 
 ---
 
@@ -1133,6 +1276,31 @@ Adds a firewall rule to a VM/container via `POST nodes/{node}/qemu/{vmid}/firewa
 deleteGuestFirewallRule(clusterId: string, node: string, vmId: number, pos: number) → void
 ```
 Deletes a firewall rule by position via `DELETE nodes/{node}/qemu/{vmid}/firewall/rules/{pos}` or `/lxc/{vmid}/firewall/rules/{pos}`.
+
+---
+
+## Task Log Commands
+
+### `get_proxmox_task_log`
+```typescript
+getProxmoxTaskLog(clusterId: string, node: string, upid: string) → TaskLogEntry[]
+```
+Retrieves the full log of a single task via `GET nodes/{node}/tasks/{upid}/log`.
+`TaskLogEntry` is `{ n: number, t: string }` (line number + full line text — PVE task
+logs, like syslog, have no separate message field). `upid` is validated (must start with
+`UPID:`, no path-traversal or shell metacharacters) before being interpolated into the
+request path.
+
+### `search_task_logs`
+```typescript
+searchTaskLogs(clusterId: string, query: string, targets: { node: string; upid: string }[]) → TaskLogSearchResult[]
+```
+Searches the logs of multiple tasks for a case-insensitive substring, powering the search
+field on Proxmox → Tasks. Fetches each task's log concurrently (capped at 5 in flight via
+`buffer_unordered`), so one slow/failing task doesn't block the rest — a failed fetch
+degrades to an empty-match result with an `error` field rather than failing the whole
+search. Capped at 100 targets per call; `query` must be at least 2 characters.
+`TaskLogSearchResult` is `{ node, upid, matches: TaskLogEntry[], error?: string }`.
 
 ---
 
@@ -1293,7 +1461,7 @@ using `ticket` as the RFB password (route `/proxmox/console/:clusterId/:node/:vm
 
 ### `open_node_shell`
 ```typescript
-openNodeShell(clusterId: string, node: string) → NodeShellSession
+openNodeShell(clusterId: string, node: string, cmd?: 'login' | 'upgrade') → NodeShellSession
 // NodeShellSession: { kind: "novnc" | "xterm"; localUrl: string; ticket: string;
 //                     localPort: number; password: string | null; user: string }
 ```
@@ -1306,6 +1474,13 @@ Opens a host (node) shell for a stored remote, reusing the local WebSocket proxy
   (PBS has no `vncshell`). The frontend speaks the term-proxy wire protocol
   (login line `"<user>:<ticket>\n"`, framed `0:<len>:<data>` / `1:<cols>:<rows>:`
   / ping `2`). Cookie: `PBSAuthCookie`; PBS requires a `user@pam` ticket.
+
+`cmd` selects the shell command PVE runs, validated against a whitelist (`login` the
+default interactive shell, or `upgrade` which runs `pveupgrade` — exactly what the
+official PVE web UI's node "Upgrade" button does). Passed through as the `cmd` form
+field on `vncshell`/`termproxy`. The route `/proxmox/shell/:clusterId/:node` reads
+`?cmd=` from the query string (Administration → Updates → **Upgrade Node…**, behind a
+confirmation dialog).
 
 The local proxy injects the correct auth cookie and accepts the node's
 self-signed TLS certificate. From **Proxmox | Remotes**, the "Console (Shell)"
