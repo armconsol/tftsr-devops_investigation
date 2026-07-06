@@ -24,4 +24,9 @@ describe("OSDList", () => {
     expect(screen.getAllByText(/TB/).length).toBeGreaterThan(0);
     expect(screen.getByText(/GB/)).toBeInTheDocument();
   });
+
+  it("does not render a non-functional 'More' action button", () => {
+    render(<OSDList osds={osds} />);
+    expect(screen.queryByTitle("More")).toBeNull();
+  });
 });

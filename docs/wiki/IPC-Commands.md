@@ -1193,6 +1193,48 @@ Starts, stops, or restarts a Ceph mon/mgr service via `POST nodes/{node}/ceph/{a
 with form field `service` (e.g. `mon.vmhost1`, `mgr.vmhost1`). `service` is validated
 against `^(mon|mgr)\.[A-Za-z0-9-]+$`.
 
+### `create_ceph_pool`
+```typescript
+createCephPool(clusterId: string, node: string, pool: string, pgNum: number) → void
+```
+Creates a Ceph pool via `POST nodes/{node}/ceph/pool`. `pool` is validated by
+`validate_ceph_pool_name` (alphanumeric, `-`, `_`, `.`, 1-128 chars) before being
+sent, guarding against path/command injection since the name is echoed back into
+later pool-scoped endpoints.
+
+---
+
+## Certificate & ACME Commands
+
+### `list_certificates` / `get_certificate` / `upload_certificate`
+```typescript
+listCertificates(clusterId: string, nodeId: string) → object[]
+getCertificate(clusterId: string, nodeId: string, certId: string) → object
+uploadCertificate(clusterId: string, certificate: string, privateKey: string, name?: string) → object
+```
+List/get/upload custom TLS certificates via `config/certificate`. `uploadCertificate`'s
+parameters were previously mismatched with the backend's `upload_certificate` command
+(which takes `certificate`/`privateKey`/`name`, not a free-form `cert` object) — the
+wrapper now matches the command signature exactly.
+
+### `list_acme_accounts` / `register_acme_account` / `get_acme_challenges`
+```typescript
+listAcmeAccounts(clusterId: string) → object[]
+registerAcmeAccount(clusterId: string, email: string, termsOfServiceAgreed: boolean) → object
+getAcmeChallenges(clusterId: string, domain: string) → object[]
+```
+Manage ACME accounts via `config/acme/accounts` and `config/acme/challenges/{domain}`.
+
+### `request_acme_certificate`
+```typescript
+requestAcmeCertificate(clusterId: string, domain: string, accountId: string) → object
+```
+Orders a new certificate for `domain` via `POST config/acme/certificates`, using the
+given ACME account. Used by the Certificates page's "Order via ACME" action and by
+per-certificate "Renew" (which re-derives the domain from the certificate's subject/SAN
+and reuses the cluster's first registered ACME account, registering one on the fly from
+an operator-supplied email if none exists yet).
+
 ---
 
 ## Firewall Commands

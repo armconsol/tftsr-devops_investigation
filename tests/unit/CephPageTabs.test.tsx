@@ -52,6 +52,7 @@ function setupInvoke() {
       case "ceph_service_action":
         return Promise.resolve("UPID:vmhost1:00001234:aaa:ceph:root@pam:");
       case "set_ceph_flag":
+      case "create_ceph_pool":
         return Promise.resolve(undefined);
       default:
         return Promise.resolve(undefined);
@@ -237,6 +238,27 @@ describe("CephPage — flags editing", () => {
         clusterId: "cluster-1",
         flag: "noout",
         value: true,
+      })
+    );
+  });
+});
+
+describe("CephPage — pool creation", () => {
+  it("creates a pool via the New Pool dialog", async () => {
+    const user = userEvent.setup();
+    render(<ProxmoxCephPage />);
+    await waitFor(() => expect(screen.getByRole("button", { name: /new pool/i })).toBeInTheDocument());
+
+    await user.click(screen.getByRole("button", { name: /new pool/i }));
+    await user.type(await screen.findByLabelText(/pool name/i), "vm-storage");
+    await user.click(screen.getByRole("button", { name: /^create$/i }));
+
+    await waitFor(() =>
+      expect(mockInvoke).toHaveBeenCalledWith("create_ceph_pool", {
+        clusterId: "cluster-1",
+        node: "vmhost1",
+        pool: "vm-storage",
+        pgNum: 128,
       })
     );
   });

@@ -18,10 +18,14 @@ export function usePolling(
   useEffect(() => {
     if (!enabled) return;
 
-    void fnRef.current();
-    const id = setInterval(() => {
-      void fnRef.current();
-    }, intervalMs);
+    const run = () => {
+      void Promise.resolve(fnRef.current()).catch((err) => {
+        console.error("usePolling: polled function rejected", err);
+      });
+    };
+
+    run();
+    const id = setInterval(run, intervalMs);
 
     return () => clearInterval(id);
   }, [enabled, intervalMs]);

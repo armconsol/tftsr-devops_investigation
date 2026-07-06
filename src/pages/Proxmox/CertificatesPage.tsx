@@ -6,8 +6,15 @@ import { Label } from '@/components/ui/index';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/index';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/index';
 import { RefreshCw, Upload, ShieldCheck } from 'lucide-react';
+import { toast } from 'sonner';
 import { CertificateList } from '@/components/Proxmox';
-import { listCertificates } from '@/lib/proxmoxClient';
+import {
+  listCertificates,
+  uploadCertificate,
+  listAcmeAccounts,
+  registerAcmeAccount,
+  requestAcmeCertificate,
+} from '@/lib/proxmoxClient';
 import { Certificate } from '@/lib/domain';
 import { useProxmoxClusters } from '@/hooks/useProxmoxClusters';
 
@@ -22,17 +29,20 @@ export function ProxmoxCertificatesPage() {
   const [uploadOpen, setUploadOpen] = useState(false);
   const [uploadCertPem, setUploadCertPem] = useState('');
   const [uploadKeyPem, setUploadKeyPem] = useState('');
+  const [uploadPending, setUploadPending] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // ACME dialog state
   const [acmeOpen, setAcmeOpen] = useState(false);
   const [acmeDomain, setAcmeDomain] = useState('');
+  const [acmeEmail, setAcmeEmail] = useState('');
+  const [acmePending, setAcmePending] = useState(false);
 
   useEffect(() => {
     if (!selectedClusterId) return;
     void fetchCerts();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedClusterId]);
+  }, [selectedClusterId, nodeId]);
 
   async function fetchCerts() {
     setLoading(true);
@@ -58,9 +68,66 @@ export function ProxmoxCertificatesPage() {
     }
   }
 
-  function handleRenew(_cert: Certificate) {
+  async function resolveAcmeAccountId(email: string): Promise<string> {
+    const accounts = await listAcmeAccounts(selectedClusterId);
+    if (accounts.length > 0) {
+      return String(accounts[0].account_id);
+    }
+    if (!email.trim()) {
+      throw new Error('No ACME account exists yet — enter an email to register one');
+    }
+    const account = await registerAcmeAccount(selectedClusterId, email.trim(), true);
+    return String(account.account_id);
+  }
 
-    void fetchCerts();
+  async function handleRenew(cert: Certificate) {
+    const domain = cert.san?.[0] ?? cert.subject;
+    if (!domain) {
+      toast.error('Certificate has no domain to renew');
+      return;
+    }
+    try {
+      const accountId = await resolveAcmeAccountId('');
+      await requestAcmeCertificate(selectedClusterId, domain, accountId);
+      toast.success(`Renewal requested for ${domain}`);
+    } catch (err) {
+      toast.error(`Failed to renew certificate: ${err}`);
+    } finally {
+      await fetchCerts();
+    }
+  }
+
+  async function handleUpload() {
+    setUploadPending(true);
+    try {
+      await uploadCertificate(selectedClusterId, uploadCertPem.trim(), uploadKeyPem.trim());
+      toast.success('Certificate uploaded');
+      setUploadOpen(false);
+      setUploadCertPem('');
+      setUploadKeyPem('');
+      await fetchCerts();
+    } catch (err) {
+      toast.error(`Failed to upload certificate: ${err}`);
+    } finally {
+      setUploadPending(false);
+    }
+  }
+
+  async function handleOrderCertificate() {
+    setAcmePending(true);
+    try {
+      const accountId = await resolveAcmeAccountId(acmeEmail);
+      await requestAcmeCertificate(selectedClusterId, acmeDomain.trim(), accountId);
+      toast.success(`Certificate requested for ${acmeDomain}`);
+      setAcmeOpen(false);
+      setAcmeDomain('');
+      setAcmeEmail('');
+      await fetchCerts();
+    } catch (err) {
+      toast.error(`Failed to order certificate: ${err}`);
+    } finally {
+      setAcmePending(false);
+    }
   }
 
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -173,14 +240,8 @@ export function ProxmoxCertificatesPage() {
               Cancel
             </Button>
             <Button
-              disabled={!uploadCertPem.trim()}
-              onClick={() => {
-
-                setUploadOpen(false);
-                setUploadCertPem('');
-                setUploadKeyPem('');
-                void fetchCerts();
-              }}
+              disabled={!uploadCertPem.trim() || !uploadKeyPem.trim() || uploadPending}
+              onClick={() => void handleUpload()}
             >
               Upload
             </Button>
@@ -214,18 +275,22 @@ export function ProxmoxCertificatesPage() {
                 onChange={(e) => setNodeId(e.target.value)}
               />
             </div>
+            <div className="space-y-2">
+              <Label>ACME Account Email (only needed if no account exists yet)</Label>
+              <Input
+                placeholder="admin@example.com"
+                value={acmeEmail}
+                onChange={(e) => setAcmeEmail(e.target.value)}
+              />
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setAcmeOpen(false)}>
               Cancel
             </Button>
             <Button
-              disabled={!acmeDomain.trim()}
-              onClick={() => {
-
-                setAcmeOpen(false);
-                setAcmeDomain('');
-              }}
+              disabled={!acmeDomain.trim() || acmePending}
+              onClick={() => void handleOrderCertificate()}
             >
               Order Certificate
             </Button>

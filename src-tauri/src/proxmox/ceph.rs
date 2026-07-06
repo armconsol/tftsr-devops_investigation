@@ -137,6 +137,25 @@ pub async fn list_pools(
     parse_pools(&response)
 }
 
+/// Validate a Ceph pool name: alphanumeric, hyphens, underscores, and dots
+/// only, matching Ceph's own pool-naming rules. Applied before the name is
+/// sent to PVE and before it can ever be interpolated into a path segment
+/// (`delete_pool`/`set_pool_quota` build `nodes/{node}/ceph/pool/{pool}`).
+fn validate_ceph_pool_name(pool: &str) -> Result<(), String> {
+    if pool.is_empty() || pool.len() > 128 {
+        return Err("Pool name must be between 1 and 128 characters".to_string());
+    }
+    if !pool
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
+    {
+        return Err(format!(
+            "Invalid pool name '{pool}': only alphanumeric characters, hyphens, underscores, and dots are allowed"
+        ));
+    }
+    Ok(())
+}
+
 /// Create Ceph pool
 pub async fn create_pool(
     client: &crate::proxmox::client::ProxmoxClient,
@@ -146,6 +165,7 @@ pub async fn create_pool(
     ticket: &str,
 ) -> Result<(), String> {
     validate_node(node)?;
+    validate_ceph_pool_name(pool)?;
     let path = format!("nodes/{node}/ceph/pool");
     let config = serde_json::json!({
         "pool": pool,
@@ -1557,5 +1577,33 @@ mod tests {
         assert!(CEPH_SERVICE_ACTIONS.contains(&"stop"));
         assert!(CEPH_SERVICE_ACTIONS.contains(&"restart"));
         assert!(!CEPH_SERVICE_ACTIONS.contains(&"delete"));
+    }
+
+    // ── Ceph pool name validation ─────────────────────────────────────────────
+
+    #[test]
+    fn test_validate_ceph_pool_name_accepts_valid_names() {
+        for name in ["rbd", "vm-storage", "pool_1", "cephfs.data"] {
+            assert!(
+                validate_ceph_pool_name(name).is_ok(),
+                "{name:?} should be valid"
+            );
+        }
+    }
+
+    #[test]
+    fn test_validate_ceph_pool_name_rejects_invalid_names() {
+        for name in [
+            "",
+            "pool/../etc",
+            "pool name",
+            "pool;rm -rf",
+            &"x".repeat(129),
+        ] {
+            assert!(
+                validate_ceph_pool_name(name).is_err(),
+                "{name:?} must be rejected"
+            );
+        }
     }
 }

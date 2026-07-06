@@ -15,6 +15,7 @@ import { useProxmoxNodes } from '@/hooks/useProxmoxNodes';
 import { usePolling } from '@/hooks/usePolling';
 import {
   listCephPools,
+  createCephPool,
   listCephOsd,
   getCephHealth,
   listCephMonitors,
@@ -59,6 +60,9 @@ export function ProxmoxCephPage() {
   const [createMonId, setCreateMonId] = useState('');
   const [createMgrDialog, setCreateMgrDialog] = useState(false);
   const [createMgrId, setCreateMgrId] = useState('');
+  const [createPoolDialog, setCreatePoolDialog] = useState(false);
+  const [createPoolName, setCreatePoolName] = useState('');
+  const [createPoolPgNum, setCreatePoolPgNum] = useState('128');
   const { nodeNames, selectedNode: tabNode, setSelectedNode, loading: nodesLoading } =
     useProxmoxNodes(clusterId);
 
@@ -275,6 +279,28 @@ export function ProxmoxCephPage() {
     }
   }, [clusterId, tabNode, createMgrId, loadManagers]);
 
+  const handleCreatePool = useCallback(async () => {
+    if (!clusterId || !tabNode || !createPoolName.trim()) return;
+    const pgNum = parseInt(createPoolPgNum, 10);
+    if (!Number.isFinite(pgNum) || pgNum <= 0) {
+      toast.error('PG count must be a positive number');
+      return;
+    }
+    setActionPending(true);
+    try {
+      await createCephPool(clusterId, tabNode, createPoolName.trim(), pgNum);
+      toast.success(`Pool ${createPoolName} created`);
+      setCreatePoolDialog(false);
+      setCreatePoolName('');
+      setCreatePoolPgNum('128');
+      await loadData(clusterId, tabNode);
+    } catch (e) {
+      toast.error(`Failed to create pool: ${e}`);
+    } finally {
+      setActionPending(false);
+    }
+  }, [clusterId, tabNode, createPoolName, createPoolPgNum, loadData]);
+
   const handleToggleFlag = useCallback(
     async (flag: CephFlag, value: boolean) => {
       if (!clusterId) return;
@@ -377,6 +403,7 @@ export function ProxmoxCephPage() {
             <PoolList
               pools={pools}
               onRefresh={handleRefresh}
+              onCreate={() => setCreatePoolDialog(true)}
             />
           </CardContent>
         </Card>
@@ -701,6 +728,47 @@ export function ProxmoxCephPage() {
               Cancel
             </Button>
             <Button onClick={handleCreateManager} disabled={actionPending || !createMgrId.trim()}>
+              Create
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={createPoolDialog} onOpenChange={setCreatePoolDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Create Ceph Pool</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div className="space-y-1">
+              <Label htmlFor="pool-node">Node</Label>
+              <Input id="pool-node" value={tabNode} disabled />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="pool-name">Pool Name</Label>
+              <Input
+                id="pool-name"
+                value={createPoolName}
+                onChange={(e) => setCreatePoolName(e.target.value)}
+                placeholder="e.g. vm-storage"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="pool-pg-num">PG Count</Label>
+              <Input
+                id="pool-pg-num"
+                type="number"
+                min={1}
+                value={createPoolPgNum}
+                onChange={(e) => setCreatePoolPgNum(e.target.value)}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCreatePoolDialog(false)} disabled={actionPending}>
+              Cancel
+            </Button>
+            <Button onClick={handleCreatePool} disabled={actionPending || !createPoolName.trim()}>
               Create
             </Button>
           </DialogFooter>

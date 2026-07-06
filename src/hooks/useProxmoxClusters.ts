@@ -59,11 +59,24 @@ export function useProxmoxClusters(
       const persistedClusterId = useProxmoxStore.getState().selectedClusterId;
       setClusters(filtered);
       setSelectedClusterIdState((prev) => {
-        if (prev && filtered.some((c) => c.id === prev)) return prev;
-        if (persistedClusterId && filtered.some((c) => c.id === persistedClusterId)) {
-          return persistedClusterId;
+        let resolved: string;
+        if (prev && filtered.some((c) => c.id === prev)) {
+          resolved = prev;
+        } else if (persistedClusterId && filtered.some((c) => c.id === persistedClusterId)) {
+          resolved = persistedClusterId;
+        } else {
+          resolved = filtered.length > 0 ? filtered[0].id : "";
         }
-        return filtered.length > 0 ? filtered[0].id : "";
+        // Keep the shared store in sync with whatever ends up selected here —
+        // including an implicit default, not just an explicit user pick —
+        // so other (unfiltered) pages see it too. Skip this when a filter is
+        // active: a filtered view's fallback (e.g. PBS-only) is only valid
+        // for its own restricted list and must not overwrite the global
+        // selection that unfiltered pages rely on.
+        if (resolved && !activeFilter) {
+          persistSelectedClusterId(resolved);
+        }
+        return resolved;
       });
     } catch (e) {
       setClusters([]);
@@ -72,7 +85,7 @@ export function useProxmoxClusters(
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [persistSelectedClusterId]);
 
   useEffect(() => {
     void load();

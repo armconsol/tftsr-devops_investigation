@@ -388,6 +388,20 @@ The CephFS/Managers/Flags tabs also now autoload when selected and refresh every
 `usePolling`) instead of requiring a manual **Load** click that previously existed for those
 three tabs only (Monitors already autoloaded).
 
+### Certificates page: Upload / Order via ACME / Renew silently did nothing
+
+**Cause:** `CertificatesPage.tsx`'s Upload and "Order via ACME" dialogs closed and refreshed
+the list on click without ever calling a Tauri command, and `handleRenew` discarded the
+certificate it was given. Separately, the `uploadCertificate` and `registerAcmeAccount`
+TS wrappers in `proxmoxClient.ts` didn't match their backend commands' actual parameter
+names (`cert`/`account` blobs vs. the backend's `certificate`/`privateKey`/`name` and
+`email`/`termsOfServiceAgreed`), so even a corrected call site would have failed at
+runtime. **Fix:** the wrappers now match their commands exactly; a new
+`request_acme_certificate` command/wrapper exposes the previously-unwired
+`proxmox::acme::request_certificate`; and the page now uploads real PEM content, resolves
+(or registers) an ACME account before ordering/renewing a certificate, and renews using the
+certificate's own domain (first SAN, falling back to its subject) instead of ignoring it.
+
 ---
 
 ## Gitea

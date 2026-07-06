@@ -2,7 +2,7 @@ import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/index';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/index';
 import { Button } from '@/components/ui/index';
-import { MoreHorizontal, Trash2 } from 'lucide-react';
+import { Trash2 } from 'lucide-react';
 import { formatBytes } from '@/lib/format';
 
 interface PoolInfo {
@@ -24,6 +24,7 @@ interface PoolListProps {
   onSetQuota?: (pool: PoolInfo) => void;
   onDelete?: (pool: PoolInfo) => void;
   onEdit?: (pool: PoolInfo) => void;
+  onCreate?: () => void;
 }
 
 export function PoolList({
@@ -33,6 +34,7 @@ export function PoolList({
   onSetQuota,
   onDelete,
   onEdit,
+  onCreate,
 }: PoolListProps) {
   return (
     <Card>
@@ -42,7 +44,7 @@ export function PoolList({
           <Button variant="outline" size="sm" onClick={onRefresh} disabled={isLoading}>
             Refresh
           </Button>
-          <Button size="sm">
+          <Button size="sm" onClick={onCreate}>
             <span className="mr-2 h-4 w-4">+</span>
             New Pool
           </Button>
@@ -109,12 +111,6 @@ export function PoolList({
                         title="Delete"
                       >
                         <Trash2 className="h-4 w-4" />
-                      </button>
-                      <button
-                        className="rounded-md p-1 hover:bg-accent"
-                        title="More"
-                      >
-                        <MoreHorizontal className="h-4 w-4" />
                       </button>
                     </div>
                   </TableCell>

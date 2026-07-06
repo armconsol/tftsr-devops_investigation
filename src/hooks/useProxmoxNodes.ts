@@ -56,9 +56,19 @@ export function useProxmoxNodes(clusterId: string): UseProxmoxNodesResult {
         setNodes(parsed);
         const persisted = getPersistedNode(cId);
         setSelectedNodeState((prev) => {
-          if (prev && parsed.some((n) => n.node === prev)) return prev;
-          if (persisted && parsed.some((n) => n.node === persisted)) return persisted;
-          return parsed.length > 0 ? parsed[0].node : "";
+          let resolved: string;
+          if (prev && parsed.some((n) => n.node === prev)) {
+            resolved = prev;
+          } else if (persisted && parsed.some((n) => n.node === persisted)) {
+            resolved = persisted;
+          } else {
+            resolved = parsed.length > 0 ? parsed[0].node : "";
+          }
+          // Keep the shared store in sync with whatever ends up selected —
+          // including an implicit default, not just an explicit user pick —
+          // so another page for the same cluster sees it too.
+          if (resolved) persistSelectedNode(cId, resolved);
+          return resolved;
         });
       } catch (e) {
         setNodes([]);
@@ -68,7 +78,7 @@ export function useProxmoxNodes(clusterId: string): UseProxmoxNodesResult {
         setLoading(false);
       }
     },
-    [getPersistedNode]
+    [getPersistedNode, persistSelectedNode]
   );
 
   useEffect(() => {

@@ -29,6 +29,14 @@ pub struct TaskLogEntry {
 /// Validate a Proxmox task UPID (`UPID:<node>:...`). Rejects anything that
 /// could be used for path traversal or injection when interpolated into a
 /// request path.
+///
+/// `:` and `@` are intentionally allowed unencoded: a real PVE UPID always
+/// contains both (e.g. `UPID:vmhost1:...::root@pam:`), and per RFC 3986's
+/// path-segment grammar (`pchar = unreserved / pct-encoded / sub-delims /
+/// ":" / "@"`) neither requires percent-encoding to appear literally in a
+/// URL path segment — only `/` can introduce an unintended segment
+/// boundary, and that (along with whitespace and shell metacharacters) is
+/// excluded below.
 pub fn validate_upid(upid: &str) -> Result<(), String> {
     if !upid.starts_with("UPID:") {
         return Err(format!(
@@ -47,6 +55,23 @@ pub fn validate_upid(upid: &str) -> Result<(), String> {
         ));
     }
     Ok(())
+}
+
+/// Extract the task UPID from a PVE task object. PVE's task-list and
+/// task-status responses key this as `upid`; `id` on those same objects is a
+/// *different* field (the affected object's id, e.g. a VMID for a qemu
+/// task) and must not be used here — every downstream call
+/// (`get_task_status`, `stop_task`, `get_task_log`) interpolates this value
+/// directly into `nodes/{node}/tasks/{task_id}`, which only accepts a UPID.
+/// Falls back to `id` only if `upid` is absent, to tolerate any endpoint
+/// variant that genuinely omits it.
+fn extract_task_upid(value: &serde_json::Value) -> String {
+    value
+        .get("upid")
+        .or_else(|| value.get("id"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string()
 }
 
 /// Case-insensitive substring search over task log lines.
@@ -75,7 +100,10 @@ pub async fn list_tasks(
         let task_list: Vec<TaskInfo> = tasks
             .iter()
             .filter_map(|task| {
-                let id = task.get("id")?.as_str()?.to_string();
+                let id = extract_task_upid(task);
+                if id.is_empty() {
+                    return None;
+                }
                 let node_name = task
                     .get("node")
                     .and_then(|n| n.as_str())
@@ -149,11 +177,7 @@ pub async fn get_task_status(
 
     {
         let data = &response;
-        let id = data
-            .get("id")
-            .and_then(|i| i.as_str())
-            .unwrap_or("")
-            .to_string();
+        let id = extract_task_upid(data);
         let node_name = data
             .get("node")
             .and_then(|n| n.as_str())
@@ -277,11 +301,7 @@ pub async fn forward_task(
 
     {
         let data = &response;
-        let id = data
-            .get("id")
-            .and_then(|i| i.as_str())
-            .unwrap_or("")
-            .to_string();
+        let id = extract_task_upid(data);
         let status = data
             .get("status")
             .and_then(|s| s.as_str())
@@ -328,6 +348,70 @@ mod tests {
                 "upid {upid:?} must be rejected"
             );
         }
+    }
+
+    #[test]
+    fn test_validate_upid_still_rejects_a_slash_which_would_add_a_path_segment() {
+        // ':' and '@' are allowed (real UPIDs require them and neither can
+        // introduce a new path segment per RFC 3986), but '/' must remain
+        // rejected since it can.
+        assert!(validate_upid("UPID:vmhost1:aaa:bbb::task::root@pam:/extra").is_err());
+    }
+
+    #[test]
+    fn test_extract_task_upid_prefers_upid_over_id() {
+        // PVE task-list/status entries carry both `id` (the affected
+        // object's id, e.g. a VMID) and `upid` (the actual task identifier).
+        // Downstream calls need `upid`.
+        let entry = serde_json::json!({
+            "id": "104",
+            "upid": "UPID:vmhost1:00001234:0000ABCD:00000000:qmstart:104:root@pam:",
+            "node": "vmhost1"
+        });
+        assert_eq!(
+            extract_task_upid(&entry),
+            "UPID:vmhost1:00001234:0000ABCD:00000000:qmstart:104:root@pam:"
+        );
+    }
+
+    #[test]
+    fn test_extract_task_upid_falls_back_to_id_when_upid_absent() {
+        let entry = serde_json::json!({ "id": "UPID:vmhost1:x:y:z:task::root@pam:" });
+        assert_eq!(
+            extract_task_upid(&entry),
+            "UPID:vmhost1:x:y:z:task::root@pam:"
+        );
+    }
+
+    #[test]
+    fn test_extract_task_upid_missing_both_returns_empty() {
+        assert_eq!(extract_task_upid(&serde_json::json!({})), "");
+    }
+
+    #[test]
+    fn test_list_tasks_field_mapping_uses_upid_not_id() {
+        // Regression test for the id/upid field mismatch: list_tasks must
+        // populate TaskInfo.task_id from "upid", not the object-id "id"
+        // field, since get_task_status/stop_task/get_task_log all
+        // interpolate task_id directly into nodes/{node}/tasks/{task_id}.
+        let pve_response = serde_json::json!([
+            {
+                "id": "104",
+                "upid": "UPID:vmhost1:00001234:0000ABCD:00000000:qmstart:104:root@pam:",
+                "node": "vmhost1",
+                "user": "root@pam",
+                "status": "stopped",
+                "starttime": "1700000000",
+                "exitstatus": "OK"
+            }
+        ]);
+        let arr = pve_response.as_array().unwrap();
+        let task = &arr[0];
+        assert_eq!(
+            extract_task_upid(task),
+            "UPID:vmhost1:00001234:0000ABCD:00000000:qmstart:104:root@pam:",
+            "list_tasks must use the upid field, not the object id field"
+        );
     }
 
     #[test]

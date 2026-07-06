@@ -352,6 +352,16 @@ export async function listCephPools(clusterId: string, node: string): Promise<Ce
   return await invoke<CephPool[]>("list_ceph_pools", { clusterId, node });
 }
 
+/** Create a Ceph pool. */
+export async function createCephPool(
+  clusterId: string,
+  node: string,
+  pool: string,
+  pgNum: number
+): Promise<void> {
+  await invoke("create_ceph_pool", { clusterId, node, pool, pgNum });
+}
+
 /**
  * List Ceph OSDs
  * @param clusterId - Cluster identifier
@@ -427,23 +437,44 @@ export async function listAcmeAccounts(clusterId: string): Promise<any[]> {
 }
 
 /**
- * Register ACME account
+ * Register an ACME account
  * @param clusterId - Cluster identifier
- * @param account - Account configuration
+ * @param email - Contact email for the ACME account
+ * @param termsOfServiceAgreed - Whether the CA's terms of service are accepted
  */
 export async function registerAcmeAccount(
   clusterId: string,
-  account: any
-): Promise<void> {
-  await invoke("register_acme_account", { clusterId, account });
+  email: string,
+  termsOfServiceAgreed: boolean
+): Promise<any> {
+  return await invoke<any>("register_acme_account", {
+    clusterId,
+    email,
+    termsOfServiceAgreed,
+  });
 }
 
 /**
- * Get ACME challenges
+ * Get ACME challenges for a domain
  * @param clusterId - Cluster identifier
+ * @param domain - Domain to check challenges for
  */
-export async function getAcmeChallenges(clusterId: string): Promise<any[]> {
-  return await invoke<any[]>("get_acme_challenges", { clusterId });
+export async function getAcmeChallenges(clusterId: string, domain: string): Promise<any[]> {
+  return await invoke<any[]>("get_acme_challenges", { clusterId, domain });
+}
+
+/**
+ * Order a new certificate via ACME for a domain, using the given ACME account.
+ * @param clusterId - Cluster identifier
+ * @param domain - Domain to request the certificate for
+ * @param accountId - ACME account id to order the certificate under
+ */
+export async function requestAcmeCertificate(
+  clusterId: string,
+  domain: string,
+  accountId: string
+): Promise<any> {
+  return await invoke<any>("request_acme_certificate", { clusterId, domain, accountId });
 }
 
 // ─── APT Repository Management ────────────────────────────────────────────────
@@ -514,17 +545,19 @@ export async function listCertificates(
 }
 
 /**
- * Upload a certificate
+ * Upload a custom certificate
  * @param clusterId - Cluster identifier
- * @param nodeId - Node identifier
- * @param cert - Certificate data
+ * @param certificate - PEM-encoded certificate
+ * @param privateKey - PEM-encoded private key
+ * @param name - Optional certificate name
  */
 export async function uploadCertificate(
   clusterId: string,
-  nodeId: string,
-  cert: any
-): Promise<void> {
-  await invoke("upload_certificate", { clusterId, nodeId, cert });
+  certificate: string,
+  privateKey: string,
+  name?: string
+): Promise<any> {
+  return await invoke<any>("upload_certificate", { clusterId, certificate, privateKey, name });
 }
 
 /**

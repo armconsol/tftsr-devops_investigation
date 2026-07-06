@@ -301,6 +301,7 @@ pub fn run() {
             commands::proxmox::list_acme_accounts,
             commands::proxmox::register_acme_account,
             commands::proxmox::get_acme_challenges,
+            commands::proxmox::request_acme_certificate,
             commands::proxmox::list_apt_updates,
             commands::proxmox::refresh_apt_cache,
             commands::proxmox::list_apt_repositories,
@@ -397,6 +398,7 @@ pub fn run() {
             commands::proxmox::delete_proxmox_storage,
             commands::proxmox::trigger_proxmox_backup_job,
             commands::proxmox::list_ceph_pools,
+            commands::proxmox::create_ceph_pool,
             commands::proxmox::list_ceph_osd,
             commands::proxmox::get_ceph_health,
             // System / Settings

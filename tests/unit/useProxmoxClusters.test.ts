@@ -84,4 +84,29 @@ describe("useProxmoxClusters", () => {
     expect(result.current.error).toContain("boom");
     expect(result.current.clusters).toEqual([]);
   });
+
+  it("persists the auto-selected default cluster, not just manual picks", async () => {
+    mockInvoke.mockResolvedValue([cluster("cluster-a"), cluster("cluster-b")]);
+    const { result } = renderHook(() => useProxmoxClusters());
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.selectedClusterId).toBe("cluster-a");
+    // The implicit default (never explicitly picked by the user) must still
+    // land in the shared store, or other pages won't see it.
+    expect(useProxmoxStore.getState().selectedClusterId).toBe("cluster-a");
+  });
+
+  it("does not let a filtered subset's fallback overwrite the shared selection", async () => {
+    // Some other (unfiltered) page already selected "ve-1" globally.
+    useProxmoxStore.getState().setSelectedClusterId("ve-1");
+    mockInvoke.mockResolvedValue([cluster("ve-1", "ve"), cluster("pbs-1", "pbs")]);
+
+    const { result } = renderHook(() => useProxmoxClusters((c) => c.clusterType === "pbs"));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    // This PBS-only view falls back locally to pbs-1 (ve-1 isn't in its list)...
+    expect(result.current.selectedClusterId).toBe("pbs-1");
+    // ...but must not clobber the global selection an unfiltered page relies on.
+    expect(useProxmoxStore.getState().selectedClusterId).toBe("ve-1");
+  });
 });

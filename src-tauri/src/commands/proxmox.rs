@@ -1169,6 +1169,27 @@ pub async fn list_ceph_pools(
     Ok(json_pools)
 }
 
+/// Create a Ceph pool.
+#[tauri::command]
+pub async fn create_ceph_pool(
+    cluster_id: String,
+    node: String,
+    pool: String,
+    pg_num: u32,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+    crate::proxmox::ceph::create_pool(
+        &client_guard,
+        &node,
+        &pool,
+        pg_num,
+        client_guard.ticket.as_deref().unwrap_or(""),
+    )
+    .await
+}
+
 /// List Ceph OSDs
 #[tauri::command]
 pub async fn list_ceph_osd(
@@ -1435,6 +1456,29 @@ pub async fn get_acme_challenges(
         .collect::<Result<Vec<_>, _>>()?;
 
     Ok(json_challenges)
+}
+
+/// Order a new certificate via ACME for a domain, using the given ACME account.
+#[tauri::command]
+pub async fn request_acme_certificate(
+    cluster_id: String,
+    domain: String,
+    account_id: String,
+    state: State<'_, AppState>,
+) -> Result<serde_json::Value, String> {
+    let client = get_proxmox_client_for_cluster(&cluster_id, &state).await?;
+    let client_guard = client.lock().await;
+
+    let cert = crate::proxmox::acme::request_certificate(
+        &client_guard,
+        &[domain.as_str()],
+        &account_id,
+        client_guard.ticket.as_deref().unwrap_or(""),
+    )
+    .await
+    .map_err(|e| format!("Failed to request ACME certificate: {e}"))?;
+
+    serde_json::to_value(cert).map_err(|e| format!("Failed to serialize certificate: {e}"))
 }
 
 /// List APT updates

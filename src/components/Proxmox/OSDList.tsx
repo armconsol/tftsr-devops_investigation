@@ -2,7 +2,6 @@ import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/index';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/index';
 import { Button } from '@/components/ui/index';
-import { MoreHorizontal } from 'lucide-react';
 import { formatBytes } from '@/lib/format';
 
 interface OSDInfo {
@@ -135,12 +134,6 @@ export function OSDList({
                         title="Zap (Destroy)"
                       >
                         <span className="h-4 w-4 text-xs">💣</span>
-                      </button>
-                      <button
-                        className="rounded-md p-1 hover:bg-accent"
-                        title="More"
-                      >
-                        <MoreHorizontal className="h-4 w-4" />
                       </button>
                     </div>
                   </TableCell>

@@ -73,4 +73,21 @@ describe("usePolling", () => {
     rerender({ enabled: true });
     await vi.waitFor(() => expect(fn).toHaveBeenCalledTimes(1));
   });
+
+  it("does not throw an unhandled rejection when fn rejects, and keeps polling", async () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    const fn = vi.fn().mockRejectedValue(new Error("boom"));
+    renderHook(() => usePolling(fn, 1000, true));
+
+    await vi.waitFor(() => expect(fn).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(consoleError).toHaveBeenCalledWith(
+      expect.stringContaining("usePolling"),
+      expect.any(Error)
+    ));
+
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(fn).toHaveBeenCalledTimes(2);
+
+    consoleError.mockRestore();
+  });
 });

@@ -84,4 +84,15 @@ describe("useProxmoxNodes", () => {
     await waitFor(() => expect(result.current.loading).toBe(false));
     expect(result.current.selectedNode).toBe("vmhost1");
   });
+
+  it("persists the auto-selected default node, not just manual picks", async () => {
+    mockInvoke.mockResolvedValue([{ node: "vmhost1" }, { node: "vmhost2" }]);
+    const { result } = renderHook(() => useProxmoxNodes("cluster-a"));
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.selectedNode).toBe("vmhost1");
+    // The implicit default (never explicitly picked) must still land in the
+    // shared store, or another page for the same cluster won't see it.
+    expect(useProxmoxStore.getState().getSelectedNode("cluster-a")).toBe("vmhost1");
+  });
 });
