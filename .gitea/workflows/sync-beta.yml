@@ -22,6 +22,7 @@ concurrency:
 
 jobs:
   sync:
+    if: false  # DISABLED — re-enable by removing this line
     runs-on: linux-amd64
     container:
       image: alpine:latest
