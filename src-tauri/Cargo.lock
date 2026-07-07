@@ -4086,6 +4086,7 @@ dependencies = [
 [[package]]
 name = "ironrdp"
 version = "0.16.0"
+source = "git+https://github.com/armconsol/IronRDP.git?rev=b0cac434a3d61bae55685e9ebd32172d9039d3f1#b0cac434a3d61bae55685e9ebd32172d9039d3f1"
 dependencies = [
  "ironrdp-cliprdr",
  "ironrdp-connector",
@@ -4101,6 +4102,7 @@ dependencies = [
 [[package]]
 name = "ironrdp-async"
 version = "0.9.0"
+source = "git+https://github.com/armconsol/IronRDP.git?rev=b0cac434a3d61bae55685e9ebd32172d9039d3f1#b0cac434a3d61bae55685e9ebd32172d9039d3f1"
 dependencies = [
  "bytes",
  "ironrdp-connector",
@@ -4112,6 +4114,7 @@ dependencies = [
 [[package]]
 name = "ironrdp-blocking"
 version = "0.9.0"
+source = "git+https://github.com/armconsol/IronRDP.git?rev=b0cac434a3d61bae55685e9ebd32172d9039d3f1#b0cac434a3d61bae55685e9ebd32172d9039d3f1"
 dependencies = [
  "bytes",
  "ironrdp-connector",
@@ -4123,10 +4126,12 @@ dependencies = [
 [[package]]
 name = "ironrdp-bulk"
 version = "0.1.1"
+source = "git+https://github.com/armconsol/IronRDP.git?rev=b0cac434a3d61bae55685e9ebd32172d9039d3f1#b0cac434a3d61bae55685e9ebd32172d9039d3f1"
 
 [[package]]
 name = "ironrdp-cliprdr"
 version = "0.6.0"
+source = "git+https://github.com/armconsol/IronRDP.git?rev=b0cac434a3d61bae55685e9ebd32172d9039d3f1#b0cac434a3d61bae55685e9ebd32172d9039d3f1"
 dependencies = [
  "bitflags 2.13.0",
  "ironrdp-core",
@@ -4138,6 +4143,7 @@ dependencies = [
 [[package]]
 name = "ironrdp-connector"
 version = "0.9.0"
+source = "git+https://github.com/armconsol/IronRDP.git?rev=b0cac434a3d61bae55685e9ebd32172d9039d3f1#b0cac434a3d61bae55685e9ebd32172d9039d3f1"
 dependencies = [
  "ironrdp-core",
  "ironrdp-error",
@@ -4155,6 +4161,7 @@ dependencies = [
 [[package]]
 name = "ironrdp-core"
 version = "0.2.0"
+source = "git+https://github.com/armconsol/IronRDP.git?rev=b0cac434a3d61bae55685e9ebd32172d9039d3f1#b0cac434a3d61bae55685e9ebd32172d9039d3f1"
 dependencies = [
  "ironrdp-error",
 ]
@@ -4162,6 +4169,7 @@ dependencies = [
 [[package]]
 name = "ironrdp-displaycontrol"
 version = "0.7.0"
+source = "git+https://github.com/armconsol/IronRDP.git?rev=b0cac434a3d61bae55685e9ebd32172d9039d3f1#b0cac434a3d61bae55685e9ebd32172d9039d3f1"
 dependencies = [
  "ironrdp-core",
  "ironrdp-dvc",
@@ -4173,6 +4181,7 @@ dependencies = [
 [[package]]
 name = "ironrdp-dvc"
 version = "0.7.0"
+source = "git+https://github.com/armconsol/IronRDP.git?rev=b0cac434a3d61bae55685e9ebd32172d9039d3f1#b0cac434a3d61bae55685e9ebd32172d9039d3f1"
 dependencies = [
  "ironrdp-core",
  "ironrdp-pdu",
@@ -4183,10 +4192,12 @@ dependencies = [
 [[package]]
 name = "ironrdp-error"
 version = "0.2.0"
+source = "git+https://github.com/armconsol/IronRDP.git?rev=b0cac434a3d61bae55685e9ebd32172d9039d3f1#b0cac434a3d61bae55685e9ebd32172d9039d3f1"
 
 [[package]]
 name = "ironrdp-graphics"
 version = "0.8.1"
+source = "git+https://github.com/armconsol/IronRDP.git?rev=b0cac434a3d61bae55685e9ebd32172d9039d3f1#b0cac434a3d61bae55685e9ebd32172d9039d3f1"
 dependencies = [
  "bit_field",
  "bitflags 2.13.0",
@@ -4202,6 +4213,7 @@ dependencies = [
 [[package]]
 name = "ironrdp-input"
 version = "0.6.0"
+source = "git+https://github.com/armconsol/IronRDP.git?rev=b0cac434a3d61bae55685e9ebd32172d9039d3f1#b0cac434a3d61bae55685e9ebd32172d9039d3f1"
 dependencies = [
  "bitvec",
  "ironrdp-pdu",
@@ -4211,6 +4223,7 @@ dependencies = [
 [[package]]
 name = "ironrdp-pdu"
 version = "0.8.0"
+source = "git+https://github.com/armconsol/IronRDP.git?rev=b0cac434a3d61bae55685e9ebd32172d9039d3f1#b0cac434a3d61bae55685e9ebd32172d9039d3f1"
 dependencies = [
  "bit_field",
  "bitflags 2.13.0",
@@ -4232,6 +4245,7 @@ dependencies = [
 [[package]]
 name = "ironrdp-session"
 version = "0.10.0"
+source = "git+https://github.com/armconsol/IronRDP.git?rev=b0cac434a3d61bae55685e9ebd32172d9039d3f1#b0cac434a3d61bae55685e9ebd32172d9039d3f1"
 dependencies = [
  "ironrdp-bulk",
  "ironrdp-connector",
@@ -4248,6 +4262,7 @@ dependencies = [
 [[package]]
 name = "ironrdp-svc"
 version = "0.7.0"
+source = "git+https://github.com/armconsol/IronRDP.git?rev=b0cac434a3d61bae55685e9ebd32172d9039d3f1#b0cac434a3d61bae55685e9ebd32172d9039d3f1"
 dependencies = [
  "bitflags 2.13.0",
  "ironrdp-core",
@@ -4257,6 +4272,7 @@ dependencies = [
 [[package]]
 name = "ironrdp-tls"
 version = "0.2.1"
+source = "git+https://github.com/armconsol/IronRDP.git?rev=b0cac434a3d61bae55685e9ebd32172d9039d3f1#b0cac434a3d61bae55685e9ebd32172d9039d3f1"
 dependencies = [
  "tokio",
  "tokio-rustls",
@@ -4266,6 +4282,7 @@ dependencies = [
 [[package]]
 name = "ironrdp-tokio"
 version = "0.9.0"
+source = "git+https://github.com/armconsol/IronRDP.git?rev=b0cac434a3d61bae55685e9ebd32172d9039d3f1#b0cac434a3d61bae55685e9ebd32172d9039d3f1"
 dependencies = [
  "ironrdp-async",
  "tokio",
