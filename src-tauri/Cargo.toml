@@ -1,6 +1,6 @@
 [package]
 name = "trcaa"
-version = "3.1.0"
+version = "3.2.0"
 edition = "2021"
 license = "MIT"
 
@@ -68,14 +68,13 @@ flate2 = { version = "1", features = ["rust_backend"] }
 serde_yaml = "0.9"
 portable-pty = "0.8"
 ssh2 = { version = "0.9", features = ["vendored-openssl"] }
-# Using patched IronRDP with local path dependencies until PR #1398 is merged upstream
+# Using patched IronRDP fork with git dependencies to enable CI builds
 # Patch fixes RDP6 bitmap stride mismatch causing horizontal striping on DGX
-# https://github.com/Devolutions/IronRDP/pull/1398
-# NOTE: Cargo path dependencies cannot use environment-variable interpolation, so
-# this remains an explicit local path in this branch. Follow-up migration to a
-# non-local source (git/workspace) is tracked separately to avoid risky source
-# changes in this logging-focused PR.
-ironrdp = { path = "/tmp/ironrdp-patch/crates/ironrdp", features = [
+# Fork: https://github.com/armconsol/IronRDP.git
+# Branch: fix/rdp6-bitmap-stride-mismatch
+# Original PR: https://github.com/Devolutions/IronRDP/pull/1398
+# When upstream PR merges, revert to official crates.io releases
+ironrdp = { git = "https://github.com/armconsol/IronRDP.git", rev = "b0cac434a3d61bae55685e9ebd32172d9039d3f1", features = [
     "svc",
     "cliprdr",
     "graphics",
@@ -84,20 +83,20 @@ ironrdp = { path = "/tmp/ironrdp-patch/crates/ironrdp", features = [
     "session",
     "displaycontrol",
 ] }
-ironrdp-async = { path = "/tmp/ironrdp-patch/crates/ironrdp-async" }
-ironrdp-tokio = { path = "/tmp/ironrdp-patch/crates/ironrdp-tokio" }
-ironrdp-graphics = { path = "/tmp/ironrdp-patch/crates/ironrdp-graphics" }
-ironrdp-input = { path = "/tmp/ironrdp-patch/crates/ironrdp-input" }
-ironrdp-cliprdr = { path = "/tmp/ironrdp-patch/crates/ironrdp-cliprdr" }
-ironrdp-blocking = { path = "/tmp/ironrdp-patch/crates/ironrdp-blocking" }
+ironrdp-async = { git = "https://github.com/armconsol/IronRDP.git", rev = "b0cac434a3d61bae55685e9ebd32172d9039d3f1" }
+ironrdp-tokio = { git = "https://github.com/armconsol/IronRDP.git", rev = "b0cac434a3d61bae55685e9ebd32172d9039d3f1" }
+ironrdp-graphics = { git = "https://github.com/armconsol/IronRDP.git", rev = "b0cac434a3d61bae55685e9ebd32172d9039d3f1" }
+ironrdp-input = { git = "https://github.com/armconsol/IronRDP.git", rev = "b0cac434a3d61bae55685e9ebd32172d9039d3f1" }
+ironrdp-cliprdr = { git = "https://github.com/armconsol/IronRDP.git", rev = "b0cac434a3d61bae55685e9ebd32172d9039d3f1" }
+ironrdp-blocking = { git = "https://github.com/armconsol/IronRDP.git", rev = "b0cac434a3d61bae55685e9ebd32172d9039d3f1" }
 # ironrdp-session 0.10 (bundled by ironrdp 0.16) is required to render slow-path
 # graphics/pointer updates that xrdp-style servers send — older releases abort
 # the session with "unhandled PDU: Update PDU", leaving a black screen. This
 # generation raises the MSRV to 1.89; the PR test gate runs on nightly and the
 # release builder images are pinned to a matching Rust in .docker/.
-ironrdp-tls = { path = "/tmp/ironrdp-patch/crates/ironrdp-tls", features = ["rustls"] }
-ironrdp-pdu = { path = "/tmp/ironrdp-patch/crates/ironrdp-pdu" }
-ironrdp-svc = { path = "/tmp/ironrdp-patch/crates/ironrdp-svc" }
+ironrdp-tls = { git = "https://github.com/armconsol/IronRDP.git", rev = "b0cac434a3d61bae55685e9ebd32172d9039d3f1", features = ["rustls"] }
+ironrdp-pdu = { git = "https://github.com/armconsol/IronRDP.git", rev = "b0cac434a3d61bae55685e9ebd32172d9039d3f1" }
+ironrdp-svc = { git = "https://github.com/armconsol/IronRDP.git", rev = "b0cac434a3d61bae55685e9ebd32172d9039d3f1" }
 x509-cert = { version = "0.2", features = ["std"] }
 tokio-rustls = "0.26"
 rustls = { version = "0.23", features = ["aws_lc_rs"] }
@@ -138,5 +137,6 @@ keyring = { version = "3.0", features = ["sync-secret-service"] }
 [profile.release]
 opt-level = "s"
 strip = true
+
 
 

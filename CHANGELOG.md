@@ -4,6 +4,20 @@ All notable changes to TRCAA are documented here.
 Commit types shown: feat, fix, perf, docs, refactor.
 CI, chore, and build changes are excluded.
 
+## [3.2.0] — 2026-07-06
+
+### Bug Fixes
+- **proxmox**: Backend fixes for Ceph, APT, syslog, tasks, and DB migration
+- **ci**: Embed the correct release version in built binaries
+- **proxmox**: Address code review findings (task UPID, Ceph pool create, selection persistence, Certificates page)
+
+### Documentation
+- **wiki**: Document Ceph/APT/syslog/task-log/updater/CI changes
+
+### Features
+- **proxmox**: Shared frontend utilities for formatting, polling, and nav
+- **proxmox**: Tools nav group, VM search/sort, Ceph UI, task log search
+
 ## [3.1.0] — 2026-07-03
 
 ### Bug Fixes
