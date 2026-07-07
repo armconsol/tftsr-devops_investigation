@@ -1,6 +1,6 @@
 [package]
 name = "trcaa"
-version = "3.2.0"
+version = "3.4.0"
 edition = "2021"
 license = "MIT"
 
@@ -137,6 +137,7 @@ keyring = { version = "3.0", features = ["sync-secret-service"] }
 [profile.release]
 opt-level = "s"
 strip = true
+
 
 
 
