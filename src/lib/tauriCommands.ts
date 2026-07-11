@@ -991,6 +991,15 @@ export const listDaemonsetsCmd = (clusterId: string, namespace: string) =>
 export const getPodLogsCmd = (clusterId: string, namespace: string, podName: string, containerName: string) =>
   invoke<LogResponse>("get_pod_logs", { clusterId, namespace, podName, containerName });
 
+export const saveLogFileCmd = (
+  path: string,
+  content: string,
+  clusterId: string,
+  namespace: string,
+  podName: string,
+  containerName: string
+) => invoke<void>("save_log_file", { path, content, clusterId, namespace, podName, containerName });
+
 export const scaleDeploymentCmd = (clusterId: string, namespace: string, deploymentName: string, replicas: number) =>
   invoke<void>("scale_deployment", { clusterId, namespace, deploymentName, replicas });
 

@@ -1,8 +1,15 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { Download, Search, Square, Trash2, Play } from "lucide-react";
+import { save } from "@tauri-apps/plugin-dialog";
+import { Download, DownloadCloud, Search, Square, Trash2, Play } from "lucide-react";
 import { Button, Input } from "@/components/ui";
-import { streamPodLogsCmd, stopLogStreamCmd, listPodsCmd } from "@/lib/tauriCommands";
+import {
+  streamPodLogsCmd,
+  stopLogStreamCmd,
+  listPodsCmd,
+  getPodLogsCmd,
+  saveLogFileCmd,
+} from "@/lib/tauriCommands";
 import type { PodInfo } from "@/lib/tauriCommands";
 
 export interface LogsTabData {
@@ -184,15 +191,38 @@ export function LogsTab({ data }: LogsTabProps) {
     setSelectedPodName(name);
   };
 
-  const handleDownload = () => {
-    const content = lines.join("\n");
-    const blob = new Blob([content], { type: "text/plain" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${podName || "workload"}-${selectedContainer}-logs.txt`;
-    a.click();
-    URL.revokeObjectURL(url);
+  const handleDownloadVisible = async () => {
+    try {
+      const filePath = await save({
+        defaultPath: `${podName || "workload"}-${selectedContainer}-visible-logs.txt`,
+        filters: [{ name: "Text", extensions: ["txt"] }],
+      });
+      if (!filePath) return;
+      await saveLogFileCmd(
+        filePath,
+        filteredLines.join("\n"),
+        clusterId,
+        namespace,
+        podName,
+        selectedContainer
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  const handleDownloadAll = async () => {
+    try {
+      const filePath = await save({
+        defaultPath: `${podName || "workload"}-${selectedContainer}-all-logs.txt`,
+        filters: [{ name: "Text", extensions: ["txt"] }],
+      });
+      if (!filePath) return;
+      const { logs } = await getPodLogsCmd(clusterId, namespace, podName, selectedContainer);
+      await saveLogFileCmd(filePath, logs, clusterId, namespace, podName, selectedContainer);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
   };
 
   const handleClear = () => setLines([]);
@@ -297,10 +327,20 @@ export function LogsTab({ data }: LogsTabProps) {
           <Button
             size="sm"
             variant="outline"
-            onClick={handleDownload}
-            disabled={lines.length === 0}
+            onClick={() => void handleDownloadVisible()}
+            disabled={filteredLines.length === 0}
           >
-            <Download className="h-3.5 w-3.5" />
+            <Download className="h-3.5 w-3.5 mr-1" />
+            Download Visible
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => void handleDownloadAll()}
+            disabled={!podName || !selectedContainer}
+          >
+            <DownloadCloud className="h-3.5 w-3.5 mr-1" />
+            Download All
           </Button>
           <Button
             size="sm"
