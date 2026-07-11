@@ -7356,6 +7356,68 @@ pub async fn stop_log_stream(stream_id: String, state: State<'_, AppState>) -> R
     }
 }
 
+/// Writes `content` to `path`. Split out from the `#[tauri::command]` handler
+/// so it can be unit-tested without a `State<AppState>`.
+fn write_log_content(path: &str, content: &str) -> Result<(), String> {
+    std::fs::write(path, content).map_err(|e| format!("Failed to write log file: {e}"))
+}
+
+/// Records a pod-log export as an audit event. Split out from the
+/// `#[tauri::command]` handler so it can be unit-tested against a migrated
+/// in-memory connection without a `State<AppState>`.
+fn record_log_export_audit(
+    conn: &rusqlite::Connection,
+    path: &str,
+    bytes: usize,
+    cluster_id: &str,
+    namespace: &str,
+    pod_name: &str,
+    container_name: &str,
+) -> Result<(), String> {
+    let details = serde_json::json!({
+        "path": path,
+        "bytes": bytes,
+        "cluster_id": cluster_id,
+        "namespace": namespace,
+        "pod_name": pod_name,
+        "container_name": container_name,
+    })
+    .to_string();
+    crate::audit::log::write_audit_event(conn, "log_file_exported", "pod_log", pod_name, &details)
+        .map_err(|e| format!("Failed to write audit log: {e}"))
+}
+
+/// Writes log content to a path the user selected via the native save dialog.
+/// The path is always user-chosen (from `@tauri-apps/plugin-dialog`'s `save()`),
+/// so this intentionally writes outside the fs-plugin's app/temp-only scope.
+#[tauri::command]
+pub async fn save_log_file(
+    path: String,
+    content: String,
+    cluster_id: String,
+    namespace: String,
+    pod_name: String,
+    container_name: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let byte_len = content.len();
+    write_log_content(&path, &content)?;
+
+    let db = state
+        .db
+        .lock()
+        .map_err(|e| format!("Failed to lock database: {e}"))?;
+    record_log_export_audit(
+        &db,
+        &path,
+        byte_len,
+        &cluster_id,
+        &namespace,
+        &pod_name,
+        &container_name,
+    )
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Phase 7: Helm commands
 // ─────────────────────────────────────────────────────────────────────────────
@@ -7988,5 +8050,66 @@ mod new_command_tests {
             path1, path2,
             "successive calls must return distinct paths to prevent concurrent-call race conditions"
         );
+    }
+
+    #[test]
+    fn test_write_log_content_writes_content() {
+        let mut path = std::env::temp_dir();
+        path.push(format!(
+            "tftsr-test-save-log-file-{}.txt",
+            uuid::Uuid::now_v7()
+        ));
+        let path_str = path.to_string_lossy().to_string();
+
+        let result = write_log_content(&path_str, "line one\nline two");
+        assert!(result.is_ok());
+
+        let written = std::fs::read_to_string(&path_str).unwrap();
+        assert_eq!(written, "line one\nline two");
+
+        let _ = std::fs::remove_file(&path_str);
+    }
+
+    #[test]
+    fn test_write_log_content_errors_on_unwritable_path() {
+        let path = "/nonexistent-directory-for-tftsr-tests/logs.txt";
+        let result = write_log_content(path, "content");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_record_log_export_audit_writes_entry() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        crate::db::migrations::run_migrations(&conn).unwrap();
+
+        let result = record_log_export_audit(
+            &conn,
+            "/tmp/pod-logs.txt",
+            42,
+            "cluster-1",
+            "default",
+            "my-pod",
+            "app",
+        );
+        assert!(result.is_ok());
+
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM audit_log WHERE action = 'log_file_exported'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 1);
+
+        let details: String = conn
+            .query_row(
+                "SELECT details FROM audit_log WHERE action = 'log_file_exported'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(details.contains("my-pod"));
+        assert!(details.contains("pod-logs.txt"));
     }
 }

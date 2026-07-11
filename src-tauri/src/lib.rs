@@ -530,6 +530,7 @@ pub fn run() {
             // Phase 6: Log Streaming
             commands::kube::stream_pod_logs,
             commands::kube::stop_log_stream,
+            commands::kube::save_log_file,
             // Phase 7: Helm Commands
             commands::kube::helm_list_repos,
             commands::kube::helm_add_repo,

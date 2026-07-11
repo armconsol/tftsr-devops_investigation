@@ -685,6 +685,18 @@ Opens a WebView window for OAuth2 authentication. Requires `auth_type = "oauth2"
 
 ---
 
+## Kubernetes Log Commands
+
+Handlers live in `src-tauri/src/commands/kube.rs`. Used by `src/components/dock/LogsTab.tsx`'s "Download Visible" / "Download All" buttons.
+
+### `save_log_file`
+```typescript
+saveLogFileCmd(path: string, content: string, clusterId: string, namespace: string, podName: string, containerName: string) → void
+```
+Writes `content` to `path` via `std::fs::write`. `path` must come from a user-driven save dialog (`@tauri-apps/plugin-dialog`'s `save()`) — this command writes outside the `fs` plugin's app/temp-only capability scope (`src-tauri/capabilities/default.json`), mirroring the pattern used by `export_query_results` (`src-tauri/src/commands/database.rs`). Records an `audit_log` entry (`action: "log_file_exported"`) with the destination path, byte count, and cluster/namespace/pod/container context — note pod log content is written raw with no PII redaction applied (redaction only gates text sent to AI providers).
+
+---
+
 ## Common Types
 
 ### `ConnectionResult`
