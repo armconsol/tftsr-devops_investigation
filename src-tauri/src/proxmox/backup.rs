@@ -29,16 +29,15 @@ pub struct DatastoreInfo {
 /// List backup jobs
 pub async fn list_backup_jobs(
     client: &crate::proxmox::client::ProxmoxClient,
-    node: &str,
     ticket: &str,
 ) -> Result<Vec<BackupJob>, String> {
-    let path = format!("nodes/{}/backup/jobs", node);
+    let path = "cluster/backup";
     let response: serde_json::Value = client
-        .get(&path, Some(ticket))
+        .get(path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to list backup jobs: {}", e))?;
+        .map_err(|e| format!("Failed to list backup jobs: {e}"))?;
 
-    if let Some(jobs) = response.get("data").and_then(|d| d.as_array()) {
+    if let Some(jobs) = response.as_array() {
         let backup_jobs: Vec<BackupJob> = jobs
             .iter()
             .filter_map(|job| {
@@ -64,7 +63,7 @@ pub async fn list_backup_jobs(
 
         Ok(backup_jobs)
     } else {
-        Err("Invalid response format: missing 'data' field".to_string())
+        Err("Invalid response format".to_string())
     }
 }
 
@@ -75,7 +74,7 @@ pub async fn create_backup_job(
     job: &BackupJob,
     ticket: &str,
 ) -> Result<(), String> {
-    let path = format!("nodes/{}/backup/jobs", node);
+    let path = format!("nodes/{node}/backup/jobs");
     let config = serde_json::json!({
         "jobid": job.job_id,
         "name": job.name,
@@ -89,7 +88,7 @@ pub async fn create_backup_job(
     let _response: serde_json::Value = client
         .post(&path, &config, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to create backup job {}: {}", job.job_id, e))?;
+        .map_err(|e| format!("Failed to create backup job {}: {e}", job.job_id))?;
     Ok(())
 }
 
@@ -101,7 +100,7 @@ pub async fn update_backup_job(
     job: &BackupJob,
     ticket: &str,
 ) -> Result<(), String> {
-    let path = format!("nodes/{}/backup/jobs/{}", node, job_id);
+    let path = format!("nodes/{node}/backup/jobs/{job_id}");
     let config = serde_json::json!({
         "name": job.name,
         "schedule": job.schedule,
@@ -114,7 +113,7 @@ pub async fn update_backup_job(
     let _response: serde_json::Value = client
         .put(&path, &config, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to update backup job {}: {}", job_id, e))?;
+        .map_err(|e| format!("Failed to update backup job {job_id}: {e}"))?;
     Ok(())
 }
 
@@ -125,27 +124,67 @@ pub async fn delete_backup_job(
     job_id: u32,
     ticket: &str,
 ) -> Result<(), String> {
-    let path = format!("nodes/{}/backup/jobs/{}", node, job_id);
+    let path = format!("nodes/{node}/backup/jobs/{job_id}");
     let _response: serde_json::Value = client
         .delete(&path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to delete backup job {}: {}", job_id, e))?;
+        .map_err(|e| format!("Failed to delete backup job {job_id}: {e}"))?;
     Ok(())
 }
 
-/// Trigger backup job manually
-pub async fn trigger_backup_job(
-    client: &crate::proxmox::client::ProxmoxClient,
-    node: &str,
-    job_id: u32,
-    ticket: &str,
-) -> Result<(), String> {
-    let path = format!("nodes/{}/backup/jobs/{}/run", node, job_id);
-    let _response: serde_json::Value = client
-        .post(&path, &serde_json::json!({}), Some(ticket))
-        .await
-        .map_err(|e| format!("Failed to trigger backup job {}: {}", job_id, e))?;
-    Ok(())
+/// Build `vzdump` form parameters from a `cluster/backup` job config object.
+///
+/// PVE has no "run job by id" REST endpoint; the web UI's "Run now" reads the
+/// job's vzdump options and POSTs them to `nodes/{node}/vzdump`. We mirror that:
+/// translate the stored job config into vzdump params. When the job targets all
+/// guests (`vmid` empty or `"all"`) we send `all=1`; otherwise the explicit
+/// `vmid` list. Common optional fields are forwarded when present.
+pub fn build_vzdump_params(job: &serde_json::Value) -> Vec<(String, String)> {
+    let mut params: Vec<(String, String)> = Vec::new();
+
+    if let Some(storage) = job.get("storage").and_then(|v| v.as_str()) {
+        if !storage.is_empty() {
+            params.push(("storage".to_string(), storage.to_string()));
+        }
+    }
+    if let Some(mode) = job.get("mode").and_then(|v| v.as_str()) {
+        if !mode.is_empty() {
+            params.push(("mode".to_string(), mode.to_string()));
+        }
+    }
+
+    let vmid = job
+        .get("vmid")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .trim();
+    if vmid.is_empty() || vmid == "all" {
+        params.push(("all".to_string(), "1".to_string()));
+    } else {
+        params.push(("vmid".to_string(), vmid.to_string()));
+    }
+
+    // Forward common optional fields when the job defines them.
+    for key in ["compress", "exclude", "mailnotification", "notes-template"] {
+        if let Some(val) = job.get(key).and_then(|v| v.as_str()) {
+            if !val.is_empty() {
+                params.push((key.to_string(), val.to_string()));
+            }
+        }
+    }
+
+    params
+}
+
+/// Pick the node to run a manual backup on: the job's configured node (first
+/// entry if comma-separated) if set, otherwise the first available cluster node.
+pub fn select_backup_node(job: &serde_json::Value, cluster_nodes: &[String]) -> Option<String> {
+    if let Some(node) = job.get("node").and_then(|v| v.as_str()) {
+        if let Some(first) = node.split(',').map(str::trim).find(|n| !n.is_empty()) {
+            return Some(first.to_string());
+        }
+    }
+    cluster_nodes.first().cloned()
 }
 
 /// List datastores
@@ -157,9 +196,9 @@ pub async fn list_datastores(
     let response: serde_json::Value = client
         .get(path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to list datastores: {}", e))?;
+        .map_err(|e| format!("Failed to list datastores: {e}"))?;
 
-    if let Some(datastores) = response.get("data").and_then(|d| d.as_array()) {
+    if let Some(datastores) = response.as_array() {
         let datastore_list: Vec<DatastoreInfo> = datastores
             .iter()
             .filter_map(|ds| {
@@ -183,7 +222,7 @@ pub async fn list_datastores(
 
         Ok(datastore_list)
     } else {
-        Err("Invalid response format: missing 'data' field".to_string())
+        Err("Invalid response format".to_string())
     }
 }
 
@@ -194,13 +233,14 @@ pub async fn get_datastore_status(
     datastore: &str,
     ticket: &str,
 ) -> Result<DatastoreInfo, String> {
-    let path = format!("nodes/{}/backup/status?datastore={}", node, datastore);
+    let path = format!("nodes/{node}/backup/status?datastore={datastore}");
     let response: serde_json::Value = client
         .get(&path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to get datastore status: {}", e))?;
+        .map_err(|e| format!("Failed to get datastore status: {e}"))?;
 
-    let ds = response.get("data").ok_or("Invalid response format")?;
+    // response IS already the data (handle_response already unwrapped the envelope)
+    let ds = &response;
 
     Ok(DatastoreInfo {
         datastore: datastore.to_string(),
@@ -223,16 +263,16 @@ pub async fn list_backup_snapshots(
     datastore: &str,
     ticket: &str,
 ) -> Result<Vec<serde_json::Value>, String> {
-    let path = format!("nodes/{}/backup/snapshots?datastore={}", node, datastore);
+    let path = format!("nodes/{node}/backup/snapshots?datastore={datastore}");
     let response: serde_json::Value = client
         .get(&path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to list backup snapshots: {}", e))?;
+        .map_err(|e| format!("Failed to list backup snapshots: {e}"))?;
 
-    if let Some(snapshots) = response.get("data").and_then(|d| d.as_array()) {
+    if let Some(snapshots) = response.as_array() {
         Ok(snapshots.to_vec())
     } else {
-        Err("Invalid response format: missing 'data' field".to_string())
+        Err("Invalid response format".to_string())
     }
 }
 
@@ -246,7 +286,7 @@ pub async fn restore_backup(
     target_vmid: u32,
     ticket: &str,
 ) -> Result<(), String> {
-    let path = format!("nodes/{}/backup/restore", node);
+    let path = format!("nodes/{node}/backup/restore");
     let config = serde_json::json!({
         "datastore": datastore,
         "backup": backup_id,
@@ -254,16 +294,10 @@ pub async fn restore_backup(
         "target-vmid": target_vmid
     });
 
-    let _response: serde_json::Value =
-        client
-            .post(&path, &config, Some(ticket))
-            .await
-            .map_err(|e| {
-                format!(
-                    "Failed to restore backup {} to VM {}: {}",
-                    backup_id, target_vmid, e
-                )
-            })?;
+    let _response: serde_json::Value = client
+        .post(&path, &config, Some(ticket))
+        .await
+        .map_err(|e| format!("Failed to restore backup {backup_id} to VM {target_vmid}: {e}"))?;
     Ok(())
 }
 
@@ -307,5 +341,80 @@ mod tests {
 
         assert_eq!(ds.datastore, deserialized.datastore);
         assert_eq!(ds.status, "available");
+    }
+
+    #[test]
+    fn test_build_vzdump_params_all_guests() {
+        let job = serde_json::json!({
+            "id": "backup-local",
+            "storage": "local",
+            "mode": "snapshot",
+            "vmid": "all"
+        });
+        let params = build_vzdump_params(&job);
+        assert!(params.contains(&("storage".to_string(), "local".to_string())));
+        assert!(params.contains(&("mode".to_string(), "snapshot".to_string())));
+        assert!(params.contains(&("all".to_string(), "1".to_string())));
+        // Must not also send an explicit vmid when backing up all guests.
+        assert!(!params.iter().any(|(k, _)| k == "vmid"));
+    }
+
+    #[test]
+    fn test_build_vzdump_params_explicit_vmids() {
+        let job = serde_json::json!({
+            "storage": "pbs",
+            "mode": "stop",
+            "vmid": "100,101"
+        });
+        let params = build_vzdump_params(&job);
+        assert!(params.contains(&("vmid".to_string(), "100,101".to_string())));
+        assert!(!params.iter().any(|(k, _)| k == "all"));
+    }
+
+    #[test]
+    fn test_build_vzdump_params_missing_vmid_defaults_to_all() {
+        let job = serde_json::json!({ "storage": "local" });
+        let params = build_vzdump_params(&job);
+        assert!(params.contains(&("all".to_string(), "1".to_string())));
+    }
+
+    #[test]
+    fn test_build_vzdump_params_forwards_optional_fields() {
+        let job = serde_json::json!({
+            "storage": "local",
+            "vmid": "100",
+            "compress": "zstd",
+            "exclude": "200"
+        });
+        let params = build_vzdump_params(&job);
+        assert!(params.contains(&("compress".to_string(), "zstd".to_string())));
+        assert!(params.contains(&("exclude".to_string(), "200".to_string())));
+    }
+
+    #[test]
+    fn test_select_backup_node_prefers_job_node() {
+        let job = serde_json::json!({ "node": "pve2" });
+        let nodes = vec!["pve1".to_string(), "pve2".to_string()];
+        assert_eq!(select_backup_node(&job, &nodes), Some("pve2".to_string()));
+    }
+
+    #[test]
+    fn test_select_backup_node_takes_first_of_list() {
+        let job = serde_json::json!({ "node": "pve2,pve3" });
+        let nodes = vec!["pve1".to_string()];
+        assert_eq!(select_backup_node(&job, &nodes), Some("pve2".to_string()));
+    }
+
+    #[test]
+    fn test_select_backup_node_falls_back_to_cluster_node() {
+        let job = serde_json::json!({ "storage": "local" });
+        let nodes = vec!["pve1".to_string(), "pve2".to_string()];
+        assert_eq!(select_backup_node(&job, &nodes), Some("pve1".to_string()));
+    }
+
+    #[test]
+    fn test_select_backup_node_none_when_no_nodes() {
+        let job = serde_json::json!({ "storage": "local" });
+        assert_eq!(select_backup_node(&job, &[]), None);
     }
 }

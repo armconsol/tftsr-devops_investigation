@@ -29,19 +29,20 @@ pub async fn list_firewall_rules(
     node: &str,
     ticket: &str,
 ) -> Result<Vec<FirewallRule>, String> {
-    let path = format!("nodes/{}/firewall/rules", node);
+    validate_node(node)?;
+    let path = format!("nodes/{node}/firewall/rules");
     let response: serde_json::Value = client
         .get(&path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to list firewall rules: {}", e))?;
+        .map_err(|e| format!("Failed to list firewall rules: {e}"))?;
 
-    if let Some(rules) = response.get("data").and_then(|d| d.as_array()) {
+    if let Some(rules) = response.as_array() {
         let rule_list: Vec<FirewallRule> = rules
             .iter()
             .filter_map(|rule| {
-                let rule_num = rule.get("rule_num")?.as_u64()? as u32;
+                let rule_num = rule.get("pos")?.as_u64()? as u32;
                 let action = rule.get("action")?.as_str()?.to_string();
-                let protocol = rule.get("protocol")?.as_str().unwrap_or("").to_string();
+                let protocol = rule.get("proto")?.as_str().unwrap_or("").to_string();
                 let source = rule.get("source")?.as_str().unwrap_or("").to_string();
                 let destination = rule.get("dest")?.as_str().unwrap_or("").to_string();
                 let port = rule
@@ -50,8 +51,9 @@ pub async fn list_firewall_rules(
                     .and_then(|p| p.as_str())
                     .map(|s| s.to_string());
                 let enabled = rule
-                    .get("enabled")
-                    .and_then(|e| e.as_bool())
+                    .get("enable")
+                    .and_then(|e| e.as_i64())
+                    .map(|n| n != 0)
                     .unwrap_or(true);
 
                 Some(FirewallRule {
@@ -68,7 +70,7 @@ pub async fn list_firewall_rules(
 
         Ok(rule_list)
     } else {
-        Err("Invalid response format: missing 'data' field".to_string())
+        Err("Invalid response format".to_string())
     }
 }
 
@@ -79,20 +81,23 @@ pub async fn add_rule(
     rule: &FirewallRule,
     ticket: &str,
 ) -> Result<(), String> {
-    let path = format!("nodes/{}/firewall/rules", node);
-    let config = serde_json::json!({
+    validate_node(node)?;
+    let path = format!("nodes/{node}/firewall/rules");
+    let mut config = serde_json::json!({
         "action": rule.action,
-        "protocol": rule.protocol,
+        "proto": rule.protocol,
         "source": rule.source,
         "dest": rule.destination,
-        "dport": rule.port,
-        "enabled": rule.enabled
+        "enable": if rule.enabled { 1 } else { 0 }
     });
+    if let Some(ref port) = rule.port {
+        config["dport"] = serde_json::Value::String(port.clone());
+    }
 
     let _response: serde_json::Value = client
         .post(&path, &config, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to add firewall rule: {}", e))?;
+        .map_err(|e| format!("Failed to add firewall rule: {e}"))?;
     Ok(())
 }
 
@@ -103,11 +108,12 @@ pub async fn delete_rule(
     rule_num: u32,
     ticket: &str,
 ) -> Result<(), String> {
-    let path = format!("nodes/{}/firewall/rules/{}", node, rule_num);
+    validate_node(node)?;
+    let path = format!("nodes/{node}/firewall/rules/{rule_num}");
     let _response: serde_json::Value = client
         .delete(&path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to delete firewall rule {}: {}", rule_num, e))?;
+        .map_err(|e| format!("Failed to delete firewall rule {rule_num}: {e}"))?;
     Ok(())
 }
 
@@ -119,20 +125,23 @@ pub async fn update_rule(
     rule: &FirewallRule,
     ticket: &str,
 ) -> Result<(), String> {
-    let path = format!("nodes/{}/firewall/rules/{}", node, rule_num);
-    let config = serde_json::json!({
+    validate_node(node)?;
+    let path = format!("nodes/{node}/firewall/rules/{rule_num}");
+    let mut config = serde_json::json!({
         "action": rule.action,
-        "protocol": rule.protocol,
+        "proto": rule.protocol,
         "source": rule.source,
         "dest": rule.destination,
-        "dport": rule.port,
-        "enabled": rule.enabled
+        "enable": if rule.enabled { 1 } else { 0 }
     });
+    if let Some(ref port) = rule.port {
+        config["dport"] = serde_json::Value::String(port.clone());
+    }
 
     let _response: serde_json::Value = client
         .put(&path, &config, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to update firewall rule {}: {}", rule_num, e))?;
+        .map_err(|e| format!("Failed to update firewall rule {rule_num}: {e}"))?;
     Ok(())
 }
 
@@ -142,15 +151,16 @@ pub async fn enable_firewall(
     node: &str,
     ticket: &str,
 ) -> Result<(), String> {
-    let path = format!("nodes/{}/firewall/options", node);
+    validate_node(node)?;
+    let path = format!("nodes/{node}/firewall/options");
     let config = serde_json::json!({
-        "enabled": true
+        "enable": 1
     });
 
     let _response: serde_json::Value = client
         .put(&path, &config, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to enable firewall: {}", e))?;
+        .map_err(|e| format!("Failed to enable firewall: {e}"))?;
     Ok(())
 }
 
@@ -160,15 +170,16 @@ pub async fn disable_firewall(
     node: &str,
     ticket: &str,
 ) -> Result<(), String> {
-    let path = format!("nodes/{}/firewall/options", node);
+    validate_node(node)?;
+    let path = format!("nodes/{node}/firewall/options");
     let config = serde_json::json!({
-        "enabled": false
+        "enable": 0
     });
 
     let _response: serde_json::Value = client
         .put(&path, &config, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to disable firewall: {}", e))?;
+        .map_err(|e| format!("Failed to disable firewall: {e}"))?;
     Ok(())
 }
 
@@ -178,33 +189,34 @@ pub async fn get_firewall_status(
     node: &str,
     ticket: &str,
 ) -> Result<FirewallStatus, String> {
-    let path = format!("nodes/{}/firewall/rules", node);
+    validate_node(node)?;
+    let path = format!("nodes/{node}/firewall/rules");
     let rules_response: serde_json::Value = client
         .get(&path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to get firewall rules: {}", e))?;
+        .map_err(|e| format!("Failed to get firewall rules: {e}"))?;
 
-    let enabled_path = format!("nodes/{}/firewall/options", node);
+    let enabled_path = format!("nodes/{node}/firewall/options");
     let options_response: serde_json::Value = client
         .get(&enabled_path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to get firewall options: {}", e))?;
+        .map_err(|e| format!("Failed to get firewall options: {e}"))?;
 
     let enabled = options_response
-        .get("data")
-        .and_then(|d| d.get("enabled"))
-        .and_then(|e| e.as_bool())
+        .get("enable")
+        .and_then(|e| e.as_i64())
+        .map(|n| n != 0)
         .unwrap_or(false);
 
+    let empty = Vec::new();
     let rules: Vec<FirewallRule> = rules_response
-        .get("data")
-        .and_then(|d| d.as_array())
-        .unwrap_or(&Vec::new())
+        .as_array()
+        .unwrap_or(&empty)
         .iter()
         .filter_map(|rule| {
-            let rule_num = rule.get("rule_num")?.as_u64()? as u32;
+            let rule_num = rule.get("pos")?.as_u64()? as u32;
             let action = rule.get("action")?.as_str()?.to_string();
-            let protocol = rule.get("protocol")?.as_str().unwrap_or("").to_string();
+            let protocol = rule.get("proto")?.as_str().unwrap_or("").to_string();
             let source = rule.get("source")?.as_str().unwrap_or("").to_string();
             let destination = rule.get("dest")?.as_str().unwrap_or("").to_string();
             let port = rule
@@ -213,8 +225,9 @@ pub async fn get_firewall_status(
                 .and_then(|p| p.as_str())
                 .map(|s| s.to_string());
             let enabled = rule
-                .get("enabled")
-                .and_then(|e| e.as_bool())
+                .get("enable")
+                .and_then(|e| e.as_i64())
+                .map(|n| n != 0)
                 .unwrap_or(true);
 
             Some(FirewallRule {
@@ -238,6 +251,188 @@ pub async fn get_firewall_status(
     })
 }
 
+fn validate_node(node: &str) -> Result<(), String> {
+    if node.is_empty() || node.len() > 64 {
+        return Err("Node name must be between 1 and 64 characters".to_string());
+    }
+    if !node.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
+        return Err(format!(
+            "Invalid node name '{node}': only alphanumeric characters and hyphens are allowed"
+        ));
+    }
+    Ok(())
+}
+
+fn validate_vmid(vmid: u32) -> Result<(), String> {
+    if !(100..=999_999_999).contains(&vmid) {
+        return Err(format!(
+            "Invalid vmid {vmid}: must be in range 100..=999999999"
+        ));
+    }
+    Ok(())
+}
+
+fn validate_firewall_zone(zone: &str) -> Result<(), String> {
+    if zone.is_empty() || zone.len() > 64 {
+        return Err("Firewall zone must be between 1 and 64 characters".to_string());
+    }
+    if !zone
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    {
+        return Err(format!("Invalid firewall zone '{zone}': only alphanumeric characters, hyphens, and underscores are allowed"));
+    }
+    Ok(())
+}
+
+/// Cluster-level firewall status (distinct from per-node FirewallStatus)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ClusterFirewallStatus {
+    pub enable: Option<i64>,
+    pub policy_in: Option<String>,
+    pub policy_out: Option<String>,
+}
+
+/// Parse a PVE firewall rules array into `Vec<FirewallRule>`
+fn parse_firewall_rules(response: serde_json::Value) -> Result<Vec<FirewallRule>, String> {
+    let rules = response
+        .as_array()
+        .ok_or_else(|| "Invalid response format".to_string())?;
+
+    let rule_list = rules
+        .iter()
+        .filter_map(|rule| {
+            let rule_num = rule.get("pos")?.as_u64()? as u32;
+            let action = rule.get("action")?.as_str()?.to_string();
+            let protocol = rule.get("proto")?.as_str().unwrap_or("").to_string();
+            let source = rule.get("source")?.as_str().unwrap_or("").to_string();
+            let destination = rule.get("dest")?.as_str().unwrap_or("").to_string();
+            let port = rule
+                .get("dport")
+                .or(rule.get("sport"))
+                .and_then(|p| p.as_str())
+                .map(|s| s.to_string());
+            let enabled = rule
+                .get("enable")
+                .and_then(|e| e.as_i64())
+                .map(|n| n != 0)
+                .unwrap_or(true);
+            Some(FirewallRule {
+                rule_num,
+                action,
+                protocol,
+                source,
+                destination,
+                port,
+                enabled,
+            })
+        })
+        .collect();
+
+    Ok(rule_list)
+}
+
+/// List cluster-level firewall rules
+pub async fn list_cluster_firewall_rules(
+    client: &crate::proxmox::client::ProxmoxClient,
+    ticket: &str,
+) -> Result<Vec<FirewallRule>, String> {
+    let response: serde_json::Value = client
+        .get("cluster/firewall/rules", Some(ticket))
+        .await
+        .map_err(|e| format!("Failed to list cluster firewall rules: {e}"))?;
+    parse_firewall_rules(response)
+}
+
+/// Get cluster-level firewall options (enable flag, default policies)
+pub async fn get_cluster_firewall_status(
+    client: &crate::proxmox::client::ProxmoxClient,
+    ticket: &str,
+) -> Result<ClusterFirewallStatus, String> {
+    let response: serde_json::Value = client
+        .get("cluster/firewall/options", Some(ticket))
+        .await
+        .map_err(|e| format!("Failed to get cluster firewall options: {e}"))?;
+
+    let enable = response.get("enable").and_then(|v| v.as_i64());
+    let policy_in = response
+        .get("policy_in")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+    let policy_out = response
+        .get("policy_out")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+
+    Ok(ClusterFirewallStatus {
+        enable,
+        policy_in,
+        policy_out,
+    })
+}
+
+/// List firewall rules for a guest VM
+pub async fn list_guest_firewall_rules(
+    client: &crate::proxmox::client::ProxmoxClient,
+    node: &str,
+    vmid: u32,
+    ticket: &str,
+) -> Result<Vec<FirewallRule>, String> {
+    validate_node(node)?;
+    validate_vmid(vmid)?;
+    let path = format!("nodes/{node}/qemu/{vmid}/firewall/rules");
+    let response: serde_json::Value = client
+        .get(&path, Some(ticket))
+        .await
+        .map_err(|e| format!("Failed to list guest firewall rules for vmid {vmid}: {e}"))?;
+    parse_firewall_rules(response)
+}
+
+/// Add a firewall rule to a guest VM
+pub async fn add_guest_firewall_rule(
+    client: &crate::proxmox::client::ProxmoxClient,
+    node: &str,
+    vmid: u32,
+    rule: &FirewallRule,
+    ticket: &str,
+) -> Result<(), String> {
+    validate_node(node)?;
+    validate_vmid(vmid)?;
+    let path = format!("nodes/{node}/qemu/{vmid}/firewall/rules");
+    let mut config = serde_json::json!({
+        "action": rule.action,
+        "proto": rule.protocol,
+        "source": rule.source,
+        "dest": rule.destination,
+        "enable": if rule.enabled { 1 } else { 0 }
+    });
+    if let Some(ref port) = rule.port {
+        config["dport"] = serde_json::Value::String(port.clone());
+    }
+    let _response: serde_json::Value = client
+        .post(&path, &config, Some(ticket))
+        .await
+        .map_err(|e| format!("Failed to add guest firewall rule for vmid {vmid}: {e}"))?;
+    Ok(())
+}
+
+/// Delete a firewall rule from a guest VM by position
+pub async fn delete_guest_firewall_rule(
+    client: &crate::proxmox::client::ProxmoxClient,
+    node: &str,
+    vmid: u32,
+    pos: u32,
+    ticket: &str,
+) -> Result<(), String> {
+    validate_node(node)?;
+    validate_vmid(vmid)?;
+    let path = format!("nodes/{node}/qemu/{vmid}/firewall/rules/{pos}");
+    let _response: serde_json::Value = client.delete(&path, Some(ticket)).await.map_err(|e| {
+        format!("Failed to delete guest firewall rule at pos {pos} for vmid {vmid}: {e}")
+    })?;
+    Ok(())
+}
+
 /// Get firewall zone configuration
 pub async fn get_firewall_zone(
     client: &crate::proxmox::client::ProxmoxClient,
@@ -245,11 +440,13 @@ pub async fn get_firewall_zone(
     zone: &str,
     ticket: &str,
 ) -> Result<serde_json::Value, String> {
-    let path = format!("nodes/{}/firewall/zones/{}", node, zone);
+    validate_node(node)?;
+    validate_firewall_zone(zone)?;
+    let path = format!("nodes/{node}/firewall/zones/{}", urlencoding::encode(zone));
     client
         .get(&path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to get firewall zone {}: {}", zone, e))
+        .map_err(|e| format!("Failed to get firewall zone {zone}: {e}"))
 }
 
 /// List firewall zones
@@ -258,16 +455,17 @@ pub async fn list_firewall_zones(
     node: &str,
     ticket: &str,
 ) -> Result<Vec<serde_json::Value>, String> {
-    let path = format!("nodes/{}/firewall/zones", node);
+    validate_node(node)?;
+    let path = format!("nodes/{node}/firewall/zones");
     let response: serde_json::Value = client
         .get(&path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to list firewall zones: {}", e))?;
+        .map_err(|e| format!("Failed to list firewall zones: {e}"))?;
 
-    if let Some(zones) = response.get("data").and_then(|d| d.as_array()) {
+    if let Some(zones) = response.as_array() {
         Ok(zones.to_vec())
     } else {
-        Err("Invalid response format: missing 'data' field".to_string())
+        Err("Invalid response format".to_string())
     }
 }
 
@@ -306,5 +504,197 @@ mod tests {
         let deserialized: FirewallStatus = serde_json::from_str(&json).unwrap();
 
         assert_eq!(status.enabled, deserialized.enabled);
+    }
+
+    #[test]
+    fn test_firewall_enable_integer_1_is_enabled() {
+        // PVE API uses integer 1/0 for enable, not boolean
+        let pve_rule =
+            serde_json::json!({"pos": 1, "action": "ACCEPT", "proto": "tcp", "enable": 1});
+        let enabled = pve_rule
+            .get("enable")
+            .and_then(|e| e.as_i64())
+            .map(|n| n != 0)
+            .unwrap_or(true);
+        assert!(enabled, "enable=1 must parse as true");
+    }
+
+    #[test]
+    fn test_firewall_enable_integer_0_is_disabled() {
+        let pve_rule = serde_json::json!({"pos": 2, "action": "DROP", "enable": 0});
+        let enabled = pve_rule
+            .get("enable")
+            .and_then(|e| e.as_i64())
+            .map(|n| n != 0)
+            .unwrap_or(true);
+        assert!(!enabled, "enable=0 must parse as false");
+    }
+
+    #[test]
+    fn test_firewall_pve_uses_proto_not_protocol() {
+        // PVE API field is "proto", not "protocol"
+        let pve_rule = serde_json::json!({"pos": 1, "action": "ACCEPT", "proto": "udp"});
+        let proto = pve_rule.get("proto").and_then(|p| p.as_str()).unwrap_or("");
+        assert_eq!(proto, "udp");
+        assert!(
+            pve_rule.get("protocol").is_none(),
+            "PVE uses 'proto' not 'protocol'"
+        );
+    }
+
+    #[test]
+    fn test_firewall_pve_uses_pos_not_rule_num() {
+        // PVE API field is "pos", not "rule_num"
+        let pve_rule = serde_json::json!({"pos": 5, "action": "ACCEPT"});
+        let pos = pve_rule.get("pos").and_then(|p| p.as_u64()).unwrap();
+        assert_eq!(pos, 5);
+        assert!(
+            pve_rule.get("rule_num").is_none(),
+            "PVE uses 'pos' not 'rule_num'"
+        );
+    }
+
+    #[test]
+    fn test_cluster_firewall_status_deserialization() {
+        let fixture = serde_json::json!({
+            "enable": 1,
+            "policy_in": "DROP",
+            "policy_out": "ACCEPT"
+        });
+
+        let enable = fixture.get("enable").and_then(|v| v.as_i64());
+        let policy_in = fixture
+            .get("policy_in")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        let policy_out = fixture
+            .get("policy_out")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+
+        let status = ClusterFirewallStatus {
+            enable,
+            policy_in,
+            policy_out,
+        };
+
+        assert_eq!(status.enable, Some(1));
+        assert_eq!(status.policy_in.as_deref(), Some("DROP"));
+        assert_eq!(status.policy_out.as_deref(), Some("ACCEPT"));
+    }
+
+    #[test]
+    fn test_cluster_firewall_status_partial_fixture() {
+        // policy fields are optional — cluster firewall may only have enable set
+        let fixture = serde_json::json!({"enable": 0});
+        let status = ClusterFirewallStatus {
+            enable: fixture.get("enable").and_then(|v| v.as_i64()),
+            policy_in: fixture
+                .get("policy_in")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string()),
+            policy_out: fixture
+                .get("policy_out")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string()),
+        };
+
+        assert_eq!(status.enable, Some(0));
+        assert!(status.policy_in.is_none());
+        assert!(status.policy_out.is_none());
+    }
+
+    #[test]
+    fn test_cluster_firewall_status_roundtrip() {
+        let status = ClusterFirewallStatus {
+            enable: Some(1),
+            policy_in: Some("REJECT".to_string()),
+            policy_out: Some("ACCEPT".to_string()),
+        };
+        let json = serde_json::to_string(&status).unwrap();
+        let deserialized: ClusterFirewallStatus = serde_json::from_str(&json).unwrap();
+        assert_eq!(status.enable, deserialized.enable);
+        assert_eq!(status.policy_in, deserialized.policy_in);
+        assert_eq!(status.policy_out, deserialized.policy_out);
+    }
+
+    #[test]
+    fn test_guest_firewall_path_building() {
+        let node = "pve-node-01";
+        let vmid: u32 = 100;
+        let pos: u32 = 3;
+        let rules_path = format!("nodes/{node}/qemu/{vmid}/firewall/rules");
+        let delete_path = format!("nodes/{node}/qemu/{vmid}/firewall/rules/{pos}");
+        assert_eq!(rules_path, "nodes/pve-node-01/qemu/100/firewall/rules");
+        assert_eq!(delete_path, "nodes/pve-node-01/qemu/100/firewall/rules/3");
+    }
+
+    #[test]
+    fn test_guest_firewall_vmid_boundary_99_rejected() {
+        assert!(
+            validate_vmid(99).is_err(),
+            "vmid 99 is below the minimum of 100"
+        );
+    }
+
+    #[test]
+    fn test_guest_firewall_vmid_boundary_100_accepted() {
+        assert!(
+            validate_vmid(100).is_ok(),
+            "vmid 100 is the minimum valid vmid"
+        );
+    }
+
+    #[test]
+    fn test_guest_firewall_vmid_boundary_999999999_accepted() {
+        assert!(
+            validate_vmid(999_999_999).is_ok(),
+            "vmid 999999999 is the maximum valid vmid"
+        );
+    }
+
+    #[test]
+    fn test_guest_firewall_vmid_boundary_1000000000_rejected() {
+        assert!(
+            validate_vmid(1_000_000_000).is_err(),
+            "vmid 1000000000 exceeds the maximum of 999999999"
+        );
+    }
+
+    #[test]
+    fn test_validate_node_rejects_path_traversal() {
+        assert!(validate_node("../etc").is_err());
+        assert!(validate_node("node/bad").is_err());
+        assert!(validate_node("node\\bad").is_err());
+        assert!(validate_node("node with space").is_err());
+    }
+
+    #[test]
+    fn test_validate_node_accepts_valid_names() {
+        assert!(validate_node("pve-node-01").is_ok());
+        assert!(validate_node("pve1").is_ok());
+    }
+
+    #[test]
+    fn test_validate_node_rejects_empty_and_too_long() {
+        assert!(validate_node("").is_err());
+        assert!(validate_node(&"a".repeat(65)).is_err());
+        assert!(validate_node(&"a".repeat(64)).is_ok());
+    }
+
+    #[test]
+    fn test_validate_firewall_zone_valid() {
+        assert!(validate_firewall_zone("trusted").is_ok());
+        assert!(validate_firewall_zone("dmz-1").is_ok());
+        assert!(validate_firewall_zone("zone_a").is_ok());
+    }
+
+    #[test]
+    fn test_validate_firewall_zone_rejects_injection() {
+        assert!(validate_firewall_zone("").is_err());
+        assert!(validate_firewall_zone(&"z".repeat(65)).is_err());
+        assert!(validate_firewall_zone("../etc").is_err());
+        assert!(validate_firewall_zone("zone/sub").is_err());
+        assert!(validate_firewall_zone("zone name").is_err());
     }
 }

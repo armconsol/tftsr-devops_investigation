@@ -145,7 +145,7 @@ export interface LogFile {
   id: string;
   issue_id: string;
   file_name: string;
-  file_path: string;
+  filePath: string;
   file_size: number;
   mime_type: string;
   content_hash: string;
@@ -157,7 +157,7 @@ export interface ImageAttachment {
   id: string;
   issue_id: string;
   file_name: string;
-  file_path: string;
+  filePath: string;
   file_size: number;
   mime_type: string;
   upload_hash: string;
@@ -256,6 +256,7 @@ export interface AppSettings {
   default_provider: string;
   default_model: string;
   ollama_url: string;
+  debug_logging_enabled: boolean;
 }
 
 // ─── TriageMessage (for UI store, not a DB type) ──────────────────────────────
@@ -655,12 +656,6 @@ export const checkAppUpdatesCmd = async (): Promise<UpdateCheckResult> =>
 export const installAppUpdatesCmd = async (): Promise<void> =>
   invoke<void>("install_app_updates");
 
-export const getUpdateChannelCmd = async (): Promise<string> =>
-  invoke<string>("get_update_channel");
-
-export const setUpdateChannelCmd = async (channel: string): Promise<void> =>
-  invoke<void>("set_update_channel", { channel });
-
 // ─── Attachment cross-incident types ─────────────────────────────────────────
 
 export interface LogFileSummary {
@@ -668,7 +663,7 @@ export interface LogFileSummary {
   issue_id: string;
   issue_title: string;
   file_name: string;
-  file_path: string;
+  filePath: string;
   file_size: number;
   mime_type: string;
   content_hash: string;
@@ -681,7 +676,7 @@ export interface ImageAttachmentSummary {
   issue_id: string;
   issue_title: string;
   file_name: string;
-  file_path: string;
+  filePath: string;
   file_size: number;
   mime_type: string;
   upload_hash: string;
@@ -995,6 +990,15 @@ export const listDaemonsetsCmd = (clusterId: string, namespace: string) =>
 
 export const getPodLogsCmd = (clusterId: string, namespace: string, podName: string, containerName: string) =>
   invoke<LogResponse>("get_pod_logs", { clusterId, namespace, podName, containerName });
+
+export const saveLogFileCmd = (
+  path: string,
+  content: string,
+  clusterId: string,
+  namespace: string,
+  podName: string,
+  containerName: string
+) => invoke<void>("save_log_file", { path, content, clusterId, namespace, podName, containerName });
 
 export const scaleDeploymentCmd = (clusterId: string, namespace: string, deploymentName: string, replicas: number) =>
   invoke<void>("scale_deployment", { clusterId, namespace, deploymentName, replicas });
@@ -1575,7 +1579,13 @@ export const startPtyAttachSessionCmd = (
   });
 
 export const sendPtyStdinCmd = (sessionId: string, data: string) =>
-  invoke<void>("send_pty_stdin", { sessionId, data });
+  // The backend command expects `data: Vec<u8>`, so the string must be encoded
+  // to a UTF-8 byte sequence. Sending a raw string makes serde reject it with
+  // `invalid type: string "...", expected a sequence`.
+  invoke<void>("send_pty_stdin", {
+    sessionId,
+    data: Array.from(new TextEncoder().encode(data)),
+  });
 
 export const resizePtySessionCmd = (sessionId: string, rows: number, cols: number) =>
   invoke<void>("resize_pty_session", { sessionId, rows, cols });
@@ -1614,3 +1624,697 @@ export const getPodMetricsCmd = (clusterId: string, namespace: string) =>
 
 export const getNodeMetricsCmd = (clusterId: string) =>
   invoke<NodeMetrics[]>("get_node_metrics", { clusterId });
+
+// ─── Remote Connection Types ─────────────────────────────────────────────────
+
+export type RemoteProtocol = "rdp" | "vnc";
+
+export interface RemoteConnection {
+  id: string;
+  name: string;
+  protocol: RemoteProtocol;
+  hostname: string;
+  port: number;
+  username?: string;
+  domain?: string;
+  // SSH tunnel configuration (non-sensitive)
+  ssh_enabled: boolean;
+  ssh_hostname?: string;
+  ssh_port?: number;
+  ssh_username?: string;
+  // Display settings
+  resolution: string;
+  color_depth: number;
+  clipboard_sync: boolean;
+  drive_redirect: boolean;
+  multi_monitor: boolean;
+  compression: boolean;
+  quality: number;
+  auto_resize: boolean;
+  stretch_to_fill: boolean;
+  // Metadata
+  created_at: string;
+  updated_at: string;
+  last_connected_at?: string;
+}
+
+export interface NewRemoteConnection {
+  name: string;
+  protocol: RemoteProtocol;
+  hostname: string;
+  port: number;
+  username?: string;
+  password: string; // Will be encrypted and stored separately
+  domain?: string;
+  // SSH tunnel configuration
+  ssh_enabled: boolean;
+  ssh_hostname?: string;
+  ssh_port?: number;
+  ssh_username?: string;
+  ssh_password?: string;
+  ssh_key_data?: string;
+  ssh_key_passphrase?: string;
+  // Display settings
+  resolution?: string;
+  color_depth?: number;
+  clipboard_sync?: boolean;
+  drive_redirect?: boolean;
+  multi_monitor?: boolean;
+  compression?: boolean;
+  quality?: number;
+  auto_resize: boolean;
+  stretch_to_fill: boolean;
+}
+
+export interface RemoteConnectionUpdate {
+  name?: string;
+  protocol?: RemoteProtocol;
+  hostname?: string;
+  port?: number;
+  username?: string | null;
+  domain?: string | null;
+  // SSH tunnel configuration
+  ssh_enabled?: boolean;
+  ssh_hostname?: string;
+  ssh_port?: number;
+  ssh_username?: string;
+  // Display settings
+  resolution?: string;
+  color_depth?: number;
+  clipboard_sync?: boolean;
+  drive_redirect?: boolean;
+  multi_monitor?: boolean;
+  compression?: boolean;
+  quality?: number;
+  auto_resize?: boolean;
+  stretch_to_fill?: boolean;
+}
+
+export interface RemoteCredentials {
+  id: string;
+  connectionId: string;
+  rdp_password_encrypted?: string;
+  ssh_password_encrypted?: string;
+  ssh_key_encrypted?: string;
+  ssh_key_passphrase_encrypted?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RemoteConnectionSummary {
+  id: string;
+  name: string;
+  protocol: RemoteProtocol;
+  hostname: string;
+  port: number;
+  username?: string;
+  status: string;
+  ssh_enabled: boolean;
+  created_at: string;
+  updated_at: string;
+  last_connected_at?: string;
+}
+
+export interface RemoteConnectionFilter {
+  protocol?: RemoteProtocol;
+  name?: string;
+  limit?: number;
+  offset?: number;
+}
+
+// ─── Remote Connection Commands ──────────────────────────────────────────────
+
+export const addRemoteConnectionCmd = (connection: NewRemoteConnection) =>
+  invoke<RemoteConnection>("create_remote_connection", { newConn: connection });
+
+export const getRemoteConnectionCmd = (connectionId: string) =>
+  invoke<RemoteConnection | null>("get_remote_connection", { id: connectionId });
+
+export const listRemoteConnectionsCmd = (filter?: RemoteConnectionFilter) =>
+  invoke<RemoteConnectionSummary[]>("list_remote_connections", { filter: filter ?? null });
+
+export const updateRemoteConnectionCmd = (connectionId: string, updates: RemoteConnectionUpdate) =>
+  invoke<RemoteConnection>("update_remote_connection", { id: connectionId, update: updates });
+
+export const deleteRemoteConnectionCmd = (connectionId: string) =>
+  invoke<void>("delete_remote_connection", { id: connectionId });
+
+// ─── RDP Session Commands ──────────────────────────────────────────────────
+
+export interface RdpSession {
+  id: string;
+  connectionId: string;
+  hostname: string;
+  port: number;
+  username: string;
+  resolution: string;
+  color_depth: number;
+  websocket_port: number;
+  websocket_url: string;
+  connected: boolean;
+  ssh_enabled: boolean;
+}
+
+export const startRdpSession = (connectionId: string, password?: string) =>
+  invoke<RdpSession>("start_rdp_session", { connectionId, password });
+
+export const stopRdpSession = (sessionId: string) =>
+  invoke<void>("stop_rdp_session", { sessionId });
+
+export const getRdpSession = (sessionId: string) =>
+  invoke<RdpSession | null>("get_rdp_session", { sessionId });
+
+export const resizeRdpSession = (sessionId: string, width: number, height: number) =>
+  invoke<void>("resize_rdp_session", { sessionId, width, height });
+
+export interface RdpDiagnostics {
+  session_id: string;
+  connection_state: 'disconnected' | 'connecting' | 'connected' | 'failed';
+  frame_stats: {
+    frames_sent: number;
+    frames_received: number;
+    last_frame_timestamp: number;
+    last_frame_width: number;
+    last_frame_height: number;
+    total_bytes_sent: number;
+    frame_stall_detected: boolean;
+  };
+  websocket_state: {
+    connected: boolean;
+    session_registered: boolean;
+    last_message_timestamp: number;
+  };
+  health: 'healthy' | 'degraded' | 'stalled' | 'failed';
+  timestamp: number;
+}
+
+export const getRdpDiagnostics = (sessionId: string) =>
+  invoke<RdpDiagnostics>("get_rdp_diagnostics", { sessionId });
+
+export const getRemoteConnections = (filter?: RemoteConnectionFilter) =>
+  listRemoteConnectionsCmd(filter);
+
+// ─── Database Management Commands ─────────────────────────────────────────────
+
+export interface DatabaseConnection {
+  id: string;
+  name: string;
+  db_type: string;
+  host: string;
+  port: number;
+  database_name?: string;
+  username: string;
+  ssl_enabled: boolean;
+  // SSH tunnel configuration
+  ssh_enabled?: boolean;
+  ssh_hostname?: string;
+  ssh_port?: number;
+  ssh_username?: string;
+  ssh_auth_method?: 'password' | 'key';
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ConnectionTestResult {
+  success: boolean;
+  message: string;
+  latency_ms: number;
+}
+
+export interface QueryResult {
+  columns: Array<{
+    name: string;
+    data_type: string;
+    nullable: boolean;
+    primary_key: boolean;
+  }>;
+  rows: any[][];
+  total_rows: number;
+  execution_time_ms: number;
+}
+
+export interface QueryExecutionResult extends QueryResult {
+  page: number;
+  page_size: number;
+}
+
+export interface Schema {
+  database_name: string;
+  tables: Table[];
+}
+
+export interface Table {
+  name: string;
+  columns: Column[];
+  indexes: Index[];
+  foreign_keys: ForeignKey[];
+}
+
+export interface Column {
+  name: string;
+  data_type: string;
+  nullable: boolean;
+  primary_key: boolean;
+  default_value?: string;
+}
+
+export interface Index {
+  name: string;
+  columns: string[];
+  is_unique: boolean;
+}
+
+export interface ForeignKey {
+  name: string;
+  from_column: string;
+  to_table: string;
+  to_column: string;
+}
+
+export interface QueryHistory {
+  id: string;
+  connectionId: string;
+  queryText: string;
+  row_count: number | null;
+  execution_time_ms: number | null;
+  status: string;
+  error_message: string | null;
+  executed_at: string;
+}
+
+export interface QueryBookmark {
+  id: string;
+  name: string;
+  queryText: string;
+  connectionId: string | null;
+  tags: string | null;
+  description: string | null;
+  created_at: string;
+}
+
+export interface ERDiagram {
+  tables: Array<{
+    name: string;
+    columns: Column[];
+    position?: { x: number; y: number };
+  }>;
+  relationships: Array<{
+    from_table: string;
+    from_column: string;
+    to_table: string;
+    to_column: string;
+  }>;
+}
+
+export interface ImportResult {
+  rows_imported: number;
+  rows_failed: number;
+  errors: string[];
+}
+
+// Connection Management
+export const createDatabaseConnectionCmd = (params: {
+  name: string;
+  db_type: string;
+  host: string;
+  port: number;
+  database_name?: string;
+  username: string;
+  password: string;
+  ssl_enabled: boolean;
+  ssl_ca_cert_path?: string;
+  ssl_client_cert_path?: string;
+  ssl_client_key_path?: string;
+  connection_options?: string;
+  ssh_enabled?: boolean;
+  ssh_hostname?: string;
+  ssh_port?: number;
+  ssh_username?: string;
+  ssh_auth_method?: 'password' | 'key';
+  ssh_password?: string;
+  ssh_private_key?: string;
+  ssh_key_passphrase?: string;
+}) => invoke<DatabaseConnection>("create_database_connection", { params });
+
+export const updateDatabaseConnectionCmd = (params: {
+  id: string;
+  name?: string;
+  password?: string;
+  ssl_enabled?: boolean;
+  ssl_ca_cert_path?: string;
+  ssl_client_cert_path?: string;
+  ssl_client_key_path?: string;
+  connection_options?: string;
+  ssh_enabled?: boolean;
+  ssh_hostname?: string;
+  ssh_port?: number;
+  ssh_username?: string;
+  ssh_auth_method?: 'password' | 'key';
+  ssh_password?: string;
+  ssh_private_key?: string;
+  ssh_key_passphrase?: string;
+}) => invoke<DatabaseConnection>("update_database_connection", { params });
+
+export const deleteDatabaseConnectionCmd = (id: string) =>
+  invoke<void>("delete_database_connection", { id });
+
+export const listDatabaseConnectionsCmd = () =>
+  invoke<DatabaseConnection[]>("list_database_connections");
+
+export const testDatabaseConnectionCmd = (connectionId: string) =>
+  invoke<ConnectionTestResult>("test_database_connection", { connectionId });
+
+// SSH Tunnel Configuration
+export interface DbSshTunnelConfig {
+  ssh_enabled: boolean;
+  ssh_hostname?: string;
+  ssh_port?: number;
+  ssh_username?: string;
+  ssh_auth_method?: 'password' | 'key';
+  ssh_password?: string;
+  ssh_private_key?: string;
+  ssh_key_passphrase?: string;
+}
+
+export const establishDbSshTunnelCmd = (
+  connection_id: string,
+  ssh_hostname: string,
+  ssh_port: number,
+  ssh_username: string,
+  ssh_auth_method: 'password' | 'key',
+  ssh_password?: string,
+  ssh_private_key?: string,
+  ssh_key_passphrase?: string
+) =>
+  invoke<ConnectionTestResult>("establish_db_ssh_tunnel", {
+    params: {
+      connection_id,
+      ssh_hostname,
+      ssh_port,
+      ssh_username,
+      ssh_auth_method,
+      ssh_password,
+      ssh_private_key,
+      ssh_key_passphrase,
+    },
+  });
+
+export const verifyDbSshTunnelCmd = (connection_id: string) =>
+  invoke<boolean>("verify_db_ssh_tunnel", { connection_id });
+
+export const getDbSshConfigCmd = (connection_id: string) =>
+  invoke<DbSshTunnelConfig>("get_db_ssh_config", { connection_id });
+
+// Query Execution
+export const executeDatabaseQueryCmd = (
+  connectionId: string,
+  query: string,
+  page: number,
+  pageSize: number
+) =>
+  invoke<QueryExecutionResult>("execute_database_query", {
+    connectionId,
+    query,
+    page,
+    pageSize,
+  });
+
+export const getDatabasesCmd = (connectionId: string) =>
+  invoke<string[]>("get_databases", { connectionId });
+
+export const getSchemaCmd = (connectionId: string, database: string) =>
+  invoke<Schema>("get_schema", { connectionId, database });
+
+export const getTablesCmd = (connectionId: string, database: string) =>
+  invoke<string[]>("get_tables", { connectionId, database });
+
+export const getTableSchemaCmd = (
+  connectionId: string,
+  database: string,
+  table: string
+) =>
+  invoke<Table>("get_table_schema", { connectionId, database, table });
+
+// Table Browser - GUI Data Viewing and Editing
+export type DataValue =
+  | { type: 'Null' }
+  | { type: 'Boolean'; value: boolean }
+  | { type: 'Integer'; value: number }
+  | { type: 'Float'; value: number }
+  | { type: 'String'; value: string }
+  | { type: 'Bytes'; value: number[] }
+  | { type: 'Date'; value: string }
+  | { type: 'DateTime'; value: string }
+  | { type: 'Json'; value: Record<string, unknown> }
+  | { type: 'Array'; value: DataValue[] };
+
+export interface TableColumnMetadata {
+  name: string;
+  data_type: string;
+  nullable: boolean;
+  primary_key: boolean;
+}
+
+export interface TableMetadata {
+  table_name: string;
+  row_count: number;
+  columns: TableColumnMetadata[];
+  primary_key?: string;
+  estimated_size_bytes?: number;
+}
+
+export type TableRow = Record<string, DataValue>;
+
+export interface BrowseTableResponse {
+  rows: TableRow[];
+  total_count: number;
+  page_number: number;
+  page_size: number;
+  total_pages: number;
+}
+
+export interface PaginationParams {
+  limit: number;
+  offset: number;
+}
+
+export interface SortParams {
+  column: string;
+  direction: 'ASC' | 'DESC';
+}
+
+export interface FilterCondition {
+  column: string;
+  operator: '=' | '!=' | '>' | '<' | '>=' | '<=' | 'LIKE';
+  value: string | number | boolean;
+}
+
+export interface BrowseTableParams {
+  connectionId: string;
+  database: string;
+  table: string;
+  pagination?: PaginationParams;
+  sort?: SortParams;
+  filters?: FilterCondition[];
+}
+
+export interface RowData {
+  values: Record<string, DataValue>;
+}
+
+export const browseTableDataCmd = (params: BrowseTableParams) =>
+  invoke<BrowseTableResponse>("browse_table_data", {
+    connectionId: params.connectionId,
+    database: params.database,
+    table: params.table,
+    pagination: params.pagination,
+    sort: params.sort,
+    filters: params.filters,
+  });
+
+export const getTableRowCountCmd = (connectionId: string, database: string, table: string) =>
+  invoke<number>("get_table_row_count", { connectionId, database, table });
+
+export const getTableMetadataCmd = (connectionId: string, database: string, table: string) =>
+  invoke<TableMetadata>("get_table_metadata", { connectionId, database, table });
+
+export const insertTableRowCmd = (connectionId: string, database: string, table: string, rowData: RowData) =>
+  invoke<RowData>("insert_table_row", { connectionId, database, table, rowData });
+
+export const updateTableRowCmd = (
+  connectionId: string,
+  database: string,
+  table: string,
+  primaryKeyCol: string,
+  primaryKeyValue: DataValue,
+  rowData: RowData
+) =>
+  invoke<RowData>("update_table_row", {
+    connectionId,
+    database,
+    table,
+    primaryKeyCol,
+    primaryKeyValue,
+    rowData,
+  });
+
+export const deleteTableRowCmd = (
+  connectionId: string,
+  database: string,
+  table: string,
+  primaryKeyCol: string,
+  primaryKeyValue: DataValue
+) =>
+  invoke<void>("delete_table_row", {
+    connectionId,
+    database,
+    table,
+    primaryKeyCol,
+    primaryKeyValue,
+  });
+
+// Transaction Management
+export const beginTransactionCmd = (connectionId: string) =>
+  invoke<string>("begin_transaction", { connectionId });
+
+export const commitTransactionCmd = (connectionId: string, transactionId: string) =>
+  invoke<void>("commit_transaction", { connectionId, transactionId });
+
+export const rollbackTransactionCmd = (connectionId: string, transactionId: string) =>
+  invoke<void>("rollback_transaction", { connectionId, transactionId });
+
+// Query History
+export const getQueryHistoryCmd = (connectionId: string, limit: number) =>
+  invoke<QueryHistory[]>("get_query_history", { connectionId, limit });
+
+export const searchQueryHistoryCmd = (
+  connectionId: string,
+  searchTerm: string,
+  limit: number
+) =>
+  invoke<QueryHistory[]>("search_query_history", {
+    connectionId,
+    searchTerm,
+    limit,
+  });
+
+// Query Bookmarks
+export const createQueryBookmarkCmd = (params: {
+  name: string;
+  queryText: string;
+  connectionId?: string;
+  tags?: string;
+  description?: string;
+}) => invoke<QueryBookmark>("create_query_bookmark", params);
+
+export const listQueryBookmarksCmd = (connectionId?: string) =>
+  invoke<QueryBookmark[]>("list_query_bookmarks", { connectionId });
+
+export const deleteQueryBookmarkCmd = (id: string) =>
+  invoke<void>("delete_query_bookmark", { id });
+
+// Import/Export
+export const importCsvDataCmd = (
+  connectionId: string,
+  filePath: string,
+  targetTable: string,
+  columnMappings: Array<{ sourceColumn: string; targetColumn: string }>
+) =>
+  invoke<ImportResult>("import_csv_data", {
+    connectionId,
+    filePath,
+    targetTable,
+    columnMappings,
+  });
+
+export const importJsonDataCmd = (
+  connectionId: string,
+  filePath: string,
+  targetTable: string,
+  columnMappings: Array<{ sourceColumn: string; targetColumn: string }>
+) =>
+  invoke<ImportResult>("import_json_data", {
+    connectionId,
+    filePath,
+    targetTable,
+    columnMappings,
+  });
+
+export const exportQueryResultsCmd = (
+  results: QueryResult,
+  filePath: string,
+  format: string
+) =>
+  invoke<void>("export_query_results", { results, filePath, format });
+
+export const previewCsvFileCmd = (filePath: string, limit: number) =>
+  invoke<{
+    columns: string[];
+    rows: any[][];
+    totalRows: number;
+  }>("preview_csv_file", { filePath, limit });
+
+export const previewJsonFileCmd = (filePath: string, limit: number) =>
+  invoke<{
+    columns: string[];
+    rows: any[][];
+    totalRows: number;
+  }>("preview_json_file", { filePath, limit });
+
+// ER Diagram
+export const generateErDiagramCmd = (connectionId: string, database: string) =>
+  invoke<ERDiagram>("generate_er_diagram", { connectionId, database });
+
+// ─── Table Row Updates (Inline CRUD) ────────────────────────────────────────
+
+export interface UpdateResult {
+  rows_updated: number;
+  rows_failed: number;
+  errors: string[];
+}
+
+export interface RowUpdate {
+  primary_keys: Record<string, unknown>;
+  column_updates: Record<string, unknown>;
+}
+
+/**
+ * Update rows in a database table.
+ * `updates` is an array of objects with `primary_keys` and `column_updates`.
+ */
+export const updateTableRowsCmd = (
+  connectionId: string,
+  database: string,
+  table_name: string,
+  updates: RowUpdate[]
+) =>
+  invoke<UpdateResult>("update_table_rows", {
+    connectionId: connectionId,
+    database,
+    tableName: table_name,
+    updates,
+  });
+
+// ─── Query Execution Plan (EXPLAIN) ─────────────────────────────────────────
+
+export interface ExplainNode {
+  node_type: string;
+  relation_name?: string | null;
+  index_name?: string | null;
+  cost?: number | null;
+  rows?: number | null;
+  actual_time_ms?: number | null;
+  extra?: string | null;
+  children: ExplainNode[];
+}
+
+export interface ExplainResult {
+  database_type: string;
+  plan: ExplainNode | null;
+  total_cost?: number | null;
+  execution_time_ms?: number | null;
+  raw_output: string;
+}
+
+export const explainQueryCmd = (connectionId: string, query: string) =>
+  invoke<ExplainResult>("explain_query", { connectionId: connectionId, query });

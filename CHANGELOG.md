@@ -4,6 +4,326 @@ All notable changes to TRCAA are documented here.
 Commit types shown: feat, fix, perf, docs, refactor.
 CI, chore, and build changes are excluded.
 
+## [3.2.0] — 2026-07-06
+
+### Bug Fixes
+- **proxmox**: Backend fixes for Ceph, APT, syslog, tasks, and DB migration
+- **ci**: Embed the correct release version in built binaries
+- **proxmox**: Address code review findings (task UPID, Ceph pool create, selection persistence, Certificates page)
+
+### Documentation
+- **wiki**: Document Ceph/APT/syslog/task-log/updater/CI changes
+
+### Features
+- **proxmox**: Shared frontend utilities for formatting, polling, and nav
+- **proxmox**: Tools nav group, VM search/sort, Ceph UI, task log search
+
+## [3.1.0] — 2026-07-03
+
+### Bug Fixes
+- Add missing ssh_tunnel_config fields
+- Restore saved ssh tunnel config
+- Preserve ssh auth method and clippy cleanup
+- **database-ui**: Restore ER diagram and table browser
+- **table-browser**: Align IPC payload keys
+
+### Documentation
+- Refresh v3 documentation
+- Refresh architecture docs
+
+## [3.0.0] — 2026-07-03
+
+### Bug Fixes
+- **database**: Address PR #196 security findings and code quality issues
+- **tests**: Correct file path validation test to use canonical paths
+- Resolve cargo fmt and clippy issues in database_security module
+- **build**: Use vendored OpenSSL to resolve macOS/Linux build failures
+- **database**: Windows OpenSSL vendoring + IPC parameter naming
+- **images**: Prevent file:// prefix on web URLs in ImageGallery
+- **database**: Correct PostgreSQL type identifier and OpenSSL CI config
+- **database**: Support PostgreSQL aliases (postgres/pg) + fix Windows OpenSSL build
+- **database**: Improve PostgreSQL connection error logging
+- **ci**: Force vendored OpenSSL for Windows MinGW cross-compile
+- **database**: Surface PostgreSQL server error details instead of 'db error'
+- **postgres**: Format method chains to comply with rustfmt
+- **database**: Harden table browser SQL execution
+- **database**: Address PR review findings
+- **ci**: Align auto-tag Windows OpenSSL config
+
+### Documentation
+- Add comprehensive PR #196 final summary
+
+### Features
+- **database**: Add SSH tunnel support for database connections
+- **database**: Add table browser commands with CRUD support
+- **database**: Add GUI table browser and SSH tunnel wiring
+
+## [2.1.0] — 2026-07-02
+
+### Bug Fixes
+- Remove all TODO placeholders - implement missing functionality
+- **database**: Resolve all CI test failures
+- **database**: Resolve remaining CI test failures
+- **database**: Resolve all clippy warnings
+
+### Features
+- **database**: Implement complete database management system v3.0.0
+- **database**: Complete ALL missing frontend and backend components
+- **database**: Implement ALL 5 missing features - 100% COMPLETE
+
+## [2.0.0] — 2026-07-02
+
+### Merge
+- **master**: Resolve Cargo.lock conflict for beta promotion
+
+## [1.8.0] — 2026-06-27
+
+### Bug Fixes
+- Resolve security and formatting issues in remote desktop module
+- **merge**: Resolve conflicts with beta — keep SSH cred schema, fix duplicate RemoteDesktopPage import
+- **deps**: Downgrade ironrdp to 0.14/sspi to 0.18 for rustc 1.88 compatibility
+- **deps**: Pin ironrdp-tls to =0.2.0 to prevent Cargo resolving to 0.2.1
+- **build**: Remove unix-only deps and add RDP connection management UI
+- **version**: Bump tauri.conf.json to 2.0.0 to match Cargo.toml and package.json
+- **rdp**: Make password optional in edit form; add SSH credential hint text
+- **build**: Resolve Windows ssh2 and macOS keychain build failures
+- **build**: Address PR review and headless-CI keychain test failure
+- **remote**: Correct create_remote_connection arg casing and wire connection-form tabs
+- **remote-desktop**: Stop tab clicks closing edit dialog and fix black RDP screen
+- **rdp**: Use saved password and fix black-screen frame routing
+- **rdp**: Address PR review findings
+- **remote**: Deliver a usable RDP client (fix black screen + wire input)
+- **docker**: Add GitHub fallback and connect-timeout for libsodium download
+- **docker**: Install make and set SODIUM_LIB_DIR in linux-amd64 builder
+- **rdp**: Prevent duplicate WebSocket connections causing blank screen
+- **rdp**: Move stopRdpSession to cleanup, not onclose handler
+- **rdp**: Patch IronRDP to fix RDP6 bitmap stride mismatch
+- **rdp**: Use patched IronRDP to resolve DGX bitmap stride issue
+- **ci**: Clone IronRDP from our fork instead of upstream
+- **ci**: Add IronRDP clone step to test workflow
+- **ci**: Add IronRDP clone to auto-tag.yml and clean up before macOS builds
+- **rdp**: Prevent premature session stop causing black screen
+- **rdp**: Harden websocket lifecycle for black-screen reconnects
+- **rdp**: Correct tungstenite handshake error response type
+- **settings**: Address PR review follow-up findings
+
+### Documentation
+- Add ticket summary for Remote Desktop tab-submit and black-screen fixes
+- Scrub internal IPs and DB credentials from wiki; fix Rust version
+- Add IronRDP upstream issue and patch
+- Update IRONRDP_PATCH.md with upstream PR link
+- Add upstream issue link
+- Add Copilot review resolution notes
+- **ci**: Add comments explaining IronRDP fork usage
+
+### Features
+- Add remote desktop feature with RDP and VNC support
+- Add MIT license headers to all source files
+- **rdp**: Add diagnostics and enhanced logging for blank screen troubleshooting
+- **logging**: Add backend disk logs with debug toggle
+
+### Security
+- **ssh**: Redact secrets in SshTunnelConfig Debug output
+
+## [1.4.0] — 2026-06-26
+
+### Bug Fixes
+- **proxmox**: Use remote_migrate REST path and validate cross-DC inputs
+- **ci**: Address PR #143 review findings
+- **kube**: Encode PTY stdin as UTF-8 bytes for send_pty_stdin
+- **proxmox**: Correct Ceph API parsing for OSDs, monitors, FS and flags
+- **k8s**: Open pod & workload logs in the bottom dock with live streaming
+- **ci**: Revert model name to qwen3.5-122b-think
+- **ci**: Add missing sys import to PR review verification script
+- **ci**: Auto-tag cuts a new minor stable on every beta→master promotion
+- **sync**: Drop GITEA_API_URL secret dependency in inbound mirror
+- **sync**: Redact tokens in reconcile git output; harden PR-head path filter
+
+### Documentation
+- **proxmox**: Document 501 migration gotcha and console clipboard
+
+### Features
+- **proxmox**: Add console copy/paste via clipboard-manager
+- **sync**: Add two-way content sync with GitHub msicie/apollo_nxt-trcaa
+
+### Refactoring
+- **review**: Address PR #142 review suggestions
+
+## [1.3.0] — 2026-06-25
+
+### Bug Fixes
+- Register missing updater commands
+- **proxmox**: Parse port from URL when adding remote
+- **build**: Resolve Windows MinGW memset_explicit linking error
+- **build**: Resolve libsodium linking failures across all CI targets
+- **ci**: Resolve libsodium pkg-config detection across all platforms
+- **ci**: Resolve libsodium pkg-config detection across all platforms
+- **ci**: Use vendored libsodium build instead of pkg-config
+- **ci**: Enable libsodium pkg-config feature across all platforms
+- **ci**: Add libsodium-dev to test workflow dependencies
+- **ci**: Use SODIUM_LIB_DIR to bypass pkg-config detection
+- Remove use-pkg-config feature conflicting with SODIUM_LIB_DIR
+- **ci**: Add libsodium to all build environments
+- **ci**: Correct SODIUM_LIB_DIR config in release-beta.yml
+- **ci**: Unset SODIUM_USE_PKG_CONFIG and use SODIUM_LIB_DIR in auto-tag.yml
+- **ci**: Unset SODIUM_USE_PKG_CONFIG before cargo builds on all platforms
+- **ci**: Use env -u instead of unset to drop SODIUM_USE_PKG_CONFIG
+- **build**: Remove SODIUM_USE_PKG_CONFIG from .cargo/config.toml [env] block
+- **ci**: Install libsodium-dev in build jobs instead of using SODIUM_LIB_DIR hacks
+- **ci**: Install libsodium-dev in release-beta build jobs
+- **build**: Add memset_shim for Windows MinGW and rpm for Linux ARM64
+- **build**: Add memset_explicit C shim for Windows MinGW libsodium linking
+- **windows**: Add memset_explicit symbol export for mingw cross-compilation
+- **windows**: Ensure memset_explicit symbol is properly exported for MinGW
+- **windows**: Link memset_shim object directly and suppress dead_code warning
+- **windows**: Compile memset_shim to real .o via get_compiler() to fix MinGW link
+- **proxmox**: Fix add-remote IPC failure and URL construction
+- **proxmox**: Use camelCase clusterType for Tauri v2 IPC
+- **proxmox**: Restore broken client retrieval across all commands
+- Address PR review findings — race condition, real ping, atomic edit, listener cleanup
+- **proxmox**: Restore reliable connect/reconnect after app restart
+- **proxmox**: Remove double-unwrap of Proxmox data envelope across all modules
+- Resolve Proxmox authentication response parsing error
+- **proxmox**: Resolve 11 dashboard UI and API issues
+- **proxmox**: Address 11 dashboard issues and add missing VM action commands
+- **proxmox**: Resolve remaining PR review findings
+- **proxmox**: Comprehensive VM management and UI improvements
+- Resolve build errors and add logs to gitignore
+- **proxmox**: Resolve 7 dashboard and AI chat issues
+- **firewall**: Correct PVE API field names for rule listing and creation
+- **proxmox**: Address PR review findings
+- **proxmox**: Address second PR review pass — menu positioning + code clarity
+- **fmt**: Apply cargo fmt to resolve CI formatting check failure
+- **proxmox**: Fix VM actions, remove Disk column, add Create VM
+- **proxmox**: Address PR review suggestions
+- **fmt**: Apply cargo fmt to proxmox command ISO validation
+- **proxmox**: Align ISO frontend validation with backend
+- **proxmox**: Replace window.prompt with CloneDialog in VMList
+- **fmt**: Reformat storage.rs map_err closure to satisfy rustfmt line-length rule
+- **proxmox**: Replace empty JSON body with post_form, fix firewall field names, add 23 new commands
+- **proxmox**: Add input validation to all new Tauri commands
+- **proxmox**: Correct API field names and double-unwrap bug across 6 modules
+- **proxmox**: Add path-traversal validation to firewall and HA group commands
+- **proxmox**: Address automated PR review findings
+- **review**: Address automated PR review findings
+- **proxmox**: Prevent app crash/nav loss via route error boundary
+- **proxmox**: Datacenter/node selectors with auto-load for node-scoped pages
+- **proxmox**: Tolerant HA/backup loading and working HA edit dialogs
+- **proxmox**: Wire up storage edit/delete actions
+- **proxmox**: Replace dead cluster-views API with local saved views
+- **proxmox**: Real cross-DC migration with task polling
+- **proxmox**: Address automated PR review findings
+- **proxmox**: Resolve 6 parity issues — ceph node paths, APT/backup key mismatch, admin node default, remove Views
+- **security**: Add validate_node to 4 ceph functions missing path-traversal guard
+- **proxmox**: Allow loopback ws:// in CSP so consoles render
+- **proxmox**: Stop Ceph page going blank on Ceph-enabled hosts
+- **proxmox**: Fall back to HA rules when groups are migrated (PVE 9)
+- **proxmox**: Make Backup Trigger and Edit actions work
+- **proxmox**: Use remote_migrate REST path and validate cross-DC inputs
+- **ci**: Address PR #143 review findings
+- **kube**: Encode PTY stdin as UTF-8 bytes for send_pty_stdin
+- **proxmox**: Correct Ceph API parsing for OSDs, monitors, FS and flags
+- **k8s**: Open pod & workload logs in the bottom dock with live streaming
+- **ci**: Revert model name to qwen3.5-122b-think
+- **ci**: Add missing sys import to PR review verification script
+- **ci**: Auto-tag cuts a new minor stable on every beta→master promotion
+- **sync**: Drop GITEA_API_URL secret dependency in inbound mirror
+- **sync**: Redact tokens in reconcile git output; harden PR-head path filter
+- Resolve security and formatting issues in remote desktop module
+- **ci**: Initialise BATCH_BYTES and MAX_BATCH_BYTES before loop
+- **remote_types**: From<NewRemoteCredentials> now encrypts credentials via TryFrom
+- **state**: Replace relative fallback data dir with cwd-relative absolute path
+- **integrations**: Share app_state.rdp_manager in OAuth task instead of creating new instance
+- **rdp**: Populate SSH credentials in SshTunnelConfig from encrypted credential store
+- **websocket**: Hold pending receiver so pre-registered channels stay open until client connects
+- **frontend**: Correct new_conn arg name, deprecated keyCode, WS close, null checks
+- **proxmox**: Address 11 dashboard issues and add missing VM action commands
+- **proxmox**: Resolve remaining PR review findings
+- **proxmox**: Comprehensive VM management and UI improvements
+- Resolve build errors and add logs to gitignore
+- **proxmox**: Resolve 7 dashboard and AI chat issues
+- **firewall**: Correct PVE API field names for rule listing and creation
+- **proxmox**: Address PR review findings
+- **proxmox**: Address second PR review pass — menu positioning + code clarity
+- **fmt**: Apply cargo fmt to resolve CI formatting check failure
+- **proxmox**: Fix VM actions, remove Disk column, add Create VM
+- **proxmox**: Address PR review suggestions
+- **fmt**: Apply cargo fmt to proxmox command ISO validation
+- **proxmox**: Align ISO frontend validation with backend
+- **proxmox**: Replace window.prompt with CloneDialog in VMList
+- **fmt**: Reformat storage.rs map_err closure to satisfy rustfmt line-length rule
+- **proxmox**: Replace empty JSON body with post_form, fix firewall field names, add 23 new commands
+- **proxmox**: Add input validation to all new Tauri commands
+- **proxmox**: Correct API field names and double-unwrap bug across 6 modules
+- **proxmox**: Add path-traversal validation to firewall and HA group commands
+- **proxmox**: Address automated PR review findings
+- **review**: Address automated PR review findings
+- **proxmox**: Prevent app crash/nav loss via route error boundary
+- **proxmox**: Datacenter/node selectors with auto-load for node-scoped pages
+- **proxmox**: Tolerant HA/backup loading and working HA edit dialogs
+- **proxmox**: Wire up storage edit/delete actions
+- **proxmox**: Replace dead cluster-views API with local saved views
+- **proxmox**: Real cross-DC migration with task polling
+- **proxmox**: Address automated PR review findings
+- **proxmox**: Resolve 6 parity issues — ceph node paths, APT/backup key mismatch, admin node default, remove Views
+- **security**: Add validate_node to 4 ceph functions missing path-traversal guard
+- **proxmox**: Allow loopback ws:// in CSP so consoles render
+- **proxmox**: Stop Ceph page going blank on Ceph-enabled hosts
+- **proxmox**: Fall back to HA rules when groups are migrated (PVE 9)
+- **proxmox**: Make Backup Trigger and Edit actions work
+
+### Documentation
+- Document pkg-config environment variable strategy
+- Clarify PR scope and add PR-specific documentation
+- Restructure to clearly separate PR #102 changes from history
+- Remove all PR #101 references to eliminate reviewer confusion
+- Clarify two-phase fix approach in summary
+- Update fix summary with commit history
+- Update ticket to include VM listing and module-wide double-unwrap fixes
+- Remove hardcoded 172.0.0.18 references
+- Add ticket summary for proxmox and AI chat fixes
+- **proxmox**: Document 27 new Proxmox IPC commands in wiki
+- Add ticket summary for proxmox full-parity work
+- Add IPC command docs and ticket summary for Proxmox parity fixes
+- **proxmox**: Add ticket for console/ceph/ha/backup fixes
+- **proxmox**: Document 501 migration gotcha and console clipboard
+- Add ticket summary for proxmox and AI chat fixes
+- **proxmox**: Document 27 new Proxmox IPC commands in wiki
+- Add ticket summary for proxmox full-parity work
+- Add IPC command docs and ticket summary for Proxmox parity fixes
+- **proxmox**: Add ticket for console/ceph/ha/backup fixes
+
+### Features
+- **proxmox**: Implement full feature parity with snapshot and network CRUD
+- Integrate SnapshotDialog and remove duplicate NetworkInterfaceConfig
+- **proxmox**: ISO upload, full CRUD validation, and security hardening
+- **proxmox**: Full frontend-backend parity — wire all stubs, add typed wrappers, new commands
+- **proxmox**: 100% feature parity with proxmox-datacenter-manager
+- **proxmox**: In-app noVNC graphical console for VMs and containers
+- **proxmox**: Add host shell console to Remotes (PVE vncshell + PBS termproxy)
+- **proxmox**: Enforce node-scoped ceph endpoints
+- **proxmox**: Add console copy/paste via clipboard-manager
+- **sync**: Add two-way content sync with GitHub msicie/apollo_nxt-trcaa
+- Add remote desktop feature with RDP and VNC support
+- Add MIT license headers to all source files
+- **rdp**: Supersede beta RDP implementation with full SSH tunnel support
+- **secure_storage**: Re-enable module; expose get_encryption_key_material_hex
+- **proxmox**: Implement full feature parity with snapshot and network CRUD
+- Integrate SnapshotDialog and remove duplicate NetworkInterfaceConfig
+- **proxmox**: ISO upload, full CRUD validation, and security hardening
+- **proxmox**: Full frontend-backend parity — wire all stubs, add typed wrappers, new commands
+- **proxmox**: 100% feature parity with proxmox-datacenter-manager
+- **proxmox**: In-app noVNC graphical console for VMs and containers
+- **proxmox**: Add host shell console to Remotes (PVE vncshell + PBS termproxy)
+- **proxmox**: Enforce node-scoped ceph endpoints
+
+### Refactoring
+- **proxmox**: Extract URL parsing helper and document edit limitation
+- **ci**: Move SODIUM_LIB_DIR to job-level env
+- **pr-review**: Switch from deprecated qwen3-coder-next to qwen3.5-122b-think
+- **proxmox**: Extract test helper and use PROXMOX_HOST env var
+- **review**: Address PR #142 review suggestions
+
 ## [1.2.3] — 2026-06-13
 
 ### Bug Fixes

@@ -2,18 +2,62 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/index';
 import { Button } from '@/components/ui/index';
 import { Badge } from '@/components/ui/index';
-import { RefreshCw, Network } from 'lucide-react';
-import { listNetworkInterfaces, listProxmoxClusters, NetworkInterface } from '@/lib/proxmoxClient';
+import { Input } from '@/components/ui/index';
+import { Label } from '@/components/ui/index';
+import { Checkbox } from '@/components/ui/index';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/index';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/index';
+import { RefreshCw, Network, Plus, Pencil, Trash2, RotateCcw } from 'lucide-react';
+import { NodeSelect } from '@/components/Proxmox';
+import { useProxmoxNodes } from '@/hooks/useProxmoxNodes';
+import {
+  listNetworkInterfaces,
+  createNetworkInterface,
+  updateNetworkInterface,
+  deleteNetworkInterface,
+  reloadNetworkConfig,
+  NetworkInterface,
+  NetworkInterfaceConfig,
+} from '@/lib/proxmoxClient';
+import { useProxmoxClusters } from '@/hooks/useProxmoxClusters';
+import { toast } from 'sonner';
+
+interface FormState {
+  ifaceName: string;
+  ifaceType: string;
+  address: string;
+  netmask: string;
+  gateway: string;
+  autostart: boolean;
+  active: boolean;
+}
+
+const defaultForm: FormState = {
+  ifaceName: '',
+  ifaceType: 'eth',
+  address: '',
+  netmask: '',
+  gateway: '',
+  autostart: false,
+  active: false,
+};
 
 export function ProxmoxNetworkPage() {
   const [interfaces, setInterfaces] = useState<NetworkInterface[]>([]);
-  const [clusterId, setClusterId] = useState('');
-  const [nodeId] = useState('localhost');
+  const { clusters, selectedClusterId: clusterId, setSelectedClusterId: setClusterId } = useProxmoxClusters();
+  const { nodeNames, selectedNode: nodeId, setSelectedNode, loading: nodesLoading } =
+    useProxmoxNodes(clusterId);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const [showDialog, setShowDialog] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editingInterface, setEditingInterface] = useState<NetworkInterface | null>(null);
+  const [form, setForm] = useState<FormState>(defaultForm);
+  const [submitting, setSubmitting] = useState(false);
+
   const loadInterfaces = useCallback(async (cId: string, nId: string) => {
-    if (!cId) return;
+    if (!cId || !nId) return;
     setLoading(true);
     setError(null);
     try {
@@ -26,16 +70,88 @@ export function ProxmoxNetworkPage() {
     }
   }, []);
 
+  // Auto-load interfaces whenever the selected datacenter/node changes.
   useEffect(() => {
-    listProxmoxClusters()
-      .then((cls) => {
-        if (cls.length > 0) {
-          setClusterId(cls[0].id);
-          void loadInterfaces(cls[0].id, nodeId);
-        }
-      })
-      .catch(console.error);
-  }, [loadInterfaces, nodeId]);
+    if (clusterId && nodeId) {
+      void loadInterfaces(clusterId, nodeId);
+    } else {
+      setInterfaces([]);
+    }
+  }, [clusterId, nodeId, loadInterfaces]);
+
+  const handleAddInterface = () => {
+    setIsEditing(false);
+    setEditingInterface(null);
+    setForm(defaultForm);
+    setShowDialog(true);
+  };
+
+  const handleEditInterface = (iface: NetworkInterface) => {
+    setIsEditing(true);
+    setEditingInterface(iface);
+    setForm({
+      ifaceName: iface.iface,
+      ifaceType: iface.type,
+      address: iface.address ?? '',
+      netmask: iface.netmask ?? '',
+      gateway: iface.gateway ?? '',
+      autostart: iface.autostart,
+      active: iface.active,
+    });
+    setShowDialog(true);
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!clusterId) return;
+
+    const config: NetworkInterfaceConfig = {
+      iface: form.ifaceName,
+      type: form.ifaceType,
+      address: form.address || undefined,
+      netmask: form.netmask || undefined,
+      gateway: form.gateway || undefined,
+      active: form.active,
+      autostart: form.autostart,
+    };
+
+    setSubmitting(true);
+    try {
+      if (isEditing && editingInterface) {
+        await updateNetworkInterface(clusterId, nodeId, editingInterface.iface, config);
+        toast.success(`Interface "${editingInterface.iface}" updated`);
+      } else {
+        await createNetworkInterface(clusterId, nodeId, config);
+        toast.success(`Interface "${config.iface}" created`);
+      }
+      setShowDialog(false);
+      await loadInterfaces(clusterId, nodeId);
+    } catch (e) {
+      toast.error(String(e));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleReload = async () => {
+    try {
+      const upid = await reloadNetworkConfig(clusterId, nodeId);
+      toast.success(`Network reload started: ${upid}`);
+    } catch (e) {
+      toast.error(String(e));
+    }
+  };
+
+  const handleDeleteInterface = async (iface: NetworkInterface) => {
+    if (!window.confirm(`Delete interface "${iface.iface}"? This cannot be undone.`)) return;
+    try {
+      await deleteNetworkInterface(clusterId, nodeId, iface.iface);
+      toast.success(`Interface "${iface.iface}" deleted`);
+      await loadInterfaces(clusterId, nodeId);
+    } catch (e) {
+      toast.error(String(e));
+    }
+  };
 
   return (
     <div className="space-y-4">
@@ -44,15 +160,54 @@ export function ProxmoxNetworkPage() {
           <h1 className="text-2xl font-bold">Network</h1>
           <p className="text-muted-foreground">Network interfaces and bridges</p>
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => void loadInterfaces(clusterId, nodeId)}
-          disabled={loading || !clusterId}
-        >
-          <RefreshCw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-          Refresh
-        </Button>
+        <div className="flex items-center gap-2">
+          {clusters.length > 1 && (
+            <Select value={clusterId} onValueChange={setClusterId}>
+              <SelectTrigger className="h-8 w-48 text-sm">
+                <SelectValue placeholder="Select datacenter" />
+              </SelectTrigger>
+              <SelectContent>
+                {clusters.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+          <NodeSelect
+            nodeNames={nodeNames}
+            value={nodeId}
+            onChange={setSelectedNode}
+            loading={nodesLoading}
+            disabled={!clusterId}
+          />
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => void handleReload()}
+            disabled={!clusterId || !nodeId}
+          >
+            <RotateCcw className="mr-2 h-4 w-4" />
+            Apply Network Changes
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleAddInterface}
+            disabled={!clusterId || !nodeId}
+          >
+            <Plus className="mr-2 h-4 w-4" />
+            Add Interface
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => void loadInterfaces(clusterId, nodeId)}
+            disabled={loading || !clusterId || !nodeId}
+          >
+            <RefreshCw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+            Refresh
+          </Button>
+        </div>
       </div>
 
       {error && (
@@ -70,7 +225,7 @@ export function ProxmoxNetworkPage() {
             <div className="text-sm text-muted-foreground">Loading...</div>
           ) : interfaces.length === 0 ? (
             <div className="text-sm text-muted-foreground">
-              {clusterId ? 'No network interfaces found.' : 'No cluster configured.'}
+              {!clusterId ? 'No cluster configured.' : !nodeId ? 'Select a node above.' : 'No network interfaces found.'}
             </div>
           ) : (
             <div className="space-y-2">
@@ -107,12 +262,141 @@ export function ProxmoxNetworkPage() {
                       </div>
                     )}
                   </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleEditInterface(iface)}
+                      title="Edit"
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => void handleDeleteInterface(iface)}
+                      title="Delete"
+                      className="text-destructive hover:text-destructive"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
                 </div>
               ))}
             </div>
           )}
         </CardContent>
       </Card>
+
+      <Dialog open={showDialog} onOpenChange={setShowDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{isEditing ? 'Edit Interface' : 'Add Interface'}</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={(e) => void handleSubmit(e)} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="ifaceName">Interface Name</Label>
+              <Input
+                id="ifaceName"
+                value={form.ifaceName}
+                onChange={(e) => setForm((f) => ({ ...f, ifaceName: e.target.value }))}
+                placeholder="e.g. vmbr0"
+                disabled={isEditing || submitting}
+                required
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Type</Label>
+              <Select
+                value={form.ifaceType}
+                onValueChange={(v) => setForm((f) => ({ ...f, ifaceType: v }))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="eth">eth</SelectItem>
+                  <SelectItem value="bridge">bridge</SelectItem>
+                  <SelectItem value="bond">bond</SelectItem>
+                  <SelectItem value="vlan">vlan</SelectItem>
+                  <SelectItem value="OVSBridge">OVS Bridge</SelectItem>
+                  <SelectItem value="OVSBond">OVS Bond</SelectItem>
+                  <SelectItem value="OVSPort">OVS Port</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="address">IP Address</Label>
+              <Input
+                id="address"
+                value={form.address}
+                onChange={(e) => setForm((f) => ({ ...f, address: e.target.value }))}
+                placeholder="e.g. 192.168.1.100"
+                disabled={submitting}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="netmask">Netmask</Label>
+              <Input
+                id="netmask"
+                value={form.netmask}
+                onChange={(e) => setForm((f) => ({ ...f, netmask: e.target.value }))}
+                placeholder="e.g. 255.255.255.0"
+                disabled={submitting}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="gateway">Gateway</Label>
+              <Input
+                id="gateway"
+                value={form.gateway}
+                onChange={(e) => setForm((f) => ({ ...f, gateway: e.target.value }))}
+                placeholder="e.g. 192.168.1.1"
+                disabled={submitting}
+              />
+            </div>
+
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="autostart"
+                  checked={form.autostart}
+                  onCheckedChange={(v) => setForm((f) => ({ ...f, autostart: v as boolean }))}
+                  disabled={submitting}
+                />
+                <Label htmlFor="autostart">Autostart</Label>
+              </div>
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="active"
+                  checked={form.active}
+                  onCheckedChange={(v) => setForm((f) => ({ ...f, active: v as boolean }))}
+                  disabled={submitting}
+                />
+                <Label htmlFor="active">Active</Label>
+              </div>
+            </div>
+
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setShowDialog(false)}
+                disabled={submitting}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={submitting}>
+                {submitting ? 'Saving...' : isEditing ? 'Update' : 'Create'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

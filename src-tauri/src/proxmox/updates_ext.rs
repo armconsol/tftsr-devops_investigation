@@ -30,35 +30,34 @@ pub async fn list_updates_all_remotes(
     let response: serde_json::Value = client
         .get(path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to list updates from all remotes: {}", e))?;
+        .map_err(|e| format!("Failed to list updates from all remotes: {e}"))?;
 
-    let updates: Vec<RemoteUpdateInfo> = response
-        .get("data")
-        .and_then(|d| d.as_array())
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|update| {
-                    let remote = update.get("remote")?.as_str()?.to_string();
-                    let package = update.get("package")?.as_str()?.to_string();
-                    let version = update.get("version")?.as_str()?.to_string();
-                    let available_version = update
-                        .get("available")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("")
-                        .to_string();
-                    let size = update.get("size").and_then(|s| s.as_u64()).unwrap_or(0);
+    let arr = match response.as_array() {
+        Some(a) => a,
+        None => return Ok(vec![]),
+    };
+    let updates: Vec<RemoteUpdateInfo> = arr
+        .iter()
+        .filter_map(|update| {
+            let remote = update.get("remote")?.as_str()?.to_string();
+            let package = update.get("package")?.as_str()?.to_string();
+            let version = update.get("version")?.as_str()?.to_string();
+            let available_version = update
+                .get("available")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let size = update.get("size").and_then(|s| s.as_u64()).unwrap_or(0);
 
-                    Some(RemoteUpdateInfo {
-                        remote,
-                        package,
-                        version,
-                        available_version,
-                        size,
-                    })
-                })
-                .collect()
+            Some(RemoteUpdateInfo {
+                remote,
+                package,
+                version,
+                available_version,
+                size,
+            })
         })
-        .unwrap_or_default();
+        .collect();
 
     Ok(updates)
 }
@@ -70,9 +69,9 @@ pub async fn refresh_updates_all(
 ) -> Result<(), String> {
     let path = "remotes/updates";
     let _response: serde_json::Value = client
-        .post(path, &serde_json::json!({}), Some(ticket))
+        .post_form(path, &[], Some(ticket))
         .await
-        .map_err(|e| format!("Failed to refresh updates: {}", e))?;
+        .map_err(|e| format!("Failed to refresh updates: {e}"))?;
     Ok(())
 }
 
@@ -90,7 +89,7 @@ pub async fn install_updates_remotes(
     let _response: serde_json::Value = client
         .post(path, &config, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to install updates: {}", e))?;
+        .map_err(|e| format!("Failed to install updates: {e}"))?;
     Ok(())
 }
 
@@ -120,16 +119,15 @@ pub async fn list_pve_remotes(
     let response: serde_json::Value = client
         .get(path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to list PVE remotes: {}", e))?;
+        .map_err(|e| format!("Failed to list PVE remotes: {e}"))?;
 
-    if let Some(data) = response.get("data") {
-        if let Some(arr) = data.as_array() {
-            Ok(arr.to_vec())
-        } else {
-            Ok(vec![data.clone()])
-        }
+    // response IS already the data (handle_response already unwrapped the envelope)
+    if let Some(arr) = response.as_array() {
+        Ok(arr.to_vec())
+    } else if response.is_null() {
+        Ok(vec![])
     } else {
-        Err("Invalid response format: missing 'data' field".to_string())
+        Ok(vec![response])
     }
 }
 
@@ -139,38 +137,37 @@ pub async fn check_remote_updates(
     remote: &str,
     ticket: &str,
 ) -> Result<Vec<RemoteUpdateInfo>, String> {
-    let path = format!("pve/{}/updates", remote);
+    let path = format!("pve/{remote}/updates");
     let response: serde_json::Value = client
         .get(&path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to check updates for remote {}: {}", remote, e))?;
+        .map_err(|e| format!("Failed to check updates for remote {remote}: {e}"))?;
 
-    let updates: Vec<RemoteUpdateInfo> = response
-        .get("data")
-        .and_then(|d| d.as_array())
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|update| {
-                    let package = update.get("package")?.as_str()?.to_string();
-                    let version = update.get("version")?.as_str()?.to_string();
-                    let available_version = update
-                        .get("available")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("")
-                        .to_string();
-                    let size = update.get("size").and_then(|s| s.as_u64()).unwrap_or(0);
+    let arr = match response.as_array() {
+        Some(a) => a,
+        None => return Ok(vec![]),
+    };
+    let updates: Vec<RemoteUpdateInfo> = arr
+        .iter()
+        .filter_map(|update| {
+            let package = update.get("package")?.as_str()?.to_string();
+            let version = update.get("version")?.as_str()?.to_string();
+            let available_version = update
+                .get("available")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let size = update.get("size").and_then(|s| s.as_u64()).unwrap_or(0);
 
-                    Some(RemoteUpdateInfo {
-                        remote: remote.to_string(),
-                        package,
-                        version,
-                        available_version,
-                        size,
-                    })
-                })
-                .collect()
+            Some(RemoteUpdateInfo {
+                remote: remote.to_string(),
+                package,
+                version,
+                available_version,
+                size,
+            })
         })
-        .unwrap_or_default();
+        .collect();
 
     Ok(updates)
 }

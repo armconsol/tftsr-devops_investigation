@@ -35,6 +35,65 @@ pub async fn get_storage_status(
     Err("Not implemented yet".to_string())
 }
 
+/// List ISO images available in a storage (client-side filtered from storage content)
+pub async fn list_storage_content_iso(
+    client: &crate::proxmox::client::ProxmoxClient,
+    node: &str,
+    storage: &str,
+    ticket: &str,
+) -> Result<Vec<serde_json::Value>, String> {
+    let path = format!("nodes/{node}/storage/{storage}/content");
+    let response: serde_json::Value = client
+        .get(&path, Some(ticket))
+        .await
+        .map_err(|e| format!("Failed to list storage content for {node}/{storage}: {e}"))?;
+
+    response
+        .as_array()
+        .map(|arr| {
+            arr.iter()
+                .filter(|item| {
+                    item.get("content")
+                        .and_then(|c| c.as_str())
+                        .map(|c| c == "iso")
+                        .unwrap_or(false)
+                })
+                .cloned()
+                .collect::<Vec<_>>()
+        })
+        .ok_or_else(|| "Invalid response format from storage content".to_string())
+}
+
+/// Upload an ISO file to a Proxmox storage pool.
+/// Returns the task UPID string that can be polled for completion.
+pub async fn upload_iso(
+    client: &crate::proxmox::client::ProxmoxClient,
+    node: &str,
+    storage: &str,
+    filename: &str,
+    file_bytes: Vec<u8>,
+    ticket: &str,
+) -> Result<String, String> {
+    let path = format!("nodes/{node}/storage/{storage}/upload");
+
+    let file_part = reqwest::multipart::Part::bytes(file_bytes)
+        .file_name(filename.to_string())
+        .mime_str("application/octet-stream")
+        .map_err(|e| format!("Failed to build multipart part: {e}"))?;
+
+    let form = reqwest::multipart::Form::new()
+        .text("content", "iso")
+        .text("filename", filename.to_string())
+        .part("file", file_part);
+
+    let task_id: String = client
+        .post_multipart(&path, form, Some(ticket))
+        .await
+        .map_err(|e| format!("Failed to upload ISO to {node}/{storage}: {e}"))?;
+
+    Ok(task_id)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -12,6 +12,8 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: rustlang/rust:nightly
+    env:
+      SODIUM_LIB_DIR: /usr/lib/x86_64-linux-gnu
     steps:
       - name: Checkout
         run: |
@@ -45,13 +47,31 @@ jobs:
             libayatana-appindicator3-dev \
             librsvg2-dev \
             libdbus-1-dev \
+            libsodium-dev \
             pkg-config
       - name: Install Rust components
         run: rustup component add rustfmt
-      - name: Install dependencies
-        run: npm install --legacy-peer-deps
+      - name: Install dependencies with retry
+        run: |
+          for i in 1 2 3; do
+            if npm install --legacy-peer-deps --prefer-offline --no-audit; then
+              exit 0
+            fi
+            echo "Attempt $i failed, retrying in 5 seconds..."
+            sleep 5
+          done
+          echo "All retry attempts failed"
+          exit 1
       - name: Update version from Git
         run: node scripts/update-version.mjs
+      - name: Clone IronRDP patch
+        run: |
+          # Clone from our fork until upstream PR #1398 merges
+          # https://github.com/Devolutions/IronRDP/pull/1398
+          # Using branch ref (not commit hash) to get latest Copilot review fixes
+          # TODO: Revert to upstream crates.io version once PR merges
+          git clone --depth=1 --branch=fix/rdp6-bitmap-stride-mismatch https://github.com/armconsol/IronRDP.git /tmp/ironrdp-patch
+          echo "IronRDP patch cloned from armconsol/IronRDP fix branch"
       - run: cargo generate-lockfile --manifest-path src-tauri/Cargo.toml
       - run: cargo fmt --manifest-path src-tauri/Cargo.toml --check
 
@@ -59,6 +79,8 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: rustlang/rust:nightly
+    env:
+      SODIUM_LIB_DIR: /usr/lib/x86_64-linux-gnu
     steps:
       - name: Checkout
         run: |
@@ -87,15 +109,26 @@ jobs:
             libayatana-appindicator3-dev \
             librsvg2-dev \
             libdbus-1-dev \
+            libsodium-dev \
             pkg-config
       - name: Install clippy
         run: rustup component add clippy
+      - name: Clone IronRDP patch
+        run: |
+          # Clone from our fork until upstream PR #1398 merges
+          # https://github.com/Devolutions/IronRDP/pull/1398
+          # Using branch ref (not commit hash) to get latest Copilot review fixes
+          # TODO: Revert to upstream crates.io version once PR merges
+          git clone --depth=1 --branch=fix/rdp6-bitmap-stride-mismatch https://github.com/armconsol/IronRDP.git /tmp/ironrdp-patch
+          echo "IronRDP patch cloned from armconsol/IronRDP fix branch"
       - run: cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
 
   rust-tests:
     runs-on: ubuntu-latest
     container:
       image: rustlang/rust:nightly
+    env:
+      SODIUM_LIB_DIR: /usr/lib/x86_64-linux-gnu
     steps:
       - name: Checkout
         run: |
@@ -124,7 +157,16 @@ jobs:
             libayatana-appindicator3-dev \
             librsvg2-dev \
             libdbus-1-dev \
+            libsodium-dev \
             pkg-config
+      - name: Clone IronRDP patch
+        run: |
+          # Clone from our fork until upstream PR #1398 merges
+          # https://github.com/Devolutions/IronRDP/pull/1398
+          # Using branch ref (not commit hash) to get latest Copilot review fixes
+          # TODO: Revert to upstream crates.io version once PR merges
+          git clone --depth=1 --branch=fix/rdp6-bitmap-stride-mismatch https://github.com/armconsol/IronRDP.git /tmp/ironrdp-patch
+          echo "IronRDP patch cloned from armconsol/IronRDP fix branch"
       - run: cargo test --manifest-path src-tauri/Cargo.toml -- --test-threads=1
 
       - name: Run shell module tests
@@ -161,7 +203,17 @@ jobs:
           key: ${{ runner.os }}-npm-${{ hashFiles('**/package-lock.json') }}
           restore-keys: |
             ${{ runner.os }}-npm-
-      - run: npm ci --legacy-peer-deps
+      - name: Install dependencies with retry
+        run: |
+          for i in 1 2 3; do
+            if npm ci --legacy-peer-deps --prefer-offline --no-audit; then
+              exit 0
+            fi
+            echo "Attempt $i failed, retrying in 5 seconds..."
+            sleep 5
+          done
+          echo "All retry attempts failed"
+          exit 1
       - run: npx tsc --noEmit
 
   frontend-tests:
@@ -195,5 +247,48 @@ jobs:
           key: ${{ runner.os }}-npm-${{ hashFiles('**/package-lock.json') }}
           restore-keys: |
             ${{ runner.os }}-npm-
-      - run: npm ci --legacy-peer-deps
+      - name: Install dependencies with retry
+        run: |
+          for i in 1 2 3; do
+            if npm ci --legacy-peer-deps --prefer-offline --no-audit; then
+              exit 0
+            fi
+            echo "Attempt $i failed, retrying in 5 seconds..."
+            sleep 5
+          done
+          echo "All retry attempts failed"
+          exit 1
       - run: npm run test:run
+
+  validate-ci-images:
+    runs-on: ubuntu-latest
+    container:
+      image: alpine:3.21
+    steps:
+      - name: Install git
+        run: apk add --no-cache git
+      - name: Checkout
+        # Gitea Actions (act_runner) is GitHub Actions-compatible and exposes the same
+        # environment variables: GITHUB_SHA, GITHUB_REF_NAME, GITHUB_REF. This is
+        # intentional — see https://docs.gitea.com/usage/actions/act-runner.
+        # actions/checkout@v4 is not used because it requires Docker-layer access that
+        # is unreliable on this self-hosted Gitea setup; all other jobs use this pattern.
+        run: |
+          set -eux
+          git init
+          git remote add origin https://gogs.tftsr.com/sarman/tftsr-devops_investigation.git
+          if [ -n "${GITHUB_SHA:-}" ] && git fetch --depth=1 origin "$GITHUB_SHA"; then
+            echo "Fetched commit SHA: $GITHUB_SHA"
+          elif [ -n "${GITHUB_REF_NAME:-}" ] && git fetch --depth=1 origin "$GITHUB_REF_NAME"; then
+            echo "Fetched ref name: $GITHUB_REF_NAME"
+          elif [ -n "${GITHUB_REF:-}" ]; then
+            REF_NAME="${GITHUB_REF#refs/heads/}"
+            git fetch --depth=1 origin "$REF_NAME"
+            echo "Fetched ref from GITHUB_REF: $REF_NAME"
+          else
+            git fetch --depth=1 origin beta
+            echo "Fetched fallback ref: beta"
+          fi
+          git checkout FETCH_HEAD
+      - name: Validate CI image tag consistency
+        run: sh scripts/validate-ci-images.sh

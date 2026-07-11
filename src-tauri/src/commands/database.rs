@@ -1,0 +1,2747 @@
+// Database management commands for import/export, connection management, and visualization
+
+use crate::db::models::{
+    ConnectionTestResult, DatabaseConnection, QueryBookmark, QueryExecutionResult, QueryHistory,
+};
+use crate::db_drivers::{
+    import_export::{csv, json, sql, ImportOptions, ImportStats},
+    types::{ConnectionConfig, DataValue, DatabaseType, DbSshTunnelConfig, QueryResult, SslConfig},
+    visualization,
+};
+use crate::state::AppState;
+use rusqlite::OptionalExtension;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::fs;
+use std::net::{SocketAddr, TcpStream};
+use std::time::Duration;
+use tauri::{AppHandle, State};
+use uuid::Uuid;
+
+/// Statistics returned after export operation
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExportStats {
+    pub rows_exported: usize,
+    pub file_size_bytes: u64,
+    pub execution_time_ms: u64,
+}
+
+/// Import CSV data into a table
+///
+/// # Arguments
+/// * `file_path` - Path to CSV file
+/// * `connection_id` - Database connection ID
+/// * `target_table` - Target table name
+/// * `options` - Import options (optional)
+#[tauri::command]
+pub async fn import_csv_data<R: tauri::Runtime>(
+    file_path: String,
+    connection_id: String,
+    target_table: String,
+    options: Option<ImportOptions>,
+    app_handle: AppHandle<R>,
+    state: State<'_, AppState>,
+) -> Result<ImportStats, String> {
+    let options = options.unwrap_or_default();
+
+    // Get pool manager from app state
+    let pool = state.db_pool_manager.lock().await;
+
+    csv::import_csv(
+        &file_path,
+        &connection_id,
+        &target_table,
+        options,
+        &pool,
+        Some(&app_handle),
+    )
+    .await
+    .map_err(|e| format!("CSV import failed: {}", e))
+}
+
+/// Import JSON data into a table
+///
+/// # Arguments
+/// * `file_path` - Path to JSON file
+/// * `connection_id` - Database connection ID
+/// * `target_table` - Target table name
+/// * `options` - Import options (optional)
+#[tauri::command]
+pub async fn import_json_data<R: tauri::Runtime>(
+    file_path: String,
+    connection_id: String,
+    target_table: String,
+    options: Option<ImportOptions>,
+    app_handle: AppHandle<R>,
+    state: State<'_, AppState>,
+) -> Result<ImportStats, String> {
+    let options = options.unwrap_or_default();
+
+    // Get pool manager from app state
+    let pool = state.db_pool_manager.lock().await;
+
+    json::import_json(
+        &file_path,
+        &connection_id,
+        &target_table,
+        options,
+        &pool,
+        Some(&app_handle),
+    )
+    .await
+    .map_err(|e| format!("JSON import failed: {}", e))
+}
+
+/// Export query results to file
+///
+/// # Arguments
+/// * `query_result` - Query result to export
+/// * `format` - Export format: "csv", "json", or "sql"
+/// * `output_path` - Output file path
+/// * `table_name` - Table name for SQL exports (optional)
+#[tauri::command]
+pub async fn export_query_results(
+    query_result: QueryResult,
+    format: String,
+    output_path: String,
+    table_name: Option<String>,
+    _state: State<'_, AppState>,
+) -> Result<ExportStats, String> {
+    let start_time = std::time::Instant::now();
+    let row_count = query_result.rows.len();
+
+    match format.to_lowercase().as_str() {
+        "csv" => {
+            csv::export_csv(&query_result, &output_path)
+                .map_err(|e| format!("CSV export failed: {}", e))?;
+        }
+        "json" => {
+            json::export_json(&query_result, &output_path)
+                .map_err(|e| format!("JSON export failed: {}", e))?;
+        }
+        "sql" => {
+            let table =
+                table_name.ok_or_else(|| "Table name required for SQL export".to_string())?;
+            sql::export_sql_inserts(&query_result, &table, &output_path)
+                .map_err(|e| format!("SQL export failed: {}", e))?;
+        }
+        _ => {
+            return Err(format!("Unsupported export format: {}", format));
+        }
+    }
+
+    // Get file size
+    let file_size = fs::metadata(&output_path).map(|m| m.len()).unwrap_or(0);
+
+    let execution_time_ms = start_time.elapsed().as_millis() as u64;
+
+    Ok(ExportStats {
+        rows_exported: row_count,
+        file_size_bytes: file_size,
+        execution_time_ms,
+    })
+}
+
+/// Generate ER diagram for a database
+///
+/// # Arguments
+/// * `connection_id` - Database connection ID
+/// * `database` - Database name (optional)
+#[tauri::command]
+pub async fn generate_er_diagram(
+    connection_id: String,
+    database: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<visualization::ERDiagramData, String> {
+    // Get pool manager from app state
+    let pool = state.db_pool_manager.lock().await;
+
+    visualization::generate_er_diagram(&connection_id, database.as_deref(), &pool)
+        .await
+        .map_err(|e| format!("ER diagram generation failed: {}", e))
+}
+
+/// Preview CSV file (first N rows)
+///
+/// # Arguments
+/// * `file_path` - Path to CSV file
+/// * `max_rows` - Maximum rows to preview (default: 100)
+#[tauri::command]
+pub async fn preview_csv_file(
+    file_path: String,
+    max_rows: Option<usize>,
+) -> Result<PreviewData, String> {
+    use std::fs::File;
+    use std::io::BufReader;
+
+    let max_rows = max_rows.unwrap_or(100);
+
+    let file = File::open(&file_path).map_err(|e| format!("Failed to open CSV file: {}", e))?;
+
+    let reader = BufReader::new(file);
+    let mut csv_reader = ::csv::ReaderBuilder::new().from_reader(reader);
+
+    // Get headers
+    let headers = csv_reader
+        .headers()
+        .map_err(|e| format!("Failed to read CSV headers: {}", e))?
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+
+    // Read preview rows
+    let mut rows = Vec::new();
+    for (idx, result) in csv_reader.records().enumerate() {
+        if idx >= max_rows {
+            break;
+        }
+
+        match result {
+            Ok(record) => {
+                let row: Vec<String> = record.iter().map(|s| s.to_string()).collect();
+                rows.push(row);
+            }
+            Err(e) => {
+                return Err(format!("CSV parsing error at row {}: {}", idx + 1, e));
+            }
+        }
+    }
+
+    Ok(PreviewData { headers, rows })
+}
+
+/// Preview JSON file (first N records)
+///
+/// # Arguments
+/// * `file_path` - Path to JSON file
+/// * `max_records` - Maximum records to preview (default: 100)
+#[tauri::command]
+pub async fn preview_json_file(
+    file_path: String,
+    max_records: Option<usize>,
+) -> Result<serde_json::Value, String> {
+    use std::fs;
+
+    let max_records = max_records.unwrap_or(100);
+
+    let content =
+        fs::read_to_string(&file_path).map_err(|e| format!("Failed to read JSON file: {}", e))?;
+
+    let json: serde_json::Value =
+        serde_json::from_str(&content).map_err(|e| format!("Failed to parse JSON: {}", e))?;
+
+    // Extract preview
+    let preview = match json {
+        serde_json::Value::Array(arr) => {
+            let preview_arr: Vec<_> = arr.into_iter().take(max_records).collect();
+            serde_json::Value::Array(preview_arr)
+        }
+        serde_json::Value::Object(obj) => {
+            if let Some(serde_json::Value::Array(arr)) = obj.get("data") {
+                let preview_arr: Vec<_> = arr.iter().take(max_records).cloned().collect();
+                serde_json::json!({ "data": preview_arr })
+            } else {
+                serde_json::Value::Object(obj)
+            }
+        }
+        other => other,
+    };
+
+    Ok(preview)
+}
+
+/// Preview data returned by preview commands
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PreviewData {
+    pub headers: Vec<String>,
+    pub rows: Vec<Vec<String>>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_preview_csv_basic() {
+        // Create temporary CSV file
+        let temp_file = std::env::temp_dir().join("test_preview.csv");
+        std::fs::write(
+            &temp_file,
+            "id,name,email\n1,Alice,alice@example.com\n2,Bob,bob@example.com\n",
+        )
+        .unwrap();
+
+        let result = preview_csv_file(temp_file.to_str().unwrap().to_string(), Some(10))
+            .await
+            .unwrap();
+
+        assert_eq!(result.headers, vec!["id", "name", "email"]);
+        assert_eq!(result.rows.len(), 2);
+        assert_eq!(result.rows[0], vec!["1", "Alice", "alice@example.com"]);
+
+        // Cleanup
+        std::fs::remove_file(temp_file).ok();
+    }
+
+    #[tokio::test]
+    async fn test_preview_json_array() {
+        // Create temporary JSON file
+        let temp_file = std::env::temp_dir().join("test_preview.json");
+        std::fs::write(
+            &temp_file,
+            r#"[{"id": 1, "name": "Alice"}, {"id": 2, "name": "Bob"}]"#,
+        )
+        .unwrap();
+
+        let result = preview_json_file(temp_file.to_str().unwrap().to_string(), Some(10))
+            .await
+            .unwrap();
+
+        assert!(result.is_array());
+        let arr = result.as_array().unwrap();
+        assert_eq!(arr.len(), 2);
+
+        // Cleanup
+        std::fs::remove_file(temp_file).ok();
+    }
+}
+
+// ─── Database Connection Management ─────────────────────────────────────────
+
+/// Parameters for creating a database connection
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateConnectionParams {
+    pub name: String,
+    pub db_type: String,
+    pub host: String,
+    pub port: u16,
+    pub database_name: Option<String>,
+    pub username: String,
+    pub password: String,
+    pub ssl_enabled: bool,
+    pub ssl_ca_cert_path: Option<String>,
+    pub ssl_client_cert_path: Option<String>,
+    pub ssl_client_key_path: Option<String>,
+    pub connection_options: Option<String>,
+    pub ssh_enabled: Option<bool>,
+    pub ssh_hostname: Option<String>,
+    pub ssh_port: Option<u16>,
+    pub ssh_username: Option<String>,
+    pub ssh_auth_method: Option<String>,
+    pub ssh_password: Option<String>,
+    pub ssh_private_key: Option<String>,
+    pub ssh_key_passphrase: Option<String>,
+}
+
+/// Create a new database connection
+#[tauri::command]
+pub async fn create_database_connection(
+    params: CreateConnectionParams,
+    state: State<'_, AppState>,
+) -> Result<DatabaseConnection, String> {
+    let CreateConnectionParams {
+        name,
+        db_type,
+        host,
+        port,
+        database_name,
+        username,
+        password,
+        ssl_enabled,
+        ssl_ca_cert_path,
+        ssl_client_cert_path,
+        ssl_client_key_path,
+        connection_options,
+        ssh_enabled,
+        ssh_hostname,
+        ssh_port,
+        ssh_username,
+        ssh_auth_method,
+        ssh_password,
+        ssh_private_key,
+        ssh_key_passphrase,
+    } = params;
+    // Encrypt password
+    let encrypted_password = crate::integrations::auth::encrypt_token(&password)
+        .map_err(|e| format!("Failed to encrypt password: {}", e))?;
+
+    let ssh_enabled = ssh_enabled.unwrap_or(false);
+    let ssh_auth_method = ssh_auth_method.unwrap_or_else(|| "password".to_string());
+    let encrypted_ssh_password = match ssh_password.filter(|v| !v.is_empty()) {
+        Some(secret) => Some(
+            crate::integrations::auth::encrypt_token(&secret)
+                .map_err(|e| format!("Failed to encrypt SSH password: {}", e))?,
+        ),
+        None => None,
+    };
+    let encrypted_ssh_private_key = match ssh_private_key.filter(|v| !v.is_empty()) {
+        Some(secret) => Some(
+            crate::integrations::auth::encrypt_token(&secret)
+                .map_err(|e| format!("Failed to encrypt SSH private key: {}", e))?,
+        ),
+        None => None,
+    };
+    let encrypted_ssh_key_passphrase = match ssh_key_passphrase.filter(|v| !v.is_empty()) {
+        Some(secret) => Some(
+            crate::integrations::auth::encrypt_token(&secret)
+                .map_err(|e| format!("Failed to encrypt SSH key passphrase: {}", e))?,
+        ),
+        None => None,
+    };
+
+    let connection = DatabaseConnection {
+        id: Uuid::now_v7().to_string(),
+        name: name.clone(),
+        db_type: db_type.clone(),
+        host: host.clone(),
+        port,
+        database_name: database_name.clone(),
+        username: username.clone(),
+        ssl_enabled,
+        ssl_ca_cert_path: ssl_ca_cert_path.clone(),
+        ssl_client_cert_path: ssl_client_cert_path.clone(),
+        ssl_client_key_path: ssl_client_key_path.clone(),
+        connection_options: connection_options.clone(),
+        ssh_enabled,
+        ssh_hostname: ssh_hostname.filter(|v| !v.is_empty()),
+        ssh_port: if ssh_enabled {
+            ssh_port.or(Some(22))
+        } else {
+            None
+        },
+        ssh_username: ssh_username.filter(|v| !v.is_empty()),
+        ssh_auth_method: if ssh_enabled {
+            Some(ssh_auth_method)
+        } else {
+            None
+        },
+        created_at: chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+        updated_at: chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+    };
+
+    // Store in database
+    {
+        let db = state
+            .db
+            .lock()
+            .map_err(|e| format!("Failed to lock database: {}", e))?;
+
+        db.execute(
+            "INSERT INTO database_connections (
+                id, name, db_type, host, port, database_name, username, encrypted_password,
+                ssl_enabled, ssl_ca_cert_path, ssl_client_cert_path, ssl_client_key_path, connection_options,
+                ssh_enabled, ssh_hostname, ssh_port, ssh_username, ssh_auth_method,
+                ssh_password_encrypted, ssh_private_key_encrypted, ssh_key_passphrase_encrypted,
+                created_at, updated_at
+            ) VALUES (
+                ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8,
+                ?9, ?10, ?11, ?12, ?13,
+                ?14, ?15, ?16, ?17, ?18,
+                ?19, ?20, ?21,
+                ?22, ?23
+            )",
+            rusqlite::params![
+                connection.id,
+                connection.name,
+                connection.db_type,
+                connection.host,
+                connection.port,
+                connection.database_name,
+                connection.username,
+                encrypted_password,
+                if ssl_enabled { 1 } else { 0 },
+                ssl_ca_cert_path,
+                ssl_client_cert_path,
+                ssl_client_key_path,
+                connection_options,
+                if connection.ssh_enabled { 1 } else { 0 },
+                connection.ssh_hostname,
+                connection.ssh_port,
+                connection.ssh_username,
+                connection.ssh_auth_method,
+                encrypted_ssh_password,
+                encrypted_ssh_private_key,
+                encrypted_ssh_key_passphrase,
+                connection.created_at,
+                connection.updated_at,
+            ],
+        )
+        .map_err(|e| format!("Failed to store connection: {}", e))?;
+    }
+
+    // Audit log
+    {
+        let db = state
+            .db
+            .lock()
+            .map_err(|e| format!("Failed to lock database: {}", e))?;
+
+        let details = serde_json::json!({
+            "name": name,
+            "db_type": db_type,
+            "host": host,
+            "port": port
+        })
+        .to_string();
+
+        crate::audit::log::write_audit_event(
+            &db,
+            "database_connection_created",
+            "database_connection",
+            &connection.id,
+            &details,
+        )
+        .map_err(|e| format!("Failed to write audit log: {}", e))?;
+    }
+
+    Ok(connection)
+}
+
+/// Parameters for updating a database connection
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateConnectionParams {
+    pub id: String,
+    pub name: Option<String>,
+    pub password: Option<String>,
+    pub ssl_enabled: Option<bool>,
+    pub ssl_ca_cert_path: Option<String>,
+    pub ssl_client_cert_path: Option<String>,
+    pub ssl_client_key_path: Option<String>,
+    pub connection_options: Option<String>,
+    pub ssh_enabled: Option<bool>,
+    pub ssh_hostname: Option<String>,
+    pub ssh_port: Option<u16>,
+    pub ssh_username: Option<String>,
+    pub ssh_auth_method: Option<String>,
+    pub ssh_password: Option<String>,
+    pub ssh_private_key: Option<String>,
+    pub ssh_key_passphrase: Option<String>,
+}
+
+/// Update an existing database connection
+#[tauri::command]
+pub async fn update_database_connection(
+    params: UpdateConnectionParams,
+    state: State<'_, AppState>,
+) -> Result<DatabaseConnection, String> {
+    let UpdateConnectionParams {
+        id,
+        name,
+        password,
+        ssl_enabled,
+        ssl_ca_cert_path,
+        ssl_client_cert_path,
+        ssl_client_key_path,
+        connection_options,
+        ssh_enabled,
+        ssh_hostname,
+        ssh_port,
+        ssh_username,
+        ssh_auth_method,
+        ssh_password,
+        ssh_private_key,
+        ssh_key_passphrase,
+    } = params;
+    // Encrypt new password if provided
+    let encrypted_password = if let Some(pwd) = password {
+        Some(
+            crate::integrations::auth::encrypt_token(&pwd)
+                .map_err(|e| format!("Failed to encrypt password: {}", e))?,
+        )
+    } else {
+        None
+    };
+    let encrypted_ssh_password = if let Some(secret) = ssh_password.filter(|v| !v.is_empty()) {
+        Some(
+            crate::integrations::auth::encrypt_token(&secret)
+                .map_err(|e| format!("Failed to encrypt SSH password: {}", e))?,
+        )
+    } else {
+        None
+    };
+    let encrypted_ssh_private_key = if let Some(secret) = ssh_private_key.filter(|v| !v.is_empty())
+    {
+        Some(
+            crate::integrations::auth::encrypt_token(&secret)
+                .map_err(|e| format!("Failed to encrypt SSH private key: {}", e))?,
+        )
+    } else {
+        None
+    };
+    let encrypted_ssh_key_passphrase =
+        if let Some(secret) = ssh_key_passphrase.filter(|v| !v.is_empty()) {
+            Some(
+                crate::integrations::auth::encrypt_token(&secret)
+                    .map_err(|e| format!("Failed to encrypt SSH key passphrase: {}", e))?,
+            )
+        } else {
+            None
+        };
+
+    let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+
+    // Update database
+    {
+        let db = state
+            .db
+            .lock()
+            .map_err(|e| format!("Failed to lock database: {}", e))?;
+
+        // Build dynamic UPDATE statement
+        let mut updates = Vec::new();
+        let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+
+        if let Some(n) = &name {
+            updates.push("name = ?");
+            params.push(Box::new(n.clone()));
+        }
+        if let Some(p) = &encrypted_password {
+            updates.push("encrypted_password = ?");
+            params.push(Box::new(p.clone()));
+        }
+        if let Some(ssl) = ssl_enabled {
+            updates.push("ssl_enabled = ?");
+            params.push(Box::new(if ssl { 1 } else { 0 }));
+        }
+        if let Some(ca) = &ssl_ca_cert_path {
+            updates.push("ssl_ca_cert_path = ?");
+            params.push(Box::new(ca.clone()));
+        }
+        if let Some(cert) = &ssl_client_cert_path {
+            updates.push("ssl_client_cert_path = ?");
+            params.push(Box::new(cert.clone()));
+        }
+        if let Some(key) = &ssl_client_key_path {
+            updates.push("ssl_client_key_path = ?");
+            params.push(Box::new(key.clone()));
+        }
+        if let Some(opts) = &connection_options {
+            updates.push("connection_options = ?");
+            params.push(Box::new(opts.clone()));
+        }
+        if let Some(ssh) = ssh_enabled {
+            updates.push("ssh_enabled = ?");
+            params.push(Box::new(if ssh { 1 } else { 0 }));
+        }
+        if let Some(hostname) = &ssh_hostname {
+            updates.push("ssh_hostname = ?");
+            params.push(Box::new(if hostname.is_empty() {
+                None::<String>
+            } else {
+                Some(hostname.clone())
+            }));
+        }
+        if let Some(port) = ssh_port {
+            updates.push("ssh_port = ?");
+            params.push(Box::new(port as i64));
+        }
+        if let Some(username) = &ssh_username {
+            updates.push("ssh_username = ?");
+            params.push(Box::new(if username.is_empty() {
+                None::<String>
+            } else {
+                Some(username.clone())
+            }));
+        }
+        if let Some(auth_method) = &ssh_auth_method {
+            updates.push("ssh_auth_method = ?");
+            params.push(Box::new(auth_method.clone()));
+        }
+        if let Some(secret) = &encrypted_ssh_password {
+            updates.push("ssh_password_encrypted = ?");
+            params.push(Box::new(secret.clone()));
+        }
+        if let Some(secret) = &encrypted_ssh_private_key {
+            updates.push("ssh_private_key_encrypted = ?");
+            params.push(Box::new(secret.clone()));
+        }
+        if let Some(secret) = &encrypted_ssh_key_passphrase {
+            updates.push("ssh_key_passphrase_encrypted = ?");
+            params.push(Box::new(secret.clone()));
+        }
+
+        if updates.is_empty() {
+            return Err("No fields to update".to_string());
+        }
+
+        updates.push("updated_at = ?");
+        params.push(Box::new(now.clone()));
+        params.push(Box::new(id.clone()));
+
+        let query = format!(
+            "UPDATE database_connections SET {} WHERE id = ?",
+            updates.join(", ")
+        );
+
+        db.execute(&query, rusqlite::params_from_iter(params.iter()))
+            .map_err(|e| format!("Failed to update connection: {}", e))?;
+
+        // Audit log (capture updates before dropping db lock)
+        let updated_field_names: Vec<String> = updates
+            .iter()
+            .map(|u| u.split(" = ").next().unwrap_or("").to_string())
+            .collect();
+        let details = serde_json::json!({ "updated_fields": updated_field_names }).to_string();
+
+        crate::audit::log::write_audit_event(
+            &db,
+            "database_connection_updated",
+            "database_connection",
+            &id,
+            &details,
+        )
+        .map_err(|e| format!("Failed to write audit log: {}", e))?;
+    }
+
+    // Remove from pool if connected (force reconnection with new credentials)
+    {
+        let pool = state.db_pool_manager.lock().await;
+        let _ = pool.remove_driver(&id).await;
+    }
+
+    // Load updated connection
+    list_database_connections(state)
+        .await?
+        .into_iter()
+        .find(|c| c.id == id)
+        .ok_or_else(|| "Connection not found after update".to_string())
+}
+
+/// Delete a database connection
+#[tauri::command]
+pub async fn delete_database_connection(
+    id: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    // Remove from database
+    {
+        let db = state
+            .db
+            .lock()
+            .map_err(|e| format!("Failed to lock database: {}", e))?;
+
+        db.execute("DELETE FROM database_connections WHERE id = ?1", [&id])
+            .map_err(|e| format!("Failed to delete connection: {}", e))?;
+    }
+
+    // Remove from pool
+    {
+        let pool = state.db_pool_manager.lock().await;
+        let _ = pool.remove_driver(&id).await;
+    }
+
+    // Audit log
+    {
+        let db = state
+            .db
+            .lock()
+            .map_err(|e| format!("Failed to lock database: {}", e))?;
+
+        crate::audit::log::write_audit_event(
+            &db,
+            "database_connection_deleted",
+            "database_connection",
+            &id,
+            "{}",
+        )
+        .map_err(|e| format!("Failed to write audit log: {}", e))?;
+    }
+
+    Ok(())
+}
+
+/// List all database connections
+#[tauri::command]
+pub async fn list_database_connections(
+    state: State<'_, AppState>,
+) -> Result<Vec<DatabaseConnection>, String> {
+    let db = state
+        .db
+        .lock()
+        .map_err(|e| format!("Failed to lock database: {}", e))?;
+
+    let mut stmt = db
+        .prepare(
+            "SELECT id, name, db_type, host, port, database_name, username, ssl_enabled, ssl_ca_cert_path, ssl_client_cert_path, ssl_client_key_path, connection_options, ssh_enabled, ssh_hostname, ssh_port, ssh_username, ssh_auth_method, created_at, updated_at
+             FROM database_connections",
+        )
+        .map_err(|e| format!("Failed to prepare query: {}", e))?;
+
+    let connections = stmt
+        .query_map([], |row| {
+            Ok(DatabaseConnection {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                db_type: row.get(2)?,
+                host: row.get(3)?,
+                port: row.get::<_, i64>(4)? as u16,
+                database_name: row.get(5)?,
+                username: row.get(6)?,
+                ssl_enabled: row.get::<_, i64>(7)? != 0,
+                ssl_ca_cert_path: row.get(8)?,
+                ssl_client_cert_path: row.get(9)?,
+                ssl_client_key_path: row.get(10)?,
+                connection_options: row.get(11)?,
+                ssh_enabled: row.get::<_, i64>(12)? != 0,
+                ssh_hostname: row.get(13)?,
+                ssh_port: row.get::<_, Option<i64>>(14)?.map(|v| v as u16),
+                ssh_username: row.get(15)?,
+                ssh_auth_method: row.get(16)?,
+                created_at: row.get(17)?,
+                updated_at: row.get(18)?,
+            })
+        })
+        .map_err(|e| format!("Failed to query connections: {}", e))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("Failed to collect connections: {}", e))?;
+
+    Ok(connections)
+}
+
+/// Test database connection
+#[tauri::command]
+pub async fn test_database_connection(
+    connection_id: String,
+    state: State<'_, AppState>,
+) -> Result<ConnectionTestResult, String> {
+    let start = std::time::Instant::now();
+
+    // Load connection config
+    let config = load_connection_config(&connection_id, &state).await?;
+
+    // Create driver and test connection
+    let mut driver = crate::db_drivers::create_driver(&config)
+        .map_err(|e| format!("Failed to create driver: {}", e))?;
+
+    match driver.connect(&config).await {
+        Ok(_) => {
+            let latency = start.elapsed().as_millis() as u64;
+            driver
+                .disconnect()
+                .await
+                .map_err(|e| format!("Failed to disconnect: {}", e))?;
+
+            tracing::info!(
+                connection_id = %connection_id,
+                latency_ms = %latency,
+                "Database connection test succeeded"
+            );
+
+            Ok(ConnectionTestResult {
+                success: true,
+                message: "Connection successful".to_string(),
+                latency_ms: Some(latency),
+            })
+        }
+        Err(e) => {
+            let detailed_message = format!(
+                "Connection failed: {} (host: {}, port: {}, database: {})",
+                e,
+                config.host,
+                config.port,
+                config.database.as_deref().unwrap_or("default")
+            );
+
+            tracing::warn!(
+                connection_id = %connection_id,
+                host = %config.host,
+                port = %config.port,
+                database = ?config.database,
+                error = %e,
+                "Database connection test failed"
+            );
+
+            Ok(ConnectionTestResult {
+                success: false,
+                message: detailed_message,
+                latency_ms: None,
+            })
+        }
+    }
+}
+
+/// Execute a database query
+#[tauri::command]
+pub async fn execute_database_query(
+    connection_id: String,
+    query: String,
+    page: usize,
+    page_size: usize,
+    state: State<'_, AppState>,
+) -> Result<QueryExecutionResult, String> {
+    let start = std::time::Instant::now();
+
+    // Get or create driver
+    let config = load_connection_config(&connection_id, &state).await?;
+    let pool = state.db_pool_manager.lock().await;
+    let driver_arc = pool
+        .get_or_create_driver(&connection_id, &config)
+        .await
+        .map_err(|e| format!("Failed to get driver: {}", e))?;
+
+    let driver = driver_arc.read().await;
+
+    // Execute query (with empty params - we don't support parameterized queries yet)
+    let result = driver
+        .execute_query(&query, Vec::new())
+        .await
+        .map_err(|e| format!("Query execution failed: {}", e))?;
+
+    let execution_time = start.elapsed().as_millis() as u64;
+    let row_count = result.rows.len();
+
+    // Paginate results
+    let offset = page * page_size;
+    let paginated_rows: Vec<_> = result
+        .rows
+        .into_iter()
+        .skip(offset)
+        .take(page_size)
+        .collect();
+
+    let paginated_result = QueryResult {
+        columns: result.columns,
+        rows: paginated_rows,
+        row_count,
+        execution_time_ms: execution_time,
+    };
+
+    // Save to history
+    save_query_history(
+        &connection_id,
+        &query,
+        row_count,
+        execution_time,
+        "success",
+        None,
+        &state,
+    )
+    .await?;
+
+    Ok(QueryExecutionResult {
+        query_result: paginated_result,
+        execution_time_ms: execution_time,
+        row_count,
+    })
+}
+
+/// Get list of databases
+#[tauri::command]
+pub async fn get_databases(
+    connection_id: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<String>, String> {
+    let config = load_connection_config(&connection_id, &state).await?;
+    let pool = state.db_pool_manager.lock().await;
+    let driver_arc = pool
+        .get_or_create_driver(&connection_id, &config)
+        .await
+        .map_err(|e| format!("Failed to get driver: {}", e))?;
+
+    let driver = driver_arc.read().await;
+    driver
+        .get_databases()
+        .await
+        .map_err(|e| format!("Failed to get databases: {}", e))
+}
+
+/// Get schema for a database
+#[tauri::command]
+pub async fn get_schema(
+    connection_id: String,
+    database: String,
+    state: State<'_, AppState>,
+) -> Result<crate::db_drivers::types::Schema, String> {
+    let config = load_connection_config(&connection_id, &state).await?;
+    let pool = state.db_pool_manager.lock().await;
+    let driver_arc = pool
+        .get_or_create_driver(&connection_id, &config)
+        .await
+        .map_err(|e| format!("Failed to get driver: {}", e))?;
+
+    let driver = driver_arc.read().await;
+    driver
+        .get_schema(&database)
+        .await
+        .map_err(|e| format!("Failed to get schema: {}", e))
+}
+
+/// Get tables in a database
+#[tauri::command]
+pub async fn get_tables(
+    connection_id: String,
+    database: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<String>, String> {
+    let config = load_connection_config(&connection_id, &state).await?;
+    let pool = state.db_pool_manager.lock().await;
+    let driver_arc = pool
+        .get_or_create_driver(&connection_id, &config)
+        .await
+        .map_err(|e| format!("Failed to get driver: {}", e))?;
+
+    let driver = driver_arc.read().await;
+    let schema = driver
+        .get_schema(&database)
+        .await
+        .map_err(|e| format!("Failed to get schema: {}", e))?;
+
+    Ok(schema.tables.iter().map(|t| t.name.clone()).collect())
+}
+
+/// Get table schema
+#[tauri::command]
+pub async fn get_table_schema(
+    connection_id: String,
+    database: String,
+    table: String,
+    state: State<'_, AppState>,
+) -> Result<crate::db_drivers::types::Table, String> {
+    let config = load_connection_config(&connection_id, &state).await?;
+    let pool = state.db_pool_manager.lock().await;
+    let driver_arc = pool
+        .get_or_create_driver(&connection_id, &config)
+        .await
+        .map_err(|e| format!("Failed to get driver: {}", e))?;
+
+    let driver = driver_arc.read().await;
+    let schema = driver
+        .get_schema(&database)
+        .await
+        .map_err(|e| format!("Failed to get schema: {}", e))?;
+
+    schema
+        .tables
+        .into_iter()
+        .find(|t| t.name == table)
+        .ok_or_else(|| format!("Table {} not found", table))
+}
+
+/// Begin transaction
+#[tauri::command]
+pub async fn begin_transaction(
+    connection_id: String,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    let config = load_connection_config(&connection_id, &state).await?;
+    let pool = state.db_pool_manager.lock().await;
+    let driver_arc = pool
+        .get_or_create_driver(&connection_id, &config)
+        .await
+        .map_err(|e| format!("Failed to get driver: {}", e))?;
+
+    let mut driver = driver_arc.write().await;
+    let handle = driver
+        .begin_transaction()
+        .await
+        .map_err(|e| format!("Failed to begin transaction: {}", e))?;
+
+    Ok(handle.id)
+}
+
+/// Commit transaction
+#[tauri::command]
+pub async fn commit_transaction(
+    connection_id: String,
+    transaction_id: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let config = load_connection_config(&connection_id, &state).await?;
+    let pool = state.db_pool_manager.lock().await;
+    let driver_arc = pool
+        .get_or_create_driver(&connection_id, &config)
+        .await
+        .map_err(|e| format!("Failed to get driver: {}", e))?;
+
+    let mut driver = driver_arc.write().await;
+    let handle = crate::db_drivers::types::TransactionHandle {
+        id: transaction_id,
+        active: true,
+    };
+    driver
+        .commit_transaction(&handle)
+        .await
+        .map_err(|e| format!("Failed to commit transaction: {}", e))
+}
+
+/// Rollback transaction
+#[tauri::command]
+pub async fn rollback_transaction(
+    connection_id: String,
+    transaction_id: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let config = load_connection_config(&connection_id, &state).await?;
+    let pool = state.db_pool_manager.lock().await;
+    let driver_arc = pool
+        .get_or_create_driver(&connection_id, &config)
+        .await
+        .map_err(|e| format!("Failed to get driver: {}", e))?;
+
+    let mut driver = driver_arc.write().await;
+    let handle = crate::db_drivers::types::TransactionHandle {
+        id: transaction_id,
+        active: true,
+    };
+    driver
+        .rollback_transaction(&handle)
+        .await
+        .map_err(|e| format!("Failed to rollback transaction: {}", e))
+}
+
+/// Get query history
+#[tauri::command]
+pub async fn get_query_history(
+    connection_id: String,
+    limit: Option<usize>,
+    state: State<'_, AppState>,
+) -> Result<Vec<QueryHistory>, String> {
+    let db = state
+        .db
+        .lock()
+        .map_err(|e| format!("Failed to lock database: {}", e))?;
+
+    let limit_val = limit.unwrap_or(100);
+    let mut stmt = db
+        .prepare(
+            "SELECT id, connection_id, query_text, row_count, execution_time_ms, status, error_message, executed_at
+             FROM query_history
+             WHERE connection_id = ?1
+             ORDER BY executed_at DESC
+             LIMIT ?2",
+        )
+        .map_err(|e| format!("Failed to prepare query: {}", e))?;
+
+    let history = stmt
+        .query_map(rusqlite::params![connection_id, limit_val], |row| {
+            Ok(QueryHistory {
+                id: row.get(0)?,
+                connection_id: row.get(1)?,
+                query_text: row.get(2)?,
+                row_count: row.get(3)?,
+                execution_time_ms: row.get(4)?,
+                status: row.get(5)?,
+                error_message: row.get(6)?,
+                executed_at: row.get(7)?,
+            })
+        })
+        .map_err(|e| format!("Failed to query history: {}", e))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("Failed to collect history: {}", e))?;
+
+    Ok(history)
+}
+
+/// Search query history
+#[tauri::command]
+pub async fn search_query_history(
+    search: String,
+    connection_id: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<Vec<QueryHistory>, String> {
+    let db = state
+        .db
+        .lock()
+        .map_err(|e| format!("Failed to lock database: {}", e))?;
+
+    let search_pattern = format!("%{}%", search);
+
+    let history: Vec<QueryHistory> = if let Some(conn_id) = connection_id {
+        let mut stmt = db
+            .prepare(
+                "SELECT id, connection_id, query_text, row_count, execution_time_ms, status, error_message, executed_at
+                 FROM query_history
+                 WHERE connection_id = ?1 AND query_text LIKE ?2
+                 ORDER BY executed_at DESC
+                 LIMIT 100",
+            )
+            .map_err(|e| format!("Failed to prepare query: {}", e))?;
+
+        let rows = stmt
+            .query_map(rusqlite::params![conn_id, search_pattern], |row| {
+                Ok(QueryHistory {
+                    id: row.get(0)?,
+                    connection_id: row.get(1)?,
+                    query_text: row.get(2)?,
+                    row_count: row.get(3)?,
+                    execution_time_ms: row.get(4)?,
+                    status: row.get(5)?,
+                    error_message: row.get(6)?,
+                    executed_at: row.get(7)?,
+                })
+            })
+            .map_err(|e| format!("Failed to query history: {}", e))?;
+
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("Failed to collect history: {}", e))?
+    } else {
+        let mut stmt = db
+            .prepare(
+                "SELECT id, connection_id, query_text, row_count, execution_time_ms, status, error_message, executed_at
+                 FROM query_history
+                 WHERE query_text LIKE ?1
+                 ORDER BY executed_at DESC
+                 LIMIT 100",
+            )
+            .map_err(|e| format!("Failed to prepare query: {}", e))?;
+
+        let rows = stmt
+            .query_map(rusqlite::params![search_pattern], |row| {
+                Ok(QueryHistory {
+                    id: row.get(0)?,
+                    connection_id: row.get(1)?,
+                    query_text: row.get(2)?,
+                    row_count: row.get(3)?,
+                    execution_time_ms: row.get(4)?,
+                    status: row.get(5)?,
+                    error_message: row.get(6)?,
+                    executed_at: row.get(7)?,
+                })
+            })
+            .map_err(|e| format!("Failed to query history: {}", e))?;
+
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("Failed to collect history: {}", e))?
+    };
+
+    Ok(history)
+}
+
+/// Create query bookmark
+#[tauri::command]
+pub async fn create_query_bookmark(
+    name: String,
+    query_text: String,
+    connection_id: Option<String>,
+    tags: Option<String>,
+    description: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<QueryBookmark, String> {
+    let bookmark = QueryBookmark {
+        id: Uuid::now_v7().to_string(),
+        name: name.clone(),
+        query_text: query_text.clone(),
+        connection_id: connection_id.clone(),
+        tags: tags.clone(),
+        description: description.clone(),
+        created_at: chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+    };
+
+    let db = state
+        .db
+        .lock()
+        .map_err(|e| format!("Failed to lock database: {}", e))?;
+
+    db.execute(
+        "INSERT INTO query_bookmarks (id, name, query_text, connection_id, tags, description, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        rusqlite::params![
+            bookmark.id,
+            bookmark.name,
+            bookmark.query_text,
+            bookmark.connection_id,
+            bookmark.tags,
+            bookmark.description,
+            bookmark.created_at,
+        ],
+    )
+    .map_err(|e| format!("Failed to create bookmark: {}", e))?;
+
+    Ok(bookmark)
+}
+
+/// List query bookmarks
+#[tauri::command]
+pub async fn list_query_bookmarks(
+    connection_id: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<Vec<QueryBookmark>, String> {
+    let db = state
+        .db
+        .lock()
+        .map_err(|e| format!("Failed to lock database: {}", e))?;
+
+    let bookmarks: Vec<QueryBookmark> = if let Some(conn_id) = connection_id {
+        let mut stmt = db
+            .prepare(
+                "SELECT id, name, query_text, connection_id, tags, description, created_at
+                 FROM query_bookmarks
+                 WHERE connection_id = ?1 OR connection_id IS NULL
+                 ORDER BY created_at DESC",
+            )
+            .map_err(|e| format!("Failed to prepare query: {}", e))?;
+
+        let rows = stmt
+            .query_map([conn_id], |row| {
+                Ok(QueryBookmark {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    query_text: row.get(2)?,
+                    connection_id: row.get(3)?,
+                    tags: row.get(4)?,
+                    description: row.get(5)?,
+                    created_at: row.get(6)?,
+                })
+            })
+            .map_err(|e| format!("Failed to query bookmarks: {}", e))?;
+
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("Failed to collect bookmarks: {}", e))?
+    } else {
+        let mut stmt = db
+            .prepare(
+                "SELECT id, name, query_text, connection_id, tags, description, created_at
+                 FROM query_bookmarks
+                 ORDER BY created_at DESC",
+            )
+            .map_err(|e| format!("Failed to prepare query: {}", e))?;
+
+        let rows = stmt
+            .query_map([], |row| {
+                Ok(QueryBookmark {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    query_text: row.get(2)?,
+                    connection_id: row.get(3)?,
+                    tags: row.get(4)?,
+                    description: row.get(5)?,
+                    created_at: row.get(6)?,
+                })
+            })
+            .map_err(|e| format!("Failed to query bookmarks: {}", e))?;
+
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("Failed to collect bookmarks: {}", e))?
+    };
+
+    Ok(bookmarks)
+}
+
+/// Delete query bookmark
+#[tauri::command]
+pub async fn delete_query_bookmark(id: String, state: State<'_, AppState>) -> Result<(), String> {
+    let db = state
+        .db
+        .lock()
+        .map_err(|e| format!("Failed to lock database: {}", e))?;
+
+    db.execute("DELETE FROM query_bookmarks WHERE id = ?1", [id])
+        .map_err(|e| format!("Failed to delete bookmark: {}", e))?;
+
+    Ok(())
+}
+
+// ─── Helper Functions ───────────────────────────────────────────────────────
+
+/// Load connection config from database and decrypt password
+pub(crate) async fn load_connection_config(
+    connection_id: &str,
+    state: &State<'_, AppState>,
+) -> Result<ConnectionConfig, String> {
+    let (
+        db_type,
+        host,
+        port,
+        database_name,
+        username,
+        encrypted_password,
+        ssl_enabled,
+        ssl_ca_cert_path,
+        ssl_client_cert_path,
+        ssl_client_key_path,
+        ssh_enabled,
+        ssh_hostname,
+        ssh_port,
+        ssh_username,
+        ssh_auth_method,
+        connection_options,
+    ) = {
+        let db = state
+            .db
+            .lock()
+            .map_err(|e| format!("Failed to lock database: {}", e))?;
+
+        let mut stmt = db
+            .prepare(
+                "SELECT db_type, host, port, database_name, username, encrypted_password, ssl_enabled, ssl_ca_cert_path, ssl_client_cert_path, ssl_client_key_path, ssh_enabled, ssh_hostname, ssh_port, ssh_username, ssh_auth_method, connection_options
+                 FROM database_connections
+                 WHERE id = ?1",
+            )
+            .map_err(|e| format!("Failed to prepare query: {}", e))?;
+
+        stmt.query_row([connection_id], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, i64>(2)?,
+                row.get::<_, Option<String>>(3)?,
+                row.get::<_, String>(4)?,
+                row.get::<_, String>(5)?,
+                row.get::<_, i64>(6)?,
+                row.get::<_, Option<String>>(7)?,
+                row.get::<_, Option<String>>(8)?,
+                row.get::<_, Option<String>>(9)?,
+                row.get::<_, i64>(10)?,
+                row.get::<_, Option<String>>(11)?,
+                row.get::<_, Option<i64>>(12)?,
+                row.get::<_, Option<String>>(13)?,
+                row.get::<_, Option<String>>(14)?,
+                row.get::<_, Option<String>>(15)?,
+            ))
+        })
+        .optional()
+        .map_err(|e| format!("Failed to query connection: {}", e))?
+        .ok_or_else(|| format!("Connection {} not found", connection_id))?
+    };
+
+    // Decrypt password
+    let password = crate::integrations::auth::decrypt_token(&encrypted_password)
+        .map_err(|e| format!("Failed to decrypt password: {}", e))?;
+
+    // Parse database type using the type's parse method to support all aliases
+    let database_type = DatabaseType::parse(&db_type)
+        .ok_or_else(|| format!("Unsupported database type: {}", db_type))?;
+
+    Ok(build_connection_config(ConnectionConfigParts {
+        database_type,
+        host,
+        port,
+        database: database_name,
+        username,
+        password,
+        ssl_enabled,
+        ssl_ca_cert_path,
+        ssl_client_cert_path,
+        ssl_client_key_path,
+        ssh_enabled,
+        ssh_hostname,
+        ssh_port,
+        ssh_username,
+        ssh_auth_method,
+        connection_options,
+    }))
+}
+
+struct ConnectionConfigParts {
+    database_type: DatabaseType,
+    host: String,
+    port: i64,
+    database: Option<String>,
+    username: String,
+    password: String,
+    ssl_enabled: i64,
+    ssl_ca_cert_path: Option<String>,
+    ssl_client_cert_path: Option<String>,
+    ssl_client_key_path: Option<String>,
+    ssh_enabled: i64,
+    ssh_hostname: Option<String>,
+    ssh_port: Option<i64>,
+    ssh_username: Option<String>,
+    ssh_auth_method: Option<String>,
+    connection_options: Option<String>,
+}
+
+fn build_connection_config(parts: ConnectionConfigParts) -> ConnectionConfig {
+    // Parse connection options
+    let mut options = HashMap::new();
+    if let Some(opts_str) = parts.connection_options {
+        if let Ok(opts_json) = serde_json::from_str::<serde_json::Value>(&opts_str) {
+            if let Some(obj) = opts_json.as_object() {
+                for (key, value) in obj {
+                    if let Some(val_str) = value.as_str() {
+                        options.insert(key.clone(), val_str.to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    let ssh_tunnel_config = if parts.ssh_enabled != 0 {
+        Some(DbSshTunnelConfig {
+            enabled: true,
+            hostname: parts.ssh_hostname.unwrap_or_default(),
+            port: parts.ssh_port.unwrap_or(22) as u16,
+            username: parts.ssh_username.unwrap_or_default(),
+            auth_method: parts.ssh_auth_method,
+            password: None,
+            private_key_data: None,
+            key_passphrase: None,
+        })
+    } else {
+        None
+    };
+
+    ConnectionConfig {
+        database_type: parts.database_type,
+        host: parts.host,
+        port: parts.port as u16,
+        database: parts.database,
+        username: parts.username,
+        password: parts.password,
+        ssl_config: if parts.ssl_enabled != 0 {
+            Some(SslConfig {
+                enabled: true,
+                ca_cert_path: parts.ssl_ca_cert_path,
+                client_cert_path: parts.ssl_client_cert_path,
+                client_key_path: parts.ssl_client_key_path,
+                verify_server: true,
+            })
+        } else {
+            None
+        },
+        ssh_tunnel_config,
+        options,
+    }
+}
+
+/// Save query execution to history
+async fn save_query_history(
+    connection_id: &str,
+    query_text: &str,
+    row_count: usize,
+    execution_time_ms: u64,
+    status: &str,
+    error_message: Option<String>,
+    state: &State<'_, AppState>,
+) -> Result<(), String> {
+    let db = state
+        .db
+        .lock()
+        .map_err(|e| format!("Failed to lock database: {}", e))?;
+
+    let history_id = Uuid::now_v7().to_string();
+    let executed_at = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+
+    db.execute(
+        "INSERT INTO query_history (id, connection_id, query_text, row_count, execution_time_ms, status, error_message, executed_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+        rusqlite::params![
+            history_id,
+            connection_id,
+            query_text,
+            row_count as i64,
+            execution_time_ms as i64,
+            status,
+            error_message,
+            executed_at,
+        ],
+    )
+    .map_err(|e| format!("Failed to save query history: {}", e))?;
+
+    Ok(())
+}
+
+// ─── Table Data Editing (CRUD) ──────────────────────────────────────────────
+
+/// Represents a single row update operation
+///
+/// Values are received as untyped JSON from the frontend and converted to
+/// `DataValue` based on the target column's data type.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RowUpdate {
+    /// Primary key values to identify the row (column_name -> value)
+    pub primary_keys: HashMap<String, serde_json::Value>,
+    /// Column updates (column_name -> new_value)
+    pub column_updates: HashMap<String, serde_json::Value>,
+}
+
+/// Convert a JSON value into a `DataValue` based on the expected column type.
+fn json_to_data_value(value: &serde_json::Value, expected_type: &str) -> DataValue {
+    if value.is_null() {
+        return DataValue::Null;
+    }
+
+    let expected_lower = expected_type.to_lowercase();
+
+    // Try to match expected type first
+    if expected_lower.contains("bool") || expected_lower.contains("bit") {
+        if let Some(b) = value.as_bool() {
+            return DataValue::Boolean(b);
+        }
+        if let Some(s) = value.as_str() {
+            let lower = s.to_lowercase();
+            if lower == "true" || lower == "t" || lower == "1" {
+                return DataValue::Boolean(true);
+            }
+            if lower == "false" || lower == "f" || lower == "0" {
+                return DataValue::Boolean(false);
+            }
+        }
+    }
+
+    if expected_lower.contains("int")
+        || expected_lower.contains("serial")
+        || expected_lower.contains("number")
+    {
+        if let Some(n) = value.as_i64() {
+            return DataValue::Integer(n);
+        }
+        if let Some(s) = value.as_str() {
+            if let Ok(n) = s.parse::<i64>() {
+                return DataValue::Integer(n);
+            }
+        }
+    }
+
+    if expected_lower.contains("float")
+        || expected_lower.contains("double")
+        || expected_lower.contains("numeric")
+        || expected_lower.contains("decimal")
+        || expected_lower.contains("real")
+    {
+        if let Some(f) = value.as_f64() {
+            return DataValue::Float(f);
+        }
+        if let Some(s) = value.as_str() {
+            if let Ok(f) = s.parse::<f64>() {
+                return DataValue::Float(f);
+            }
+        }
+    }
+
+    if (expected_lower.contains("json") || expected_lower.contains("jsonb"))
+        && (value.is_object() || value.is_array())
+    {
+        return DataValue::Json(value.clone());
+    }
+
+    // Fallback to native JSON types
+    if let Some(b) = value.as_bool() {
+        return DataValue::Boolean(b);
+    }
+    if let Some(n) = value.as_i64() {
+        return DataValue::Integer(n);
+    }
+    if let Some(f) = value.as_f64() {
+        return DataValue::Float(f);
+    }
+    if let Some(s) = value.as_str() {
+        return DataValue::String(s.to_string());
+    }
+    if value.is_array() {
+        return DataValue::Json(value.clone());
+    }
+    if value.is_object() {
+        return DataValue::Json(value.clone());
+    }
+
+    DataValue::String(value.to_string())
+}
+
+/// Result of update operation
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateResult {
+    pub rows_updated: usize,
+    pub rows_failed: usize,
+    pub errors: Vec<String>,
+}
+
+/// Update rows in a table
+///
+/// # Arguments
+/// * `connection_id` - Database connection ID
+/// * `database` - Database name
+/// * `table_name` - Table name
+/// * `updates` - Vector of row updates with primary keys and new values
+#[tauri::command]
+pub async fn update_table_rows(
+    connection_id: String,
+    database: String,
+    table_name: String,
+    updates: Vec<RowUpdate>,
+    state: State<'_, AppState>,
+) -> Result<UpdateResult, String> {
+    if updates.is_empty() {
+        return Ok(UpdateResult {
+            rows_updated: 0,
+            rows_failed: 0,
+            errors: vec![],
+        });
+    }
+
+    // Load connection config
+    let config = load_connection_config(&connection_id, &state).await?;
+    let pool = state.db_pool_manager.lock().await;
+    let driver_arc = pool
+        .get_or_create_driver(&connection_id, &config)
+        .await
+        .map_err(|e| format!("Failed to get driver: {}", e))?;
+
+    // Get table schema to validate primary keys and column types
+    let driver = driver_arc.read().await;
+    let schema = driver
+        .get_schema(&database)
+        .await
+        .map_err(|e| format!("Failed to get schema: {}", e))?;
+
+    let table = schema
+        .tables
+        .iter()
+        .find(|t| t.name == table_name)
+        .ok_or_else(|| format!("Table {} not found in schema", table_name))?;
+
+    // Extract primary key columns
+    let pk_columns: Vec<String> = table
+        .columns
+        .iter()
+        .filter(|c| c.primary_key)
+        .map(|c| c.name.clone())
+        .collect();
+
+    if pk_columns.is_empty() {
+        return Err(format!(
+            "Table {} has no primary key - cannot perform updates",
+            table_name
+        ));
+    }
+
+    // Build column type map for validation
+    let column_types: HashMap<String, String> = table
+        .columns
+        .iter()
+        .map(|c| (c.name.clone(), c.data_type.clone()))
+        .collect();
+
+    // Begin transaction
+    drop(driver); // Drop read lock before acquiring write lock
+    let mut driver = driver_arc.write().await;
+    let tx_handle = driver
+        .begin_transaction()
+        .await
+        .map_err(|e| format!("Failed to begin transaction: {}", e))?;
+
+    let mut rows_updated = 0;
+    let mut rows_failed = 0;
+    let mut errors = Vec::new();
+
+    // Process each update
+    for (idx, update) in updates.iter().enumerate() {
+        let mut update_invalid = false;
+
+        // Validate primary keys are present
+        for pk_col in &pk_columns {
+            if !update.primary_keys.contains_key(pk_col) {
+                let err = format!("Update {} missing primary key column: {}", idx + 1, pk_col);
+                errors.push(err);
+                update_invalid = true;
+            }
+        }
+
+        // Validate column updates exist in schema
+        for col_name in update.column_updates.keys() {
+            if !column_types.contains_key(col_name) {
+                let err = format!(
+                    "Update {} references non-existent column: {}",
+                    idx + 1,
+                    col_name
+                );
+                errors.push(err);
+                update_invalid = true;
+            }
+        }
+
+        if update_invalid {
+            rows_failed += 1;
+            continue;
+        }
+
+        // Convert JSON values to typed DataValues
+        let pk_typed: HashMap<String, DataValue> = update
+            .primary_keys
+            .iter()
+            .map(|(k, v)| {
+                let expected_type = column_types
+                    .get(k)
+                    .cloned()
+                    .unwrap_or_else(|| "TEXT".to_string());
+                (k.clone(), json_to_data_value(v, &expected_type))
+            })
+            .collect();
+
+        let cols_typed: HashMap<String, DataValue> = update
+            .column_updates
+            .iter()
+            .map(|(k, v)| {
+                let expected_type = column_types
+                    .get(k)
+                    .cloned()
+                    .unwrap_or_else(|| "TEXT".to_string());
+                (k.clone(), json_to_data_value(v, &expected_type))
+            })
+            .collect();
+
+        let typed_update = TypedRowUpdate {
+            primary_keys: pk_typed,
+            column_updates: cols_typed,
+        };
+
+        // Build UPDATE statement
+        match build_update_statement(
+            &table_name,
+            &pk_columns,
+            &typed_update,
+            &config.database_type,
+        ) {
+            Ok((sql, params)) => {
+                // Execute update
+                match driver.execute_query(&sql, params).await {
+                    Ok(result) => {
+                        if result.row_count > 0 {
+                            rows_updated += 1;
+                        } else {
+                            let err = format!(
+                                "Update {} matched no rows (primary key may not exist)",
+                                idx + 1
+                            );
+                            errors.push(err);
+                            rows_failed += 1;
+                        }
+                    }
+                    Err(e) => {
+                        let err = format!("Update {} failed: {}", idx + 1, e);
+                        errors.push(err);
+                        rows_failed += 1;
+                    }
+                }
+            }
+            Err(e) => {
+                errors.push(format!("Update {} SQL generation failed: {}", idx + 1, e));
+                rows_failed += 1;
+            }
+        }
+    }
+
+    // Commit or rollback transaction
+    if rows_failed > 0 {
+        driver
+            .rollback_transaction(&tx_handle)
+            .await
+            .map_err(|e| format!("Failed to rollback transaction: {}", e))?;
+        Err(format!(
+            "Transaction rolled back due to errors: {}",
+            errors.join("; ")
+        ))
+    } else {
+        driver
+            .commit_transaction(&tx_handle)
+            .await
+            .map_err(|e| format!("Failed to commit transaction: {}", e))?;
+
+        // Audit log
+        {
+            let db = state
+                .db
+                .lock()
+                .map_err(|e| format!("Failed to lock database: {}", e))?;
+
+            let details = serde_json::json!({
+                "connection_id": connection_id,
+                "database": database,
+                "table": table_name,
+                "rows_updated": rows_updated,
+            })
+            .to_string();
+
+            crate::audit::log::write_audit_event(
+                &db,
+                "table_rows_updated",
+                "database_table",
+                &format!("{}.{}", database, table_name),
+                &details,
+            )
+            .map_err(|e| format!("Failed to write audit log: {}", e))?;
+        }
+
+        Ok(UpdateResult {
+            rows_updated,
+            rows_failed,
+            errors,
+        })
+    }
+}
+
+/// Internal typed representation after JSON→DataValue conversion.
+#[derive(Debug, Clone)]
+struct TypedRowUpdate {
+    primary_keys: HashMap<String, DataValue>,
+    column_updates: HashMap<String, DataValue>,
+}
+
+/// Build UPDATE SQL statement with WHERE clause
+fn build_update_statement(
+    table_name: &str,
+    pk_columns: &[String],
+    update: &TypedRowUpdate,
+    db_type: &DatabaseType,
+) -> Result<(String, Vec<DataValue>), String> {
+    // Validate table name to prevent SQL injection
+    crate::commands::database_security::validate_sql_identifier(table_name)?;
+
+    if update.column_updates.is_empty() {
+        return Err("No columns to update".to_string());
+    }
+
+    let mut params = Vec::new();
+    let mut set_clauses = Vec::new();
+    let mut param_idx = 1;
+
+    // Build SET clause with validated column names
+    for (col_name, value) in &update.column_updates {
+        // Validate column name to prevent SQL injection
+        crate::commands::database_security::validate_sql_identifier(col_name)?;
+        set_clauses.push(format!(
+            "{} = {}",
+            col_name,
+            param_placeholder(param_idx, db_type)
+        ));
+        params.push(value.clone());
+        param_idx += 1;
+    }
+
+    // Build WHERE clause using primary keys
+    let mut where_clauses = Vec::new();
+    for pk_col in pk_columns {
+        // Validate primary key column name
+        crate::commands::database_security::validate_sql_identifier(pk_col)?;
+
+        let pk_value = update
+            .primary_keys
+            .get(pk_col)
+            .ok_or_else(|| format!("Missing primary key: {}", pk_col))?;
+        where_clauses.push(format!(
+            "{} = {}",
+            pk_col,
+            param_placeholder(param_idx, db_type)
+        ));
+        params.push(pk_value.clone());
+        param_idx += 1;
+    }
+
+    let sql = format!(
+        "UPDATE {} SET {} WHERE {}",
+        table_name,
+        set_clauses.join(", "),
+        where_clauses.join(" AND ")
+    );
+
+    Ok((sql, params))
+}
+
+/// Generate parameterized query placeholder for database type
+fn param_placeholder(index: usize, db_type: &DatabaseType) -> String {
+    match db_type {
+        DatabaseType::PostgreSQL => format!("${}", index),
+        DatabaseType::MySQL => "?".to_string(),
+        DatabaseType::MongoDB => {
+            // MongoDB uses native query format, not SQL
+            format!("${}", index)
+        }
+        DatabaseType::Cassandra => "?".to_string(),
+        DatabaseType::Redis => {
+            // Redis doesn't support traditional SQL updates
+            format!("${}", index)
+        }
+    }
+}
+
+/// Validate that a DataValue matches expected column type
+#[allow(dead_code)]
+fn validate_data_type(value: &DataValue, expected_type: &str) -> bool {
+    use crate::db_drivers::types::DataValue;
+
+    // Allow NULL for any type
+    if matches!(value, DataValue::Null) {
+        return true;
+    }
+
+    let expected_lower = expected_type.to_lowercase();
+
+    match value {
+        DataValue::Integer(_) => {
+            expected_lower.contains("int")
+                || expected_lower.contains("serial")
+                || expected_lower.contains("bigserial")
+                || expected_lower.contains("smallserial")
+                || expected_lower.contains("number")
+        }
+        DataValue::Float(_) => {
+            expected_lower.contains("float")
+                || expected_lower.contains("double")
+                || expected_lower.contains("real")
+                || expected_lower.contains("numeric")
+                || expected_lower.contains("decimal")
+        }
+        DataValue::Boolean(_) => expected_lower.contains("bool") || expected_lower.contains("bit"),
+        DataValue::String(_) => {
+            expected_lower.contains("char")
+                || expected_lower.contains("varchar")
+                || expected_lower.contains("text")
+                || expected_lower.contains("string")
+                || expected_lower.contains("clob")
+        }
+        DataValue::Date(_) => expected_lower.contains("date"),
+        DataValue::DateTime(_) => {
+            expected_lower.contains("timestamp") || expected_lower.contains("datetime")
+        }
+        DataValue::Bytes(_) => {
+            expected_lower.contains("blob")
+                || expected_lower.contains("bytea")
+                || expected_lower.contains("binary")
+        }
+        DataValue::Json(_) => expected_lower.contains("json") || expected_lower.contains("jsonb"),
+        DataValue::Array(_) => expected_lower.contains("array"),
+        DataValue::Null => true,
+    }
+}
+
+// ─── SSH Tunnel Support for Database Connections ────────────────────────────
+
+/// Setup SSH tunnel for a database connection
+/// Validates and configures SSH tunnel parameters (actual tunnel creation happens at connection time)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EstablishDbSshTunnelParams {
+    pub connection_id: String,
+    pub ssh_hostname: String,
+    pub ssh_port: u16,
+    pub ssh_username: String,
+    pub ssh_auth_method: String,
+    pub ssh_password: Option<String>,
+    pub ssh_private_key: Option<String>,
+    pub ssh_key_passphrase: Option<String>,
+}
+
+#[tauri::command]
+pub fn establish_db_ssh_tunnel(
+    params: EstablishDbSshTunnelParams,
+    state: State<'_, AppState>,
+) -> Result<ConnectionTestResult, String> {
+    let EstablishDbSshTunnelParams {
+        connection_id,
+        ssh_hostname,
+        ssh_port,
+        ssh_username,
+        ssh_auth_method,
+        ssh_password,
+        ssh_private_key,
+        ssh_key_passphrase,
+    } = params;
+
+    let db = state
+        .db
+        .lock()
+        .map_err(|e| format!("Failed to lock database: {}", e))?;
+
+    // Validate inputs
+    if ssh_hostname.is_empty() {
+        return Ok(ConnectionTestResult {
+            success: false,
+            message: "SSH hostname cannot be empty".to_string(),
+            latency_ms: None,
+        });
+    }
+
+    if ssh_username.is_empty() {
+        return Ok(ConnectionTestResult {
+            success: false,
+            message: "SSH username cannot be empty".to_string(),
+            latency_ms: None,
+        });
+    }
+
+    if ssh_auth_method != "password" && ssh_auth_method != "key" {
+        return Ok(ConnectionTestResult {
+            success: false,
+            message: "SSH auth method must be 'password' or 'key'".to_string(),
+            latency_ms: None,
+        });
+    }
+
+    let auth_check = match ssh_auth_method.as_str() {
+        "password" => {
+            if ssh_password.as_ref().map(|v| v.is_empty()).unwrap_or(true) {
+                return Ok(ConnectionTestResult {
+                    success: false,
+                    message: "SSH password is required for password authentication".to_string(),
+                    latency_ms: None,
+                });
+            }
+            Ok(())
+        }
+        "key" => {
+            if ssh_private_key
+                .as_ref()
+                .map(|v| v.is_empty())
+                .unwrap_or(true)
+            {
+                return Ok(ConnectionTestResult {
+                    success: false,
+                    message: "SSH private key is required for key authentication".to_string(),
+                    latency_ms: None,
+                });
+            }
+            Ok(())
+        }
+        _ => Err("Unsupported SSH auth method".to_string()),
+    };
+    if let Err(message) = auth_check {
+        return Ok(ConnectionTestResult {
+            success: false,
+            message,
+            latency_ms: None,
+        });
+    }
+
+    let started = std::time::Instant::now();
+    if let Err(message) = test_ssh_connectivity(
+        &ssh_hostname,
+        ssh_port,
+        &ssh_username,
+        &ssh_auth_method,
+        ssh_password.as_deref(),
+        ssh_private_key.as_deref(),
+        ssh_key_passphrase.as_deref(),
+    ) {
+        return Ok(ConnectionTestResult {
+            success: false,
+            message,
+            latency_ms: Some(started.elapsed().as_millis() as u64),
+        });
+    }
+
+    let ssh_password_encrypted = match ssh_password.filter(|v| !v.is_empty()) {
+        Some(secret) => Some(
+            crate::integrations::auth::encrypt_token(&secret)
+                .map_err(|e| format!("Failed to encrypt SSH password: {}", e))?,
+        ),
+        None => None,
+    };
+    let ssh_private_key_encrypted = match ssh_private_key.filter(|v| !v.is_empty()) {
+        Some(secret) => Some(
+            crate::integrations::auth::encrypt_token(&secret)
+                .map_err(|e| format!("Failed to encrypt SSH private key: {}", e))?,
+        ),
+        None => None,
+    };
+    let ssh_key_passphrase_encrypted = match ssh_key_passphrase.filter(|v| !v.is_empty()) {
+        Some(secret) => Some(
+            crate::integrations::auth::encrypt_token(&secret)
+                .map_err(|e| format!("Failed to encrypt SSH key passphrase: {}", e))?,
+        ),
+        None => None,
+    };
+
+    // Update SSH configuration in database
+    let update_query = "UPDATE database_connections 
+        SET ssh_enabled = 1,
+            ssh_hostname = ?2,
+            ssh_port = ?3,
+            ssh_username = ?4,
+            ssh_auth_method = ?5,
+            ssh_password_encrypted = ?6,
+            ssh_private_key_encrypted = ?7,
+            ssh_key_passphrase_encrypted = ?8,
+            updated_at = datetime('now')
+        WHERE id = ?1";
+
+    db.execute(
+        update_query,
+        rusqlite::params![
+            &connection_id,
+            &ssh_hostname,
+            &ssh_port,
+            &ssh_username,
+            &ssh_auth_method,
+            &ssh_password_encrypted,
+            &ssh_private_key_encrypted,
+            &ssh_key_passphrase_encrypted
+        ],
+    )
+    .map_err(|e| format!("Failed to update SSH config: {}", e))?;
+
+    Ok(ConnectionTestResult {
+        success: true,
+        message: "SSH tunnel configuration validated and saved successfully".to_string(),
+        latency_ms: Some(started.elapsed().as_millis() as u64),
+    })
+}
+
+fn test_ssh_connectivity(
+    hostname: &str,
+    port: u16,
+    username: &str,
+    auth_method: &str,
+    password: Option<&str>,
+    private_key: Option<&str>,
+    key_passphrase: Option<&str>,
+) -> Result<(), String> {
+    let addr: SocketAddr = format!("{hostname}:{port}")
+        .parse()
+        .map_err(|e| format!("Invalid SSH host/port: {}", e))?;
+    let tcp_stream = TcpStream::connect_timeout(&addr, Duration::from_secs(8))
+        .map_err(|e| format!("SSH TCP connection failed: {}", e))?;
+    tcp_stream
+        .set_read_timeout(Some(Duration::from_secs(8)))
+        .map_err(|e| format!("Failed to set SSH read timeout: {}", e))?;
+    tcp_stream
+        .set_write_timeout(Some(Duration::from_secs(8)))
+        .map_err(|e| format!("Failed to set SSH write timeout: {}", e))?;
+
+    let mut session =
+        ssh2::Session::new().map_err(|e| format!("Failed to create SSH session: {}", e))?;
+    session.set_tcp_stream(tcp_stream);
+    session
+        .handshake()
+        .map_err(|e| format!("SSH handshake failed: {}", e))?;
+
+    match auth_method {
+        "password" => {
+            let secret = password.ok_or_else(|| "SSH password is required".to_string())?;
+            session
+                .userauth_password(username, secret)
+                .map_err(|e| format!("SSH password authentication failed: {}", e))?;
+        }
+        "key" => {
+            let key = private_key.ok_or_else(|| "SSH private key is required".to_string())?;
+            session
+                .userauth_pubkey_memory(username, None, key, key_passphrase)
+                .map_err(|e| format!("SSH key authentication failed: {}", e))?;
+        }
+        _ => return Err("Unsupported SSH auth method".to_string()),
+    }
+
+    if !session.authenticated() {
+        return Err("SSH authentication failed".to_string());
+    }
+
+    Ok(())
+}
+
+/// Verify SSH tunnel is configured
+#[tauri::command]
+pub fn verify_db_ssh_tunnel(
+    connection_id: String,
+    state: State<'_, AppState>,
+) -> Result<bool, String> {
+    let db = state
+        .db
+        .lock()
+        .map_err(|e| format!("Failed to lock database: {}", e))?;
+
+    let mut stmt = db
+        .prepare("SELECT ssh_enabled FROM database_connections WHERE id = ?1")
+        .map_err(|e| format!("Failed to prepare query: {}", e))?;
+
+    stmt.query_row(rusqlite::params![&connection_id], |row| {
+        let ssh_enabled: bool = row.get::<_, i32>(0).map(|v| v != 0)?;
+        Ok(ssh_enabled)
+    })
+    .map_err(|e| format!("Connection not found or SSH not configured: {}", e))
+}
+
+/// Get SSH tunnel configuration for a connection
+#[tauri::command]
+pub fn get_db_ssh_config(
+    connection_id: String,
+    state: State<'_, AppState>,
+) -> Result<serde_json::Value, String> {
+    let db = state
+        .db
+        .lock()
+        .map_err(|e| format!("Failed to lock database: {}", e))?;
+
+    let mut stmt = db
+        .prepare(
+            "SELECT ssh_enabled, ssh_hostname, ssh_port, ssh_username, ssh_auth_method 
+             FROM database_connections 
+             WHERE id = ?1",
+        )
+        .map_err(|e| format!("Failed to prepare query: {}", e))?;
+
+    stmt.query_row(rusqlite::params![&connection_id], |row| {
+        let ssh_enabled: bool = row.get::<_, i32>(0).map(|v| v != 0)?;
+        let ssh_hostname: Option<String> = row.get(1)?;
+        let ssh_port: Option<u16> = row.get(2)?;
+        let ssh_username: Option<String> = row.get(3)?;
+        let ssh_auth_method: Option<String> = row.get(4)?;
+
+        Ok(serde_json::json!({
+            "ssh_enabled": ssh_enabled,
+            "ssh_hostname": ssh_hostname,
+            "ssh_port": ssh_port,
+            "ssh_username": ssh_username,
+            "ssh_auth_method": ssh_auth_method
+        }))
+    })
+    .map_err(|e| format!("Failed to get SSH config: {}", e))
+}
+
+#[cfg(test)]
+mod update_tests {
+    use super::*;
+    use crate::db_drivers::types::DataValue;
+
+    #[test]
+    fn test_validate_data_type() {
+        assert!(validate_data_type(&DataValue::Integer(42), "INTEGER"));
+        assert!(validate_data_type(&DataValue::Integer(42), "BIGINT"));
+        assert!(validate_data_type(&DataValue::Float(3.14), "FLOAT"));
+        assert!(validate_data_type(&DataValue::Float(3.14), "DOUBLE"));
+        assert!(validate_data_type(
+            &DataValue::String("test".into()),
+            "VARCHAR"
+        ));
+        assert!(validate_data_type(
+            &DataValue::String("test".into()),
+            "TEXT"
+        ));
+        assert!(validate_data_type(&DataValue::Boolean(true), "BOOLEAN"));
+        assert!(validate_data_type(&DataValue::Null, "INTEGER"));
+        assert!(validate_data_type(&DataValue::Null, "VARCHAR"));
+
+        // Type mismatches
+        assert!(!validate_data_type(
+            &DataValue::String("test".into()),
+            "INTEGER"
+        ));
+        assert!(!validate_data_type(&DataValue::Integer(42), "VARCHAR"));
+    }
+
+    #[test]
+    fn test_param_placeholder() {
+        assert_eq!(param_placeholder(1, &DatabaseType::PostgreSQL), "$1");
+        assert_eq!(param_placeholder(1, &DatabaseType::MySQL), "?");
+        assert_eq!(param_placeholder(2, &DatabaseType::PostgreSQL), "$2");
+    }
+
+    #[test]
+    fn test_build_update_statement() {
+        let mut primary_keys = HashMap::new();
+        primary_keys.insert("id".to_string(), DataValue::Integer(1));
+
+        let mut column_updates = HashMap::new();
+        column_updates.insert("name".to_string(), DataValue::String("John".into()));
+        column_updates.insert("age".to_string(), DataValue::Integer(30));
+
+        let update = TypedRowUpdate {
+            primary_keys,
+            column_updates,
+        };
+
+        let (sql, params) = build_update_statement(
+            "users",
+            &["id".to_string()],
+            &update,
+            &DatabaseType::PostgreSQL,
+        )
+        .unwrap();
+
+        assert!(sql.contains("UPDATE users"));
+        assert!(sql.contains("SET"));
+        assert!(sql.contains("WHERE id = $3"));
+        assert_eq!(params.len(), 3);
+    }
+
+    #[test]
+    fn test_build_update_statement_composite_key() {
+        let mut primary_keys = HashMap::new();
+        primary_keys.insert("user_id".to_string(), DataValue::Integer(1));
+        primary_keys.insert("org_id".to_string(), DataValue::Integer(100));
+
+        let mut column_updates = HashMap::new();
+        column_updates.insert("status".to_string(), DataValue::String("active".into()));
+
+        let update = TypedRowUpdate {
+            primary_keys,
+            column_updates,
+        };
+
+        let (sql, params) = build_update_statement(
+            "memberships",
+            &["user_id".to_string(), "org_id".to_string()],
+            &update,
+            &DatabaseType::MySQL,
+        )
+        .unwrap();
+
+        assert!(sql.contains("UPDATE memberships"));
+        assert!(sql.contains("SET status = ?"));
+        assert!(sql.contains("WHERE"));
+        assert!(sql.contains("user_id = ?"));
+        assert!(sql.contains("org_id = ?"));
+        assert_eq!(params.len(), 3);
+    }
+
+    #[test]
+    fn test_json_to_data_value_int() {
+        let v = serde_json::json!(42);
+        let dv = json_to_data_value(&v, "INTEGER");
+        assert!(matches!(dv, DataValue::Integer(42)));
+    }
+
+    #[test]
+    fn test_json_to_data_value_string_to_int() {
+        let v = serde_json::json!("42");
+        let dv = json_to_data_value(&v, "INTEGER");
+        assert!(matches!(dv, DataValue::Integer(42)));
+    }
+
+    #[test]
+    fn test_json_to_data_value_null() {
+        let v = serde_json::json!(null);
+        let dv = json_to_data_value(&v, "VARCHAR");
+        assert!(matches!(dv, DataValue::Null));
+    }
+
+    #[test]
+    fn test_database_type_parse_postgresql_aliases() {
+        // Test that all PostgreSQL aliases are supported
+        assert_eq!(
+            DatabaseType::parse("postgresql"),
+            Some(DatabaseType::PostgreSQL)
+        );
+        assert_eq!(
+            DatabaseType::parse("postgres"),
+            Some(DatabaseType::PostgreSQL)
+        );
+        assert_eq!(DatabaseType::parse("pg"), Some(DatabaseType::PostgreSQL));
+        assert_eq!(
+            DatabaseType::parse("POSTGRESQL"),
+            Some(DatabaseType::PostgreSQL)
+        );
+        assert_eq!(
+            DatabaseType::parse("PostgreSQL"),
+            Some(DatabaseType::PostgreSQL)
+        );
+    }
+
+    #[test]
+    fn test_database_type_parse_mysql() {
+        assert_eq!(DatabaseType::parse("mysql"), Some(DatabaseType::MySQL));
+        assert_eq!(DatabaseType::parse("MySQL"), Some(DatabaseType::MySQL));
+    }
+
+    #[test]
+    fn test_database_type_parse_mongodb_aliases() {
+        assert_eq!(DatabaseType::parse("mongodb"), Some(DatabaseType::MongoDB));
+        assert_eq!(DatabaseType::parse("mongo"), Some(DatabaseType::MongoDB));
+    }
+
+    #[test]
+    fn test_database_type_parse_unknown() {
+        assert_eq!(DatabaseType::parse("unknown"), None);
+        assert_eq!(DatabaseType::parse("sqlite"), None);
+    }
+
+    #[test]
+    fn test_build_connection_config_restores_ssh_tunnel() {
+        let config = build_connection_config(ConnectionConfigParts {
+            database_type: DatabaseType::PostgreSQL,
+            host: "db.local".to_string(),
+            port: 5432,
+            database: Some("app".to_string()),
+            username: "postgres".to_string(),
+            password: "secret".to_string(),
+            ssl_enabled: 1,
+            ssl_ca_cert_path: Some("/etc/ssl/ca.pem".to_string()),
+            ssl_client_cert_path: None,
+            ssl_client_key_path: None,
+            ssh_enabled: 1,
+            ssh_hostname: Some("bastion.local".to_string()),
+            ssh_port: Some(2222),
+            ssh_username: Some("jumpuser".to_string()),
+            ssh_auth_method: Some("key".to_string()),
+            connection_options: Some(r#"{"statement_timeout":"5000"}"#.to_string()),
+        });
+
+        assert_eq!(config.database_type, DatabaseType::PostgreSQL);
+        assert_eq!(config.database.as_deref(), Some("app"));
+        assert_eq!(config.ssl_config.as_ref().map(|s| s.enabled), Some(true));
+        let tunnel = config
+            .ssh_tunnel_config
+            .expect("ssh tunnel should be restored");
+        assert!(tunnel.enabled);
+        assert_eq!(tunnel.hostname, "bastion.local");
+        assert_eq!(tunnel.port, 2222);
+        assert_eq!(tunnel.username, "jumpuser");
+        assert_eq!(tunnel.auth_method.as_deref(), Some("key"));
+        assert_eq!(
+            config.options.get("statement_timeout").map(String::as_str),
+            Some("5000")
+        );
+    }
+}
+
+// ─── Query Execution Plans (EXPLAIN) ────────────────────────────────────────
+
+/// A single node in a query execution plan tree.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExplainNode {
+    pub node_type: String,
+    pub relation_name: Option<String>,
+    pub index_name: Option<String>,
+    pub cost: Option<f64>,
+    pub rows: Option<i64>,
+    pub actual_time_ms: Option<f64>,
+    pub extra: Option<String>,
+    pub children: Vec<ExplainNode>,
+}
+
+/// Structured EXPLAIN result returned to the frontend.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExplainResult {
+    pub database_type: String,
+    pub plan: Option<ExplainNode>,
+    pub total_cost: Option<f64>,
+    pub execution_time_ms: Option<f64>,
+    pub raw_output: String,
+}
+
+/// Run EXPLAIN on a query and return a structured plan.
+#[tauri::command]
+pub async fn explain_query(
+    connection_id: String,
+    query: String,
+    state: State<'_, AppState>,
+) -> Result<ExplainResult, String> {
+    let config = load_connection_config(&connection_id, &state).await?;
+
+    let explain_sql = build_explain_sql(&query, &config.database_type)?;
+
+    let pool = state.db_pool_manager.lock().await;
+    let driver_arc = pool
+        .get_or_create_driver(&connection_id, &config)
+        .await
+        .map_err(|e| format!("Failed to get driver: {}", e))?;
+
+    let driver = driver_arc.read().await;
+    let result = driver
+        .execute_query(&explain_sql, Vec::new())
+        .await
+        .map_err(|e| format!("EXPLAIN failed: {}", e))?;
+
+    let raw_output = render_explain_rows(&result);
+
+    let database_type_str = match config.database_type {
+        DatabaseType::PostgreSQL => "postgresql",
+        DatabaseType::MySQL => "mysql",
+        DatabaseType::MongoDB => "mongodb",
+        DatabaseType::Cassandra => "cassandra",
+        DatabaseType::Redis => "redis",
+    }
+    .to_string();
+
+    let plan = match config.database_type {
+        DatabaseType::PostgreSQL => parse_postgres_explain(&raw_output),
+        DatabaseType::MySQL => parse_mysql_explain(&result),
+        _ => None,
+    };
+
+    let (total_cost, execution_time_ms) = plan
+        .as_ref()
+        .map(|p| (p.cost, p.actual_time_ms))
+        .unwrap_or((None, None));
+
+    Ok(ExplainResult {
+        database_type: database_type_str,
+        plan,
+        total_cost,
+        execution_time_ms,
+        raw_output,
+    })
+}
+
+fn build_explain_sql(query: &str, db_type: &DatabaseType) -> Result<String, String> {
+    let trimmed = query.trim().trim_end_matches(';');
+    match db_type {
+        DatabaseType::PostgreSQL => Ok(format!("EXPLAIN (FORMAT JSON) {}", trimmed)),
+        DatabaseType::MySQL => Ok(format!("EXPLAIN {}", trimmed)),
+        DatabaseType::Cassandra => Ok(format!("TRACING ON; {}", trimmed)),
+        DatabaseType::MongoDB => {
+            Err("EXPLAIN is not supported for MongoDB through SQL".to_string())
+        }
+        DatabaseType::Redis => Err("EXPLAIN is not supported for Redis".to_string()),
+    }
+}
+
+fn render_explain_rows(result: &QueryResult) -> String {
+    let mut buf = String::new();
+    for row in &result.rows {
+        for cell in row {
+            match cell {
+                DataValue::String(s) => buf.push_str(s),
+                DataValue::Json(j) => buf.push_str(&j.to_string()),
+                other => buf.push_str(&other.to_string()),
+            }
+            buf.push('\n');
+        }
+    }
+    buf
+}
+
+fn parse_postgres_explain(raw: &str) -> Option<ExplainNode> {
+    let trimmed = raw.trim();
+    let parsed: serde_json::Value = serde_json::from_str(trimmed).ok()?;
+    let arr = parsed.as_array()?;
+    let first = arr.first()?;
+    let plan = first.get("Plan")?;
+    Some(pg_node_from_json(plan))
+}
+
+fn pg_node_from_json(value: &serde_json::Value) -> ExplainNode {
+    let node_type = value
+        .get("Node Type")
+        .and_then(|v| v.as_str())
+        .unwrap_or("Unknown")
+        .to_string();
+
+    let relation_name = value
+        .get("Relation Name")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+
+    let index_name = value
+        .get("Index Name")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+
+    let cost = value.get("Total Cost").and_then(|v| v.as_f64());
+    let rows = value.get("Plan Rows").and_then(|v| v.as_i64());
+    let actual_time_ms = value.get("Actual Total Time").and_then(|v| v.as_f64());
+
+    let mut extras = Vec::new();
+    if let Some(strategy) = value.get("Strategy").and_then(|v| v.as_str()) {
+        extras.push(format!("strategy: {}", strategy));
+    }
+    if let Some(filter) = value.get("Filter").and_then(|v| v.as_str()) {
+        extras.push(format!("filter: {}", filter));
+    }
+    if let Some(cond) = value.get("Hash Cond").and_then(|v| v.as_str()) {
+        extras.push(format!("hash_cond: {}", cond));
+    }
+    if let Some(cond) = value.get("Index Cond").and_then(|v| v.as_str()) {
+        extras.push(format!("index_cond: {}", cond));
+    }
+    let extra = if extras.is_empty() {
+        None
+    } else {
+        Some(extras.join(" | "))
+    };
+
+    let children = value
+        .get("Plans")
+        .and_then(|v| v.as_array())
+        .map(|arr| arr.iter().map(pg_node_from_json).collect())
+        .unwrap_or_default();
+
+    ExplainNode {
+        node_type,
+        relation_name,
+        index_name,
+        cost,
+        rows,
+        actual_time_ms,
+        extra,
+        children,
+    }
+}
+
+fn parse_mysql_explain(result: &QueryResult) -> Option<ExplainNode> {
+    if result.rows.is_empty() {
+        return None;
+    }
+
+    let col_idx = |name: &str| -> Option<usize> {
+        result
+            .columns
+            .iter()
+            .position(|c| c.name.eq_ignore_ascii_case(name))
+    };
+
+    let table_idx = col_idx("table");
+    let type_idx = col_idx("type");
+    let key_idx = col_idx("key");
+    let rows_idx = col_idx("rows");
+    let extra_idx = col_idx("Extra");
+
+    let mut nodes: Vec<ExplainNode> = Vec::new();
+    for row in &result.rows {
+        let get = |idx: Option<usize>| -> Option<String> {
+            idx.and_then(|i| row.get(i)).and_then(|v| match v {
+                DataValue::Null => None,
+                DataValue::String(s) => Some(s.clone()),
+                other => Some(other.to_string()),
+            })
+        };
+
+        let table_name = get(table_idx);
+        let scan_type = get(type_idx).unwrap_or_else(|| "Unknown".to_string());
+        let key = get(key_idx);
+        let rows = rows_idx.and_then(|i| row.get(i)).and_then(|v| match v {
+            DataValue::Integer(n) => Some(*n),
+            DataValue::String(s) => s.parse::<i64>().ok(),
+            _ => None,
+        });
+        let extra = get(extra_idx);
+
+        nodes.push(ExplainNode {
+            node_type: format!("MySQL {}", scan_type),
+            relation_name: table_name,
+            index_name: key,
+            cost: None,
+            rows,
+            actual_time_ms: None,
+            extra,
+            children: vec![],
+        });
+    }
+
+    // Chain: pop the tail, attach as child of new tail, repeat until single root remains
+    while nodes.len() > 1 {
+        let child = nodes.pop().unwrap();
+        if let Some(parent) = nodes.last_mut() {
+            parent.children.push(child);
+        }
+    }
+
+    nodes.pop()
+}
+
+#[cfg(test)]
+mod explain_tests {
+    use super::*;
+
+    #[test]
+    fn test_build_explain_sql_postgres() {
+        let sql = build_explain_sql("SELECT * FROM t;", &DatabaseType::PostgreSQL).unwrap();
+        assert_eq!(sql, "EXPLAIN (FORMAT JSON) SELECT * FROM t");
+    }
+
+    #[test]
+    fn test_build_explain_sql_mysql() {
+        let sql = build_explain_sql("SELECT 1", &DatabaseType::MySQL).unwrap();
+        assert_eq!(sql, "EXPLAIN SELECT 1");
+    }
+
+    #[test]
+    fn test_build_explain_sql_unsupported() {
+        assert!(build_explain_sql("get x", &DatabaseType::Redis).is_err());
+    }
+
+    #[test]
+    fn test_parse_postgres_explain_simple() {
+        let raw = r#"[{"Plan":{"Node Type":"Seq Scan","Relation Name":"users","Total Cost":15.5,"Plan Rows":100,"Plans":[]}}]"#;
+        let plan = parse_postgres_explain(raw).unwrap();
+        assert_eq!(plan.node_type, "Seq Scan");
+        assert_eq!(plan.relation_name.as_deref(), Some("users"));
+        assert_eq!(plan.cost, Some(15.5));
+        assert_eq!(plan.rows, Some(100));
+    }
+
+    #[test]
+    fn test_parse_postgres_explain_nested() {
+        let raw = r#"[{"Plan":{"Node Type":"Hash Join","Total Cost":50.0,"Plans":[{"Node Type":"Seq Scan","Relation Name":"a","Total Cost":10.0},{"Node Type":"Seq Scan","Relation Name":"b","Total Cost":15.0}]}}]"#;
+        let plan = parse_postgres_explain(raw).unwrap();
+        assert_eq!(plan.node_type, "Hash Join");
+        assert_eq!(plan.children.len(), 2);
+    }
+}

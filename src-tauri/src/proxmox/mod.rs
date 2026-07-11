@@ -1,3 +1,6 @@
+// Copyright (c) 2025 Shaun Arman
+// MIT License - see LICENSE file for details
+
 // Proxmox integration module
 // Provides management for Proxmox VE and Proxmox Backup Server clusters
 
@@ -10,18 +13,23 @@ pub mod ceph_cluster;
 pub mod certificates;
 pub mod client;
 pub mod cluster;
+pub mod console;
 pub mod firewall;
 pub mod ha;
+pub mod lxc;
 pub mod metrics;
 pub mod migration;
+pub mod network;
 pub mod node;
+pub mod pbs;
 pub mod sdn;
 pub mod shell;
 pub mod storage;
 pub mod tasks;
+pub mod tfa;
 pub mod updates;
 pub mod updates_ext;
-pub mod views;
+pub mod validate;
 pub mod vm;
 
 pub use client::ProxmoxClient;

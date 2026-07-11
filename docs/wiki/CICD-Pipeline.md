@@ -4,10 +4,9 @@
 
 | Component | URL | Notes |
 |-----------|-----|-------|
-| Gitea | `https://gogs.tftsr.com` / `http://172.0.0.29:3000` | Git server (migrated from Gogs 0.14) |
+| Gitea | `https://gogs.tftsr.com` | Git server (migrated from Gogs 0.14) |
 | Gitea Actions (direct) | `http://gitea.tftsr.com:8084` | v2.x |
 | Gitea Actions (proxy) | `http://gitea.tftsr.com:8085` | nginx reverse proxy |
-| PostgreSQL (Gitea DB) | Container: `gogs_postgres_db` | DB: `gogsdb`, User: `gogs` |
 
 ### CI Agents
 
@@ -29,42 +28,75 @@ macOS runner runs jobs **directly on the host** (no Docker container) — macOS 
 
 ## Pre-baked Builder Images
 
-CI build and test jobs use pre-baked Docker images pushed to the local Gitea registry
-at `172.0.0.29:3000`. These images bake in all system dependencies (Tauri libs, Node.js,
-Rust toolchain, cross-compilers) so that CI jobs skip package installation entirely.
+CI build and test jobs use pre-baked Docker images pushed to the internal Gitea container
+registry (`${GITEA_REGISTRY}`). These images bake in all system dependencies (Tauri libs,
+Node.js, Rust toolchain, cross-compilers) so that CI jobs skip package installation entirely.
 
-| Image | Used by jobs | Contents |
-|-------|-------------|----------|
-| `172.0.0.29:3000/sarman/tftsr-linux-amd64:rust1.88-node22` | `rust-fmt-check`, `rust-clippy`, `rust-tests`, `build-linux-amd64` | Rust 1.88 + rustfmt + clippy + Tauri amd64 libs + Node.js 22 |
-| `172.0.0.29:3000/sarman/tftsr-windows-cross:rust1.88-node22` | `build-windows-amd64` | Rust 1.88 + mingw-w64 + NSIS + Node.js 22 |
-| `172.0.0.29:3000/sarman/tftsr-linux-arm64:rust1.88-node22` | `build-linux-arm64` | Rust 1.88 + aarch64 cross-toolchain + arm64 multiarch libs + Node.js 22 |
+| Image tag | Used by jobs | Contents |
+|-----------|-------------|----------|
+| `tftsr-linux-amd64:rust1.89-node22` | `rust-fmt-check`, `rust-clippy`, `rust-tests`, `build-linux-amd64` | Rust 1.89 + rustfmt + clippy + Tauri amd64 libs + Node.js 22 |
+| `tftsr-windows-cross:rust1.89-node22` | `build-windows-amd64` | Rust 1.89 + mingw-w64 + NSIS + Node.js 22 |
+| `tftsr-linux-arm64:rust1.89-node22` | `build-linux-arm64` | Rust 1.89 + aarch64 cross-toolchain + arm64 multiarch libs + Node.js 22 |
+
+Full image paths follow the pattern `${GITEA_REGISTRY}/sarman/<tag>` where `GITEA_REGISTRY`
+is configured in the act_runner environment.
 
 **Rebuild triggers:** Rust toolchain version bump, webkit2gtk/gtk major version change, Node.js major version change.
 
+**linux-amd64 libsodium:** `Dockerfile.linux-amd64` sets `SODIUM_LIB_DIR=/usr/lib/x86_64-linux-gnu` so that `libsodium-sys-stable` (pulled in via `tauri-plugin-stronghold`) links against the pre-installed `libsodium-dev` static library instead of downloading and compiling libsodium from source at cargo build time. `make` is also installed as a fallback for any future C build deps.
+
 **How to rebuild images:**
 1. Trigger `build-images.yml` via `workflow_dispatch` in the Gitea Actions UI
-2. Confirm all 3 images appear in the Gitea package/container registry at `172.0.0.29:3000`
+2. Confirm all 3 images appear in the Gitea container registry
 3. Only then merge workflow changes that depend on the new image contents
 
-**Server prerequisite — insecure registry** (one-time, on gitea.tftsr.com):
+### Bumping the Rust toolchain version
+
+When upgrading the Rust version used in CI (e.g. 1.89 → 1.90), all of the following must
+be updated in a single PR and the images **must be built before** the PR is merged:
+
+1. `.docker/Dockerfile.linux-amd64` — `FROM rust:<VER>-slim`
+2. `.docker/Dockerfile.windows-cross` — `FROM rust:<VER>-slim`
+3. `.docker/Dockerfile.linux-arm64` — `--default-toolchain <VER>.0`
+4. `.gitea/workflows/build-images.yml` — `docker build -t` and `docker push` tag lines
+5. `.gitea/workflows/release-beta.yml` — `container: image:` lines
+6. `.gitea/workflows/auto-tag.yml` — `container: image:` lines
+
+**Before merging the PR:**
+- Manually dispatch `build-images.yml` on the `beta` branch via the Gitea Actions UI:
+  navigate to the repo → **Actions** → **Build CI Docker Images** → **Run workflow** → select branch `beta` → click Run.
+- Wait for the run to finish and confirm the three new images appear in the registry.
+- Only then merge the PR.
+
+> **Why manual dispatch?** `build-images.yml` only auto-triggers on `master` pushes (stable
+> releases). `beta` is the primary development branch and uses `workflow_dispatch` for
+> on-demand image rebuilds. Gitea 1.22 does not expose the workflow dispatch API endpoint,
+> so this step must be performed through the web UI.
+
+`scripts/validate-ci-images.sh` (run in CI by `test.yml`) catches version drift between
+Dockerfiles and workflow files — but it cannot verify that the images have actually been
+pushed to the registry.
+
+**Server prerequisite — insecure registry** (one-time, on each act_runner host):
 ```sh
-echo '{"insecure-registries":["172.0.0.29:3000"]}' | sudo tee /etc/docker/daemon.json
+echo '{"insecure-registries":["${GITEA_REGISTRY}"]}' | sudo tee /etc/docker/daemon.json
 sudo systemctl restart docker
 ```
 This must be configured on every machine running an act_runner for the runner's Docker
-daemon to pull from the local HTTP registry.
+daemon to pull from the internal HTTP registry. Replace `${GITEA_REGISTRY}` with the
+actual registry host configured for this environment.
 
 ---
 
 ## Cargo and npm Caching
 
-All Rust and build jobs use `actions/cache@v3` to cache downloaded package artifacts.
+All Rust and build jobs use `actions/cache@v4` to cache downloaded package artifacts.
 Gitea 1.22 implements the Gitea Actions cache API natively.
 
 **Cargo cache** (Rust jobs):
 ```yaml
 - name: Cache cargo registry
-  uses: actions/cache@v3
+  uses: actions/cache@v4
   with:
     path: |
       ~/.cargo/registry/index
@@ -78,7 +110,7 @@ Gitea 1.22 implements the Gitea Actions cache API natively.
 **npm cache** (frontend and build jobs):
 ```yaml
 - name: Cache npm
-  uses: actions/cache@v3
+  uses: actions/cache@v4
   with:
     path: ~/.npm
     key: ${{ runner.os }}-npm-${{ hashFiles('**/package-lock.json') }}
@@ -89,6 +121,10 @@ Gitea 1.22 implements the Gitea Actions cache API natively.
 Cache keys for cross-compile jobs use a suffix to avoid collisions:
 - Windows build: `${{ runner.os }}-cargo-windows-${{ hashFiles('**/Cargo.lock') }}`
 - arm64 build: `${{ runner.os }}-cargo-arm64-${{ hashFiles('**/Cargo.lock') }}`
+- macOS build: `${{ runner.os }}-cargo-macos-${{ hashFiles('**/Cargo.lock') }}`
+
+The macOS release build also caches `src-tauri/target/aarch64-apple-darwin` and runs with
+`timeout-minutes: 120` so the full Rust compile has room to complete on a cold cache.
 
 ---
 
@@ -106,7 +142,7 @@ Pipeline jobs (run in parallel):
 ```
 
 **Docker images used:**
-- `172.0.0.29:3000/sarman/tftsr-linux-amd64:rust1.88-node22` — Rust steps (replaces `rust:1.88-slim`)
+- `tftsr-linux-amd64:rust1.89-node22` (from internal registry) — Rust steps
 - `node:22-alpine` — Frontend steps
 
 ---
@@ -120,19 +156,20 @@ Release jobs are executed in the same workflow and depend on `autotag` completio
 
 ```
 Jobs (run in parallel after autotag):
-  build-linux-amd64   → image: tftsr-linux-amd64:rust1.88-node22
+  build-linux-amd64   → image: tftsr-linux-amd64:rust1.89-node22
                          → cargo tauri build (x86_64-unknown-linux-gnu)
                          → {.deb, .rpm, .AppImage} uploaded to Gitea release
                          → fails fast if no Linux artifacts are produced
-  build-windows-amd64 → image: tftsr-windows-cross:rust1.88-node22
+  build-windows-amd64 → image: tftsr-windows-cross:rust1.89-node22
                          → cargo tauri build (x86_64-pc-windows-gnu) via mingw-w64
                          → {.exe, .msi} uploaded to Gitea release
                          → fails fast if no Windows artifacts are produced
-  build-linux-arm64   → image: tftsr-linux-arm64:rust1.88-node22 (ubuntu:22.04-based)
+  build-linux-arm64   → image: tftsr-linux-arm64:rust1.89-node22 (ubuntu:22.04-based)
                          → cargo tauri build (aarch64-unknown-linux-gnu)
                          → {.deb, .rpm, .AppImage} uploaded to Gitea release
                          → fails fast if no Linux artifacts are produced
-  build-macos-arm64   → cargo tauri build (aarch64-apple-darwin) — runs on local Mac
+  build-macos-arm64   → timeout-minutes: 120 + cargo/npm + target cache
+                         → cargo tauri build (aarch64-apple-darwin) — runs on local Mac
                          → {.dmg} uploaded to Gitea release
                          → existing same-name assets are deleted before upload (rerun-safe)
                          → unsigned; after install run: xattr -cr /Applications/TRCAA.app
@@ -154,7 +191,7 @@ steps:
 **Multi-agent workspace isolation:**
 
 Steps routed to different agents do **not** share a workspace. The arm64 step clones
-the repo directly within its commands (using `http://172.0.0.29:3000`, accessible from
+the repo directly within its commands (using the internal Gitea URL, accessible from
 the local machine) and uploads its artifacts inline. The `upload-release` step (amd64)
 handles amd64 + windows artifacts only.
 
@@ -209,7 +246,7 @@ Authorization: token $GOGS_TOKEN
 POST http://gitea_app:3000/api/v1/repos/sarman/tftsr-devops_investigation/releases/{id}/assets
 ```
 
-From the arm64 agent (local machine), use `http://172.0.0.29:3000/api/v1` instead.
+From the arm64 agent (local machine), use the internal Gitea API URL (`${GITEA_URL}/api/v1`) instead.
 
 ---
 
@@ -244,16 +281,9 @@ activated via the UI. No manual JWT-signed webhook setup required.
 
 Master branch is protected: all changes require a PR.
 
-```sql
--- Gitea branch protection (via psql on gogs_postgres_db container)
--- Check protection
-SELECT name, protected, require_pull_request FROM protect_branch WHERE repo_id=42;
-
--- Temporarily disable for urgent fixes (restore immediately after!)
-UPDATE protect_branch SET protected=false WHERE repo_id=42 AND name='master';
--- ... push ...
-UPDATE protect_branch SET protected=true, require_pull_request=true WHERE repo_id=42 AND name='master';
-```
+Branch protection is configured in Gitea under **Repository → Settings → Branches**.
+For emergency access, it can be temporarily suspended via the Gitea admin UI and must
+be re-enabled immediately after.
 
 ---
 
@@ -305,6 +335,23 @@ Subsequent runs are fully automated by CI.
 
 ## Known Issues & Fixes
 
+### linux-amd64: `libsodium-sys-stable` fails with `make install: No such file or directory`
+
+`libsodium-sys-stable` (transitive dep via `tauri-plugin-stronghold`) attempts to download
+and compile libsodium from source when `SODIUM_STATIC=1` is set and `SODIUM_LIB_DIR` is not
+provided. `rust:1.89-slim` does not include `make`, causing the compilation to fail with
+`os error 2` (executable not found).
+
+**Fix**: `Dockerfile.linux-amd64` now installs `make` and sets:
+```dockerfile
+ENV SODIUM_LIB_DIR=/usr/lib/x86_64-linux-gnu \
+    SODIUM_INCLUDE_DIR=/usr/include
+```
+`libsodium-dev` (already in the image) provides `/usr/lib/x86_64-linux-gnu/libsodium.a`.
+`SODIUM_LIB_DIR` tells the crate to use that library directly, bypassing the
+download-and-compile path. The `build-images.yml` linux-amd64 job validates the image
+asserts all four conditions before pushing to the registry.
+
 ### Debian Multiarch Breaks arm64 Cross-Compile (`held broken packages`)
 When using `rust:1.88-slim` (Debian Bookworm) with `dpkg --add-architecture arm64`, apt
 resolves amd64 and arm64 simultaneously against the same mirror. The `binary-all` package
@@ -318,9 +365,9 @@ There are no cross-arch index overlaps and the dependency resolver succeeds. Rus
 installed manually via `rustup` since it is not pre-installed in the Ubuntu base image.
 
 ### Step Containers Cannot Reach `gitea_app`
-Default Docker bridge containers cannot resolve `gitea_app` or reach `172.0.0.29:3000`
-(host firewall). Fix: use `network_mode: gogs_default` in any step that needs Gitea
-access. Requires `repo_trusted=1`.
+Default Docker bridge containers cannot resolve `gitea_app` or reach the internal Gitea
+host. Fix: use `network_mode: gogs_default` in any step that needs Gitea access.
+Requires `repo_trusted=1`.
 
 ### `CI=woodpecker` Rejected by Tauri CLI
 Woodpecker sets `CI=woodpecker`; `cargo tauri build` expects a boolean. Fix: prefix with
@@ -353,11 +400,14 @@ After migrating from Woodpecker 0.15.4 to 2.x, recreate the `GOGS_TOKEN` secret:
 
 ## Gitea PostgreSQL Access
 
+Access the Gitea database via the PostgreSQL container:
+
 ```bash
-docker exec gogs_postgres_db psql -U gogs -d gogsdb -c "SELECT id, lower_name FROM repository;"
+docker exec <postgres-container> psql -U <db-user> -d <db-name> -c "SELECT id, lower_name FROM repository;"
 ```
 
-> Database name is `gogsdb` (unchanged from Gogs migration).
+Container name, database name, and credentials are defined in the Gitea compose file.
+Do not commit these values to documentation.
 
 ---
 
@@ -396,17 +446,43 @@ When `Cargo.toml` is bumped (e.g. `1.3.0` → `1.4.0`), the counter resets to `.
 2. Open a PR from `beta → master` and merge it.
 3. `auto-tag.yml` fires, creates tag `v1.3.0`, builds all platforms, marks release stable.
 
-### In-app updater channel switching
+### In-app updater: no channel selection
 
-Users select their channel in **Settings → Updates**. The selection is stored in
-`AppSettings.update_channel` (persisted via the frontend settings store).
+There is no channel picker in Settings → Updater anymore — `AppSettings.update_channel`
+and the `get_update_channel`/`set_update_channel` commands have been removed. Installs may
+themselves come from a beta prerelease, so filtering `check_app_updates` down to only
+`stable` (non-prerelease) releases could hide a genuinely newer prerelease build. Instead,
+`check_app_updates` fetches `GET /releases?limit=20` and picks the **highest-versioned
+non-draft release**, prereleases included, using a prerelease-aware comparison
+(`3.1.0` > `3.1.0-beta.9` > `3.0.0`). Old settings JSON with a leftover `update_channel`
+key still deserializes fine — the field is just ignored.
 
-`check_app_updates` queries `GET /releases?limit=20` and returns the first release
-matching the active channel:
-- `stable` → first entry where `prerelease == false`
-- `beta` → first entry where `prerelease == true`
+### Version embedding at build time
 
-Draft releases are always skipped.
+Every `cargo tauri build` runs `beforeBuildCommand: "npm run version:update && npm run build"`
+(`src-tauri/tauri.conf.json`), which invokes `scripts/update-version.mjs`. That script
+resolves the version to embed in this order: an explicit CLI argument → `$RELEASE_TAG`
+(set as job-level `env:` on every build job in `auto-tag.yml` and `release-beta.yml`) →
+`git describe --tags` → `package.json` as a last-resort fallback.
+
+**Bug fixed:** the `autotag` job in `auto-tag.yml` runs in a plain `alpine:latest`
+container (BusyBox `sed`, not GNU `sed`). Its version-bump step used to rewrite
+`package.json` / `Cargo.toml` / `tauri.conf.json` with the GNU-only
+`sed -i "0,/re/s//repl/"` range-addressing form, which BusyBox `sed` silently accepts and
+turns into a no-op — no error, no substitution. Only the `Cargo.lock` line (written with a
+POSIX-compatible `/pattern/{n;s/.../}` form) actually updated. The result: a release could
+tag and build as (say) `v3.1.0` while `get_app_version` — and the three JSON/TOML files —
+still reported `3.0.0`. Fixed by having that step call
+`node scripts/update-version.mjs "${NEW_VERSION}"` (the same well-tested script used for
+local dev bumps and the build-time hook) instead of hand-rolled `sed`, with `nodejs`
+added to the job's `apk add` line, followed by a verification step that greps every
+version-bearing file for the expected version and fails the job (`exit 1`) if any file
+wasn't actually updated.
+
+Separately, `get_app_version` itself used to read the `APP_VERSION`/`CARGO_PKG_VERSION`
+**environment variables**, which are never set in a packaged build — it now reads
+`app.package_info().version`, sourced from `tauri.conf.json` at build time, matching what
+`check_app_updates` already used.
 
 ### Branch protection for `beta`
 

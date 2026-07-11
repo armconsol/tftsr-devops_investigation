@@ -1,16 +1,22 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/index';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/index';
 import { Button } from '@/components/ui/index';
-import { Input } from '@/components/ui/index';
-import { RefreshCw, Power, RotateCcw } from 'lucide-react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/index';
+import { RefreshCw, Power, RotateCcw, ArrowUpCircle } from 'lucide-react';
+import { confirm } from '@tauri-apps/plugin-dialog';
 import {
-  listProxmoxClusters,
   getNodeStatus,
   listAptUpdates,
   listAptRepositories,
   getSyslog,
   listClusterTasks,
+  getNodeJournal,
+  getNodeReport,
+  rebootNode,
+  shutdownNode,
+  refreshAptCache,
 } from '@/lib/proxmoxClient';
 import type {
   NodeStatus,
@@ -19,33 +25,30 @@ import type {
   SyslogEntry,
   ClusterTask,
 } from '@/lib/proxmoxClient';
-import type { ClusterInfo } from '@/lib/domain';
+import { toast } from 'sonner';
+import { useProxmoxNodes } from '@/hooks/useProxmoxNodes';
+import { useProxmoxClusters } from '@/hooks/useProxmoxClusters';
 
 export function ProxmoxAdminPage() {
-  const [clusters, setClusters] = useState<ClusterInfo[]>([]);
-  const [clusterId, setClusterId] = useState('');
-  const [nodeId, setNodeId] = useState('localhost');
-  const [nodeInputValue, setNodeInputValue] = useState('localhost');
+  const navigate = useNavigate();
+  const { clusters, selectedClusterId: clusterId, setSelectedClusterId: setClusterId } = useProxmoxClusters();
   const [nodeStatus, setNodeStatus] = useState<NodeStatus | null>(null);
   const [aptUpdates, setAptUpdates] = useState<AptPackage[]>([]);
   const [aptRepos, setAptRepos] = useState<AptRepository[]>([]);
   const [syslog, setSyslog] = useState<SyslogEntry[]>([]);
   const [tasks, setTasks] = useState<ClusterTask[]>([]);
+  const [journal, setJournal] = useState<string[]>([]);
+  const [report, setReport] = useState<string>('');
   const [activeTab, setActiveTab] = useState('status');
   const [tabError, setTabError] = useState<string | null>(null);
+  const [confirmAction, setConfirmAction] = useState<'reboot' | 'shutdown' | null>(null);
+  const [refreshingAptCache, setRefreshingAptCache] = useState(false);
 
-  useEffect(() => {
-    listProxmoxClusters()
-      .then((cls) => {
-        setClusters(cls);
-        if (cls.length > 0) setClusterId(cls[0].id);
-      })
-      .catch((err: unknown) => console.error('Failed to load clusters:', err));
-  }, []);
+  const { nodeNames, selectedNode, setSelectedNode } = useProxmoxNodes(clusterId);
 
   const loadTabData = useCallback(
     async (tab: string, cId: string, nId: string) => {
-      if (!cId) return;
+      if (!cId || !nId) return;
       setTabError(null);
       try {
         switch (tab) {
@@ -64,6 +67,12 @@ export function ProxmoxAdminPage() {
           case 'tasks':
             setTasks(await listClusterTasks(cId));
             break;
+          case 'journal':
+            setJournal(await getNodeJournal(cId, nId, 200));
+            break;
+          case 'report':
+            setReport(await getNodeReport(cId, nId));
+            break;
         }
       } catch (e) {
         setTabError(String(e));
@@ -73,19 +82,59 @@ export function ProxmoxAdminPage() {
   );
 
   useEffect(() => {
-    void loadTabData(activeTab, clusterId, nodeId);
-  }, [activeTab, clusterId, nodeId, loadTabData]);
+    if (selectedNode) void loadTabData(activeTab, clusterId, selectedNode);
+  }, [activeTab, clusterId, selectedNode, loadTabData]);
 
-  const applyNodeId = () => {
-    setNodeId(nodeInputValue.trim() || 'localhost');
+  const handleConfirmAction = async () => {
+    if (!confirmAction) return;
+    try {
+      if (confirmAction === 'reboot') {
+        await rebootNode(clusterId, selectedNode);
+        toast.success('Node reboot initiated');
+      } else {
+        await shutdownNode(clusterId, selectedNode);
+        toast.success('Node shutdown initiated');
+      }
+    } catch (e) {
+      toast.error(String(e));
+    } finally {
+      setConfirmAction(null);
+    }
   };
 
-  const formatBytes = (bytes: number) =>
-    bytes >= 1073741824
+  const handleRefreshAptCache = async () => {
+    if (!clusterId || !selectedNode) return;
+    setRefreshingAptCache(true);
+    try {
+      const upid = await refreshAptCache(clusterId, selectedNode);
+      toast.success(`APT cache refresh started: ${upid}`);
+      await loadTabData('updates', clusterId, selectedNode);
+    } catch (e) {
+      toast.error(`Failed to refresh APT cache: ${e}`);
+    } finally {
+      setRefreshingAptCache(false);
+    }
+  };
+
+  const handleUpgradeNode = async () => {
+    if (!clusterId || !selectedNode) return;
+    const confirmed = await confirm(
+      `Open a shell on ${selectedNode} and run the full package upgrade (pveupgrade)?`,
+      { title: 'Upgrade Node', kind: 'warning' }
+    );
+    if (!confirmed) return;
+    navigate(`/proxmox/shell/${encodeURIComponent(clusterId)}/${encodeURIComponent(selectedNode)}?cmd=upgrade`);
+  };
+
+  const formatBytes = (bytes: number | undefined | null) => {
+    if (bytes == null || Number.isNaN(bytes)) return '—';
+    return bytes >= 1073741824
       ? `${(bytes / 1073741824).toFixed(1)} GB`
       : `${Math.round(bytes / 1048576)} MB`;
+  };
 
-  const formatUptime = (seconds: number) => {
+  const formatUptime = (seconds: number | undefined | null) => {
+    if (seconds == null || Number.isNaN(seconds)) return '—';
     const d = Math.floor(seconds / 86400);
     const h = Math.floor((seconds % 86400) / 3600);
     const m = Math.floor((seconds % 3600) / 60);
@@ -101,7 +150,6 @@ export function ProxmoxAdminPage() {
         </div>
       </div>
 
-      {/* Cluster / Node selector bar */}
       <div className="flex items-center gap-3 flex-wrap">
         <div className="flex items-center gap-2">
           <span className="text-sm text-muted-foreground">Cluster:</span>
@@ -120,23 +168,21 @@ export function ProxmoxAdminPage() {
         </div>
         <div className="flex items-center gap-2">
           <span className="text-sm text-muted-foreground">Node:</span>
-          <Input
-            className="w-36 h-8 text-sm"
-            value={nodeInputValue}
-            onChange={(e) => setNodeInputValue(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') applyNodeId();
-            }}
-            placeholder="localhost"
-          />
-          <Button variant="outline" size="sm" onClick={applyNodeId}>
-            Apply
-          </Button>
+          <select
+            className="text-sm border rounded px-2 py-1 bg-background"
+            value={selectedNode}
+            onChange={(e) => setSelectedNode(e.target.value)}
+          >
+            {nodeNames.length === 0 && <option value="">No nodes</option>}
+            {nodeNames.map((n) => (
+              <option key={n} value={n}>{n}</option>
+            ))}
+          </select>
         </div>
         <Button
           variant="outline"
           size="sm"
-          onClick={() => void loadTabData(activeTab, clusterId, nodeId)}
+          onClick={() => void loadTabData(activeTab, clusterId, selectedNode)}
         >
           <RefreshCw className="mr-2 h-4 w-4" />
           Refresh
@@ -152,58 +198,69 @@ export function ProxmoxAdminPage() {
           <TabsTrigger value="repositories">Repositories</TabsTrigger>
           <TabsTrigger value="syslog">System Log</TabsTrigger>
           <TabsTrigger value="tasks">Tasks</TabsTrigger>
+          <TabsTrigger value="journal">Journal</TabsTrigger>
+          <TabsTrigger value="report">Report</TabsTrigger>
         </TabsList>
 
-        {/* ── Node Status ─────────────────────────────────────────────────── */}
         <TabsContent value="status">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
               <CardTitle>Node Status</CardTitle>
-              <div className="flex space-x-2">
-                <Button variant="outline" size="sm">
-                  <RotateCcw className="mr-2 h-4 w-4" />
-                  Reboot
-                </Button>
-                <Button variant="destructive" size="sm">
-                  <Power className="mr-2 h-4 w-4" />
-                  Shutdown
-                </Button>
-              </div>
             </CardHeader>
             <CardContent>
               {nodeStatus ? (
-                <div className="grid grid-cols-2 gap-4 text-sm">
-                  <div>
-                    <span className="text-muted-foreground">CPU:</span>{' '}
-                    {(nodeStatus.cpu * 100).toFixed(1)}%
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground">Memory:</span>{' '}
-                    {formatBytes(nodeStatus.memory.used)} / {formatBytes(nodeStatus.memory.total)}
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground">Swap:</span>{' '}
-                    {formatBytes(nodeStatus.swap.used)} / {formatBytes(nodeStatus.swap.total)}
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground">Disk:</span>{' '}
-                    {formatBytes(nodeStatus.disk.used)} / {formatBytes(nodeStatus.disk.total)}
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground">Uptime:</span>{' '}
-                    {formatUptime(nodeStatus.uptime)}
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground">Version:</span>{' '}
-                    {nodeStatus.version}
-                  </div>
-                  {nodeStatus.loadAvg.length > 0 && (
-                    <div className="col-span-2">
-                      <span className="text-muted-foreground">Load Avg:</span>{' '}
-                      {nodeStatus.loadAvg.map((v) => v.toFixed(2)).join(' / ')}
+                <>
+                  <div className="grid grid-cols-2 gap-4 text-sm">
+                    <div>
+                      <span className="text-muted-foreground">CPU:</span>{' '}
+                      {((nodeStatus.cpu ?? 0) * 100).toFixed(1)}%
                     </div>
-                  )}
-                </div>
+                    <div>
+                      <span className="text-muted-foreground">Memory:</span>{' '}
+                      {formatBytes(nodeStatus.memory?.used)} / {formatBytes(nodeStatus.memory?.total)}
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Swap:</span>{' '}
+                      {formatBytes(nodeStatus.swap?.used)} / {formatBytes(nodeStatus.swap?.total)}
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Disk:</span>{' '}
+                      {formatBytes(nodeStatus.disk?.used)} / {formatBytes(nodeStatus.disk?.total)}
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Uptime:</span>{' '}
+                      {formatUptime(nodeStatus.uptime)}
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Version:</span>{' '}
+                      {nodeStatus.version}
+                    </div>
+                    {(nodeStatus.loadAvg?.length ?? 0) > 0 && (
+                      <div className="col-span-2">
+                        <span className="text-muted-foreground">Load Avg:</span>{' '}
+                        {(nodeStatus.loadAvg ?? []).map((v) => v.toFixed(2)).join(' / ')}
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex gap-2 mt-4 pt-4 border-t border-destructive/20">
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      onClick={() => setConfirmAction('reboot')}
+                    >
+                      <RotateCcw className="mr-2 h-4 w-4" />
+                      Reboot Node
+                    </Button>
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      onClick={() => setConfirmAction('shutdown')}
+                    >
+                      <Power className="mr-2 h-4 w-4" />
+                      Shutdown Node
+                    </Button>
+                  </div>
+                </>
               ) : (
                 <div className="text-muted-foreground text-sm">Loading node status...</div>
               )}
@@ -211,11 +268,30 @@ export function ProxmoxAdminPage() {
           </Card>
         </TabsContent>
 
-        {/* ── APT Updates ─────────────────────────────────────────────────── */}
         <TabsContent value="updates">
           <Card>
-            <CardHeader>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0">
               <CardTitle>Available Updates ({aptUpdates.length})</CardTitle>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void handleRefreshAptCache()}
+                  disabled={refreshingAptCache || !selectedNode}
+                >
+                  <RefreshCw className={`mr-2 h-4 w-4 ${refreshingAptCache ? 'animate-spin' : ''}`} />
+                  Refresh APT Cache
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void handleUpgradeNode()}
+                  disabled={!selectedNode}
+                >
+                  <ArrowUpCircle className="mr-2 h-4 w-4" />
+                  Upgrade Node…
+                </Button>
+              </div>
             </CardHeader>
             <CardContent>
               {aptUpdates.length === 0 ? (
@@ -245,7 +321,6 @@ export function ProxmoxAdminPage() {
           </Card>
         </TabsContent>
 
-        {/* ── APT Repositories ────────────────────────────────────────────── */}
         <TabsContent value="repositories">
           <Card>
             <CardHeader>
@@ -259,8 +334,8 @@ export function ProxmoxAdminPage() {
                   {aptRepos.map((repo, i) => (
                     <div key={i} className="p-3 border rounded text-sm">
                       <div className="font-mono text-xs">
-                        {repo.types.join(' ')} {repo.uris.join(' ')} {repo.suites.join(' ')}{' '}
-                        {repo.components.join(' ')}
+                        {(repo.types ?? []).join(' ')} {(repo.uris ?? []).join(' ')}{' '}
+                        {(repo.suites ?? []).join(' ')} {(repo.components ?? []).join(' ')}
                       </div>
                       <div className="flex items-center gap-2 mt-1">
                         <span
@@ -284,7 +359,6 @@ export function ProxmoxAdminPage() {
           </Card>
         </TabsContent>
 
-        {/* ── Syslog ──────────────────────────────────────────────────────── */}
         <TabsContent value="syslog">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
@@ -292,7 +366,7 @@ export function ProxmoxAdminPage() {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => void loadTabData('syslog', clusterId, nodeId)}
+                onClick={() => void loadTabData('syslog', clusterId, selectedNode)}
               >
                 <RefreshCw className="mr-2 h-4 w-4" />
                 Refresh
@@ -305,7 +379,7 @@ export function ProxmoxAdminPage() {
                 ) : (
                   syslog.map((entry) => (
                     <div key={entry.n} className="text-muted-foreground">
-                      {entry.t} {entry.msg}
+                      {entry.t}
                     </div>
                   ))
                 )}
@@ -314,7 +388,6 @@ export function ProxmoxAdminPage() {
           </Card>
         </TabsContent>
 
-        {/* ── Tasks ───────────────────────────────────────────────────────── */}
         <TabsContent value="tasks">
           <Card>
             <CardHeader>
@@ -349,7 +422,69 @@ export function ProxmoxAdminPage() {
             </CardContent>
           </Card>
         </TabsContent>
+
+        <TabsContent value="journal">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <CardTitle>System Journal</CardTitle>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void loadTabData('journal', clusterId, selectedNode)}
+              >
+                <RefreshCw className="mr-2 h-4 w-4" />
+                Refresh
+              </Button>
+            </CardHeader>
+            <CardContent>
+              <pre className="text-xs font-mono bg-muted p-3 rounded max-h-96 overflow-y-auto whitespace-pre-wrap">
+                {journal.join('\n') || 'No journal entries'}
+              </pre>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="report">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <CardTitle>Node Report</CardTitle>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void loadTabData('report', clusterId, selectedNode)}
+              >
+                <RefreshCw className="mr-2 h-4 w-4" />
+                Refresh
+              </Button>
+            </CardHeader>
+            <CardContent>
+              <pre className="text-xs font-mono bg-muted p-3 rounded max-h-96 overflow-y-auto whitespace-pre-wrap">
+                {report || 'No report available'}
+              </pre>
+            </CardContent>
+          </Card>
+        </TabsContent>
       </Tabs>
+
+      <Dialog open={!!confirmAction} onOpenChange={() => setConfirmAction(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              Confirm {confirmAction === 'reboot' ? 'Reboot' : 'Shutdown'}
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground py-2">
+            Are you sure you want to {confirmAction} node <strong>{selectedNode}</strong>? This will
+            interrupt all running workloads on this node.
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmAction(null)}>Cancel</Button>
+            <Button variant="destructive" onClick={() => void handleConfirmAction()}>
+              {confirmAction === 'reboot' ? 'Reboot' : 'Shutdown'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

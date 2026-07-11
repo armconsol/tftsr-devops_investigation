@@ -29,14 +29,14 @@ pub async fn check_updates(
     let response: serde_json::Value = client
         .get(path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to check for updates: {}", e))?;
+        .map_err(|e| format!("Failed to check for updates: {e}"))?;
 
     let checked_at = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
 
     let updates: Vec<UpdateInfo> = response
-        .get("data")
-        .and_then(|d| d.as_array())
-        .unwrap_or(&Vec::new())
+        .as_array()
+        .map(|arr| arr.as_slice())
+        .unwrap_or(&[])
         .iter()
         .filter_map(|update| {
             let package = update.get("package")?.as_str()?.to_string();
@@ -71,11 +71,10 @@ pub async fn list_updates(
     let response: serde_json::Value = client
         .get(path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to list updates: {}", e))?;
+        .map_err(|e| format!("Failed to list updates: {e}"))?;
 
     let updates: Vec<UpdateInfo> = response
-        .get("data")
-        .and_then(|d| d.as_array())
+        .as_array()
         .map(|arr| {
             arr.iter()
                 .filter_map(|update| {
@@ -108,7 +107,7 @@ pub async fn get_update_status(
     client
         .get(path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to get update status: {}", e))
+        .map_err(|e| format!("Failed to get update status: {e}"))
 }
 
 /// Refresh update list
@@ -120,7 +119,7 @@ pub async fn refresh_updates(
     let _response: serde_json::Value = client
         .post(path, &serde_json::json!({}), Some(ticket))
         .await
-        .map_err(|e| format!("Failed to refresh updates: {}", e))?;
+        .map_err(|e| format!("Failed to refresh updates: {e}"))?;
     Ok(())
 }
 
@@ -138,7 +137,7 @@ pub async fn install_updates(
     let _response: serde_json::Value = client
         .post(path, &config, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to install updates: {}", e))?;
+        .map_err(|e| format!("Failed to install updates: {e}"))?;
     Ok(())
 }
 
@@ -151,13 +150,12 @@ pub async fn get_update_history(
     let response: serde_json::Value = client
         .get(path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to get update history: {}", e))?;
+        .map_err(|e| format!("Failed to get update history: {e}"))?;
 
-    if let Some(history) = response.get("data").and_then(|d| d.as_array()) {
-        Ok(history.to_vec())
-    } else {
-        Err("Invalid response format: missing 'data' field".to_string())
-    }
+    response
+        .as_array()
+        .map(|arr| arr.to_vec())
+        .ok_or_else(|| "Invalid response format: expected array".to_string())
 }
 
 #[cfg(test)]

@@ -2,7 +2,7 @@ import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/index';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/index';
 import { Button } from '@/components/ui/index';
-import { Play, Trash2, RefreshCw } from 'lucide-react';
+import { Play, Pencil, Trash2, RefreshCw } from 'lucide-react';
 import { HaResource } from '@/lib/proxmoxClient';
 
 interface HAResourcesListProps {
@@ -10,6 +10,7 @@ interface HAResourcesListProps {
   onRefresh?: () => void;
   isLoading?: boolean;
   onEnable?: (resource: HaResource) => void;
+  onEdit?: (resource: HaResource) => void;
   onRemove?: (resource: HaResource) => void;
 }
 
@@ -18,6 +19,7 @@ export function HAResourcesList({
   onRefresh,
   isLoading,
   onEnable,
+  onEdit,
   onRemove,
 }: HAResourcesListProps) {
   return (
@@ -76,6 +78,13 @@ export function HAResourcesList({
                           title="Enable"
                         >
                           <Play className="h-4 w-4" />
+                        </button>
+                        <button
+                          className="rounded-md p-1 hover:bg-accent"
+                          onClick={() => onEdit?.(resource)}
+                          title="Edit"
+                        >
+                          <Pencil className="h-4 w-4" />
                         </button>
                         <button
                           className="rounded-md p-1 hover:bg-red-100 hover:text-red-600"

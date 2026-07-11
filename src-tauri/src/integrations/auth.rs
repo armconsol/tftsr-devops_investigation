@@ -48,14 +48,7 @@ pub fn build_auth_url(
     scope: &str,
     pkce: &PkceChallenge,
 ) -> String {
-    format!(
-        "{}?response_type=code&client_id={}&redirect_uri={}&scope={}&code_challenge={}&code_challenge_method=S256",
-        auth_endpoint,
-        urlencoding_encode(client_id),
-        urlencoding_encode(redirect_uri),
-        urlencoding_encode(scope),
-        pkce.code_challenge,
-    )
+    format!("{auth_endpoint}?response_type=code&client_id={}&redirect_uri={}&scope={}&code_challenge={}&code_challenge_method=S256", urlencoding_encode(client_id), urlencoding_encode(redirect_uri), urlencoding_encode(scope), pkce.code_challenge)
 }
 
 /// Exchange an authorization code for tokens using PKCE.
@@ -235,7 +228,7 @@ fn get_encryption_key_material() -> Result<String, String> {
                 .map_err(|e| format!("Failed to write encryption key: {e}"))?;
         }
 
-        tracing::info!("Generated new encryption key at {:?}", key_path);
+        tracing::info!("Generated new encryption key at {key_path:?}");
         return Ok(key);
     }
 
@@ -248,6 +241,12 @@ fn derive_aes_key() -> Result<[u8; 32], String> {
     let mut key_bytes = [0u8; 32];
     key_bytes.copy_from_slice(&digest);
     Ok(key_bytes)
+}
+
+/// Returns the persistent encryption key material as a hex string.
+/// Usable by other modules (e.g. `secure_storage`) that need the same key.
+pub fn get_encryption_key_material_hex() -> Result<String, String> {
+    get_encryption_key_material()
 }
 
 /// Encrypt a token using AES-256-GCM.

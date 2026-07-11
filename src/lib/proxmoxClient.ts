@@ -1,3 +1,6 @@
+// Copyright (c) 2025 Shaun Arman
+// MIT License - see LICENSE file for details
+
 /* eslint-disable @typescript-eslint/no-explicit-any */
 // Proxmox client module
 // Provides TypeScript client wrapper for Proxmox API
@@ -25,7 +28,7 @@ export async function addProxmoxCluster(
   return await invoke<ClusterInfo>("add_proxmox_cluster", {
     id,
     name,
-    cluster_type: clusterType,
+    clusterType,
     connection,
     username,
     password,
@@ -38,6 +41,53 @@ export async function addProxmoxCluster(
  */
 export async function removeProxmoxCluster(id: string): Promise<void> {
   await invoke("remove_proxmox_cluster", { id });
+}
+
+/**
+ * Update an existing Proxmox cluster's metadata and credentials atomically.
+ * Uses a single SQL UPDATE so there is no window where the record is missing.
+ */
+export async function updateProxmoxCluster(
+  id: string,
+  name: string,
+  clusterType: ClusterType,
+  connection: { url: string; port: number },
+  username: string,
+  password: string
+): Promise<ClusterInfo> {
+  return await invoke<ClusterInfo>("update_proxmox_cluster", {
+    id,
+    name,
+    clusterType,
+    connection,
+    username,
+    password,
+  });
+}
+
+/**
+ * Ping a Proxmox cluster — authenticates and calls the version endpoint to verify
+ * the API is reachable and credentials are valid.
+ */
+export async function pingProxmoxCluster(clusterId: string): Promise<unknown> {
+  return await invoke("ping_proxmox_cluster", { clusterId });
+}
+
+/**
+ * Connect (or re-connect) to a cluster stored in the DB.
+ * Authenticates against the Proxmox API and populates the in-memory pool.
+ * Use after app restart or after an explicit disconnect.
+ */
+export async function connectProxmoxCluster(clusterId: string): Promise<boolean> {
+  return await invoke<boolean>("connect_proxmox_cluster", { clusterId });
+}
+
+/**
+ * Disconnect from a cluster by removing its authenticated session from the
+ * in-memory pool. Credentials are retained in the DB for later reconnection.
+ */
+export async function disconnectProxmoxCluster(clusterId: string): Promise<void> {
+  await invoke("disconnect_proxmox_cluster", { clusterId });
 }
 
 /**
@@ -141,16 +191,93 @@ export async function shutdownProxmoxVm(
   await invoke("shutdown_proxmox_vm", { clusterId, nodeId, vmId });
 }
 
+export async function suspendProxmoxVm(
+  clusterId: string,
+  nodeId: string,
+  vmId: number
+): Promise<void> {
+  await invoke("suspend_proxmox_vm", { clusterId, nodeId, vmId });
+}
+
+export async function resumeProxmoxVm(
+  clusterId: string,
+  nodeId: string,
+  vmId: number
+): Promise<void> {
+  await invoke("resume_proxmox_vm", { clusterId, nodeId, vmId });
+}
+
+export interface ProxmoxNodeSummary {
+  node: string;
+  status?: string;
+  cpu?: number;
+  maxcpu?: number;
+  mem?: number;
+  maxmem?: number;
+  uptime?: number;
+  [key: string]: unknown;
+}
+
+export async function listProxmoxNodes(clusterId: string): Promise<any[]> {
+  return await invoke<any[]>("list_proxmox_nodes", { clusterId });
+}
+
+/**
+ * Returns the sorted list of node names for a cluster. Centralises the parsing
+ * of the raw PVE `/nodes` payload (where the node name lives in the `node`
+ * field) so node dropdowns across the UI stay consistent.
+ */
+export async function listProxmoxNodeNames(clusterId: string): Promise<string[]> {
+  const nodes = await listProxmoxNodes(clusterId);
+  return nodes
+    .map((n) => (n && typeof n.node === "string" ? (n.node as string) : ""))
+    .filter((name): name is string => name.length > 0)
+    .sort((a, b) => a.localeCompare(b));
+}
+
+export interface CreateVmParams {
+  nodeId: string;
+  vmid: number;
+  name: string;
+  memory: number;
+  cores: number;
+  sockets: number;
+  osType: string;
+  storage: string;
+  diskSize: number;
+  netBridge: string;
+  iso?: string;
+}
+
+export async function createProxmoxVm(
+  clusterId: string,
+  params: CreateVmParams
+): Promise<void> {
+  await invoke("create_proxmox_vm", {
+    clusterId,
+    nodeId: params.nodeId,
+    vmid: params.vmid,
+    name: params.name,
+    memory: params.memory,
+    cores: params.cores,
+    sockets: params.sockets,
+    osType: params.osType,
+    storage: params.storage,
+    diskSize: params.diskSize,
+    netBridge: params.netBridge,
+    iso: params.iso ?? null,
+  });
+}
+
 /**
  * List Proxmox Backup Jobs
  * @param clusterId - Cluster identifier
  * @param nodeId - Node identifier
  */
 export async function listProxmoxBackupJobs(
-  clusterId: string,
-  nodeId: string
+  clusterId: string
 ): Promise<any[]> {
-  return await invoke<any[]>("list_proxmox_backup_jobs", { clusterId, nodeId });
+  return await invoke<any[]>("list_proxmox_backup_jobs", { clusterId });
 }
 
 /**
@@ -164,41 +291,93 @@ export async function listProxmoxDatastores(
 }
 
 /**
- * Trigger Proxmox Backup Job
+ * Get the configuration of a single datacenter-level storage.
+ */
+export async function getProxmoxStorageConfig(
+  clusterId: string,
+  storage: string
+): Promise<Record<string, any>> {
+  return await invoke<Record<string, any>>("get_proxmox_storage_config", {
+    clusterId,
+    storage,
+  });
+}
+
+/**
+ * Update a datacenter-level storage configuration.
+ * Only provided fields are changed.
+ */
+export async function updateProxmoxStorage(
+  clusterId: string,
+  storage: string,
+  config: { content?: string; nodes?: string; disable?: boolean }
+): Promise<void> {
+  return await invoke<void>("update_proxmox_storage", {
+    clusterId,
+    storage,
+    content: config.content,
+    nodes: config.nodes,
+    disable: config.disable,
+  });
+}
+
+/**
+ * Delete a datacenter-level storage configuration.
+ */
+export async function deleteProxmoxStorage(
+  clusterId: string,
+  storage: string
+): Promise<void> {
+  return await invoke<void>("delete_proxmox_storage", { clusterId, storage });
+}
+
+/**
+ * Trigger Proxmox Backup Job ("Run now").
+ * Runs the job's vzdump configuration on its node (or the first cluster node).
  * @param clusterId - Cluster identifier
- * @param nodeId - Node identifier
- * @param jobId - Backup job identifier
+ * @param jobId - Backup job identifier (string id from cluster/backup)
  */
 export async function triggerProxmoxBackupJob(
   clusterId: string,
-  nodeId: string,
-  jobId: number
+  jobId: string
 ): Promise<void> {
-  await invoke("trigger_proxmox_backup_job", { clusterId, nodeId, jobId });
+  await invoke("trigger_proxmox_backup_job", { clusterId, jobId });
 }
 
 /**
  * List Ceph Pools
  * @param clusterId - Cluster identifier
  */
-export async function listCephPools(clusterId: string): Promise<any[]> {
-  return await invoke<any[]>("list_ceph_pools", { clusterId });
+export async function listCephPools(clusterId: string, node: string): Promise<CephPool[]> {
+  return await invoke<CephPool[]>("list_ceph_pools", { clusterId, node });
+}
+
+/** Create a Ceph pool. */
+export async function createCephPool(
+  clusterId: string,
+  node: string,
+  pool: string,
+  pgNum: number
+): Promise<void> {
+  await invoke("create_ceph_pool", { clusterId, node, pool, pgNum });
 }
 
 /**
  * List Ceph OSDs
  * @param clusterId - Cluster identifier
+ * @param node - Node name
  */
-export async function listCephOsd(clusterId: string): Promise<any[]> {
-  return await invoke<any[]>("list_ceph_osd", { clusterId });
+export async function listCephOsd(clusterId: string, node: string): Promise<CephOsd[]> {
+  return await invoke<CephOsd[]>("list_ceph_osd", { clusterId, node });
 }
 
 /**
  * Get Ceph Health
  * @param clusterId - Cluster identifier
+ * @param node - Node name
  */
-export async function getCephHealth(clusterId: string): Promise<any> {
-  return await invoke<any>("get_ceph_health", { clusterId });
+export async function getCephHealth(clusterId: string, node: string): Promise<CephHealth> {
+  return await invoke<CephHealth>("get_ceph_health", { clusterId, node });
 }
 
 // ─── User Management (LDAP/AD/OpenID) ─────────────────────────────────────────
@@ -258,23 +437,44 @@ export async function listAcmeAccounts(clusterId: string): Promise<any[]> {
 }
 
 /**
- * Register ACME account
+ * Register an ACME account
  * @param clusterId - Cluster identifier
- * @param account - Account configuration
+ * @param email - Contact email for the ACME account
+ * @param termsOfServiceAgreed - Whether the CA's terms of service are accepted
  */
 export async function registerAcmeAccount(
   clusterId: string,
-  account: any
-): Promise<void> {
-  await invoke("register_acme_account", { clusterId, account });
+  email: string,
+  termsOfServiceAgreed: boolean
+): Promise<any> {
+  return await invoke<any>("register_acme_account", {
+    clusterId,
+    email,
+    termsOfServiceAgreed,
+  });
 }
 
 /**
- * Get ACME challenges
+ * Get ACME challenges for a domain
  * @param clusterId - Cluster identifier
+ * @param domain - Domain to check challenges for
  */
-export async function getAcmeChallenges(clusterId: string): Promise<any[]> {
-  return await invoke<any[]>("get_acme_challenges", { clusterId });
+export async function getAcmeChallenges(clusterId: string, domain: string): Promise<any[]> {
+  return await invoke<any[]>("get_acme_challenges", { clusterId, domain });
+}
+
+/**
+ * Order a new certificate via ACME for a domain, using the given ACME account.
+ * @param clusterId - Cluster identifier
+ * @param domain - Domain to request the certificate for
+ * @param accountId - ACME account id to order the certificate under
+ */
+export async function requestAcmeCertificate(
+  clusterId: string,
+  domain: string,
+  accountId: string
+): Promise<any> {
+  return await invoke<any>("request_acme_certificate", { clusterId, domain, accountId });
 }
 
 // ─── APT Repository Management ────────────────────────────────────────────────
@@ -288,19 +488,20 @@ export async function listAptUpdates(
   clusterId: string,
   nodeId: string
 ): Promise<any[]> {
-  return await invoke<any[]>("list_apt_updates", { clusterId, nodeId });
+  return await invoke<any[]>("list_apt_updates", { clusterId, node: nodeId });
 }
 
 /**
- * Update APT repositories
+ * Refresh the APT package index on a node (apt-get update).
  * @param clusterId - Cluster identifier
  * @param nodeId - Node identifier
+ * @returns UPID of the PVE task running the refresh
  */
-export async function updateAptRepos(
+export async function refreshAptCache(
   clusterId: string,
   nodeId: string
-): Promise<void> {
-  await invoke("update_apt_repos", { clusterId, nodeId });
+): Promise<string> {
+  return await invoke<string>("refresh_apt_cache", { clusterId, node: nodeId });
 }
 
 /**
@@ -311,8 +512,8 @@ export async function updateAptRepos(
 export async function listAptRepositories(
   clusterId: string,
   nodeId: string
-): Promise<any[]> {
-  return await invoke<any[]>("list_apt_repositories", { clusterId, nodeId });
+): Promise<AptRepository[]> {
+  return await invoke<AptRepository[]>("list_apt_repositories", { clusterId, node: nodeId });
 }
 
 // ─── Remote Shell ─────────────────────────────────────────────────────────────
@@ -327,51 +528,6 @@ export async function getShellTicket(
   nodeId: string
 ): Promise<any> {
   return await invoke<any>("get_shell_ticket", { clusterId, nodeId });
-}
-
-// ─── Dashboard Views ──────────────────────────────────────────────────────────
-
-/**
- * List dashboard views
- * @param clusterId - Cluster identifier
- */
-export async function listViews(clusterId: string): Promise<any[]> {
-  return await invoke<any[]>("list_views", { clusterId });
-}
-
-/**
- * Add a dashboard view
- * @param clusterId - Cluster identifier
- * @param view - View configuration
- */
-export async function addView(clusterId: string, view: any): Promise<void> {
-  await invoke("add_view", { clusterId, view });
-}
-
-/**
- * Update a dashboard view
- * @param clusterId - Cluster identifier
- * @param viewId - View identifier
- * @param view - View configuration
- */
-export async function updateView(
-  clusterId: string,
-  viewId: string,
-  view: any
-): Promise<void> {
-  await invoke("update_view", { clusterId, viewId, view });
-}
-
-/**
- * Delete a dashboard view
- * @param clusterId - Cluster identifier
- * @param viewId - View identifier
- */
-export async function deleteView(
-  clusterId: string,
-  viewId: string
-): Promise<void> {
-  await invoke("delete_view", { clusterId, viewId });
 }
 
 // ─── Certificate Management ───────────────────────────────────────────────────
@@ -389,17 +545,19 @@ export async function listCertificates(
 }
 
 /**
- * Upload a certificate
+ * Upload a custom certificate
  * @param clusterId - Cluster identifier
- * @param nodeId - Node identifier
- * @param cert - Certificate data
+ * @param certificate - PEM-encoded certificate
+ * @param privateKey - PEM-encoded private key
+ * @param name - Optional certificate name
  */
 export async function uploadCertificate(
   clusterId: string,
-  nodeId: string,
-  cert: any
-): Promise<void> {
-  await invoke("upload_certificate", { clusterId, nodeId, cert });
+  certificate: string,
+  privateKey: string,
+  name?: string
+): Promise<any> {
+  return await invoke<any>("upload_certificate", { clusterId, certificate, privateKey, name });
 }
 
 /**
@@ -516,14 +674,57 @@ export async function migrateVm(
   clusterId: string,
   nodeId: string,
   vmId: number,
-  targetClusterId: string,
-  online: boolean
-): Promise<void> {
-  await invoke("migrate_vm", {
+  targetNode: string,
+  targetCluster: string
+): Promise<MigrationTaskResult> {
+  return await invoke<MigrationTaskResult>("migrate_vm", {
     clusterId,
     nodeId,
     vmId,
-    targetClusterId,
+    targetNode,
+    targetCluster,
+  });
+}
+
+/** Result of an intra-cluster migration start (carries the task UPID). */
+export interface MigrationTaskResult {
+  task_id: string;
+  source_node: string;
+  [key: string]: unknown;
+}
+
+/** Result of starting a cross-datacenter (remote) migration. */
+export interface RemoteMigrationStart {
+  upid: string;
+  source_node: string;
+  dest_cluster_id: string;
+  dest_userid: string;
+  dest_tokenname: string;
+}
+
+/**
+ * Start a cross-datacenter (remote) VM migration. Returns the task UPID plus
+ * the temporary destination token details so the caller can clean it up once
+ * the migration task completes.
+ */
+export async function startRemoteMigration(
+  clusterId: string,
+  node: string,
+  vmId: number,
+  destClusterId: string,
+  targetNode: string,
+  targetStorage: string,
+  targetBridge: string,
+  online: boolean
+): Promise<RemoteMigrationStart> {
+  return await invoke<RemoteMigrationStart>("start_remote_migration", {
+    clusterId,
+    node,
+    vmId,
+    destClusterId,
+    targetNode,
+    targetStorage,
+    targetBridge,
     online,
   });
 }
@@ -590,8 +791,22 @@ export async function getTaskStatus(
   clusterId: string,
   nodeId: string,
   taskId: string
-): Promise<any> {
-  return await invoke<any>("get_task_status", { clusterId, nodeId, taskId });
+): Promise<TaskStatusInfo> {
+  return await invoke<TaskStatusInfo>("get_task_status", {
+    clusterId,
+    node: nodeId,
+    taskId,
+  });
+}
+
+/** Task status as returned by the backend `get_task_status` command. */
+export interface TaskStatusInfo {
+  task_id: string;
+  node: string;
+  status: string;
+  exit_status?: string | null;
+  progress?: number;
+  [key: string]: unknown;
 }
 
 /**
@@ -644,6 +859,7 @@ export interface HaResource {
   state: string;
   maxRestart?: number;
   maxRelocate?: number;
+  comment?: string;
 }
 
 /**
@@ -656,24 +872,42 @@ export const listHaGroups = async (clusterId: string): Promise<HaGroup[]> =>
 /**
  * Create an HA group
  * @param clusterId - Cluster identifier
- * @param config - HA group configuration
+ * @param config - HA group configuration (group id + node list)
  */
 export const createHaGroup = async (
   clusterId: string,
-  config: Partial<HaGroup>
-): Promise<void> => invoke<void>("create_ha_group", { clusterId, config });
+  config: { id: string; nodes: string[] }
+): Promise<void> =>
+  invoke<void>("create_ha_group", {
+    clusterId,
+    group: config.id,
+    nodes: config.nodes,
+  });
 
 /**
  * Update an HA group
  * @param clusterId - Cluster identifier
  * @param id - HA group identifier
- * @param config - HA group configuration
+ * @param config - HA group fields to update
  */
 export const updateHaGroup = async (
   clusterId: string,
   id: string,
-  config: Partial<HaGroup>
-): Promise<void> => invoke<void>("update_ha_group", { clusterId, id, config });
+  config: {
+    nodes: string[];
+    comment?: string;
+    restricted?: boolean;
+    nofailback?: boolean;
+  }
+): Promise<void> =>
+  invoke<void>("update_ha_group", {
+    clusterId,
+    group: id,
+    nodes: config.nodes,
+    comment: config.comment,
+    restricted: config.restricted,
+    nofailback: config.nofailback,
+  });
 
 /**
  * Delete an HA group
@@ -683,7 +917,7 @@ export const updateHaGroup = async (
 export const deleteHaGroup = async (
   clusterId: string,
   id: string
-): Promise<void> => invoke<void>("delete_ha_group", { clusterId, id });
+): Promise<void> => invoke<void>("delete_ha_group", { clusterId, group: id });
 
 /**
  * List HA resources
@@ -695,6 +929,33 @@ export const listHaResources = async (
   invoke<HaResource[]>("list_ha_resources", { clusterId });
 
 /**
+ * Update (edit) an HA resource
+ * @param clusterId - Cluster identifier
+ * @param sid - HA resource identifier (e.g. "vm:100")
+ * @param config - fields to update
+ */
+export const updateHaResource = async (
+  clusterId: string,
+  sid: string,
+  config: {
+    group?: string;
+    state?: string;
+    maxRestart?: number;
+    maxRelocate?: number;
+    comment?: string;
+  }
+): Promise<void> =>
+  invoke<void>("update_ha_resource", {
+    clusterId,
+    resource: sid,
+    group: config.group,
+    stateValue: config.state,
+    maxRestart: config.maxRestart,
+    maxRelocate: config.maxRelocate,
+    comment: config.comment,
+  });
+
+/**
  * Enable an HA resource
  * @param clusterId - Cluster identifier
  * @param id - HA resource identifier
@@ -702,7 +963,17 @@ export const listHaResources = async (
 export const enableHaResource = async (
   clusterId: string,
   id: string
-): Promise<void> => invoke<void>("enable_ha_resource", { clusterId, id });
+): Promise<void> => invoke<void>("enable_ha_resource", { clusterId, resource: id });
+
+export const disableHaResource = async (
+  clusterId: string,
+  id: string
+): Promise<void> => invoke<void>("disable_ha_resource", { clusterId, resource: id });
+
+export const deleteHaResource = async (
+  clusterId: string,
+  id: string
+): Promise<void> => invoke<void>("delete_ha_resource", { clusterId, resource: id });
 
 // ─── ACL / User Management ────────────────────────────────────────────────────
 
@@ -839,7 +1110,6 @@ export interface AptRepository {
 export interface SyslogEntry {
   n: number;
   t: string;
-  msg: string;
 }
 
 /**
@@ -883,47 +1153,129 @@ export const listNetworkInterfaces = async (
 ): Promise<NetworkInterface[]> =>
   invoke<NetworkInterface[]>("list_network_interfaces", { clusterId, nodeId });
 
-// ─── Cluster Views (typed) ────────────────────────────────────────────────────
-
-export interface ClusterView {
-  view_id: string;
-  name: string;
-  description?: string;
-  layout?: string;
-  enabled?: boolean;
+/**
+ * Network interface configuration for creation/update
+ */
+export interface NetworkInterfaceConfig {
+  iface: string;
+  type: string;
+  address?: string;
+  netmask?: string;
+  gateway?: string;
+  active?: boolean;
+  autostart?: boolean;
+  comments?: string;
 }
 
 /**
- * List cluster views
+ * Create a network interface
  * @param clusterId - Cluster identifier
+ * @param nodeId - Node identifier
+ * @param config - Network interface configuration
  */
-export const listClusterViews = async (
-  clusterId: string
-): Promise<ClusterView[]> =>
-  invoke<ClusterView[]>("list_cluster_views", { clusterId });
-
-/**
- * Create a cluster view
- * @param clusterId - Cluster identifier
- * @param viewId - View identifier
- * @param name - View display name
- */
-export const createClusterView = async (
+export const createNetworkInterface = async (
   clusterId: string,
-  viewId: string,
-  name: string
+  nodeId: string,
+  config: NetworkInterfaceConfig
 ): Promise<void> =>
-  invoke<void>("create_cluster_view", { clusterId, viewId, name });
+  invoke<void>("create_network_interface", { clusterId, nodeId, config });
 
 /**
- * Delete a cluster view
+ * Update a network interface
  * @param clusterId - Cluster identifier
- * @param viewId - View identifier
+ * @param nodeId - Node identifier
+ * @param iface - Network interface identifier
+ * @param config - Updated network interface configuration
  */
-export const deleteClusterView = async (
+export const updateNetworkInterface = async (
   clusterId: string,
-  viewId: string
-): Promise<void> => invoke<void>("delete_cluster_view", { clusterId, viewId });
+  nodeId: string,
+  iface: string,
+  config: NetworkInterfaceConfig
+): Promise<void> =>
+  invoke<void>("update_network_interface", { clusterId, nodeId, iface, config });
+
+/**
+ * Delete a network interface
+ * @param clusterId - Cluster identifier
+ * @param nodeId - Node identifier
+ * @param iface - Network interface identifier
+ */
+export const deleteNetworkInterface = async (
+  clusterId: string,
+  nodeId: string,
+  iface: string
+): Promise<void> =>
+  invoke<void>("delete_network_interface", { clusterId, nodeId, iface });
+
+// ─── VM Snapshots ─────────────────────────────────────────────────────────────
+
+export interface ProxmoxSnapshot {
+  snapname: string;
+  vmid: number;
+  name?: string;
+  ctime: number;
+  parent?: string;
+  description?: string;
+}
+
+/**
+ * List snapshots for a VM
+ * @param clusterId - Cluster identifier
+ * @param nodeId - Node identifier
+ * @param vmid - VM identifier
+ */
+export const listProxmoxSnapshots = async (
+  clusterId: string,
+  nodeId: string,
+  vmid: number
+): Promise<ProxmoxSnapshot[]> =>
+  invoke<ProxmoxSnapshot[]>("list_proxmox_snapshots", { clusterId, nodeId, vmid });
+
+/**
+ * Create a snapshot for a VM
+ * @param clusterId - Cluster identifier
+ * @param nodeId - Node identifier
+ * @param vmid - VM identifier
+ * @param snapshotName - Snapshot name
+ */
+export const createProxmoxSnapshot = async (
+  clusterId: string,
+  nodeId: string,
+  vmid: number,
+  snapshotName: string
+): Promise<void> =>
+  invoke<void>("create_proxmox_snapshot", { clusterId, nodeId, vmid, snapshotName });
+
+/**
+ * Delete a snapshot for a VM
+ * @param clusterId - Cluster identifier
+ * @param nodeId - Node identifier
+ * @param vmid - VM identifier
+ * @param snapshotName - Snapshot name
+ */
+export const deleteProxmoxSnapshot = async (
+  clusterId: string,
+  nodeId: string,
+  vmid: number,
+  snapshotName: string
+): Promise<void> =>
+  invoke<void>("delete_proxmox_snapshot", { clusterId, nodeId, vmid, snapshotName });
+
+/**
+ * Rollback a VM to a snapshot
+ * @param clusterId - Cluster identifier
+ * @param nodeId - Node identifier
+ * @param vmid - VM identifier
+ * @param snapshotName - Snapshot name
+ */
+export const rollbackProxmoxSnapshot = async (
+  clusterId: string,
+  nodeId: string,
+  vmid: number,
+  snapshotName: string
+): Promise<void> =>
+  invoke<void>("rollback_proxmox_snapshot", { clusterId, nodeId, vmid, snapshotName });
 
 // ─── Subscription ─────────────────────────────────────────────────────────────
 
@@ -971,3 +1323,899 @@ export const listClusterTasks = async (
     clusterId,
     limit: limit ?? 50,
   });
+
+/** One line of a PVE task log ({n}=line number, {t}=line text). */
+export interface TaskLogEntry {
+  n: number;
+  t: string;
+}
+
+/** Get the full log of a single task. */
+export const getProxmoxTaskLog = async (
+  clusterId: string,
+  node: string,
+  upid: string
+): Promise<TaskLogEntry[]> =>
+  invoke<TaskLogEntry[]>("get_proxmox_task_log", { clusterId, node, upid });
+
+export interface TaskLogTarget {
+  node: string;
+  upid: string;
+}
+
+export interface TaskLogSearchResult {
+  node: string;
+  upid: string;
+  matches: TaskLogEntry[];
+  error?: string;
+}
+
+/**
+ * Search the logs of multiple tasks for a case-insensitive substring.
+ * Limited to 100 targets per call; query must be at least 2 characters.
+ */
+export const searchTaskLogs = async (
+  clusterId: string,
+  query: string,
+  targets: TaskLogTarget[]
+): Promise<TaskLogSearchResult[]> =>
+  invoke<TaskLogSearchResult[]>("search_task_logs", { clusterId, query, targets });
+
+// ─── Storage Per-Node ─────────────────────────────────────────────────────────
+
+/**
+ * List storage pools visible on a specific node (filtered from cluster resources)
+ */
+export const listProxmoxStorages = async (
+  clusterId: string,
+  nodeId: string
+): Promise<{ storage: string; type: string; content?: string }[]> => {
+  const all = await listProxmoxDatastores(clusterId);
+  return (all as Array<{ storage?: string; node?: string; type?: string; content?: string }>)
+    .filter((s) => s.node === nodeId || !s.node)
+    .map((s) => ({
+      storage: s.storage ?? '',
+      type: s.type ?? '',
+      content: s.content,
+    }))
+    .filter((s) => s.storage !== '');
+};
+
+// ─── ISO Images ───────────────────────────────────────────────────────────────
+
+/**
+ * List ISO images available in a Proxmox storage
+ * @param clusterId - Cluster identifier
+ * @param nodeId - Node identifier
+ * @param storageId - Storage pool identifier
+ */
+export const listIsoImages = async (
+  clusterId: string,
+  nodeId: string,
+  storageId: string
+): Promise<{ volid: string; name?: string; size?: number }[]> =>
+  invoke<{ volid: string; name?: string; size?: number }[]>("list_iso_images", {
+    clusterId,
+    nodeId,
+    storageId,
+  });
+
+/**
+ * Upload an ISO file to a Proxmox storage pool.
+ * @param clusterId - Cluster identifier
+ * @param nodeId - Node identifier
+ * @param storageId - Storage pool identifier
+ * @param filePath - Absolute local path to the .iso file (from file dialog)
+ * @returns Proxmox task UPID
+ */
+export const uploadIsoImage = async (
+  clusterId: string,
+  nodeId: string,
+  storageId: string,
+  filePath: string
+): Promise<string> =>
+  invoke<string>("upload_iso_image", {
+    clusterId,
+    nodeId,
+    storageId,
+    filePath,
+  });
+
+// ─── VM clone / delete ────────────────────────────────────────────────────────
+
+export interface CloneVmParams extends Record<string, unknown> {
+  clusterId: string;
+  nodeId: string;
+  vmId: number;
+  newVmId: number;
+  name?: string;
+  full?: boolean;
+}
+
+export const cloneVm = (params: CloneVmParams): Promise<void> =>
+  invoke("clone_vm", params);
+
+export const deleteVm = (
+  clusterId: string,
+  nodeId: string,
+  vmId: number
+): Promise<void> => invoke("delete_vm", { clusterId, nodeId, vmId });
+
+// ─── LXC Container Power ──────────────────────────────────────────────────────
+
+export const startProxmoxContainer = (
+  clusterId: string,
+  nodeId: string,
+  vmId: number
+): Promise<void> =>
+  invoke("start_proxmox_container", { clusterId, nodeId, vmId });
+
+export const stopProxmoxContainer = (
+  clusterId: string,
+  nodeId: string,
+  vmId: number
+): Promise<void> =>
+  invoke("stop_proxmox_container", { clusterId, nodeId, vmId });
+
+export const rebootProxmoxContainer = (
+  clusterId: string,
+  nodeId: string,
+  vmId: number
+): Promise<void> =>
+  invoke("reboot_proxmox_container", { clusterId, nodeId, vmId });
+
+export const shutdownProxmoxContainer = (
+  clusterId: string,
+  nodeId: string,
+  vmId: number
+): Promise<void> =>
+  invoke("shutdown_proxmox_container", { clusterId, nodeId, vmId });
+
+export const suspendProxmoxContainer = (
+  clusterId: string,
+  nodeId: string,
+  vmId: number
+): Promise<void> =>
+  invoke("suspend_proxmox_container", { clusterId, nodeId, vmId });
+
+export const resumeProxmoxContainer = (
+  clusterId: string,
+  nodeId: string,
+  vmId: number
+): Promise<void> =>
+  invoke("resume_proxmox_container", { clusterId, nodeId, vmId });
+
+// ─── SDN CRUD ─────────────────────────────────────────────────────────────────
+
+export const createSdnZone = (
+  clusterId: string,
+  zone: string,
+  asn: number,
+  vni: number
+): Promise<void> => invoke("create_sdn_zone", { clusterId, zone, asn, vni });
+
+export const updateSdnZone = (
+  clusterId: string,
+  zone: string,
+  asn: number,
+  vni: number
+): Promise<void> => invoke("update_sdn_zone", { clusterId, zone, asn, vni });
+
+export const deleteSdnZone = (
+  clusterId: string,
+  zone: string
+): Promise<void> => invoke("delete_sdn_zone", { clusterId, zone });
+
+export const createSdnVnet = (
+  clusterId: string,
+  vnet: string,
+  zone: string,
+  l2vni: number
+): Promise<void> =>
+  invoke("create_sdn_vnet", { clusterId, vnet, zone, l2vni });
+
+export const updateSdnVnet = (
+  clusterId: string,
+  vnet: string,
+  zone: string,
+  l2vni: number
+): Promise<void> =>
+  invoke("update_sdn_vnet", { clusterId, vnet, zone, l2vni });
+
+export const deleteSdnVnet = (
+  clusterId: string,
+  vnet: string
+): Promise<void> => invoke("delete_sdn_vnet", { clusterId, vnet });
+
+// ─── Backup Job CRUD ──────────────────────────────────────────────────────────
+
+export interface BackupJobParams extends Record<string, unknown> {
+  clusterId: string;
+  storage: string;
+  vmid?: string;
+  mode?: string;
+  schedule?: string;
+  enabled?: boolean;
+}
+
+export const createProxmoxBackupJob = (
+  params: BackupJobParams
+): Promise<void> => invoke("create_proxmox_backup_job", params);
+
+export const updateProxmoxBackupJob = (
+  clusterId: string,
+  jobId: string,
+  updates: Partial<Omit<BackupJobParams, "clusterId">>
+): Promise<void> =>
+  invoke("update_proxmox_backup_job", { clusterId, jobId, ...updates });
+
+export const deleteProxmoxBackupJob = (
+  clusterId: string,
+  jobId: string
+): Promise<void> =>
+  invoke("delete_proxmox_backup_job", { clusterId, jobId });
+
+// ─── ACL CRUD ─────────────────────────────────────────────────────────────────
+
+export const createProxmoxAcl = (
+  clusterId: string,
+  path: string,
+  roles: string,
+  users?: string,
+  groups?: string,
+  propagate?: boolean
+): Promise<void> =>
+  invoke("create_proxmox_acl", { clusterId, path, roles, users, groups, propagate });
+
+export const deleteProxmoxAcl = (
+  clusterId: string,
+  path: string,
+  roles: string,
+  users?: string,
+  groups?: string
+): Promise<void> =>
+  invoke("delete_proxmox_acl", { clusterId, path, roles, users, groups });
+
+// ─── User CRUD ────────────────────────────────────────────────────────────────
+
+export const createProxmoxUser = (
+  clusterId: string,
+  userid: string,
+  password: string,
+  comment?: string,
+  email?: string,
+  enabled?: boolean
+): Promise<void> =>
+  invoke("create_proxmox_user", {
+    clusterId,
+    userid,
+    password,
+    comment,
+    email,
+    enabled,
+  });
+
+export const updateProxmoxUser = (
+  clusterId: string,
+  userid: string,
+  comment?: string,
+  email?: string,
+  enabled?: boolean
+): Promise<void> =>
+  invoke("update_proxmox_user", { clusterId, userid, comment, email, enabled });
+
+export const deleteProxmoxUser = (
+  clusterId: string,
+  userid: string
+): Promise<void> => invoke("delete_proxmox_user", { clusterId, userid });
+
+// ─── Realm CRUD ───────────────────────────────────────────────────────────────
+
+export const createProxmoxRealm = (
+  clusterId: string,
+  realm: string,
+  realmType: string,
+  comment?: string
+): Promise<void> =>
+  invoke("create_proxmox_realm", { clusterId, realm, realmType, comment });
+
+export const updateProxmoxRealm = (
+  clusterId: string,
+  realm: string,
+  comment?: string
+): Promise<void> =>
+  invoke("update_proxmox_realm", { clusterId, realm, comment });
+
+export const deleteProxmoxRealm = (
+  clusterId: string,
+  realm: string
+): Promise<void> => invoke("delete_proxmox_realm", { clusterId, realm });
+
+// ─── Firewall rule update ─────────────────────────────────────────────────────
+
+export const updateFirewallRule = (
+  clusterId: string,
+  nodeId: string,
+  ruleNum: number,
+  rule: {
+    action: string;
+    protocol?: string;
+    source?: string;
+    destination?: string;
+    port?: string;
+    enabled: boolean;
+    comment?: string;
+  }
+): Promise<void> =>
+  invoke("update_proxmox_firewall_rule", { clusterId, nodeId, ruleNum, rule });
+
+// ─── Node DNS ─────────────────────────────────────────────────────────────────
+
+export interface NodeDns {
+  search: string;
+  dns1?: string;
+  dns2?: string;
+  dns3?: string;
+}
+
+// ─── Node Time ────────────────────────────────────────────────────────────────
+
+export interface NodeTime {
+  localtime: number;
+  time: number;
+  timezone: string;
+}
+
+// ─── VM Pending Config Entry ──────────────────────────────────────────────────
+
+export interface VmPendingEntry {
+  key: string;
+  value?: unknown;
+  pending?: unknown;
+  delete?: number;
+}
+
+// ─── Ceph ─────────────────────────────────────────────────────────────────────
+
+export interface CephMonitor {
+  name: string;
+  quorum: boolean;
+  address: string;
+  version?: string;
+}
+
+export interface CephMgr {
+  name: string;
+  addr?: string;
+  state?: string;
+}
+
+export interface CephFs {
+  name: string;
+  metadataPool?: string;
+  dataPool?: string;
+}
+
+export interface CephHealth {
+  status: 'HEALTH_OK' | 'HEALTH_WARN' | 'HEALTH_ERR';
+  summary: string;
+  details: string[];
+}
+
+export interface CephPool {
+  id: string;
+  name: string;
+  type: string;
+  size: number;
+  minSize: number;
+  used: number;
+  available: number;
+  total: number;
+  usedPercent: number;
+}
+
+export interface CephOsd {
+  id: number;
+  host: string;
+  status: 'up' | 'down';
+  weight: number;
+  size: number;
+  used: number;
+  avail: number;
+  usedPercent: number;
+}
+
+// ─── Cluster Firewall Status ──────────────────────────────────────────────────
+
+export interface ClusterFirewallStatus {
+  enable?: number;
+  policyIn?: string;
+  policyOut?: string;
+}
+
+// ─── TFA ──────────────────────────────────────────────────────────────────────
+
+export interface TfaEntry {
+  id: string;
+  userid: string;
+  tfaType: string;
+  description?: string;
+  enable?: boolean;
+  created?: number;
+}
+
+// ─── User Tokens ──────────────────────────────────────────────────────────────
+
+export interface UserToken {
+  tokenid: string;
+  comment?: string;
+  privsep?: number;
+  expire?: number;
+}
+
+export interface UserTokenCreateResult {
+  fullTokenid?: string;
+  info?: unknown;
+  value?: string;
+}
+
+// ─── PBS ──────────────────────────────────────────────────────────────────────
+
+export interface PbsDatastore {
+  store: string;
+  path?: string;
+  total?: number;
+  used?: number;
+  avail?: number;
+  storeType?: string;
+}
+
+export interface PbsNamespace {
+  ns: string;
+  comment?: string;
+}
+
+export interface PbsSnapshot {
+  backupId: string;
+  backupTime: number;
+  backupType: string;
+  size?: number;
+  files?: unknown[];
+  verifyState?: string;
+  notes?: string;
+}
+
+export interface PbsTask {
+  upid: string;
+  node: string;
+  taskType: string;
+  status?: string;
+  starttime: number;
+  endtime?: number;
+}
+
+// ─── Node Administration ──────────────────────────────────────────────────────
+
+export const getNodeDns = (
+  clusterId: string,
+  node: string
+): Promise<NodeDns> => invoke("get_node_dns", { clusterId, node });
+
+export const updateNodeDns = (
+  clusterId: string,
+  node: string,
+  search: string,
+  dns1?: string,
+  dns2?: string,
+  dns3?: string
+): Promise<void> =>
+  invoke("update_node_dns", { clusterId, node, search, dns1, dns2, dns3 });
+
+export const getNodeTime = (
+  clusterId: string,
+  node: string
+): Promise<NodeTime> => invoke("get_node_time", { clusterId, node });
+
+export const updateNodeTime = (
+  clusterId: string,
+  node: string,
+  timezone: string
+): Promise<void> => invoke("update_node_time", { clusterId, node, timezone });
+
+export const rebootNode = (
+  clusterId: string,
+  node: string
+): Promise<string> => invoke("reboot_node", { clusterId, node });
+
+export const shutdownNode = (
+  clusterId: string,
+  node: string
+): Promise<string> => invoke("shutdown_node", { clusterId, node });
+
+export const getNodeJournal = (
+  clusterId: string,
+  node: string,
+  lastentries?: number
+): Promise<string[]> =>
+  invoke("get_node_journal", { clusterId, node, lastentries });
+
+export const getNodeReport = (
+  clusterId: string,
+  node: string
+): Promise<string> => invoke("get_node_report", { clusterId, node });
+
+// ─── Network ──────────────────────────────────────────────────────────────────
+
+export const reloadNetworkConfig = (
+  clusterId: string,
+  node: string
+): Promise<string> => invoke("reload_network_config", { clusterId, node });
+
+// ─── VM Config ────────────────────────────────────────────────────────────────
+
+export const getVmConfig = (
+  clusterId: string,
+  node: string,
+  vmId: number
+): Promise<Record<string, unknown>> =>
+  invoke("get_vm_config", { clusterId, node, vmId });
+
+export const getVmPendingConfig = (
+  clusterId: string,
+  node: string,
+  vmId: number
+): Promise<VmPendingEntry[]> =>
+  invoke("get_vm_pending_config", { clusterId, node, vmId });
+
+export const remoteMigrateVm = (
+  clusterId: string,
+  node: string,
+  vmId: number,
+  targetNode: string,
+  targetStorage: string,
+  online: boolean
+): Promise<string> =>
+  invoke("remote_migrate_vm", {
+    clusterId,
+    node,
+    vmId,
+    targetNode,
+    targetStorage,
+    online,
+  });
+
+// ─── VM Console (noVNC) ───────────────────────────────────────────────────
+
+/** Session details for connecting an in-app noVNC client to the local proxy. */
+export interface VncConsoleSession {
+  local_url: string;
+  ticket: string;
+  local_port: number;
+}
+
+/** Open an in-app noVNC console for a QEMU VM. */
+export const openVncConsole = (
+  clusterId: string,
+  node: string,
+  vmId: number
+): Promise<VncConsoleSession> =>
+  invoke("open_vnc_console", { clusterId, node, vmId });
+
+/** Open an in-app noVNC console for an LXC container. */
+export const openLxcConsole = (
+  clusterId: string,
+  node: string,
+  vmId: number
+): Promise<VncConsoleSession> =>
+  invoke("open_lxc_console", { clusterId, node, vmId });
+
+/** Tagged host-shell session for the Remotes "Console (Shell)" action. */
+export interface NodeShellSession {
+  /** "novnc" (PVE graphical shell) or "xterm" (PBS terminal). */
+  kind: "novnc" | "xterm";
+  localUrl: string;
+  ticket: string;
+  localPort: number;
+  /** RFB password for noVNC shells (PVE vncshell only). */
+  password: string | null;
+  /** Session user (needed for the xterm termproxy login line). */
+  user: string;
+}
+
+/**
+ * Open a host (node) shell for a stored remote (PVE=noVNC, PBS=xterm).
+ * `cmd` selects the shell command PVE runs: "login" (default) or "upgrade"
+ * (runs pveupgrade, like the official PVE UI's node Upgrade button).
+ */
+export const openNodeShell = (
+  clusterId: string,
+  node: string,
+  cmd?: 'login' | 'upgrade'
+): Promise<NodeShellSession> =>
+  invoke("open_node_shell", { clusterId, node, cmd: cmd ?? null });
+
+// ─── Container (LXC) ──────────────────────────────────────────────────────────
+
+export const getContainerConfig = (
+  clusterId: string,
+  node: string,
+  vmId: number
+): Promise<Record<string, unknown>> =>
+  invoke("get_container_config", { clusterId, node, vmId });
+
+export interface ContainerCreateParams {
+  vmid: number;
+  ostemplate: string;
+  hostname?: string;
+  memory?: number;
+  cores?: number;
+  rootfs?: string;
+  net0?: string;
+  password?: string;
+  unprivileged?: boolean;
+  start?: boolean;
+}
+
+export const createProxmoxContainer = (
+  clusterId: string,
+  node: string,
+  params: ContainerCreateParams
+): Promise<string> =>
+  invoke("create_proxmox_container", { clusterId, node, ...params });
+
+// ─── RRD Metrics ──────────────────────────────────────────────────────────────
+
+export type RrdTimeframe = "hour" | "day" | "week" | "month" | "year";
+
+export const getNodeRrdData = (
+  clusterId: string,
+  node: string,
+  timeframe: RrdTimeframe
+): Promise<Record<string, unknown>[]> =>
+  invoke("get_node_rrd_data", { clusterId, node, timeframe });
+
+export const getVmRrdData = (
+  clusterId: string,
+  node: string,
+  vmId: number,
+  timeframe: RrdTimeframe
+): Promise<Record<string, unknown>[]> =>
+  invoke("get_vm_rrd_data", { clusterId, node, vmId, timeframe });
+
+export const getStorageRrdData = (
+  clusterId: string,
+  node: string,
+  storage: string,
+  timeframe: RrdTimeframe
+): Promise<Record<string, unknown>[]> =>
+  invoke("get_storage_rrd_data", { clusterId, node, storage, timeframe });
+
+// ─── Ceph Advanced ────────────────────────────────────────────────────────────
+
+export const listCephMonitors = (clusterId: string, node: string): Promise<CephMonitor[]> =>
+  invoke("list_ceph_monitors", { clusterId, node });
+
+export const listCephManagers = (
+  clusterId: string,
+  node: string
+): Promise<CephMgr[]> => invoke("list_ceph_managers", { clusterId, node });
+
+export const listCephfs = (
+  clusterId: string,
+  node: string
+): Promise<CephFs[]> => invoke("list_cephfs", { clusterId, node });
+
+export interface CephFlag {
+  name: string;
+  value: number;
+  description?: string;
+}
+
+export const getCephFlags = (
+  clusterId: string,
+  node: string
+): Promise<CephFlag[]> =>
+  invoke("get_ceph_flags", { clusterId, node });
+
+/** Set (or clear) a cluster-level Ceph runtime flag (e.g. "noout"). */
+export const setCephFlag = (
+  clusterId: string,
+  flag: string,
+  value: boolean
+): Promise<void> => invoke("set_ceph_flag", { clusterId, flag, value });
+
+/** Create a Ceph monitor on a node. Returns the PVE task UPID. */
+export const createCephMonitor = (
+  clusterId: string,
+  node: string,
+  monid: string
+): Promise<string> => invoke("create_ceph_monitor", { clusterId, node, monid });
+
+/** Destroy a Ceph monitor. Returns the PVE task UPID. */
+export const deleteCephMonitor = (
+  clusterId: string,
+  node: string,
+  monid: string
+): Promise<string> => invoke("delete_ceph_monitor", { clusterId, node, monid });
+
+/** Create a Ceph manager on a node. Returns the PVE task UPID. */
+export const createCephManager = (
+  clusterId: string,
+  node: string,
+  id: string
+): Promise<string> => invoke("create_ceph_manager", { clusterId, node, id });
+
+/** Destroy a Ceph manager. Returns the PVE task UPID. */
+export const deleteCephManager = (
+  clusterId: string,
+  node: string,
+  id: string
+): Promise<string> => invoke("delete_ceph_manager", { clusterId, node, id });
+
+/**
+ * Start, stop, or restart a Ceph mon/mgr service (e.g. service="mon.vmhost1").
+ * Returns the PVE task UPID.
+ */
+export const cephServiceAction = (
+  clusterId: string,
+  node: string,
+  service: string,
+  action: 'start' | 'stop' | 'restart'
+): Promise<string> =>
+  invoke("ceph_service_action", { clusterId, node, service, action });
+
+// ─── Firewall (cluster + guest) ───────────────────────────────────────────────
+
+export const listClusterFirewallRules = (
+  clusterId: string
+): Promise<any[]> => invoke("list_cluster_firewall_rules", { clusterId });
+
+export const getClusterFirewallStatus = (
+  clusterId: string
+): Promise<ClusterFirewallStatus> =>
+  invoke("get_cluster_firewall_status", { clusterId });
+
+export const listGuestFirewallRules = (
+  clusterId: string,
+  node: string,
+  vmId: number
+): Promise<any[]> =>
+  invoke("list_guest_firewall_rules", { clusterId, node, vmId });
+
+export const addGuestFirewallRule = (
+  clusterId: string,
+  node: string,
+  vmId: number,
+  action: string,
+  proto?: string,
+  source?: string,
+  dest?: string,
+  dport?: string,
+  enable?: boolean
+): Promise<void> =>
+  invoke("add_guest_firewall_rule", {
+    clusterId,
+    node,
+    vmId,
+    action,
+    proto,
+    source,
+    dest,
+    dport,
+    enable,
+  });
+
+export const deleteGuestFirewallRule = (
+  clusterId: string,
+  node: string,
+  vmId: number,
+  pos: number
+): Promise<void> =>
+  invoke("delete_guest_firewall_rule", { clusterId, node, vmId, pos });
+
+// ─── TFA Management ───────────────────────────────────────────────────────────
+
+export const listTfaEntries = (clusterId: string): Promise<TfaEntry[]> =>
+  invoke("list_tfa_entries", { clusterId });
+
+export const addTfaEntry = (
+  clusterId: string,
+  userid: string,
+  tfaType: string,
+  description?: string,
+  totp?: string,
+  value?: string,
+  key?: string
+): Promise<unknown> =>
+  invoke("add_tfa_entry", {
+    clusterId,
+    userid,
+    tfaType,
+    description,
+    totp,
+    value,
+    key,
+  });
+
+export const deleteTfaEntry = (
+  clusterId: string,
+  userid: string,
+  id: string
+): Promise<void> => invoke("delete_tfa_entry", { clusterId, userid, id });
+
+// ─── User API Tokens ──────────────────────────────────────────────────────────
+
+export const listUserTokens = (
+  clusterId: string,
+  userid: string
+): Promise<UserToken[]> =>
+  invoke("list_user_tokens", { clusterId, userid });
+
+export const createUserToken = (
+  clusterId: string,
+  userid: string,
+  tokenname: string,
+  comment?: string,
+  privsep?: boolean,
+  expire?: number
+): Promise<UserTokenCreateResult> =>
+  invoke("create_user_token", {
+    clusterId,
+    userid,
+    tokenname,
+    comment,
+    privsep,
+    expire,
+  });
+
+export const deleteUserToken = (
+  clusterId: string,
+  userid: string,
+  tokenname: string
+): Promise<void> =>
+  invoke("delete_user_token", { clusterId, userid, tokenname });
+
+// ─── PBS Management ───────────────────────────────────────────────────────────
+
+export const listPbsDatastores = (
+  clusterId: string
+): Promise<PbsDatastore[]> => invoke("list_pbs_datastores", { clusterId });
+
+export const getPbsDatastoreStatus = (
+  clusterId: string,
+  store: string
+): Promise<Record<string, unknown>> =>
+  invoke("get_pbs_datastore_status", { clusterId, store });
+
+export const listPbsNamespaces = (
+  clusterId: string,
+  store: string
+): Promise<PbsNamespace[]> =>
+  invoke("list_pbs_namespaces", { clusterId, store });
+
+export const listPbsSnapshots = (
+  clusterId: string,
+  store: string,
+  ns?: string
+): Promise<PbsSnapshot[]> =>
+  invoke("list_pbs_snapshots", { clusterId, store, ns });
+
+export const listPbsTasks = (
+  clusterId: string,
+  node: string
+): Promise<PbsTask[]> => invoke("list_pbs_tasks", { clusterId, node });
+
+export const getPbsNodeStatus = (
+  clusterId: string,
+  node: string
+): Promise<Record<string, unknown>> =>
+  invoke("get_pbs_node_status", { clusterId, node });
+
+// ─── Subscription ─────────────────────────────────────────────────────────────
+
+export const updateSubscription = (
+  clusterId: string,
+  node: string,
+  key: string
+): Promise<void> =>
+  invoke("update_subscription", { clusterId, node, key });

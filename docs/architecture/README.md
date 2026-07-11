@@ -35,21 +35,29 @@ C4Context
     System_Ext(openai, "OpenAI API", "GPT-4o, GPT-4o-mini for cloud AI inference")
     System_Ext(anthropic, "Anthropic API", "Claude 3.5 Sonnet, Claude Haiku")
     System_Ext(gemini, "Google Gemini API", "Gemini Pro for cloud AI inference")
+    System_Ext(mistral, "Mistral API", "Mistral Large / Medium / Small")
     System_Ext(custom_rest, "Custom REST Gateway", "Enterprise AI gateway (custom REST format)")
 
     System_Ext(confluence, "Confluence", "Atlassian wiki — publish RCA docs")
     System_Ext(servicenow, "ServiceNow", "ITSM platform — create incident tickets")
     System_Ext(ado, "Azure DevOps", "Work item tracking and collaboration")
+    System_Ext(kubernetes, "Kubernetes Clusters", "Cluster and resource management")
+    System_Ext(proxmox, "Proxmox Clusters", "VE, PBS, Ceph, SDN, and HA")
+    System_Ext(mcp_servers, "MCP Servers", "stdio and HTTP tool servers")
 
     Rel(it_eng, trcaa, "Uses", "Desktop app (Tauri WebView)")
     Rel(trcaa, ollama, "AI inference", "HTTP/JSON (local)")
     Rel(trcaa, openai, "AI inference", "HTTPS/REST")
     Rel(trcaa, anthropic, "AI inference", "HTTPS/REST")
     Rel(trcaa, gemini, "AI inference", "HTTPS/REST")
+    Rel(trcaa, mistral, "AI inference", "HTTPS/REST")
     Rel(trcaa, custom_rest, "AI inference", "HTTPS/REST")
     Rel(trcaa, confluence, "Publish RCA docs", "HTTPS/REST + OAuth2")
     Rel(trcaa, servicenow, "Create incidents", "HTTPS/REST + OAuth2")
     Rel(trcaa, ado, "Create work items", "HTTPS/REST + OAuth2")
+    Rel(trcaa, kubernetes, "Cluster management", "kubectl + IPC")
+    Rel(trcaa, proxmox, "Cluster management", "HTTP/REST + auth")
+    Rel(trcaa, mcp_servers, "Tool discovery/execution", "rmcp client")
 ```
 
 ---
@@ -67,14 +75,17 @@ C4Container
     System_Boundary(trcaa, "TRCAA Desktop Process") {
         Container(webview, "React Frontend", "React 18 + TypeScript + Vite", "Renders UI via OS WebView (WebKit/WebView2). Manages ephemeral session state and persisted settings.")
         Container(tauri_core, "Tauri Core / IPC Bridge", "Rust / Tauri 2", "Routes invoke() calls between WebView and backend command handlers. Enforces capability ACL.")
-        Container(rust_backend, "Rust Backend", "Rust / Tokio async", "Command handlers, AI provider clients, PII engine, document generation, integration clients, audit logging.")
+        Container(rust_backend, "Rust Backend", "Rust / Tokio async", "Command handlers, AI provider clients, PII engine, document generation, integration clients, audit logging, Kubernetes, Proxmox, MCP, database management, remote desktop, and shell execution.")
         ContainerDb(db, "SQLCipher Database", "SQLite + SQLCipher AES-256", "All persistent data: issues, logs, messages, audit trail, credentials, AI provider configs.")
         ContainerDb(stronghold, "Stronghold Key Store", "tauri-plugin-stronghold", "Encrypted key-value store for symmetric key material.")
         ContainerDb(local_fs, "Local Filesystem", "App data directory", "Redacted log files, .dbkey, .enckey, exported documents.")
     }
 
-    System_Ext(ai_providers, "AI Providers", "OpenAI, Anthropic, Gemini, Mistral, Ollama")
+    System_Ext(ai_providers, "AI Providers", "OpenAI, Anthropic, Gemini, Mistral, Ollama, LiteLLM/Bedrock, Custom REST")
     System_Ext(integrations, "Integrations", "Confluence, ServiceNow, Azure DevOps")
+    System_Ext(kubernetes, "Kubernetes Clusters", "k3s, RKE2, Rancher, OpenShift")
+    System_Ext(proxmox, "Proxmox Clusters", "VE, PBS, Ceph, SDN, HA")
+    System_Ext(mcp_servers, "MCP Servers", "stdio and HTTP transports")
 
     Rel(user, webview, "Interacts with", "Mouse/keyboard via OS WebView")
     Rel(webview, tauri_core, "IPC calls", "invoke() / Tauri JS bridge")
@@ -84,6 +95,9 @@ C4Container
     Rel(rust_backend, local_fs, "Reads/writes files", "std::fs")
     Rel(rust_backend, ai_providers, "AI inference", "reqwest async HTTP")
     Rel(rust_backend, integrations, "API calls", "reqwest async HTTP + OAuth2")
+    Rel(rust_backend, kubernetes, "Cluster management", "kubectl + IPC")
+    Rel(rust_backend, proxmox, "Cluster management", "reqwest async HTTP + auth")
+    Rel(rust_backend, mcp_servers, "Tool discovery/execution", "rmcp client")
 ```
 
 ---
@@ -428,13 +442,22 @@ graph TD
     end
 
     subgraph "Command Handlers (commands/)"
+        CMD_AGENTIC[agentic.rs\nAgent orchestration\nTool routing]
         CMD_DB[db.rs\nIssue CRUD\nTimeline Events\n5-Whys Entries]
         CMD_AI[ai.rs\nChat Message\nLog Analysis\nProvider Test\nTool Calling Detection]
         CMD_ANALYSIS[analysis.rs\nLog Upload\nPII Detection\nRedaction Apply]
+        CMD_DATABASE[database.rs\nDatabase connections\nQuery history\nBookmarks]
+        CMD_DATABASE_SECURITY[database_security.rs\nDatabase security policy\nValidation helpers]
         CMD_DOCS[docs.rs\nRCA Generation\nPostmortem Gen\nDocument Export]
+        CMD_IMAGE[image.rs\nImage attachments\nPaste upload\nDeletion]
         CMD_INTEGRATIONS[integrations.rs\nConfluence\nServiceNow\nAzure DevOps\nOAuth Flow]
+        CMD_KUBE[kube.rs\nCluster management\nResources\nPort forwards\nEvents]
+        CMD_METRICS[metrics.rs\nShared metrics\nTelemetry helpers]
+        CMD_PROXMOX[proxmox.rs\nCluster / VM / PBS\nCeph / SDN / HA]
+        CMD_REMOTE[remote.rs\nRemote desktop\nSSH / RDP sessions]
         CMD_SYSTEM[system.rs\nSettings CRUD\nOllama Mgmt\nAI Provider Mgmt\nAudit Log]
         CMD_SHELL[shell.rs\nKubeconfig CRUD\nCommand Execution\nExecution History]
+        CMD_TABLE_BROWSER[table_browser.rs\nTable browser\nData exploration]
         CMD_MCP[mcp/commands.rs\nMCP Server CRUD\nDiscovery\nTool/Resource Listing]
     end
 
@@ -442,7 +465,7 @@ graph TD
         AI[AI Layer\nai/provider.rs\nTrait + Factory]
         TOOLS[AI Tools\nai/tools.rs\nStatic Tools Registry]
         AGENTS[AI Agents\nai/agents.rs\nAgent Registry]
-        PII[PII Engine\npii/detector.rs\n12 Pattern Detectors]
+        PII[PII Engine\npii/detector.rs\n13 Pattern Detectors]
         AUDIT[Audit Logger\naudit/log.rs\nHash-chained entries]
         DOCS_GEN[Doc Generator\ndocs/rca.rs\ndocs/postmortem.rs]
         SHELL[Shell System\nshell/classifier.rs\nshell/executor.rs\nshell/kubectl.rs]
@@ -471,20 +494,38 @@ graph TD
         CONNECTION[connection.rs\nSQLCipher Connect\nKey Auto-gen\nPlain→Encrypted Migration]
     end
 
+    IPC --> CMD_AGENTIC
     IPC --> CMD_DB
     IPC --> CMD_AI
     IPC --> CMD_ANALYSIS
+    IPC --> CMD_DATABASE
+    IPC --> CMD_DATABASE_SECURITY
     IPC --> CMD_DOCS
+    IPC --> CMD_IMAGE
     IPC --> CMD_INTEGRATIONS
+    IPC --> CMD_KUBE
+    IPC --> CMD_METRICS
+    IPC --> CMD_PROXMOX
+    IPC --> CMD_REMOTE
     IPC --> CMD_SYSTEM
     IPC --> CMD_SHELL
+    IPC --> CMD_TABLE_BROWSER
     IPC --> CMD_MCP
 
+    CMD_AGENTIC --> AGENTS
     CMD_AI --> AI
     CMD_AI --> TOOLS
     CMD_ANALYSIS --> PII
+    CMD_DATABASE --> MODELS
+    CMD_DATABASE_SECURITY --> MODELS
     CMD_DOCS --> DOCS_GEN
+    CMD_IMAGE --> MODELS
+    CMD_KUBE --> MODELS
+    CMD_METRICS --> MODELS
+    CMD_PROXMOX --> MODELS
+    CMD_REMOTE --> MODELS
     CMD_SHELL --> SHELL
+    CMD_TABLE_BROWSER --> MODELS
     CMD_MCP --> MCP
     CMD_INTEGRATIONS --> CONFLUENCE
     CMD_INTEGRATIONS --> SERVICENOW
@@ -532,7 +573,11 @@ graph TD
         RCA[RCA\nDocument Editor]
         POSTMORTEM[Postmortem\nDocument Editor]
         HISTORY[History\nSearch + Filter]
-        SETTINGS[Settings\nProviders / Ollama\nIntegrations / Security]
+        K8S[Kubernetes\nCluster + Resource Views]
+        PROXMOX[Proxmox\nCluster + VM Management]
+        DATABASE[Database\nConnections + Query Tools]
+        REMOTE[Remote Desktop\nRDP / SSH Sessions]
+        SETTINGS[Settings\nProviders / Ollama\nShell / Kubeconfig\nIntegrations / MCP / Security / Updater / Proxmox]
     end
 
     subgraph "Components (src/components/)"
@@ -542,28 +587,34 @@ graph TD
         HW_REPORT[HardwareReport\nSystem Specs]
         MODEL_SEL[ModelSelector\nProvider Dropdown]
         TRIAGE_PROG[TriageProgress\n5-Whys Steps]
+        SHELL_MODAL[ShellApprovalModal\nCommand Approval]
     end
 
     subgraph "State (src/stores/)"
         SESSION[sessionStore\nEphemeral — NOT persisted\nCurrentIssue / Messages\nPiiSpans / WhyLevel]
-        SETTINGS_STORE[settingsStore\nPersisted to localStorage\nTheme / ActiveProvider\nPiiPatterns]
+        SETTINGS_STORE[settingsStore\nPersisted to localStorage\nTheme / ActiveProvider\nPii patterns / Ollama]
         HISTORY_STORE[historyStore\nCached issue list\nSearch results]
     end
 
     subgraph "IPC Layer (src/lib/)"
         IPC[tauriCommands.ts\nTyped invoke() wrappers\nAll Tauri commands]
-        PROMPTS[domainPrompts.ts\n8 Domain System Prompts]
+        PROMPTS[domainPrompts.ts\n16 Domain System Prompts]
     end
 
     APP --> DASHBOARD
     APP --> TRIAGE
     APP --> LOG_UPLOAD
     APP --> HISTORY
+    APP --> K8S
+    APP --> PROXMOX
+    APP --> DATABASE
+    APP --> REMOTE
     APP --> SETTINGS
 
     TRIAGE --> CHAT_WIN
     TRIAGE --> TRIAGE_PROG
     LOG_UPLOAD --> PII_DIFF
+    SETTINGS --> SHELL_MODAL
     RCA --> DOC_EDITOR
     POSTMORTEM --> DOC_EDITOR
     SETTINGS --> HW_REPORT
@@ -577,6 +628,10 @@ graph TD
     CHAT_WIN --> IPC
     LOG_UPLOAD --> IPC
     RCA --> IPC
+    K8S --> IPC
+    PROXMOX --> IPC
+    DATABASE --> IPC
+    REMOTE --> IPC
     SETTINGS --> IPC
 
     IPC --> PROMPTS
@@ -1280,7 +1335,7 @@ flowchart TD
     D --> E[Run PII Detection Engine]
 
     subgraph "PII Engine"
-        E --> F{12 Pattern Detectors}
+        E --> F{13 Pattern Detectors}
         F --> G[Email Regex]
         F --> H[IPv4/IPv6 Regex]
         F --> I[Bearer Token Regex]

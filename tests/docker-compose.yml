@@ -1,0 +1,103 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15
+    container_name: tftsr_test_postgres
+    environment:
+      POSTGRES_USER: testuser
+      POSTGRES_PASSWORD: testpassword
+      POSTGRES_DB: testdb
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./fixtures/postgres_test_data.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U testuser -d testdb"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - tftsr_test
+
+  mysql:
+    image: mysql:8.0
+    container_name: tftsr_test_mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: testpassword
+      MYSQL_DATABASE: testdb
+      MYSQL_USER: testuser
+      MYSQL_PASSWORD: testpassword
+    ports:
+      - "3306:3306"
+    volumes:
+      - ./fixtures/mysql_test_data.sql:/docker-entrypoint-initdb.d/init.sql
+    command: --default-authentication-plugin=mysql_native_password
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "testuser", "-ptestpassword"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - tftsr_test
+
+  mongodb:
+    image: mongo:6.0
+    container_name: tftsr_test_mongodb
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: testuser
+      MONGO_INITDB_ROOT_PASSWORD: testpassword
+      MONGO_INITDB_DATABASE: testdb
+    ports:
+      - "27017:27017"
+    volumes:
+      - ./fixtures/mongodb_test_data.js:/docker-entrypoint-initdb.d/init.js:ro
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - tftsr_test
+
+  redis:
+    image: redis:7.0
+    container_name: tftsr_test_redis
+    command: redis-server --requirepass testpassword
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - tftsr_test
+
+  cassandra:
+    image: cassandra:4.1
+    container_name: tftsr_test_cassandra
+    environment:
+      CASSANDRA_CLUSTER_NAME: TestCluster
+      CASSANDRA_DC: datacenter1
+      CASSANDRA_RACK: rack1
+    ports:
+      - "9042:9042"
+    healthcheck:
+      test: ["CMD-SHELL", "cqlsh -e 'describe cluster'"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+    networks:
+      - tftsr_test
+
+networks:
+  tftsr_test:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  mysql_data:
+  mongodb_data:
+  cassandra_data:

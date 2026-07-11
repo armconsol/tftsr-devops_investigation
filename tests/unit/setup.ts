@@ -17,6 +17,17 @@ function makeStorage() {
 Object.defineProperty(globalThis, "localStorage", { value: makeStorage(), writable: true });
 Object.defineProperty(globalThis, "sessionStorage", { value: makeStorage(), writable: true });
 
+class ResizeObserverMock {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+}
+
+Object.defineProperty(globalThis, "ResizeObserver", {
+  value: ResizeObserverMock,
+  writable: true,
+});
+
 // Mock Tauri core API
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),
@@ -46,6 +57,12 @@ vi.mock("@tauri-apps/plugin-fs", () => ({
   writeFile: vi.fn(() => Promise.resolve()),
   mkdir: vi.fn(() => Promise.resolve()),
   exists: vi.fn(() => Promise.resolve(false)),
+}));
+
+// Mock Tauri clipboard-manager plugin (console copy/paste)
+vi.mock("@tauri-apps/plugin-clipboard-manager", () => ({
+  readText: vi.fn(() => Promise.resolve("")),
+  writeText: vi.fn(() => Promise.resolve()),
 }));
 
 // Mock console.error to suppress React warnings

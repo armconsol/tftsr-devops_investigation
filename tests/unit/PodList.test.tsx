@@ -3,16 +3,12 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
 import { PodList } from "@/components/Kubernetes/PodList";
+import { useBottomPanelStore, BottomPanelTabType } from "@/stores/bottomPanelStore";
 import type { PodInfo } from "@/lib/tauriCommands";
 
 vi.mock("@tauri-apps/api/core");
 
 // Silence console.error noise from modal portals in jsdom
-vi.mock("@/components/Kubernetes/LogStreamPanel", () => ({
-  LogStreamPanel: ({ namespace }: { namespace: string }) => (
-    <div data-testid="logs-modal" data-namespace={namespace} />
-  ),
-}));
 vi.mock("@/components/Kubernetes/InteractiveShellModal", () => ({
   InteractiveShellModal: ({ namespace }: { namespace: string }) => (
     <div data-testid="shell-modal" data-namespace={namespace} />
@@ -164,7 +160,9 @@ describe("PodList — namespace isolation", () => {
     });
   });
 
-  it('Logs modal receives pod.namespace ("default"), not filter "all"', async () => {
+  it('Logs action opens a dock tab carrying pod.namespace ("default"), not filter "all"', async () => {
+    useBottomPanelStore.setState({ tabs: [], activeTabId: null });
+
     render(
       <PodList
         pods={[mockPod]}
@@ -178,8 +176,12 @@ describe("PodList — namespace isolation", () => {
     fireEvent.click(screen.getByRole("button", { name: /^logs$/i }));
 
     await waitFor(() => {
-      const modal = screen.getByTestId("logs-modal");
-      expect(modal.getAttribute("data-namespace")).toBe("default");
+      const tab = useBottomPanelStore
+        .getState()
+        .tabs.find((t) => t.type === BottomPanelTabType.POD_LOGS);
+      expect(tab).toBeDefined();
+      expect(tab?.data?.namespace).toBe("default");
+      expect(tab?.data?.podName).toBe("test-pod");
     });
   });
 

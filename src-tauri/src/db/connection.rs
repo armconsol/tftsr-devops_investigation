@@ -96,7 +96,7 @@ fn migrate_plain_to_encrypted(db_path: &Path, key: &str) -> anyhow::Result<Conne
     // Create backup of plain database
     let backup_path = db_path.with_extension("db.plain-backup");
     std::fs::copy(db_path, &backup_path)?;
-    tracing::info!("Backed up plain database to {:?}", backup_path);
+    tracing::info!("Backed up plain database to {backup_path:?}");
 
     // Open the plain database
     let plain_conn = Connection::open(db_path)?;
@@ -180,7 +180,7 @@ mod tests {
             .duration_since(SystemTime::UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let dir = std::env::temp_dir().join(format!("tftsr-test-{}-{}", name, timestamp));
+        let dir = std::env::temp_dir().join(format!("tftsr-test-{name}-{timestamp}"));
         // Clean up if it exists
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();

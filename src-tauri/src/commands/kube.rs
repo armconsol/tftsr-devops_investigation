@@ -24,7 +24,7 @@ static KUBECONFIG_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::Ato
 
 fn unique_kubeconfig_path(cluster_id: impl AsRef<str>) -> std::path::PathBuf {
     let n = KUBECONFIG_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    std::env::temp_dir().join(format!("kubeconfig-{}-{}.yaml", cluster_id.as_ref(), n))
+    std::env::temp_dir().join(format!("kubeconfig-{}-{n}.yaml", cluster_id.as_ref()))
 }
 
 struct TempFileCleanup(std::path::PathBuf);
@@ -152,7 +152,7 @@ pub async fn add_cluster(
 
 fn extract_context(content: &str) -> Result<String, String> {
     let value: serde_yaml::Value =
-        serde_yaml::from_str(content).map_err(|e| format!("Invalid kubeconfig YAML: {}", e))?;
+        serde_yaml::from_str(content).map_err(|e| format!("Invalid kubeconfig YAML: {e}"))?;
 
     // Prefer current-context — this is what kubectl uses by default and what the
     // user intends when they upload their kubeconfig. Falling back to contexts[0]
@@ -182,7 +182,7 @@ fn extract_context(content: &str) -> Result<String, String> {
 
 fn extract_server_url(content: &str) -> Result<String, String> {
     let value: serde_yaml::Value =
-        serde_yaml::from_str(content).map_err(|e| format!("Invalid kubeconfig YAML: {}", e))?;
+        serde_yaml::from_str(content).map_err(|e| format!("Invalid kubeconfig YAML: {e}"))?;
 
     let clusters = value
         .get("clusters")
@@ -322,10 +322,7 @@ pub async fn test_kubectl_connection(
     let (kubeconfig_content, context) = {
         let clusters = state.clusters.lock().await;
         let cluster = clusters.get(&cluster_id).ok_or_else(|| {
-            format!(
-                "Cluster {} not found in session — try re-selecting the cluster",
-                cluster_id
-            )
+            format!("Cluster {cluster_id} not found in session — try re-selecting the cluster")
         })?;
         (cluster.kubeconfig_content.clone(), cluster.context.clone())
     };
@@ -471,7 +468,7 @@ pub async fn test_cluster_connection(
     let clusters = state.clusters.lock().await;
     let cluster = clusters
         .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+        .ok_or_else(|| format!("Cluster {cluster_id} not found"))?;
 
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
@@ -520,7 +517,7 @@ pub async fn discover_pods(
     let clusters = state.clusters.lock().await;
     let cluster = clusters
         .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+        .ok_or_else(|| format!("Cluster {cluster_id} not found"))?;
 
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
@@ -552,7 +549,7 @@ pub async fn discover_pods(
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("Failed to list pods: {}", stderr));
+        return Err(format!("Failed to list pods: {stderr}"));
     }
 
     // Parse actual JSON output to get real pod information
@@ -580,32 +577,29 @@ pub fn validate_resource_name(name: &str, field_name: &str) -> Result<(), String
     // Check max length to prevent ReDoS attacks
     if name.len() > MAX_NAME_LENGTH {
         return Err(format!(
-            "{} '{}' exceeds maximum length of {} characters",
-            field_name, name, MAX_NAME_LENGTH
+            "{field_name} '{name}' exceeds maximum length of {MAX_NAME_LENGTH} characters"
         ));
     }
 
     // Reject names starting with hyphens or dots
     if name.starts_with('-') || name.starts_with('.') {
         return Err(format!(
-            "{} '{}' cannot start with a hyphen or dot",
-            field_name, name
+            "{field_name} '{name}' cannot start with a hyphen or dot"
         ));
     }
 
     // Reject names ending with hyphens or dots
     if name.ends_with('-') || name.ends_with('.') {
         return Err(format!(
-            "{} '{}' cannot end with a hyphen or dot",
-            field_name, name
+            "{field_name} '{name}' cannot end with a hyphen or dot"
         ));
     }
 
     // Use cached regex pattern
     if !NAME_PATTERN_REGEX.is_match(name) {
         return Err(format!(
-            "{} '{}' does not match pattern {}",
-            field_name, name, r"^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$"
+            "{field_name} '{name}' does not match pattern {}",
+            r"^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$"
         ));
     }
 
@@ -665,7 +659,7 @@ pub async fn start_port_forward(
     let args = vec![
         "port-forward".to_string(),
         format!("pod/{}", request.pod),
-        format!("{}:{}", local_port, request.container_port),
+        format!("{local_port}:{}", request.container_port),
         "-n".to_string(),
         request.namespace.clone(),
     ];
@@ -971,7 +965,7 @@ pub async fn list_namespaces(
     let clusters = state.clusters.lock().await;
     let cluster = clusters
         .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+        .ok_or_else(|| format!("Cluster {cluster_id} not found"))?;
 
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
@@ -1008,7 +1002,7 @@ pub async fn list_namespaces(
 
 fn parse_namespaces_json(json_str: &str) -> Result<Vec<NamespaceInfo>, String> {
     let value: Value = serde_json::from_str(json_str)
-        .map_err(|e| format!("Failed to parse kubectl JSON output: {}", e))?;
+        .map_err(|e| format!("Failed to parse kubectl JSON output: {e}"))?;
 
     let items = value
         .get("items")
@@ -1053,7 +1047,7 @@ pub async fn list_pods(
     let clusters = state.clusters.lock().await;
     let cluster = clusters
         .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+        .ok_or_else(|| format!("Cluster {cluster_id} not found"))?;
 
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
@@ -1095,7 +1089,7 @@ pub async fn list_pods(
 
 fn parse_pods_json(json_str: &str) -> Result<Vec<PodInfo>, String> {
     let value: Value = serde_json::from_str(json_str)
-        .map_err(|e| format!("Failed to parse kubectl JSON output: {}", e))?;
+        .map_err(|e| format!("Failed to parse kubectl JSON output: {e}"))?;
 
     let items = value
         .get("items")
@@ -1135,7 +1129,7 @@ fn parse_pods_json(json_str: &str) -> Result<Vec<PodInfo>, String> {
                     .filter(|c| c.get("ready").and_then(|r| r.as_bool()).unwrap_or(false))
                     .count();
                 let total_count = container_statuses.len();
-                format!("{}/{}", ready_count, total_count)
+                format!("{ready_count}/{total_count}")
             })
             .unwrap_or("0/0".to_string());
 
@@ -1212,7 +1206,7 @@ pub async fn list_services(
     let clusters = state.clusters.lock().await;
     let cluster = clusters
         .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+        .ok_or_else(|| format!("Cluster {cluster_id} not found"))?;
 
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
@@ -1254,7 +1248,7 @@ pub async fn list_services(
 
 fn parse_services_json(json_str: &str) -> Result<Vec<ServiceInfo>, String> {
     let value: Value = serde_json::from_str(json_str)
-        .map_err(|e| format!("Failed to parse kubectl JSON output: {}", e))?;
+        .map_err(|e| format!("Failed to parse kubectl JSON output: {e}"))?;
 
     let items = value
         .get("items")
@@ -1370,7 +1364,7 @@ pub async fn list_deployments(
     let clusters = state.clusters.lock().await;
     let cluster = clusters
         .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+        .ok_or_else(|| format!("Cluster {cluster_id} not found"))?;
 
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
@@ -1412,7 +1406,7 @@ pub async fn list_deployments(
 
 fn parse_deployments_json(json_str: &str) -> Result<Vec<DeploymentInfo>, String> {
     let value: Value = serde_json::from_str(json_str)
-        .map_err(|e| format!("Failed to parse kubectl JSON output: {}", e))?;
+        .map_err(|e| format!("Failed to parse kubectl JSON output: {e}"))?;
 
     let items = value
         .get("items")
@@ -1445,8 +1439,8 @@ fn parse_deployments_json(json_str: &str) -> Result<Vec<DeploymentInfo>, String>
             .get("status")
             .and_then(|s| s.get("readyReplicas"))
             .and_then(|r| r.as_i64())
-            .map(|r| format!("{}/{}", r, replicas))
-            .unwrap_or_else(|| format!("0/{}", replicas));
+            .map(|r| format!("{r}/{replicas}"))
+            .unwrap_or_else(|| format!("0/{replicas}"));
 
         let up_to_date = item
             .get("status")
@@ -1504,7 +1498,7 @@ pub async fn list_statefulsets(
     let clusters = state.clusters.lock().await;
     let cluster = clusters
         .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+        .ok_or_else(|| format!("Cluster {cluster_id} not found"))?;
 
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
@@ -1546,7 +1540,7 @@ pub async fn list_statefulsets(
 
 fn parse_statefulsets_json(json_str: &str) -> Result<Vec<StatefulSetInfo>, String> {
     let value: Value = serde_json::from_str(json_str)
-        .map_err(|e| format!("Failed to parse kubectl JSON output: {}", e))?;
+        .map_err(|e| format!("Failed to parse kubectl JSON output: {e}"))?;
 
     let items = value
         .get("items")
@@ -1579,8 +1573,8 @@ fn parse_statefulsets_json(json_str: &str) -> Result<Vec<StatefulSetInfo>, Strin
             .get("status")
             .and_then(|s| s.get("readyReplicas"))
             .and_then(|r| r.as_i64())
-            .map(|r| format!("{}/{}", r, replicas))
-            .unwrap_or_else(|| format!("0/{}", replicas));
+            .map(|r| format!("{r}/{replicas}"))
+            .unwrap_or_else(|| format!("0/{replicas}"));
 
         let age = item
             .get("metadata")
@@ -1622,7 +1616,7 @@ pub async fn list_daemonsets(
     let clusters = state.clusters.lock().await;
     let cluster = clusters
         .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+        .ok_or_else(|| format!("Cluster {cluster_id} not found"))?;
 
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
@@ -1664,7 +1658,7 @@ pub async fn list_daemonsets(
 
 fn parse_daemonsets_json(json_str: &str) -> Result<Vec<DaemonSetInfo>, String> {
     let value: Value = serde_json::from_str(json_str)
-        .map_err(|e| format!("Failed to parse kubectl JSON output: {}", e))?;
+        .map_err(|e| format!("Failed to parse kubectl JSON output: {e}"))?;
 
     let items = value
         .get("items")
@@ -1790,7 +1784,7 @@ pub async fn get_pod_logs(
     let clusters = state.clusters.lock().await;
     let cluster = clusters
         .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+        .ok_or_else(|| format!("Cluster {cluster_id} not found"))?;
 
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
@@ -1839,7 +1833,7 @@ pub async fn scale_deployment(
     let clusters = state.clusters.lock().await;
     let cluster = clusters
         .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+        .ok_or_else(|| format!("Cluster {cluster_id} not found"))?;
 
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
@@ -1886,7 +1880,7 @@ pub async fn restart_deployment(
     let clusters = state.clusters.lock().await;
     let cluster = clusters
         .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+        .ok_or_else(|| format!("Cluster {cluster_id} not found"))?;
 
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
@@ -1933,7 +1927,7 @@ pub async fn delete_resource(
     let clusters = state.clusters.lock().await;
     let cluster = clusters
         .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+        .ok_or_else(|| format!("Cluster {cluster_id} not found"))?;
 
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
@@ -1981,7 +1975,7 @@ pub async fn exec_pod(
     let clusters = state.clusters.lock().await;
     let cluster = clusters
         .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+        .ok_or_else(|| format!("Cluster {cluster_id} not found"))?;
 
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
@@ -2007,8 +2001,7 @@ pub async fn exec_pod(
     let shell_cmd = shell.as_deref().unwrap_or("sh");
     if !ALLOWED_SHELLS.contains(&shell_cmd) {
         return Err(format!(
-            "Unsupported shell '{}'; allowed: sh, bash, ash, dash",
-            shell_cmd
+            "Unsupported shell '{shell_cmd}'; allowed: sh, bash, ash, dash"
         ));
     }
 
@@ -2259,7 +2252,7 @@ pub async fn list_replicasets(
     let clusters = state.clusters.lock().await;
     let cluster = clusters
         .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+        .ok_or_else(|| format!("Cluster {cluster_id} not found"))?;
 
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
@@ -2301,7 +2294,7 @@ pub async fn list_replicasets(
 
 fn parse_replicasets_json(json_str: &str) -> Result<Vec<ReplicaSetInfo>, String> {
     let value: Value = serde_json::from_str(json_str)
-        .map_err(|e| format!("Failed to parse kubectl JSON output: {}", e))?;
+        .map_err(|e| format!("Failed to parse kubectl JSON output: {e}"))?;
 
     let items = value
         .get("items")
@@ -2334,8 +2327,8 @@ fn parse_replicasets_json(json_str: &str) -> Result<Vec<ReplicaSetInfo>, String>
             .get("status")
             .and_then(|s| s.get("readyReplicas"))
             .and_then(|r| r.as_i64())
-            .map(|r| format!("{}/{}", r, replicas))
-            .unwrap_or_else(|| format!("0/{}", replicas));
+            .map(|r| format!("{r}/{replicas}"))
+            .unwrap_or_else(|| format!("0/{replicas}"));
 
         let age = item
             .get("metadata")
@@ -2377,7 +2370,7 @@ pub async fn list_jobs(
     let clusters = state.clusters.lock().await;
     let cluster = clusters
         .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+        .ok_or_else(|| format!("Cluster {cluster_id} not found"))?;
 
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
@@ -2419,7 +2412,7 @@ pub async fn list_jobs(
 
 fn parse_jobs_json(json_str: &str) -> Result<Vec<JobInfo>, String> {
     let value: Value = serde_json::from_str(json_str)
-        .map_err(|e| format!("Failed to parse kubectl JSON output: {}", e))?;
+        .map_err(|e| format!("Failed to parse kubectl JSON output: {e}"))?;
 
     let items = value
         .get("items")
@@ -2452,7 +2445,7 @@ fn parse_jobs_json(json_str: &str) -> Result<Vec<JobInfo>, String> {
                     .and_then(|sp| sp.get("completions"))
                     .and_then(|c| c.as_i64())
                     .unwrap_or(1);
-                format!("{}/{}", s, total)
+                format!("{s}/{total}")
             })
             .unwrap_or_else(|| "0/0".to_string());
 
@@ -2533,7 +2526,7 @@ pub async fn list_cronjobs(
     let clusters = state.clusters.lock().await;
     let cluster = clusters
         .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+        .ok_or_else(|| format!("Cluster {cluster_id} not found"))?;
 
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
@@ -2575,7 +2568,7 @@ pub async fn list_cronjobs(
 
 fn parse_cronjobs_json(json_str: &str) -> Result<Vec<CronJobInfo>, String> {
     let value: Value = serde_json::from_str(json_str)
-        .map_err(|e| format!("Failed to parse kubectl JSON output: {}", e))?;
+        .map_err(|e| format!("Failed to parse kubectl JSON output: {e}"))?;
 
     let items = value
         .get("items")
@@ -2660,7 +2653,7 @@ pub async fn list_configmaps(
     let clusters = state.clusters.lock().await;
     let cluster = clusters
         .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+        .ok_or_else(|| format!("Cluster {cluster_id} not found"))?;
 
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
@@ -2702,7 +2695,7 @@ pub async fn list_configmaps(
 
 fn parse_configmaps_json(json_str: &str) -> Result<Vec<ConfigMapInfo>, String> {
     let value: Value = serde_json::from_str(json_str)
-        .map_err(|e| format!("Failed to parse kubectl JSON output: {}", e))?;
+        .map_err(|e| format!("Failed to parse kubectl JSON output: {e}"))?;
 
     let items = value
         .get("items")
@@ -2758,7 +2751,7 @@ pub async fn list_secrets(
     let clusters = state.clusters.lock().await;
     let cluster = clusters
         .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+        .ok_or_else(|| format!("Cluster {cluster_id} not found"))?;
 
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
@@ -2800,7 +2793,7 @@ pub async fn list_secrets(
 
 fn parse_secrets_json(json_str: &str) -> Result<Vec<SecretInfo>, String> {
     let value: Value = serde_json::from_str(json_str)
-        .map_err(|e| format!("Failed to parse kubectl JSON output: {}", e))?;
+        .map_err(|e| format!("Failed to parse kubectl JSON output: {e}"))?;
 
     let items = value
         .get("items")
@@ -2862,7 +2855,7 @@ pub async fn list_nodes(
     let clusters = state.clusters.lock().await;
     let cluster = clusters
         .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+        .ok_or_else(|| format!("Cluster {cluster_id} not found"))?;
 
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
@@ -2899,7 +2892,7 @@ pub async fn list_nodes(
 
 fn parse_nodes_json(json_str: &str) -> Result<Vec<NodeInfo>, String> {
     let value: Value = serde_json::from_str(json_str)
-        .map_err(|e| format!("Failed to parse kubectl JSON output: {}", e))?;
+        .map_err(|e| format!("Failed to parse kubectl JSON output: {e}"))?;
 
     let items = value
         .get("items")
@@ -3050,7 +3043,7 @@ pub async fn list_events(
     let clusters = state.clusters.lock().await;
     let cluster = clusters
         .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+        .ok_or_else(|| format!("Cluster {cluster_id} not found"))?;
 
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
@@ -3092,7 +3085,7 @@ pub async fn list_events(
 
 fn parse_events_json(json_str: &str) -> Result<Vec<EventInfo>, String> {
     let value: Value = serde_json::from_str(json_str)
-        .map_err(|e| format!("Failed to parse kubectl JSON output: {}", e))?;
+        .map_err(|e| format!("Failed to parse kubectl JSON output: {e}"))?;
 
     let items = value
         .get("items")
@@ -3179,7 +3172,7 @@ pub async fn list_ingresses(
     let clusters = state.clusters.lock().await;
     let cluster = clusters
         .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+        .ok_or_else(|| format!("Cluster {cluster_id} not found"))?;
 
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
@@ -3221,7 +3214,7 @@ pub async fn list_ingresses(
 
 fn parse_ingresses_json(json_str: &str) -> Result<Vec<IngressInfo>, String> {
     let value: Value = serde_json::from_str(json_str)
-        .map_err(|e| format!("Failed to parse kubectl JSON output: {}", e))?;
+        .map_err(|e| format!("Failed to parse kubectl JSON output: {e}"))?;
 
     let items = value
         .get("items")
@@ -3305,7 +3298,7 @@ pub async fn list_persistentvolumeclaims(
     let clusters = state.clusters.lock().await;
     let cluster = clusters
         .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+        .ok_or_else(|| format!("Cluster {cluster_id} not found"))?;
 
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
@@ -3347,7 +3340,7 @@ pub async fn list_persistentvolumeclaims(
 
 fn parse_pvcs_json(json_str: &str) -> Result<Vec<PersistentVolumeClaimInfo>, String> {
     let value: Value = serde_json::from_str(json_str)
-        .map_err(|e| format!("Failed to parse kubectl JSON output: {}", e))?;
+        .map_err(|e| format!("Failed to parse kubectl JSON output: {e}"))?;
 
     let items = value
         .get("items")
@@ -3435,7 +3428,7 @@ pub async fn list_persistentvolumes(
     let clusters = state.clusters.lock().await;
     let cluster = clusters
         .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+        .ok_or_else(|| format!("Cluster {cluster_id} not found"))?;
 
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
@@ -3472,7 +3465,7 @@ pub async fn list_persistentvolumes(
 
 fn parse_pvs_json(json_str: &str) -> Result<Vec<PersistentVolumeInfo>, String> {
     let value: Value = serde_json::from_str(json_str)
-        .map_err(|e| format!("Failed to parse kubectl JSON output: {}", e))?;
+        .map_err(|e| format!("Failed to parse kubectl JSON output: {e}"))?;
 
     let items = value
         .get("items")
@@ -3561,7 +3554,7 @@ pub async fn list_serviceaccounts(
     let clusters = state.clusters.lock().await;
     let cluster = clusters
         .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+        .ok_or_else(|| format!("Cluster {cluster_id} not found"))?;
 
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
@@ -3603,7 +3596,7 @@ pub async fn list_serviceaccounts(
 
 fn parse_serviceaccounts_json(json_str: &str) -> Result<Vec<ServiceAccountInfo>, String> {
     let value: Value = serde_json::from_str(json_str)
-        .map_err(|e| format!("Failed to parse kubectl JSON output: {}", e))?;
+        .map_err(|e| format!("Failed to parse kubectl JSON output: {e}"))?;
 
     let items = value
         .get("items")
@@ -3659,7 +3652,7 @@ pub async fn list_roles(
     let clusters = state.clusters.lock().await;
     let cluster = clusters
         .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+        .ok_or_else(|| format!("Cluster {cluster_id} not found"))?;
 
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
@@ -3701,7 +3694,7 @@ pub async fn list_roles(
 
 fn parse_roles_json(json_str: &str) -> Result<Vec<RoleInfo>, String> {
     let value: Value = serde_json::from_str(json_str)
-        .map_err(|e| format!("Failed to parse kubectl JSON output: {}", e))?;
+        .map_err(|e| format!("Failed to parse kubectl JSON output: {e}"))?;
 
     let items = value
         .get("items")
@@ -3749,7 +3742,7 @@ pub async fn list_clusterroles(
     let clusters = state.clusters.lock().await;
     let cluster = clusters
         .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+        .ok_or_else(|| format!("Cluster {cluster_id} not found"))?;
 
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
@@ -3786,7 +3779,7 @@ pub async fn list_clusterroles(
 
 fn parse_clusterroles_json(json_str: &str) -> Result<Vec<ClusterRoleInfo>, String> {
     let value: Value = serde_json::from_str(json_str)
-        .map_err(|e| format!("Failed to parse kubectl JSON output: {}", e))?;
+        .map_err(|e| format!("Failed to parse kubectl JSON output: {e}"))?;
 
     let items = value
         .get("items")
@@ -3824,7 +3817,7 @@ pub async fn list_rolebindings(
     let clusters = state.clusters.lock().await;
     let cluster = clusters
         .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+        .ok_or_else(|| format!("Cluster {cluster_id} not found"))?;
 
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
@@ -3866,7 +3859,7 @@ pub async fn list_rolebindings(
 
 fn parse_rolebindings_json(json_str: &str) -> Result<Vec<RoleBindingInfo>, String> {
     let value: Value = serde_json::from_str(json_str)
-        .map_err(|e| format!("Failed to parse kubectl JSON output: {}", e))?;
+        .map_err(|e| format!("Failed to parse kubectl JSON output: {e}"))?;
 
     let items = value
         .get("items")
@@ -3922,7 +3915,7 @@ pub async fn list_clusterrolebindings(
     let clusters = state.clusters.lock().await;
     let cluster = clusters
         .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+        .ok_or_else(|| format!("Cluster {cluster_id} not found"))?;
 
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
@@ -3959,7 +3952,7 @@ pub async fn list_clusterrolebindings(
 
 fn parse_clusterrolebindings_json(json_str: &str) -> Result<Vec<ClusterRoleBindingInfo>, String> {
     let value: Value = serde_json::from_str(json_str)
-        .map_err(|e| format!("Failed to parse kubectl JSON output: {}", e))?;
+        .map_err(|e| format!("Failed to parse kubectl JSON output: {e}"))?;
 
     let items = value
         .get("items")
@@ -4008,7 +4001,7 @@ pub async fn list_horizontalpodautoscalers(
     let clusters = state.clusters.lock().await;
     let cluster = clusters
         .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+        .ok_or_else(|| format!("Cluster {cluster_id} not found"))?;
 
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
@@ -4050,7 +4043,7 @@ pub async fn list_horizontalpodautoscalers(
 
 fn parse_hpas_json(json_str: &str) -> Result<Vec<HorizontalPodAutoscalerInfo>, String> {
     let value: Value = serde_json::from_str(json_str)
-        .map_err(|e| format!("Failed to parse kubectl JSON output: {}", e))?;
+        .map_err(|e| format!("Failed to parse kubectl JSON output: {e}"))?;
 
     let items = value
         .get("items")
@@ -4126,7 +4119,7 @@ pub async fn list_storageclasses(
     let clusters = state.clusters.lock().await;
     let cluster = clusters
         .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+        .ok_or_else(|| format!("Cluster {cluster_id} not found"))?;
 
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
@@ -4163,7 +4156,7 @@ pub async fn list_storageclasses(
 
 fn parse_storageclasses_json(json_str: &str) -> Result<Vec<StorageClassInfo>, String> {
     let value: Value = serde_json::from_str(json_str)
-        .map_err(|e| format!("Failed to parse kubectl JSON output: {}", e))?;
+        .map_err(|e| format!("Failed to parse kubectl JSON output: {e}"))?;
 
     let items = value
         .get("items")
@@ -4231,7 +4224,7 @@ pub async fn list_networkpolicies(
     let clusters = state.clusters.lock().await;
     let cluster = clusters
         .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+        .ok_or_else(|| format!("Cluster {cluster_id} not found"))?;
 
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
@@ -4273,7 +4266,7 @@ pub async fn list_networkpolicies(
 
 fn parse_networkpolicies_json(json_str: &str) -> Result<Vec<NetworkPolicyInfo>, String> {
     let value: Value = serde_json::from_str(json_str)
-        .map_err(|e| format!("Failed to parse kubectl JSON output: {}", e))?;
+        .map_err(|e| format!("Failed to parse kubectl JSON output: {e}"))?;
 
     let items = value
         .get("items")
@@ -4342,7 +4335,7 @@ pub async fn list_resourcequotas(
     let clusters = state.clusters.lock().await;
     let cluster = clusters
         .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+        .ok_or_else(|| format!("Cluster {cluster_id} not found"))?;
 
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
@@ -4384,7 +4377,7 @@ pub async fn list_resourcequotas(
 
 fn parse_resourcequotas_json(json_str: &str) -> Result<Vec<ResourceQuotaInfo>, String> {
     let value: Value = serde_json::from_str(json_str)
-        .map_err(|e| format!("Failed to parse kubectl JSON output: {}", e))?;
+        .map_err(|e| format!("Failed to parse kubectl JSON output: {e}"))?;
 
     let items = value
         .get("items")
@@ -4463,7 +4456,7 @@ pub async fn list_limitranges(
     let clusters = state.clusters.lock().await;
     let cluster = clusters
         .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+        .ok_or_else(|| format!("Cluster {cluster_id} not found"))?;
 
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
@@ -4505,7 +4498,7 @@ pub async fn list_limitranges(
 
 fn parse_limitranges_json(json_str: &str) -> Result<Vec<LimitRangeInfo>, String> {
     let value: Value = serde_json::from_str(json_str)
-        .map_err(|e| format!("Failed to parse kubectl JSON output: {}", e))?;
+        .map_err(|e| format!("Failed to parse kubectl JSON output: {e}"))?;
 
     let items = value
         .get("items")
@@ -4562,7 +4555,7 @@ pub async fn cordon_node(
     let clusters = state.clusters.lock().await;
     let cluster = clusters
         .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+        .ok_or_else(|| format!("Cluster {cluster_id} not found"))?;
 
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
@@ -4603,7 +4596,7 @@ pub async fn uncordon_node(
     let clusters = state.clusters.lock().await;
     let cluster = clusters
         .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+        .ok_or_else(|| format!("Cluster {cluster_id} not found"))?;
 
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
@@ -4644,7 +4637,7 @@ pub async fn drain_node(
     let clusters = state.clusters.lock().await;
     let cluster = clusters
         .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+        .ok_or_else(|| format!("Cluster {cluster_id} not found"))?;
 
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
@@ -4689,7 +4682,7 @@ pub async fn rollback_deployment(
     let clusters = state.clusters.lock().await;
     let cluster = clusters
         .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+        .ok_or_else(|| format!("Cluster {cluster_id} not found"))?;
 
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
@@ -4736,7 +4729,7 @@ pub async fn create_resource(
     let clusters = state.clusters.lock().await;
     let cluster = clusters
         .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+        .ok_or_else(|| format!("Cluster {cluster_id} not found"))?;
 
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
@@ -4799,7 +4792,7 @@ pub async fn edit_resource(
     let clusters = state.clusters.lock().await;
     let cluster = clusters
         .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+        .ok_or_else(|| format!("Cluster {cluster_id} not found"))?;
 
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
@@ -4917,7 +4910,7 @@ pub async fn unsubscribe_from_k8s_events(
         .remove(&unsubscribe_id);
 
     if removed.is_none() {
-        return Err(format!("Watcher {} not found", unsubscribe_id));
+        return Err(format!("Watcher {unsubscribe_id} not found"));
     }
 
     Ok(())
@@ -5069,7 +5062,7 @@ pub async fn list_replicationcontrollers(
     let clusters = state.clusters.lock().await;
     let cluster = clusters
         .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+        .ok_or_else(|| format!("Cluster {cluster_id} not found"))?;
 
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
@@ -5113,7 +5106,7 @@ fn parse_replicationcontrollers_json(
     json_str: &str,
 ) -> Result<Vec<ReplicationControllerInfo>, String> {
     let value: Value = serde_json::from_str(json_str)
-        .map_err(|e| format!("Failed to parse kubectl JSON output: {}", e))?;
+        .map_err(|e| format!("Failed to parse kubectl JSON output: {e}"))?;
 
     let items = value
         .get("items")
@@ -5146,8 +5139,8 @@ fn parse_replicationcontrollers_json(
             .get("status")
             .and_then(|s| s.get("readyReplicas"))
             .and_then(|r| r.as_i64())
-            .map(|r| format!("{}/{}", r, replicas))
-            .unwrap_or_else(|| format!("0/{}", replicas));
+            .map(|r| format!("{r}/{replicas}"))
+            .unwrap_or_else(|| format!("0/{replicas}"));
 
         let age = item
             .get("metadata")
@@ -5193,7 +5186,7 @@ pub async fn list_poddisruptionbudgets(
     let clusters = state.clusters.lock().await;
     let cluster = clusters
         .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+        .ok_or_else(|| format!("Cluster {cluster_id} not found"))?;
 
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
@@ -5235,7 +5228,7 @@ pub async fn list_poddisruptionbudgets(
 
 fn parse_poddisruptionbudgets_json(json_str: &str) -> Result<Vec<PodDisruptionBudgetInfo>, String> {
     let value: Value = serde_json::from_str(json_str)
-        .map_err(|e| format!("Failed to parse kubectl JSON output: {}", e))?;
+        .map_err(|e| format!("Failed to parse kubectl JSON output: {e}"))?;
 
     let items = value
         .get("items")
@@ -5308,7 +5301,7 @@ pub async fn list_priorityclasses(
     let clusters = state.clusters.lock().await;
     let cluster = clusters
         .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+        .ok_or_else(|| format!("Cluster {cluster_id} not found"))?;
 
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
@@ -5345,7 +5338,7 @@ pub async fn list_priorityclasses(
 
 fn parse_priorityclasses_json(json_str: &str) -> Result<Vec<PriorityClassInfo>, String> {
     let value: Value = serde_json::from_str(json_str)
-        .map_err(|e| format!("Failed to parse kubectl JSON output: {}", e))?;
+        .map_err(|e| format!("Failed to parse kubectl JSON output: {e}"))?;
 
     let items = value
         .get("items")
@@ -5405,7 +5398,7 @@ pub async fn list_runtimeclasses(
     let clusters = state.clusters.lock().await;
     let cluster = clusters
         .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+        .ok_or_else(|| format!("Cluster {cluster_id} not found"))?;
 
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
@@ -5442,7 +5435,7 @@ pub async fn list_runtimeclasses(
 
 fn parse_runtimeclasses_json(json_str: &str) -> Result<Vec<RuntimeClassInfo>, String> {
     let value: Value = serde_json::from_str(json_str)
-        .map_err(|e| format!("Failed to parse kubectl JSON output: {}", e))?;
+        .map_err(|e| format!("Failed to parse kubectl JSON output: {e}"))?;
 
     let items = value
         .get("items")
@@ -5490,7 +5483,7 @@ pub async fn list_leases(
     let clusters = state.clusters.lock().await;
     let cluster = clusters
         .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+        .ok_or_else(|| format!("Cluster {cluster_id} not found"))?;
 
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
@@ -5532,7 +5525,7 @@ pub async fn list_leases(
 
 fn parse_leases_json(json_str: &str) -> Result<Vec<LeaseInfo>, String> {
     let value: Value = serde_json::from_str(json_str)
-        .map_err(|e| format!("Failed to parse kubectl JSON output: {}", e))?;
+        .map_err(|e| format!("Failed to parse kubectl JSON output: {e}"))?;
 
     let items = value
         .get("items")
@@ -5592,7 +5585,7 @@ pub async fn list_mutatingwebhookconfigurations(
     let clusters = state.clusters.lock().await;
     let cluster = clusters
         .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+        .ok_or_else(|| format!("Cluster {cluster_id} not found"))?;
 
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
@@ -5631,7 +5624,7 @@ fn parse_mutatingwebhookconfigurations_json(
     json_str: &str,
 ) -> Result<Vec<MutatingWebhookConfigurationInfo>, String> {
     let value: Value = serde_json::from_str(json_str)
-        .map_err(|e| format!("Failed to parse kubectl JSON output: {}", e))?;
+        .map_err(|e| format!("Failed to parse kubectl JSON output: {e}"))?;
 
     let items = value
         .get("items")
@@ -5682,7 +5675,7 @@ pub async fn list_validatingwebhookconfigurations(
     let clusters = state.clusters.lock().await;
     let cluster = clusters
         .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+        .ok_or_else(|| format!("Cluster {cluster_id} not found"))?;
 
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
@@ -5721,7 +5714,7 @@ fn parse_validatingwebhookconfigurations_json(
     json_str: &str,
 ) -> Result<Vec<ValidatingWebhookConfigurationInfo>, String> {
     let value: Value = serde_json::from_str(json_str)
-        .map_err(|e| format!("Failed to parse kubectl JSON output: {}", e))?;
+        .map_err(|e| format!("Failed to parse kubectl JSON output: {e}"))?;
 
     let items = value
         .get("items")
@@ -5773,7 +5766,7 @@ pub async fn list_endpoints(
     let clusters = state.clusters.lock().await;
     let cluster = clusters
         .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+        .ok_or_else(|| format!("Cluster {cluster_id} not found"))?;
 
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
@@ -5815,7 +5808,7 @@ pub async fn list_endpoints(
 
 fn parse_endpoints_json(json_str: &str) -> Result<Vec<EndpointInfo>, String> {
     let value: Value = serde_json::from_str(json_str)
-        .map_err(|e| format!("Failed to parse kubectl JSON output: {}", e))?;
+        .map_err(|e| format!("Failed to parse kubectl JSON output: {e}"))?;
 
     let items = value
         .get("items")
@@ -5888,7 +5881,7 @@ pub async fn list_endpointslices(
     let clusters = state.clusters.lock().await;
     let cluster = clusters
         .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+        .ok_or_else(|| format!("Cluster {cluster_id} not found"))?;
 
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
@@ -5930,7 +5923,7 @@ pub async fn list_endpointslices(
 
 fn parse_endpointslices_json(json_str: &str) -> Result<Vec<EndpointSliceInfo>, String> {
     let value: Value = serde_json::from_str(json_str)
-        .map_err(|e| format!("Failed to parse kubectl JSON output: {}", e))?;
+        .map_err(|e| format!("Failed to parse kubectl JSON output: {e}"))?;
 
     let items = value
         .get("items")
@@ -6010,7 +6003,7 @@ pub async fn list_ingressclasses(
     let clusters = state.clusters.lock().await;
     let cluster = clusters
         .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+        .ok_or_else(|| format!("Cluster {cluster_id} not found"))?;
 
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
@@ -6047,7 +6040,7 @@ pub async fn list_ingressclasses(
 
 fn parse_ingressclasses_json(json_str: &str) -> Result<Vec<IngressClassInfo>, String> {
     let value: Value = serde_json::from_str(json_str)
-        .map_err(|e| format!("Failed to parse kubectl JSON output: {}", e))?;
+        .map_err(|e| format!("Failed to parse kubectl JSON output: {e}"))?;
 
     let items = value
         .get("items")
@@ -6110,7 +6103,7 @@ pub async fn list_namespaces_resource(
     let clusters = state.clusters.lock().await;
     let cluster = clusters
         .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+        .ok_or_else(|| format!("Cluster {cluster_id} not found"))?;
 
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
@@ -6147,7 +6140,7 @@ pub async fn list_namespaces_resource(
 
 fn parse_namespaces_resource_json(json_str: &str) -> Result<Vec<NamespaceResourceInfo>, String> {
     let value: Value = serde_json::from_str(json_str)
-        .map_err(|e| format!("Failed to parse kubectl JSON output: {}", e))?;
+        .map_err(|e| format!("Failed to parse kubectl JSON output: {e}"))?;
 
     let items = value
         .get("items")
@@ -6195,7 +6188,7 @@ pub async fn list_crds(
     let clusters = state.clusters.lock().await;
     let cluster = clusters
         .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+        .ok_or_else(|| format!("Cluster {cluster_id} not found"))?;
 
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
@@ -6232,7 +6225,7 @@ pub async fn list_crds(
 
 fn parse_crds_json(json_str: &str) -> Result<Vec<CrdInfo>, String> {
     let value: Value = serde_json::from_str(json_str)
-        .map_err(|e| format!("Failed to parse kubectl JSON output: {}", e))?;
+        .map_err(|e| format!("Failed to parse kubectl JSON output: {e}"))?;
 
     let items = value
         .get("items")
@@ -6397,7 +6390,7 @@ pub async fn list_custom_resources(
     let clusters = state.clusters.lock().await;
     let cluster = clusters
         .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+        .ok_or_else(|| format!("Cluster {cluster_id} not found"))?;
 
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
@@ -6411,7 +6404,7 @@ pub async fn list_custom_resources(
     let kubectl_path = locate_kubectl()?;
 
     // Build resource specifier: group/resource (version is part of the API group context)
-    let resource_spec = format!("{}/{}", group, resource);
+    let resource_spec = format!("{group}/{resource}");
 
     let mut kubectl_cmd = Command::new(kubectl_path);
     kubectl_cmd.arg("get").arg(&resource_spec);
@@ -6451,7 +6444,7 @@ pub async fn list_custom_resources(
 
 fn parse_custom_resources_json(json_str: &str) -> Result<Vec<CustomResourceInfo>, String> {
     let value: Value = serde_json::from_str(json_str)
-        .map_err(|e| format!("Failed to parse kubectl JSON output: {}", e))?;
+        .map_err(|e| format!("Failed to parse kubectl JSON output: {e}"))?;
 
     let items = value
         .get("items")
@@ -6529,7 +6522,7 @@ pub async fn force_delete_resource(
     let clusters = state.clusters.lock().await;
     let cluster = clusters
         .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+        .ok_or_else(|| format!("Cluster {cluster_id} not found"))?;
 
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
@@ -6587,7 +6580,7 @@ pub async fn describe_resource(
     let clusters = state.clusters.lock().await;
     let cluster = clusters
         .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+        .ok_or_else(|| format!("Cluster {cluster_id} not found"))?;
 
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
@@ -6599,7 +6592,7 @@ pub async fn describe_resource(
         .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
 
     let kubectl_path = locate_kubectl()?;
-    let resource_spec = format!("{}/{}", resource_type, resource_name);
+    let resource_spec = format!("{resource_type}/{resource_name}");
 
     let mut cmd = Command::new(kubectl_path);
     cmd.arg("describe").arg(&resource_spec);
@@ -6641,7 +6634,7 @@ pub async fn get_resource_yaml(
     let clusters = state.clusters.lock().await;
     let cluster = clusters
         .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+        .ok_or_else(|| format!("Cluster {cluster_id} not found"))?;
 
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
@@ -6653,7 +6646,7 @@ pub async fn get_resource_yaml(
         .map_err(|e| format!("Failed to write kubeconfig temp file: {e}"))?;
 
     let kubectl_path = locate_kubectl()?;
-    let resource_spec = format!("{}/{}", resource_type, resource_name);
+    let resource_spec = format!("{resource_type}/{resource_name}");
 
     let mut cmd = Command::new(kubectl_path);
     cmd.arg("get").arg(&resource_spec).arg("-o").arg("yaml");
@@ -6693,7 +6686,7 @@ pub async fn attach_pod(
     let clusters = state.clusters.lock().await;
     let cluster = clusters
         .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+        .ok_or_else(|| format!("Cluster {cluster_id} not found"))?;
 
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
@@ -6762,7 +6755,7 @@ pub async fn restart_statefulset(
     let clusters = state.clusters.lock().await;
     let cluster = clusters
         .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+        .ok_or_else(|| format!("Cluster {cluster_id} not found"))?;
 
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
@@ -6778,7 +6771,7 @@ pub async fn restart_statefulset(
     let output = Command::new(kubectl_path)
         .arg("rollout")
         .arg("restart")
-        .arg(format!("statefulsets/{}", name))
+        .arg(format!("statefulsets/{name}"))
         .arg("-n")
         .arg(&namespace)
         .arg("--kubeconfig")
@@ -6809,7 +6802,7 @@ pub async fn restart_daemonset(
     let clusters = state.clusters.lock().await;
     let cluster = clusters
         .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+        .ok_or_else(|| format!("Cluster {cluster_id} not found"))?;
 
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
@@ -6825,7 +6818,7 @@ pub async fn restart_daemonset(
     let output = Command::new(kubectl_path)
         .arg("rollout")
         .arg("restart")
-        .arg(format!("daemonsets/{}", name))
+        .arg(format!("daemonsets/{name}"))
         .arg("-n")
         .arg(&namespace)
         .arg("--kubeconfig")
@@ -6857,7 +6850,7 @@ pub async fn scale_statefulset(
     let clusters = state.clusters.lock().await;
     let cluster = clusters
         .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+        .ok_or_else(|| format!("Cluster {cluster_id} not found"))?;
 
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
@@ -6872,8 +6865,8 @@ pub async fn scale_statefulset(
 
     let output = Command::new(kubectl_path)
         .arg("scale")
-        .arg(format!("statefulsets/{}", name))
-        .arg(format!("--replicas={}", replicas))
+        .arg(format!("statefulsets/{name}"))
+        .arg(format!("--replicas={replicas}"))
         .arg("-n")
         .arg(&namespace)
         .arg("--kubeconfig")
@@ -6905,7 +6898,7 @@ pub async fn scale_replicaset(
     let clusters = state.clusters.lock().await;
     let cluster = clusters
         .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+        .ok_or_else(|| format!("Cluster {cluster_id} not found"))?;
 
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
@@ -6920,8 +6913,8 @@ pub async fn scale_replicaset(
 
     let output = Command::new(kubectl_path)
         .arg("scale")
-        .arg(format!("replicasets/{}", name))
-        .arg(format!("--replicas={}", replicas))
+        .arg(format!("replicasets/{name}"))
+        .arg(format!("--replicas={replicas}"))
         .arg("-n")
         .arg(&namespace)
         .arg("--kubeconfig")
@@ -6953,7 +6946,7 @@ pub async fn scale_replicationcontroller(
     let clusters = state.clusters.lock().await;
     let cluster = clusters
         .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+        .ok_or_else(|| format!("Cluster {cluster_id} not found"))?;
 
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
@@ -6968,8 +6961,8 @@ pub async fn scale_replicationcontroller(
 
     let output = Command::new(kubectl_path)
         .arg("scale")
-        .arg(format!("replicationcontrollers/{}", name))
-        .arg(format!("--replicas={}", replicas))
+        .arg(format!("replicationcontrollers/{name}"))
+        .arg(format!("--replicas={replicas}"))
         .arg("-n")
         .arg(&namespace)
         .arg("--kubeconfig")
@@ -7000,7 +6993,7 @@ pub async fn suspend_cronjob(
     let clusters = state.clusters.lock().await;
     let cluster = clusters
         .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+        .ok_or_else(|| format!("Cluster {cluster_id} not found"))?;
 
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
@@ -7015,7 +7008,7 @@ pub async fn suspend_cronjob(
 
     let output = Command::new(kubectl_path)
         .arg("patch")
-        .arg(format!("cronjob/{}", name))
+        .arg(format!("cronjob/{name}"))
         .arg("-p")
         .arg(r#"{"spec":{"suspend":true}}"#)
         .arg("-n")
@@ -7048,7 +7041,7 @@ pub async fn resume_cronjob(
     let clusters = state.clusters.lock().await;
     let cluster = clusters
         .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+        .ok_or_else(|| format!("Cluster {cluster_id} not found"))?;
 
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
@@ -7063,7 +7056,7 @@ pub async fn resume_cronjob(
 
     let output = Command::new(kubectl_path)
         .arg("patch")
-        .arg(format!("cronjob/{}", name))
+        .arg(format!("cronjob/{name}"))
         .arg("-p")
         .arg(r#"{"spec":{"suspend":false}}"#)
         .arg("-n")
@@ -7096,7 +7089,7 @@ pub async fn trigger_cronjob(
     let clusters = state.clusters.lock().await;
     let cluster = clusters
         .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+        .ok_or_else(|| format!("Cluster {cluster_id} not found"))?;
 
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
@@ -7109,8 +7102,8 @@ pub async fn trigger_cronjob(
 
     let kubectl_path = locate_kubectl()?;
 
-    let job_name = format!("{}-manual", name);
-    let from_spec = format!("cronjob/{}", name);
+    let job_name = format!("{name}-manual");
+    let from_spec = format!("cronjob/{name}");
 
     let output = Command::new(kubectl_path)
         .arg("create")
@@ -7147,7 +7140,7 @@ pub async fn create_namespace(
     let clusters = state.clusters.lock().await;
     let cluster = clusters
         .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+        .ok_or_else(|| format!("Cluster {cluster_id} not found"))?;
 
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
@@ -7193,7 +7186,7 @@ pub async fn delete_namespace(
     let clusters = state.clusters.lock().await;
     let cluster = clusters
         .get(&cluster_id)
-        .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+        .ok_or_else(|| format!("Cluster {cluster_id} not found"))?;
 
     let kubeconfig_content = cluster.kubeconfig_content.as_ref();
     let context = &cluster.context;
@@ -7296,7 +7289,7 @@ pub async fn stream_pod_logs(
     }
 
     if let Some(tail) = config.tail_lines {
-        cmd.arg(format!("--tail={}", tail));
+        cmd.arg(format!("--tail={tail}"));
     }
 
     cmd.arg("--kubeconfig")
@@ -7359,8 +7352,70 @@ pub async fn stop_log_stream(stream_id: String, state: State<'_, AppState>) -> R
         info!(stream_id = %stream_id, "Stopped pod log stream");
         Ok(())
     } else {
-        Err(format!("Log stream {} not found", stream_id))
+        Err(format!("Log stream {stream_id} not found"))
     }
+}
+
+/// Writes `content` to `path`. Split out from the `#[tauri::command]` handler
+/// so it can be unit-tested without a `State<AppState>`.
+fn write_log_content(path: &str, content: &str) -> Result<(), String> {
+    std::fs::write(path, content).map_err(|e| format!("Failed to write log file: {e}"))
+}
+
+/// Records a pod-log export as an audit event. Split out from the
+/// `#[tauri::command]` handler so it can be unit-tested against a migrated
+/// in-memory connection without a `State<AppState>`.
+fn record_log_export_audit(
+    conn: &rusqlite::Connection,
+    path: &str,
+    bytes: usize,
+    cluster_id: &str,
+    namespace: &str,
+    pod_name: &str,
+    container_name: &str,
+) -> Result<(), String> {
+    let details = serde_json::json!({
+        "path": path,
+        "bytes": bytes,
+        "cluster_id": cluster_id,
+        "namespace": namespace,
+        "pod_name": pod_name,
+        "container_name": container_name,
+    })
+    .to_string();
+    crate::audit::log::write_audit_event(conn, "log_file_exported", "pod_log", pod_name, &details)
+        .map_err(|e| format!("Failed to write audit log: {e}"))
+}
+
+/// Writes log content to a path the user selected via the native save dialog.
+/// The path is always user-chosen (from `@tauri-apps/plugin-dialog`'s `save()`),
+/// so this intentionally writes outside the fs-plugin's app/temp-only scope.
+#[tauri::command]
+pub async fn save_log_file(
+    path: String,
+    content: String,
+    cluster_id: String,
+    namespace: String,
+    pod_name: String,
+    container_name: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let byte_len = content.len();
+    write_log_content(&path, &content)?;
+
+    let db = state
+        .db
+        .lock()
+        .map_err(|e| format!("Failed to lock database: {e}"))?;
+    record_log_export_audit(
+        &db,
+        &path,
+        byte_len,
+        &cluster_id,
+        &namespace,
+        &pod_name,
+        &container_name,
+    )
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -7424,7 +7479,7 @@ pub async fn helm_list_repos(
 
 fn parse_helm_repos_json(json_str: &str) -> Result<Vec<HelmRepository>, String> {
     let value: Value = serde_json::from_str(json_str)
-        .map_err(|e| format!("Failed to parse helm JSON output: {}", e))?;
+        .map_err(|e| format!("Failed to parse helm JSON output: {e}"))?;
 
     let items = value
         .as_array()
@@ -7531,7 +7586,7 @@ pub async fn helm_search_repo(
 
 fn parse_helm_search_json(json_str: &str) -> Result<Vec<HelmChart>, String> {
     let value: Value = serde_json::from_str(json_str)
-        .map_err(|e| format!("Failed to parse helm JSON output: {}", e))?;
+        .map_err(|e| format!("Failed to parse helm JSON output: {e}"))?;
 
     let items = value
         .as_array()
@@ -7588,7 +7643,7 @@ pub async fn helm_list_releases(
         let clusters = state.clusters.lock().await;
         let cluster = clusters
             .get(&cluster_id)
-            .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+            .ok_or_else(|| format!("Cluster {cluster_id} not found"))?;
         (cluster.kubeconfig_content.clone(), cluster.context.clone())
     };
 
@@ -7633,7 +7688,7 @@ pub async fn helm_list_releases(
 
 fn parse_helm_releases_json(json_str: &str) -> Result<Vec<HelmRelease>, String> {
     let value: Value = serde_json::from_str(json_str)
-        .map_err(|e| format!("Failed to parse helm JSON output: {}", e))?;
+        .map_err(|e| format!("Failed to parse helm JSON output: {e}"))?;
 
     let items = value
         .as_array()
@@ -7711,7 +7766,7 @@ pub async fn helm_uninstall(
         let clusters = state.clusters.lock().await;
         let cluster = clusters
             .get(&cluster_id)
-            .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+            .ok_or_else(|| format!("Cluster {cluster_id} not found"))?;
         (cluster.kubeconfig_content.clone(), cluster.context.clone())
     };
 
@@ -7762,7 +7817,7 @@ pub async fn helm_rollback(
         let clusters = state.clusters.lock().await;
         let cluster = clusters
             .get(&cluster_id)
-            .ok_or_else(|| format!("Cluster {} not found", cluster_id))?;
+            .ok_or_else(|| format!("Cluster {cluster_id} not found"))?;
         (cluster.kubeconfig_content.clone(), cluster.context.clone())
     };
 
@@ -7995,5 +8050,66 @@ mod new_command_tests {
             path1, path2,
             "successive calls must return distinct paths to prevent concurrent-call race conditions"
         );
+    }
+
+    #[test]
+    fn test_write_log_content_writes_content() {
+        let mut path = std::env::temp_dir();
+        path.push(format!(
+            "tftsr-test-save-log-file-{}.txt",
+            uuid::Uuid::now_v7()
+        ));
+        let path_str = path.to_string_lossy().to_string();
+
+        let result = write_log_content(&path_str, "line one\nline two");
+        assert!(result.is_ok());
+
+        let written = std::fs::read_to_string(&path_str).unwrap();
+        assert_eq!(written, "line one\nline two");
+
+        let _ = std::fs::remove_file(&path_str);
+    }
+
+    #[test]
+    fn test_write_log_content_errors_on_unwritable_path() {
+        let path = "/nonexistent-directory-for-tftsr-tests/logs.txt";
+        let result = write_log_content(path, "content");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_record_log_export_audit_writes_entry() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        crate::db::migrations::run_migrations(&conn).unwrap();
+
+        let result = record_log_export_audit(
+            &conn,
+            "/tmp/pod-logs.txt",
+            42,
+            "cluster-1",
+            "default",
+            "my-pod",
+            "app",
+        );
+        assert!(result.is_ok());
+
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM audit_log WHERE action = 'log_file_exported'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 1);
+
+        let details: String = conn
+            .query_row(
+                "SELECT details FROM audit_log WHERE action = 'log_file_exported'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(details.contains("my-pod"));
+        assert!(details.contains("pod-logs.txt"));
     }
 }

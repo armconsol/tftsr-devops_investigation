@@ -156,7 +156,7 @@ The domain prompt is injected as the first `system` role message in every new co
 
 ## 6. Custom Provider (Multiple API Formats)
 
-**Status:** ✅ **Implemented** (v0.2.6)
+**Status:** ✅ **Implemented** (v3.0.x)
 
 Custom providers allow integration with non-OpenAI-compatible APIs. The application supports multiple API formats:
 
@@ -282,7 +282,7 @@ Auth Prefix:      (leave empty if no prefix)
 
 ## Custom Provider Configuration Fields
 
-All providers support the following optional configuration fields (v0.2.6+):
+All providers support the following optional configuration fields (v3.0.x+):
 
 | Field | Type | Purpose | Default |
 |-------|------|---------|---------|

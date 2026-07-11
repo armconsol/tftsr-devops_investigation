@@ -1,3 +1,6 @@
+// Copyright (c) 2025 Shaun Arman
+// MIT License - see LICENSE file for details
+
 export interface DomainInfo {
   id: string;
   label: string;

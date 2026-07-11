@@ -23,6 +23,11 @@ TRCAA uses a Tauri 2.x architecture: a Rust backend runs natively, and a React/T
 
 **Entry point:** `src-tauri/src/lib.rs` → `run()` initialises tracing, opens the DB, registers Tauri plugins, and calls `generate_handler![]` with all IPC commands.
 
+**Backend logging:** tracing now writes to both console and local disk at
+`<app_data_dir>/logs/backend.log` (daily rolling file). Default level is `info`;
+`debug` can be enabled at runtime via settings (`debug_logging_enabled`).
+Current retention behavior is daily rotation only (no fixed max-days purge yet).
+
 ### Shared State
 
 ```rust
@@ -47,13 +52,24 @@ All command handlers receive `State<'_, AppState>` as a Tauri-injected parameter
 | `commands/docs.rs` | RCA and post-mortem generation, document export |
 | `commands/system.rs` | Ollama management, hardware probe, settings, audit log |
 | `commands/image.rs` | Image attachment upload, list, delete, paste |
-| `commands/integrations.rs` | Confluence / ServiceNow / ADO — v0.2 stubs |
+| `commands/database.rs` | Database connections, query history, bookmarks, import/export |
+| `commands/kube.rs` | Kubernetes clusters, resources, port forwards, events |
+| `commands/metrics.rs` | Shared metrics and telemetry helpers |
+| `commands/remote.rs` | RDP and remote session management |
+| `commands/shell.rs` | Shell execution, approvals, kubeconfig handling |
+| `commands/table_browser.rs` | Table browser and data exploration |
+| `commands/integrations.rs` | Confluence / ServiceNow / ADO integration handlers |
 | `ai/provider.rs` | `Provider` trait + `create_provider()` factory |
 | `pii/detector.rs` | Multi-pattern PII scanner with overlap resolution |
-| `db/migrations.rs` | Versioned schema (15 migrations in `_migrations` table) |
+| `db/migrations.rs` | Versioned schema (23 migrations in `_migrations` table) |
 | `db/models.rs` | All DB types — see `IssueDetail` note below |
 | `docs/rca.rs` + `docs/postmortem.rs` | Markdown template builders |
 | `audit/log.rs` | `write_audit_event()` — called before every external send |
+| `proxmox/lxc.rs` | LXC container config retrieval and creation |
+| `proxmox/ceph.rs` | Ceph pool/OSD/monitor/manager/filesystem operations (node-scoped `nodes/{node}/ceph/*` endpoints) |
+| `proxmox/tfa.rs` | Two-factor authentication entry management |
+| `proxmox/pbs.rs` | Proxmox Backup Server datastore, namespace, snapshot, and task queries |
+| `proxmox/validate.rs` | Shared input validation (node names, vmid range) used across proxmox modules |
 
 ### Directory Structure
 
@@ -76,7 +92,13 @@ src-tauri/src/
 │   ├── docs.rs
 │   ├── system.rs
 │   ├── image.rs
-│   └── integrations.rs
+│   ├── integrations.rs
+│   ├── database.rs
+│   ├── kube.rs
+│   ├── metrics.rs
+│   ├── remote.rs
+│   ├── shell.rs
+│   └── table_browser.rs
 ├── pii/
 │   ├── patterns.rs
 │   ├── detector.rs
@@ -96,6 +118,19 @@ src-tauri/src/
 │   ├── manager.rs
 │   ├── recommender.rs
 │   └── hardware.rs
+├── mcp/
+│   ├── discovery.rs
+│   ├── servers.rs
+│   └── tools.rs
+├── ollama/
+│   ├── installer.rs
+│   ├── manager.rs
+│   ├── recommender.rs
+│   └── hardware.rs
+├── proxmox/
+├── remote/
+├── shell/
+├── database/
 └── integrations/
     ├── confluence.rs
     ├── servicenow.rs
@@ -111,8 +146,25 @@ src-tauri/src/
 | Store | Persistence | Contents |
 |-------|------------|----------|
 | `sessionStore.ts` | Not persisted (ephemeral) | currentIssue, messages, piiSpans, approvedRedactions, whyLevel (0–5), loading state |
-| `settingsStore.ts` | `localStorage` as `"tftsr-settings"` | AI providers, theme, Ollama URL, active provider |
+| `settingsStore.ts` | `localStorage` as `"trcaa-settings"` | AI providers, theme, Ollama URL, active provider, debug logging toggle |
 | `historyStore.ts` | Not persisted (cache) | Past issues list, search query |
+| `proxmoxStore.ts` | `localStorage` as `"tftsr-proxmox"` | Selected Proxmox cluster id + selected node per cluster (`Record<clusterId, node>`), shared across every Proxmox subpage so switching pages no longer resets the host dropdown back to the default |
+
+### Shared Proxmox frontend utilities
+
+- `src/lib/format.ts` — `formatBytes` (B → PB, used by Ceph pool/OSD tables so Used/Available
+  render as e.g. `1.5 TB` instead of raw byte counts) and `formatUptime`.
+- `src/hooks/usePolling.ts` — fires a callback immediately then on a fixed interval while
+  enabled; used to auto-load and periodically refresh the Ceph Monitors/Managers/CephFS/Flags
+  tabs (they previously only loaded once via a manual "Load" button).
+- `src/hooks/useProxmoxClusters.ts` / `src/hooks/useProxmoxNodes.ts` — load the cluster/node
+  list and restore the selection from `proxmoxStore` (falling back to the first entry if the
+  persisted id/name is no longer present), instead of every page defaulting back to index 0.
+- `src/components/SidebarNav.tsx` — recursive sidebar renderer (groups with `children` are
+  collapsible buttons, leaves are `NavLink`s) backing the top-level **Tools** group
+  (Kubernetes, Proxmox, Database, Remote Desktop — collapsed by default) and the **Settings**
+  group (also collapsed by default), replacing the previous single-level, always-expanded
+  Settings list in `App.tsx`.
 
 ### Page Flow
 
@@ -271,3 +323,48 @@ User Input
   ↓
 [Export] ────────── MD or PDF to user-chosen directory
 ```
+
+## Remote Desktop (RDP)
+
+The `remote/` module provides an in-app RDP client. Pixels are decoded in Rust
+(IronRDP) and streamed to a `<canvas>` in the webview over a local WebSocket;
+keyboard/mouse input flows back over the same socket.
+
+### Module Layout
+
+| Path | Responsibility |
+|------|---------------|
+| `remote/rdp.rs` | Session lifecycle (`start_session_async`): spawns the connect task, owns the per-session input channel + dispatch task |
+| `remote/rdp_client.rs` | IronRDP connect/handshake, frame capture, input translation to fastpath PDUs |
+| `remote/input.rs` | `RawInputEvent` wire type, JS `KeyboardEvent.code` → RDP scancode map, coordinate clamping |
+| `remote/websocket_server.rs` | Local WS server: streams frames out, decodes JSON input frames in, per-session routing |
+| `remote/ssh_tunnel.rs` | Optional SSH tunnel for the TCP connection |
+
+### Pipeline
+
+```
+Browser <canvas>  ──WS binary frame [u32 LE w][u32 LE h][RGBA]──  websocket_server
+        │                                                              ▲
+        │ WS JSON text {type,...}                                      │ frame_rx (poll)
+        ▼                                                              │
+  websocket_server ──input mpsc──▶ rdp.rs dispatch ──▶ session.handle_input
+                                                          ▼
+                                            IronRDP fastpath input  ──▶  RDP host
+```
+
+### Key Implementation Notes
+
+- **Frame forwarder uses polling, not `recv().await`.** Frames are produced by a
+  blocking IronRDP `connect()` loop on a tokio worker. Channel wakeups land on
+  that worker's local run-queue, which it never drains while blocked in a socket
+  read, so an awaiting `recv()` never wakes. The forwarder instead polls
+  `try_recv()` with a 5 ms async sleep, decoupling delivery from the starved
+  waker.
+- **Socket read-timeout duality.** The IronRDP blocking handshake does not
+  tolerate `WouldBlock`/`TimedOut`, so a 30 s read timeout is used during
+  negotiation, then lowered to 50 ms after `connect_finalize` so queued input is
+  serviced promptly even when the server sends no graphics.
+- **Slow-path graphics** (xrdp-style `ShareDataPdu::Update`) require
+  ironrdp-session ≥ 0.10 (ironrdp 0.16 generation, MSRV Rust 1.89).
+- **Input hardening.** The WS server caps messages at 4 KiB, validates the
+  session id from the path, and drops input on channel saturation (`try_send`).

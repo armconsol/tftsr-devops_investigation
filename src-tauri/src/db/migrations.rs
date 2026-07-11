@@ -437,6 +437,151 @@ pub fn run_migrations(conn: &Connection) -> anyhow::Result<()> {
             "034_add_proxmox_username_column",
             "ALTER TABLE proxmox_clusters ADD COLUMN username TEXT NOT NULL DEFAULT '';",
         ),
+        (
+            "035_create_remote_connections",
+            "CREATE TABLE IF NOT EXISTS remote_connections (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                protocol TEXT NOT NULL CHECK(protocol IN ('rdp', 'vnc')),
+                hostname TEXT NOT NULL,
+                port INTEGER NOT NULL DEFAULT 3389,
+                username TEXT,
+                password_encrypted TEXT NOT NULL,
+                domain TEXT,
+                resolution TEXT NOT NULL DEFAULT '1280x800',
+                color_depth INTEGER NOT NULL DEFAULT 32,
+                clipboard_sync INTEGER NOT NULL DEFAULT 1,
+                drive_redirect INTEGER NOT NULL DEFAULT 0,
+                multi_monitor INTEGER NOT NULL DEFAULT 0,
+                compression INTEGER NOT NULL DEFAULT 1,
+                quality INTEGER NOT NULL DEFAULT 80,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+                last_connected_at TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_remote_connections_protocol ON remote_connections(protocol);
+            CREATE INDEX IF NOT EXISTS idx_remote_connections_last_connected ON remote_connections(last_connected_at);",
+        ),
+        (
+            "035a_upgrade_remote_connections_ssh",
+            "DROP TABLE IF EXISTS remote_connections;
+            CREATE TABLE IF NOT EXISTS remote_connections (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                protocol TEXT NOT NULL CHECK(protocol IN ('rdp', 'vnc')),
+                hostname TEXT NOT NULL,
+                port INTEGER NOT NULL,
+                username TEXT,
+                domain TEXT,
+                resolution TEXT NOT NULL DEFAULT 'auto',
+                color_depth INTEGER NOT NULL DEFAULT 32,
+                clipboard_sync INTEGER NOT NULL DEFAULT 1,
+                drive_redirect INTEGER NOT NULL DEFAULT 0,
+                multi_monitor INTEGER NOT NULL DEFAULT 0,
+                compression INTEGER NOT NULL DEFAULT 1,
+                quality INTEGER NOT NULL DEFAULT 80,
+                ssh_enabled INTEGER NOT NULL DEFAULT 0,
+                ssh_hostname TEXT,
+                ssh_port INTEGER DEFAULT 22,
+                ssh_username TEXT,
+                auto_resize INTEGER NOT NULL DEFAULT 1,
+                stretch_to_fill INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+                last_connected_at TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_remote_connections_protocol ON remote_connections(protocol);
+            CREATE INDEX IF NOT EXISTS idx_remote_connections_ssh ON remote_connections(ssh_enabled);",
+        ),
+        (
+            "036_create_remote_credentials",
+            "CREATE TABLE IF NOT EXISTS remote_credentials (
+                id TEXT PRIMARY KEY,
+                connection_id TEXT NOT NULL REFERENCES remote_connections(id) ON DELETE CASCADE,
+                rdp_password_encrypted TEXT,
+                ssh_password_encrypted TEXT,
+                ssh_key_encrypted TEXT,
+                ssh_key_passphrase_encrypted TEXT,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+                UNIQUE(connection_id)
+            );",
+        ),
+        (
+            "037_create_ssh_credentials",
+            "CREATE TABLE IF NOT EXISTS ssh_credentials (
+                key_id TEXT PRIMARY KEY,
+                encrypted_data TEXT NOT NULL,
+                updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );",
+        ),
+        (
+            "038_create_database_connections",
+            "CREATE TABLE IF NOT EXISTS database_connections (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                db_type TEXT NOT NULL,
+                host TEXT NOT NULL,
+                port INTEGER NOT NULL,
+                database_name TEXT,
+                username TEXT,
+                encrypted_password TEXT,
+                ssl_enabled INTEGER DEFAULT 0,
+                ssl_ca_cert_path TEXT,
+                ssl_client_cert_path TEXT,
+                ssl_client_key_path TEXT,
+                connection_options TEXT,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+            CREATE INDEX IF NOT EXISTS idx_db_connections_type ON database_connections(db_type);",
+        ),
+        (
+            "039_create_query_history",
+            "CREATE TABLE IF NOT EXISTS query_history (
+                id TEXT PRIMARY KEY,
+                connection_id TEXT NOT NULL,
+                query_text TEXT NOT NULL,
+                row_count INTEGER,
+                execution_time_ms INTEGER,
+                status TEXT NOT NULL,
+                error_message TEXT,
+                executed_at TEXT NOT NULL DEFAULT (datetime('now')),
+                FOREIGN KEY (connection_id) REFERENCES database_connections(id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_query_history_connection ON query_history(connection_id);
+            CREATE INDEX IF NOT EXISTS idx_query_history_executed ON query_history(executed_at DESC);",
+        ),
+        (
+            "040_create_query_bookmarks",
+            "CREATE TABLE IF NOT EXISTS query_bookmarks (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                query_text TEXT NOT NULL,
+                connection_id TEXT,
+                tags TEXT,
+                description TEXT,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                FOREIGN KEY (connection_id) REFERENCES database_connections(id) ON DELETE SET NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_query_bookmarks_connection ON query_bookmarks(connection_id);",
+        ),
+        (
+            "041_add_database_ssh_tunnel_columns",
+            "ALTER TABLE database_connections ADD COLUMN ssh_enabled INTEGER DEFAULT 0;
+             ALTER TABLE database_connections ADD COLUMN ssh_hostname TEXT;
+             ALTER TABLE database_connections ADD COLUMN ssh_port INTEGER;
+             ALTER TABLE database_connections ADD COLUMN ssh_username TEXT;
+             ALTER TABLE database_connections ADD COLUMN ssh_auth_method TEXT;",
+        ),
+        (
+            // 041 added the SSH tunnel config columns but not the encrypted
+            // credential columns referenced by create/update_database_connection.
+            "042_add_database_ssh_credential_columns",
+            "ALTER TABLE database_connections ADD COLUMN ssh_password_encrypted TEXT;
+             ALTER TABLE database_connections ADD COLUMN ssh_private_key_encrypted TEXT;
+             ALTER TABLE database_connections ADD COLUMN ssh_key_passphrase_encrypted TEXT;",
+        ),
     ];
 
     for (name, sql) in migrations {
@@ -458,10 +603,12 @@ pub fn run_migrations(conn: &Connection) -> anyhow::Result<()> {
                 || name.ends_with("_add_image_data")
                 || name.ends_with("_add_supports_tool_calling")
                 || name.ends_with("_add_proxmox_username_column")
+                || name.ends_with("_add_database_ssh_tunnel_columns")
+                || name.ends_with("_add_database_ssh_credential_columns")
             {
                 // Use execute for ALTER TABLE (SQLite only allows one statement per command)
                 // Skip error if column already exists (SQLITE_ERROR with "duplicate column name")
-                if let Err(e) = conn.execute(sql, []) {
+                if let Err(e) = conn.execute_batch(sql) {
                     let err_str = e.to_string();
                     if err_str.contains("duplicate column name") {
                         tracing::info!("Column may already exist, skipping migration {name}: {e}");
@@ -1637,5 +1784,146 @@ users:
                 .unwrap();
             assert_eq!(count, 1, "{migration} should be recorded exactly once");
         }
+    }
+
+    fn database_connections_columns(conn: &Connection) -> Vec<String> {
+        let mut stmt = conn
+            .prepare("PRAGMA table_info(database_connections)")
+            .unwrap();
+        stmt.query_map([], |row| row.get::<_, String>(1))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap()
+    }
+
+    #[test]
+    fn test_042_database_connections_has_ssh_credential_columns() {
+        let conn = setup_test_db();
+        let columns = database_connections_columns(&conn);
+
+        for col in [
+            "ssh_password_encrypted",
+            "ssh_private_key_encrypted",
+            "ssh_key_passphrase_encrypted",
+        ] {
+            assert!(
+                columns.contains(&col.to_string()),
+                "database_connections should have column {col}, got: {columns:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_042_idempotent_rerun() {
+        let conn = Connection::open_in_memory().unwrap();
+        run_migrations(&conn).unwrap();
+        run_migrations(&conn).unwrap();
+
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM _migrations WHERE name = ?1",
+                ["042_add_database_ssh_credential_columns"],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 1, "migration 042 should be recorded exactly once");
+    }
+
+    #[test]
+    fn test_042_applies_to_existing_v041_database() {
+        // Simulate an existing installation: table created by 038 + columns from
+        // 041, with both migrations recorded, then run_migrations must add the
+        // credential columns without error.
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE _migrations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                applied_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );",
+        )
+        .unwrap();
+        run_migrations(&conn).unwrap();
+        // Drop the credential columns to mimic a DB that predates migration 042
+        conn.execute_batch(
+            "ALTER TABLE database_connections DROP COLUMN ssh_password_encrypted;
+             ALTER TABLE database_connections DROP COLUMN ssh_private_key_encrypted;
+             ALTER TABLE database_connections DROP COLUMN ssh_key_passphrase_encrypted;
+             DELETE FROM _migrations WHERE name = '042_add_database_ssh_credential_columns';",
+        )
+        .unwrap();
+        assert!(
+            !database_connections_columns(&conn).contains(&"ssh_password_encrypted".to_string())
+        );
+
+        run_migrations(&conn).unwrap();
+
+        let columns = database_connections_columns(&conn);
+        for col in [
+            "ssh_password_encrypted",
+            "ssh_private_key_encrypted",
+            "ssh_key_passphrase_encrypted",
+        ] {
+            assert!(
+                columns.contains(&col.to_string()),
+                "missing {col} after re-migration"
+            );
+        }
+    }
+
+    #[test]
+    fn test_042_insert_with_ssh_credentials_succeeds() {
+        // Mirrors the INSERT in commands/database.rs::create_database_connection
+        let conn = setup_test_db();
+        conn.execute(
+            "INSERT INTO database_connections (
+                id, name, db_type, host, port, database_name, username, encrypted_password,
+                ssl_enabled, ssl_ca_cert_path, ssl_client_cert_path, ssl_client_key_path, connection_options,
+                ssh_enabled, ssh_hostname, ssh_port, ssh_username, ssh_auth_method,
+                ssh_password_encrypted, ssh_private_key_encrypted, ssh_key_passphrase_encrypted,
+                created_at, updated_at
+            ) VALUES (
+                ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8,
+                ?9, ?10, ?11, ?12, ?13,
+                ?14, ?15, ?16, ?17, ?18,
+                ?19, ?20, ?21,
+                ?22, ?23
+            )",
+            rusqlite::params![
+                "conn-1",
+                "Test PSQL",
+                "postgresql",
+                "db.example.com",
+                5432,
+                "appdb",
+                "app",
+                "enc:password",
+                0,
+                Option::<String>::None,
+                Option::<String>::None,
+                Option::<String>::None,
+                Option::<String>::None,
+                1,
+                "bastion.example.com",
+                22,
+                "tunnel",
+                "password",
+                "enc:sshpw",
+                Option::<String>::None,
+                Option::<String>::None,
+                "2026-07-04 00:00:00",
+                "2026-07-04 00:00:00",
+            ],
+        )
+        .expect("INSERT with ssh credential columns must succeed");
+
+        let stored: String = conn
+            .query_row(
+                "SELECT ssh_password_encrypted FROM database_connections WHERE id = 'conn-1'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(stored, "enc:sshpw");
     }
 }

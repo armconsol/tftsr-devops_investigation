@@ -351,57 +351,10 @@ pub async fn chat_message(
     let agent_registry = create_agent_registry();
     let devops_agent = agent_registry.get("devops-incident-responder");
 
-    let mut messages = Vec::new();
-
-    // Inject devops-incident-responder as primary system prompt (always)
-    if let Some(agent) = devops_agent {
-        messages.push(Message {
-            role: "system".into(),
-            content: agent.system_prompt.clone(),
-            tool_call_id: None,
-            tool_calls: None,
-        });
-    }
-
-    // Inject domain system prompt if provided
-    if let Some(ref prompt) = system_prompt {
-        if !prompt.is_empty() {
-            messages.push(Message {
-                role: "system".into(),
-                content: prompt.clone(),
-                tool_call_id: None,
-                tool_calls: None,
-            });
-        }
-    }
-
-    messages.extend(history);
-
-    // If we found integration content, add it to the conversation context
-    if !integration_context.is_empty() {
-        let context_message = Message {
-            role: "system".into(),
-            content: format!(
-                "INTERNAL DOCUMENTATION SOURCES:\n\n{integration_context}\n\n\
-                 Instructions: The above content is from internal company documentation systems \
-                 (Confluence, ServiceNow, Azure DevOps). \
-                 \n\n**IMPORTANT**: First determine if this documentation is RELEVANT to the user's question:\
-                 \n- If the documentation directly addresses the question → Use it and cite sources with URLs\
-                 \n- If the documentation is tangentially related but doesn't answer the question → Briefly mention what internal docs exist, then provide a complete answer using general knowledge\
-                 \n- If the documentation is completely unrelated → Ignore it and answer using general knowledge\
-                 \n\nDo NOT force irrelevant internal documentation into your answer. The user needs accurate information, not forced citations."
-            ),
-            tool_call_id: None,
-            tool_calls: None,
-        };
-        messages.push(context_message);
-    }
-
     // Tool execution configuration
-    const MAX_TOOL_ITERATIONS: usize = 20; // Allow sufficient iterations for complex diagnostics
+    const MAX_TOOL_ITERATIONS: usize = 20;
 
     // Get available tools — static + MCP
-    // Only enable tools if the provider explicitly supports tool calling
     let tools = if provider_config.supports_tool_calling.unwrap_or(false) {
         let mut all_tools = crate::ai::tools::get_available_tools();
         let mcp_tools = crate::ai::tools::get_enabled_mcp_tools(&state).await;
@@ -415,9 +368,6 @@ pub async fn chat_message(
         None
     };
 
-    // If tools are available AND using OpenAI-compatible provider, add explicit JSON format instruction
-    // Only OpenAI-compatible providers (default case in create_provider) actually support tool calling.
-    // Others (anthropic, gemini, mistral, ollama) either ignore tools or use provider-specific formats.
     let is_openai_compatible = {
         let kind = if provider_config.provider_type.is_empty() {
             provider_config.name.as_str()
@@ -427,32 +377,72 @@ pub async fn chat_message(
         !matches!(kind, "anthropic" | "gemini" | "mistral" | "ollama")
     };
 
-    if tools.is_some() && is_openai_compatible {
-        messages.push(Message {
-            role: "system".into(),
-            content: "CRITICAL: You have tools available. When calling tools, you MUST use the native JSON function calling format in your API response. DO NOT output XML tags like <tool_name>. DO NOT output text descriptions of tool calls. Use the structured tool_calls field in your response.".into(),
-            tool_call_id: None,
-            tool_calls: None,
-        });
+    // Collect all system prompt parts and merge into ONE message to satisfy providers
+    // like Qwen 3.5 that reject multiple consecutive system messages.
+    let mut system_parts: Vec<String> = Vec::new();
 
-        // Add iteration budget awareness
+    if let Some(agent) = devops_agent {
+        system_parts.push(agent.system_prompt.clone());
+    }
+
+    if let Some(ref prompt) = system_prompt {
+        if !prompt.is_empty() {
+            system_parts.push(prompt.clone());
+        }
+    }
+
+    if tools.is_some() && is_openai_compatible {
+        system_parts.push(
+            "CRITICAL: You have tools available. When calling tools, you MUST use the native \
+             JSON function calling format in your API response. DO NOT output XML tags like \
+             <tool_name>. DO NOT output text descriptions of tool calls. Use the structured \
+             tool_calls field in your response."
+                .to_string(),
+        );
+        system_parts.push(format!(
+            "TOOL EXECUTION BUDGET: You have a maximum of {MAX_TOOL_ITERATIONS} rounds (each \
+             AI response counts as one round). You can call multiple tools in a single round. \
+             Plan your investigation efficiently:\n\
+             - Call multiple related tools in the same round when possible\n\
+             - Prioritize high-value diagnostic commands first\n\
+             - Use comprehensive output formats (e.g., kubectl --output=yaml) to gather more data per call\n\
+             - Reserve 1 round for your final summary/answer\n\
+             - If you exceed the budget, you'll be cut off mid-investigation\n\
+             Current round count is not visible to you, so plan conservatively."
+        ));
+    }
+
+    if !integration_context.is_empty() {
+        system_parts.push(format!(
+            "INTERNAL DOCUMENTATION SOURCES:\n\n{integration_context}\n\n\
+             Instructions: The above content is from internal company documentation systems \
+             (Confluence, ServiceNow, Azure DevOps). \
+             \n\n**IMPORTANT**: First determine if this documentation is RELEVANT to the user's question:\
+             \n- If the documentation directly addresses the question → Use it and cite sources with URLs\
+             \n- If the documentation is tangentially related but doesn't answer the question → Briefly mention what internal docs exist, then provide a complete answer using general knowledge\
+             \n- If the documentation is completely unrelated → Ignore it and answer using general knowledge\
+             \n\nDo NOT force irrelevant internal documentation into your answer. The user needs accurate information, not forced citations."
+        ));
+    }
+
+    let mut messages = Vec::new();
+
+    if !system_parts.is_empty() {
         messages.push(Message {
             role: "system".into(),
-            content: format!(
-                "TOOL EXECUTION BUDGET: You have a maximum of {MAX_TOOL_ITERATIONS} rounds (each AI response counts as one round). \
-                 You can call multiple tools in a single round. \
-                 Plan your investigation efficiently:\n\
-                 - Call multiple related tools in the same round when possible\n\
-                 - Prioritize high-value diagnostic commands first\n\
-                 - Use comprehensive output formats (e.g., kubectl --output=yaml) to gather more data per call\n\
-                 - Reserve 1 round for your final summary/answer\n\
-                 - If you exceed the budget, you'll be cut off mid-investigation\n\
-                 Current round count is not visible to you, so plan conservatively."
-            ),
+            content: system_parts.join("\n\n---\n\n"),
             tool_call_id: None,
             tool_calls: None,
         });
     }
+
+    // Filter system messages from history (already merged above) and append
+    let filtered_history: Vec<Message> = history
+        .into_iter()
+        .filter(|msg| msg.role != "system")
+        .collect();
+
+    messages.extend(filtered_history);
 
     messages.push(Message {
         role: "user".into(),
@@ -471,7 +461,7 @@ pub async fn chat_message(
         // Warn AI when approaching limit
         if iteration == MAX_TOOL_ITERATIONS - 2 {
             messages.push(Message {
-                role: "system".into(),
+                role: "user".into(),
                 content: format!(
                     "WARNING: You are on iteration {iteration}/{MAX_TOOL_ITERATIONS} (2 rounds remaining). \
                      You MUST provide your final answer in the NEXT round. \
@@ -490,7 +480,7 @@ pub async fn chat_message(
             // Add final instruction
             let mut final_messages = sanitized_messages;
             final_messages.push(Message {
-                role: "system".into(),
+                role: "user".into(),
                 content: format!(
                     "CRITICAL: Tool iteration limit reached ({iteration}/{MAX_TOOL_ITERATIONS}). \
                      TOOLS ARE NOW DISABLED. \
@@ -525,7 +515,7 @@ pub async fn chat_message(
             .await
             .map_err(|e| {
                 let error_msg = format!("AI provider request failed: {e}");
-                warn!("{}", error_msg);
+                warn!("{error_msg}");
                 error_msg
             })?;
 
@@ -533,19 +523,25 @@ pub async fn chat_message(
         if let Some(tool_calls) = &response.tool_calls {
             tracing::info!("AI requested {} tool call(s)", tool_calls.len());
 
-            // Execute each tool call
+            // OpenAI API contract: push the assistant message WITH tool_calls BEFORE any tool results
+            messages.push(Message {
+                role: "assistant".into(),
+                content: response.content.clone(),
+                tool_call_id: None,
+                tool_calls: Some(tool_calls.clone()),
+            });
+
+            // Execute each tool call and append result messages
             for tool_call in tool_calls {
                 tracing::info!("Executing tool: {}", tool_call.name);
 
                 let tool_result = execute_tool_call(tool_call, &app_handle, &state).await;
 
-                // Format result
                 let result_content = match tool_result {
                     Ok(result) => result,
                     Err(e) => format!("Error executing tool: {e}"),
                 };
 
-                // Add tool result as a message
                 messages.push(Message {
                     role: "tool".into(),
                     content: result_content,
@@ -726,8 +722,8 @@ pub async fn detect_tool_calling_support(provider_config: ProviderConfig) -> Res
                 || error_msg.contains("503")
             {
                 info!(
-                    "Tool calling not supported for provider {}: {}",
-                    provider_config.name, e
+                    "Tool calling not supported for provider {}: {e}",
+                    provider_config.name
                 );
                 Ok(false)
             } else {
@@ -788,7 +784,7 @@ async fn search_integration_sources(
         let db = match state.db.lock() {
             Ok(db) => db,
             Err(e) => {
-                tracing::warn!("Failed to lock database: {}", e);
+                tracing::warn!("Failed to lock database: {e}");
                 return String::new();
             }
         };
@@ -798,7 +794,7 @@ async fn search_integration_sources(
         ) {
             Ok(stmt) => stmt,
             Err(e) => {
-                tracing::warn!("Failed to prepare statement: {}", e);
+                tracing::warn!("Failed to prepare statement: {e}");
                 return String::new();
             }
         };
@@ -814,7 +810,7 @@ async fn search_integration_sources(
         }) {
             Ok(rows) => rows,
             Err(e) => {
-                tracing::warn!("Failed to query integration configs: {}", e);
+                tracing::warn!("Failed to query integration configs: {e}");
                 return String::new();
             }
         };
@@ -1019,10 +1015,7 @@ async fn search_integration_sources(
                                         results
                                     }
                                     Err(e) => {
-                                        tracing::warn!(
-                                            "Webview fetch failed for Confluence: {}",
-                                            e
-                                        );
+                                        tracing::warn!("Webview fetch failed for Confluence: {e}");
                                         Vec::new()
                                     }
                                 }
@@ -1046,10 +1039,7 @@ async fn search_integration_sources(
                                         results
                                     }
                                     Err(e) => {
-                                        tracing::warn!(
-                                            "Webview fetch failed for ServiceNow: {}",
-                                            e
-                                        );
+                                        tracing::warn!("Webview fetch failed for ServiceNow: {e}");
                                         Vec::new()
                                     }
                                 }
@@ -1073,7 +1063,7 @@ async fn search_integration_sources(
                                         results.extend(wiki_results);
                                     }
                                     Err(e) => {
-                                        tracing::warn!("Webview fetch failed for ADO wiki: {}", e);
+                                        tracing::warn!("Webview fetch failed for ADO wiki: {e}");
                                     }
                                 }
 
@@ -1089,7 +1079,7 @@ async fn search_integration_sources(
                                         results.extend(wi_results);
                                     }
                                     Err(e) => {
-                                        tracing::warn!("Webview fetch failed for ADO work items: {}", e);
+                                        tracing::warn!("Webview fetch failed for ADO work items: {e}");
                                     }
                                 }
 
@@ -1166,9 +1156,7 @@ async fn execute_tool_call(
 
             // Execute the add_ado_comment command
             tracing::info!(
-                "AI executing tool: add_ado_comment({}, \"{}\")",
-                work_item_id,
-                comment_text
+                "AI executing tool: add_ado_comment({work_item_id}, \"{comment_text}\")"
             );
             crate::commands::integrations::add_ado_comment(
                 work_item_id,

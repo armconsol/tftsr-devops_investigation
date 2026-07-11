@@ -210,7 +210,7 @@ fn format_memory_from_kb(kb: u64) -> String {
     } else if kb >= 1024 {
         format!("{:.0}Mi", kb as f64 / 1024.0)
     } else {
-        format!("{}Ki", kb)
+        format!("{kb}Ki")
     }
 }
 

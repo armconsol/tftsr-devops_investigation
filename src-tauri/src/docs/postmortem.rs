@@ -109,8 +109,8 @@ pub fn generate_postmortem_markdown(detail: &IssueDetail) -> String {
                 &step.answer
             };
             md.push_str(&format!(
-                "{}. **Why?** {} -> {}\n",
-                step.step_order, step.why_question, answer
+                "{}. **Why?** {} -> {answer}\n",
+                step.step_order, step.why_question
             ));
         }
         md.push('\n');

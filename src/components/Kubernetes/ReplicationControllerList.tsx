@@ -11,7 +11,7 @@ import { ResourceActionMenu } from "./ResourceActionMenu";
 import { ConfirmDeleteDialog } from "./ConfirmDeleteDialog";
 import { ScaleModal } from "./ScaleModal";
 import { EditResourceModal } from "./EditResourceModal";
-import { WorkloadLogsModal } from "./WorkloadLogsModal";
+import { openWorkloadLogsTab } from "@/lib/logsDock";
 import { useColumnConfig } from "@/hooks/useColumnConfig";
 import { DEFAULT_COLUMNS } from "@/config/defaultColumns";
 import { ColumnConfigModal } from "@/components/tables/ColumnConfigModal";
@@ -25,7 +25,6 @@ interface ReplicationControllerListProps {
 
 type ActiveModal =
   | { type: "scale"; rc: ReplicationControllerInfo }
-  | { type: "logs"; rc: ReplicationControllerInfo }
   | { type: "edit"; rc: ReplicationControllerInfo; yaml: string }
   | { type: "delete"; rc: ReplicationControllerInfo }
   | null;
@@ -138,7 +137,13 @@ export function ReplicationControllerList({
                         {
                           label: "Logs",
                           icon: FileText,
-                          onClick: () => setActiveModal({ type: "logs", rc }),
+                          onClick: () =>
+                            openWorkloadLogsTab({
+                              clusterId,
+                              namespace: rc.namespace,
+                              workloadName: rc.name,
+                              workloadType: "replicationcontroller",
+                            }),
                         },
                         {
                           label: "Edit",
@@ -161,18 +166,6 @@ export function ReplicationControllerList({
           </TableBody>
         </Table>
       </div>
-
-      {activeModal?.type === "logs" && (
-        <WorkloadLogsModal
-          open
-          onOpenChange={(o) => { if (!o) setActiveModal(null); }}
-          clusterId={clusterId}
-          namespace={activeModal.rc.namespace}
-          workloadType="replicationcontroller"
-          workloadName={activeModal.rc.name}
-          labels={{}}
-        />
-      )}
 
       {activeModal?.type === "scale" && (
         <ScaleModal

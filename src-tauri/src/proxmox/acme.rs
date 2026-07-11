@@ -42,9 +42,9 @@ pub async fn list_acme_accounts(
     let response: serde_json::Value = client
         .get(path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to list ACME accounts: {}", e))?;
+        .map_err(|e| format!("Failed to list ACME accounts: {e}"))?;
 
-    if let Some(accounts) = response.get("data").and_then(|d| d.as_array()) {
+    if let Some(accounts) = response.as_array() {
         let account_list: Vec<AcmeAccount> = accounts
             .iter()
             .filter_map(|account| {
@@ -92,9 +92,10 @@ pub async fn register_acme_account(
     let response: serde_json::Value = client
         .post(path, &config, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to register ACME account: {}", e))?;
+        .map_err(|e| format!("Failed to register ACME account: {e}"))?;
 
-    if let Some(data) = response.get("data") {
+    {
+        let data = &response;
         let id = data
             .get("id")
             .and_then(|i| i.as_str())
@@ -117,8 +118,6 @@ pub async fn register_acme_account(
             status,
             created_at,
         })
-    } else {
-        Err("Invalid response format: missing 'data' field".to_string())
     }
 }
 
@@ -128,13 +127,13 @@ pub async fn get_acme_challenges(
     domain: &str,
     ticket: &str,
 ) -> Result<Vec<AcmeChallenge>, String> {
-    let path = format!("config/acme/challenges/{}", domain);
+    let path = format!("config/acme/challenges/{domain}");
     let response: serde_json::Value = client
         .get(&path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to get ACME challenges for {}: {}", domain, e))?;
+        .map_err(|e| format!("Failed to get ACME challenges for {domain}: {e}"))?;
 
-    if let Some(challenges) = response.get("data").and_then(|d| d.as_array()) {
+    if let Some(challenges) = response.as_array() {
         let challenge_list: Vec<AcmeChallenge> = challenges
             .iter()
             .filter_map(|challenge| {
@@ -189,9 +188,10 @@ pub async fn request_certificate(
     let response: serde_json::Value = client
         .post(path, &config, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to request ACME certificate: {}", e))?;
+        .map_err(|e| format!("Failed to request ACME certificate: {e}"))?;
 
-    if let Some(data) = response.get("data") {
+    {
+        let data = &response;
         let id = data
             .get("id")
             .and_then(|i| i.as_str())
@@ -230,8 +230,6 @@ pub async fn request_certificate(
             expires_at,
             issuer,
         })
-    } else {
-        Err("Invalid response format: missing 'data' field".to_string())
     }
 }
 
@@ -241,13 +239,14 @@ pub async fn get_certificate_details(
     cert_id: &str,
     ticket: &str,
 ) -> Result<AcmeCertificate, String> {
-    let path = format!("config/acme/certificates/{}", cert_id);
+    let path = format!("config/acme/certificates/{cert_id}");
     let response: serde_json::Value = client
         .get(&path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to get ACME certificate {}: {}", cert_id, e))?;
+        .map_err(|e| format!("Failed to get ACME certificate {cert_id}: {e}"))?;
 
-    if let Some(data) = response.get("data") {
+    {
+        let data = &response;
         let id = data
             .get("id")
             .and_then(|i| i.as_str())
@@ -286,8 +285,6 @@ pub async fn get_certificate_details(
             expires_at,
             issuer,
         })
-    } else {
-        Err("Invalid response format: missing 'data' field".to_string())
     }
 }
 
@@ -297,10 +294,10 @@ pub async fn revoke_certificate(
     cert_id: &str,
     ticket: &str,
 ) -> Result<(), String> {
-    let path = format!("config/acme/certificates/{}", cert_id);
+    let path = format!("config/acme/certificates/{cert_id}");
     let _response: serde_json::Value = client
         .delete(&path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to revoke ACME certificate {}: {}", cert_id, e))?;
+        .map_err(|e| format!("Failed to revoke ACME certificate {cert_id}: {e}"))?;
     Ok(())
 }

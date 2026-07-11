@@ -5,25 +5,13 @@ import { RefreshCw, Check, AlertCircle, Loader, ExternalLink } from 'lucide-reac
 import {
   checkAppUpdatesCmd,
   installAppUpdatesCmd,
-  getUpdateChannelCmd,
-  setUpdateChannelCmd,
   type UpdateCheckResult,
 } from '@/lib/tauriCommands';
 
 export function Updater() {
-  const [channel, setChannel] = useState('stable');
   const [checking, setChecking] = useState(false);
   const [result, setResult] = useState<UpdateCheckResult | null>(null);
   const [error, setError] = useState<string | null>(null);
-
-  const loadChannel = async () => {
-    try {
-      const ch = await getUpdateChannelCmd();
-      setChannel(ch);
-    } catch {
-      console.error('Failed to load channel');
-    }
-  };
 
   const checkForUpdates = async () => {
     setChecking(true);
@@ -46,17 +34,7 @@ export function Updater() {
     }
   };
 
-  const handleChannelChange = async (newChannel: string) => {
-    setChannel(newChannel);
-    try {
-      await setUpdateChannelCmd(newChannel);
-    } catch {
-      setError('Failed to update channel');
-    }
-  };
-
   useEffect(() => {
-    void loadChannel();
     void checkForUpdates();
   }, []);
 
@@ -66,38 +44,6 @@ export function Updater() {
         <h1 className="text-2xl font-bold">Updater</h1>
         <p className="text-muted-foreground">Configure application updates</p>
       </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Update Channel</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex space-x-4">
-            <button
-              onClick={() => handleChannelChange('stable')}
-              className={`flex-1 p-4 rounded-lg border-2 transition-all ${
-                channel === 'stable'
-                  ? 'border-primary bg-primary/5'
-                  : 'border-border hover:border-muted-foreground'
-              }`}
-            >
-              <div className="font-semibold">Stable</div>
-              <div className="text-sm text-muted-foreground">Production-ready releases</div>
-            </button>
-            <button
-              onClick={() => handleChannelChange('pre-release')}
-              className={`flex-1 p-4 rounded-lg border-2 transition-all ${
-                channel === 'pre-release'
-                  ? 'border-primary bg-primary/5'
-                  : 'border-border hover:border-muted-foreground'
-              }`}
-            >
-              <div className="font-semibold">Pre-Release</div>
-              <div className="text-sm text-muted-foreground">Latest development builds</div>
-            </button>
-          </div>
-        </CardContent>
-      </Card>
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">

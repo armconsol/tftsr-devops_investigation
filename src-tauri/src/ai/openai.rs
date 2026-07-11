@@ -315,11 +315,18 @@ impl OpenAiProvider {
         let api_url = config.api_url.trim_end_matches('/');
         let url = format!("{api_url}{endpoint_path}");
 
-        // Extract system message if present
-        let system_message = messages
+        // Extract ALL system messages and combine them (must be at the beginning)
+        let system_messages: Vec<String> = messages
             .iter()
-            .find(|m| m.role == "system")
-            .map(|m| m.content.clone());
+            .filter(|m| m.role == "system")
+            .map(|m| m.content.clone())
+            .collect();
+
+        let combined_system = if system_messages.is_empty() {
+            None
+        } else {
+            Some(system_messages.join("\n\n"))
+        };
 
         // Get last user message as prompt
         let prompt = messages
@@ -341,7 +348,7 @@ impl OpenAiProvider {
         }
 
         // Add optional system message
-        if let Some(system) = system_message {
+        if let Some(system) = combined_system {
             body["system"] = serde_json::Value::String(system);
         }
 
@@ -381,7 +388,7 @@ impl OpenAiProvider {
             body["tools"] = serde_json::Value::from(formatted_tools);
             body["tool_choice"] = serde_json::Value::from("auto");
 
-            tracing::info!("GenAI: Sending {} tools in request", tool_count);
+            tracing::info!("GenAI: Sending {tool_count} tools in request");
         }
 
         // Use custom auth header and prefix (no default prefix for custom REST)
@@ -409,8 +416,11 @@ impl OpenAiProvider {
         let json: serde_json::Value = resp.json().await?;
 
         tracing::debug!(
-            "GenAI response: {}",
-            serde_json::to_string_pretty(&json).unwrap_or_else(|_| "invalid JSON".to_string())
+            has_msg = json.get("msg").is_some(),
+            has_tool_calls = json.get("tool_calls").is_some()
+                || json.get("toolCalls").is_some()
+                || json.get("function_calls").is_some(),
+            "GenAI response metadata"
         );
 
         // Extract response content from "msg" field
@@ -453,7 +463,7 @@ impl OpenAiProvider {
                                     });
 
                                 if let Some(args) = arguments {
-                                    tracing::info!("GenAI: Parsed tool call: {} ({})", name, id);
+                                    tracing::info!("GenAI: Parsed tool call: {name} ({id})");
                                     return Some(crate::ai::ToolCall {
                                         id: id.to_string(),
                                         name: name.to_string(),
@@ -482,9 +492,7 @@ impl OpenAiProvider {
                                         .map(|s| s.to_string())
                                         .unwrap_or_else(|| format!("tool_call_{index}"));
                                     tracing::info!(
-                                        "GenAI: Parsed tool call (simple format): {} ({})",
-                                        name,
-                                        id
+                                        "GenAI: Parsed tool call (simple format): {name} ({id})"
                                     );
                                     return Some(crate::ai::ToolCall {
                                         id,
@@ -494,7 +502,17 @@ impl OpenAiProvider {
                                 }
                             }
 
-                            tracing::warn!("GenAI: Failed to parse tool call: {:?}", call);
+                            tracing::warn!(
+                                has_id = call.get("id").is_some(),
+                                has_name = call.get("name").is_some()
+                                    || call.get("function").and_then(|f| f.get("name")).is_some(),
+                                has_args = call.get("arguments").is_some()
+                                    || call
+                                        .get("function")
+                                        .and_then(|f| f.get("arguments"))
+                                        .is_some(),
+                                "GenAI: Failed to parse tool call"
+                            );
                             None
                         })
                         .collect();

@@ -1,6 +1,24 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+// ─── Remote Protocol Enum ───────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum RemoteProtocol {
+    Rdp,
+    Vnc,
+}
+
+impl std::fmt::Display for RemoteProtocol {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            RemoteProtocol::Rdp => write!(f, "rdp"),
+            RemoteProtocol::Vnc => write!(f, "vnc"),
+        }
+    }
+}
+
 // ─── Issue ──────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -645,4 +663,320 @@ impl ImageAttachment {
             is_paste,
         }
     }
+}
+
+// ─── Remote Connections ─────────────────────────────────────────────────────
+
+/// Represents a remote desktop connection (RDP, VNC, etc.)
+/// Credentials are stored separately in the remote_credentials table.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RemoteConnection {
+    pub id: String,
+    pub name: String,
+    pub protocol: RemoteProtocol,
+    pub hostname: String,
+    pub port: u16,
+    pub username: Option<String>,
+    pub domain: Option<String>,
+    // SSH tunnel configuration (non-sensitive)
+    pub ssh_enabled: bool,
+    pub ssh_hostname: Option<String>,
+    pub ssh_port: Option<u16>,
+    pub ssh_username: Option<String>,
+    // Display settings
+    pub resolution: String,
+    pub color_depth: u32,
+    pub clipboard_sync: bool,
+    pub drive_redirect: bool,
+    pub multi_monitor: bool,
+    pub compression: bool,
+    pub quality: u32,
+    pub auto_resize: bool,
+    pub stretch_to_fill: bool,
+    // Metadata
+    pub created_at: String,
+    pub updated_at: String,
+    pub last_connected_at: Option<String>,
+}
+
+/// Input for creating a new remote connection
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NewRemoteConnection {
+    pub name: String,
+    pub protocol: RemoteProtocol,
+    pub hostname: String,
+    pub port: u16,
+    pub username: Option<String>,
+    pub password: String, // Will be encrypted and stored separately
+    pub domain: Option<String>,
+    // SSH tunnel configuration
+    pub ssh_enabled: bool,
+    pub ssh_hostname: Option<String>,
+    pub ssh_port: Option<u16>,
+    pub ssh_username: Option<String>,
+    pub ssh_password: Option<String>,
+    pub ssh_key_data: Option<String>,
+    pub ssh_key_passphrase: Option<String>,
+    // Display settings
+    pub resolution: Option<String>,
+    pub color_depth: Option<u32>,
+    pub clipboard_sync: Option<bool>,
+    pub drive_redirect: Option<bool>,
+    pub multi_monitor: Option<bool>,
+    pub compression: Option<bool>,
+    pub quality: Option<u32>,
+    pub auto_resize: bool,
+    pub stretch_to_fill: bool,
+}
+
+/// Update for an existing remote connection
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct RemoteConnectionUpdate {
+    pub name: Option<String>,
+    pub protocol: Option<RemoteProtocol>,
+    pub hostname: Option<String>,
+    pub port: Option<u16>,
+    pub username: Option<Option<String>>,
+    pub domain: Option<Option<String>>,
+    // SSH tunnel configuration
+    pub ssh_enabled: Option<bool>,
+    pub ssh_hostname: Option<String>,
+    pub ssh_port: Option<u16>,
+    pub ssh_username: Option<String>,
+    // Display settings
+    pub resolution: Option<String>,
+    pub color_depth: Option<u32>,
+    pub clipboard_sync: Option<bool>,
+    pub drive_redirect: Option<bool>,
+    pub multi_monitor: Option<bool>,
+    pub compression: Option<bool>,
+    pub quality: Option<u32>,
+    pub auto_resize: Option<bool>,
+    pub stretch_to_fill: Option<bool>,
+}
+
+/// Lightweight summary for listing remote connections
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RemoteConnectionSummary {
+    pub id: String,
+    pub name: String,
+    pub protocol: RemoteProtocol,
+    pub hostname: String,
+    pub port: u16,
+    pub username: Option<String>,
+    pub status: String,
+    pub ssh_enabled: bool,
+    pub created_at: String,
+    pub updated_at: String,
+    pub last_connected_at: Option<String>,
+}
+
+/// Filter for listing remote connections
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct RemoteConnectionFilter {
+    pub protocol: Option<RemoteProtocol>,
+    pub name: Option<String>,
+    pub limit: Option<i64>,
+    pub offset: Option<i64>,
+}
+
+/// Encrypted credentials for remote connections
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RemoteCredentials {
+    pub id: String,
+    pub connection_id: String,
+    pub rdp_password_encrypted: Option<String>,
+    pub ssh_password_encrypted: Option<String>,
+    pub ssh_key_encrypted: Option<String>,
+    pub ssh_key_passphrase_encrypted: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+impl RemoteCredentials {
+    pub fn new(
+        connection_id: String,
+        rdp_password: Option<String>,
+        ssh_password: Option<String>,
+        ssh_key: Option<String>,
+        ssh_key_passphrase: Option<String>,
+    ) -> Result<Self, String> {
+        use crate::integrations::auth::encrypt_token;
+
+        let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+
+        let rdp_password_encrypted = if let Some(pwd) = rdp_password {
+            Some(encrypt_token(&pwd).map_err(|e| e.to_string())?)
+        } else {
+            None
+        };
+
+        let ssh_password_encrypted = if let Some(pwd) = ssh_password {
+            Some(encrypt_token(&pwd).map_err(|e| e.to_string())?)
+        } else {
+            None
+        };
+
+        let ssh_key_encrypted = if let Some(key) = ssh_key {
+            Some(encrypt_token(&key).map_err(|e| e.to_string())?)
+        } else {
+            None
+        };
+
+        let ssh_key_passphrase_encrypted = if let Some(pass) = ssh_key_passphrase {
+            Some(encrypt_token(&pass).map_err(|e| e.to_string())?)
+        } else {
+            None
+        };
+
+        Ok(RemoteCredentials {
+            id: Uuid::now_v7().to_string(),
+            connection_id,
+            rdp_password_encrypted,
+            ssh_password_encrypted,
+            ssh_key_encrypted,
+            ssh_key_passphrase_encrypted,
+            created_at: now.clone(),
+            updated_at: now,
+        })
+    }
+}
+
+/// Input for creating remote credentials
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NewRemoteCredentials {
+    pub connection_id: String,
+    pub rdp_password: Option<String>,
+    pub ssh_password: Option<String>,
+    pub ssh_key: Option<String>,
+    pub ssh_key_passphrase: Option<String>,
+}
+
+/// Update for existing remote credentials
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct RemoteCredentialsUpdate {
+    pub rdp_password: Option<String>,
+    pub ssh_password: Option<String>,
+    pub ssh_key: Option<String>,
+    pub ssh_key_passphrase: Option<String>,
+}
+
+// ─── Database Management ────────────────────────────────────────────────────
+
+/// Represents a database connection configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DatabaseConnection {
+    pub id: String,
+    pub name: String,
+    pub db_type: String,
+    pub host: String,
+    pub port: u16,
+    pub database_name: Option<String>,
+    pub username: String,
+    pub ssl_enabled: bool,
+    pub ssl_ca_cert_path: Option<String>,
+    pub ssl_client_cert_path: Option<String>,
+    pub ssl_client_key_path: Option<String>,
+    pub connection_options: Option<String>,
+    // SSH tunnel configuration (non-sensitive)
+    pub ssh_enabled: bool,
+    pub ssh_hostname: Option<String>,
+    pub ssh_port: Option<u16>,
+    pub ssh_username: Option<String>,
+    pub ssh_auth_method: Option<String>, // "password" or "key"
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+impl DatabaseConnection {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        name: String,
+        db_type: String,
+        host: String,
+        port: u16,
+        database_name: Option<String>,
+        username: String,
+        ssl_enabled: bool,
+    ) -> Self {
+        let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+        DatabaseConnection {
+            id: Uuid::now_v7().to_string(),
+            name,
+            db_type,
+            host,
+            port,
+            database_name,
+            username,
+            ssl_enabled,
+            ssl_ca_cert_path: None,
+            ssl_client_cert_path: None,
+            ssl_client_key_path: None,
+            connection_options: None,
+            ssh_enabled: false,
+            ssh_hostname: None,
+            ssh_port: None,
+            ssh_username: None,
+            ssh_auth_method: None,
+            created_at: now.clone(),
+            updated_at: now,
+        }
+    }
+
+    /// Enable SSH tunnel for this connection
+    pub fn with_ssh_tunnel(
+        mut self,
+        ssh_hostname: String,
+        ssh_port: u16,
+        ssh_username: String,
+        auth_method: String,
+    ) -> Self {
+        self.ssh_enabled = true;
+        self.ssh_hostname = Some(ssh_hostname);
+        self.ssh_port = Some(ssh_port);
+        self.ssh_username = Some(ssh_username);
+        self.ssh_auth_method = Some(auth_method);
+        self
+    }
+}
+
+/// Connection test result
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConnectionTestResult {
+    pub success: bool,
+    pub message: String,
+    pub latency_ms: Option<u64>,
+}
+
+/// Query execution result with metadata
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QueryExecutionResult {
+    pub query_result: crate::db_drivers::types::QueryResult,
+    pub execution_time_ms: u64,
+    pub row_count: usize,
+}
+
+/// Query history entry
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QueryHistory {
+    pub id: String,
+    pub connection_id: String,
+    pub query_text: String,
+    pub row_count: Option<i64>,
+    pub execution_time_ms: Option<i64>,
+    pub status: String,
+    pub error_message: Option<String>,
+    pub executed_at: String,
+}
+
+/// Query bookmark
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QueryBookmark {
+    pub id: String,
+    pub name: String,
+    pub query_text: String,
+    pub connection_id: Option<String>,
+    pub tags: Option<String>,
+    pub description: Option<String>,
+    pub created_at: String,
 }

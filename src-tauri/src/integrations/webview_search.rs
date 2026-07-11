@@ -18,7 +18,7 @@ pub async fn search_from_webview<R: tauri::Runtime>(
         "confluence" => search_confluence_from_webview(webview_window, base_url, query).await,
         "servicenow" => search_servicenow_from_webview(webview_window, base_url, query).await,
         "azuredevops" => Ok(Vec::new()), // Not yet implemented
-        _ => Err(format!("Unsupported service: {}", service)),
+        _ => Err(format!("Unsupported service: {service}")),
     }
 }
 
@@ -128,13 +128,13 @@ async fn search_confluence_from_webview<R: tauri::Runtime>(
 
     webview_window
         .eval(&callback_script)
-        .map_err(|e| format!("Failed to execute search: {}", e))?;
+        .map_err(|e| format!("Failed to execute search: {e}"))?;
 
     // Poll for result in localStorage
     for _ in 0..50 {  // Try for 5 seconds
         tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 
-        let check_script = format!("localStorage.getItem('{}')", storage_key);
+        let check_script = format!("localStorage.getItem('{storage_key}')");
         let result_str = match webview_window.eval(&check_script) {
             Ok(_) => {
                 // Try to retrieve the actual value
@@ -254,10 +254,10 @@ async fn search_servicenow_from_webview<R: tauri::Runtime>(
 
     let result: serde_json::Value = webview_window
         .eval(&search_script)
-        .map_err(|e| format!("Failed to execute search: {}", e))?;
+        .map_err(|e| format!("Failed to execute search: {e}"))?;
 
     if let Some(error) = result.get("error") {
-        return Err(format!("Search error: {}", error));
+        return Err(format!("Search error: {error}"));
     }
 
     if let Some(results_array) = result.get("results").and_then(|v| v.as_array()) {

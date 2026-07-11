@@ -1,5 +1,25 @@
 # Troubleshooting
 
+## Runtime Logging
+
+### Where backend logs are written
+
+Backend logs are written locally to:
+
+- Linux: `~/.local/share/tftsr/logs/backend.log` (or `${TRCAA_DATA_DIR}/logs/backend.log` / legacy `${TFTSR_DATA_DIR}/logs/backend.log` if overridden)
+- macOS: `~/Library/Application Support/tftsr/logs/backend.log`
+- Windows: `%APPDATA%\\tftsr\\logs\\backend.log`
+
+The file sink rolls daily; console logging remains enabled. Daily rotation is currently not capped by day-count retention.
+
+### Enable debug logging for deeper diagnostics
+
+1. Open **Settings → Security**
+2. Turn on **Enable debug logging**
+3. Reproduce the issue and inspect `backend.log`
+
+Default level is normal (`info`). Debug logging should be enabled only while actively diagnosing.
+
 ## CI/CD — Gitea Actions
 
 ### Build Not Triggering After Push
@@ -169,6 +189,56 @@ sudo apt-get install -y libwebkit2gtk-4.1-dev libssl-dev libgtk-3-dev \
 
 ---
 
+### Windows: `no method named userauth_pubkey_memory` on `ssh2::Session`
+
+```text
+error[E0599]: no method named `userauth_pubkey_memory` found for
+mutable reference `&mut ssh2::Session`
+```
+
+In-memory SSH key auth (`authenticate_with_key_data` in `remote/ssh_tunnel.rs`)
+requires libssh2 to be built against OpenSSL. The default Windows crypto backend
+does not expose `userauth_pubkey_memory`.
+
+**Fix:** enable the `vendored-openssl` feature on `ssh2` so OpenSSL is statically
+linked on every platform:
+```toml
+ssh2 = { version = "0.9", features = ["vendored-openssl"] }
+```
+> Trade-off: OpenSSL is pinned to the bundled version and no longer tracks OS
+> security updates — keep `ssh2`/`openssl-src` current (e.g. `cargo audit` in CI).
+
+---
+
+### macOS: `unresolved module or unlinked crate security_framework`
+
+```text
+error[E0433]: failed to resolve: use of unresolved module or unlinked
+crate `security_framework`
+```
+
+`secure_storage.rs` previously hand-rolled a macOS backend against the
+`security_framework` crate, which was never declared in `Cargo.toml`.
+
+**Fix:** use the `keyring` crate for macOS too (mirroring Windows/Linux). Note
+`keyring` 3.x ships **no backend by default** (`default = []`) and silently falls
+back to an in-memory mock, so the native store must be opted in per target:
+```toml
+[target.'cfg(target_os = "macos")'.dependencies]
+keyring = { version = "3.0", features = ["apple-native"] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+keyring = { version = "3.0", features = ["windows-native"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+keyring = { version = "3.0", features = ["sync-secret-service"] }
+```
+Build a fresh `keyring::Entry::new(service_name, account)` **per call** so each
+credential is stored under its own account — a single cached `Entry` collides all
+credentials into one slot.
+
+---
+
 ## Database
 
 ### DB Won't Open in Production
@@ -223,6 +293,117 @@ Common causes:
 
 ---
 
+## Proxmox
+
+### Cross-datacenter migration fails with `501 Not Implemented`
+
+Symptom (from the migration log / toast):
+
+```
+Failed to remote-migrate VM 104: API request failed with status 501 Not Implemented:
+{"data":null,"message":"Method 'POST /nodes/vmhost3/qemu/104/remote-migrate' not implemented"}
+```
+
+**Cause:** The Proxmox REST API registers the cross-cluster endpoint as
+`POST /nodes/{node}/qemu/{vmid}/remote_migrate` — with an **underscore**. The
+dashed form `remote-migrate` is only the `qm remote-migrate` **CLI** command
+name; it is not a valid REST path, so `pveproxy` returns `501 Not Implemented`.
+
+**Fix:** The path is built by `remote_migrate_path()` in
+`src-tauri/src/proxmox/migration.rs` and must use the underscore form. Both
+`migration.rs` and `proxmox/vm.rs` delegate to it; unit tests
+(`test_remote_migrate_path_uses_rest_underscore_form`,
+`test_remote_migrate_uses_rest_underscore_path`) guard against regressing back
+to the dash. The remote-migrate request params are `target-endpoint`,
+`target-vmid`, `target-bridge`, `target-storage`, and `online`.
+
+> Cross-DC migration is an **experimental** PVE feature and requires
+> `VM.Migrate` permission. The app provisions a short-lived API token on the
+> destination remote for the duration of the task and deletes it afterwards.
+
+### Console copy/paste does not work
+
+The in-app VM/LXC and node-shell consoles support clipboard via
+`tauri-plugin-clipboard-manager`. If copy/paste stops working, check:
+
+- **Capability grants** — `src-tauri/capabilities/default.json` must include
+  `clipboard-manager:allow-read-text` and `clipboard-manager:allow-write-text`
+  (guarded by `test_capabilities_allow_clipboard_text`). Without them the Tauri
+  ACL rejects the clipboard calls at runtime.
+- **Plugin registration** — `tauri_plugin_clipboard_manager::init()` must be
+  registered in `src-tauri/src/lib.rs`.
+- **Shortcuts** — paste is **Ctrl/Cmd+Shift+V** (a bare `Ctrl+V` is forwarded to
+  the guest); in the xterm terminal, copy the current selection with
+  **Ctrl/Cmd+Shift+C**. Graphical (noVNC) consoles also expose a **Paste**
+  toolbar button. Shortcut detection lives in `src/lib/consoleClipboard.ts` and
+  the clipboard wrapper in `src/lib/clipboard.ts`.
+- **Protocol limit** — VNC clipboard is **text-only** (RFB CutText / extended
+  clipboard); images cannot be transferred through the console.
+- **Security note** — clipboard sync is bidirectional and the guest→host
+  direction is automatic (standard VNC behavior): a guest's clipboard changes are
+  mirrored to the host system clipboard. Treat a console guest as an untrusted
+  boundary — a compromised guest can overwrite your host clipboard, so review
+  text before pasting it into a host shell/browser. Host→guest paste is always
+  user-initiated (Paste button / Ctrl+Shift+V).
+
+### Administration → Repositories crashes with `e.types.join` is not a function
+
+```
+TypeError: undefined is not an object (evaluating 'e.types.join')
+```
+
+**Cause:** `AptRepository` was previously serialized as a flattened first-element view
+(`{repository_id, url, distribution, component, enabled, type_}`), but the frontend always
+rendered `repo.types.join(' ')`, `repo.uris.join(' ')`, etc., expecting arrays. Any
+repository entry crashed the tab. **Fix:** `AptRepository` now serializes the raw PVE
+arrays (`types`, `uris`, `suites`, `components`, `enabled`, `comment`), parsed from
+`files[].repositories[]` (PVE's actual nesting, with a flat-`files[]` fallback for older
+shapes). The render also defensively falls back to `[]` (`(repo.types ?? []).join(' ')`)
+so a malformed entry degrades instead of crashing the whole tab.
+
+### System Log / Journal tabs show nothing, or `Failed to get syslog: GET request failed`
+
+```
+Failed to get syslog: GET request failed: error sending request for url (https://.../syslog?limit=500)
+```
+
+**Cause:** The cached `ProxmoxClient` per cluster lives for the whole app session and never
+refreshed its login ticket (PVE tickets expire after ~2h) or its HTTP connection pool
+(`pveproxy` closes idle keep-alive connections aggressively) — the first request after a
+period of idle time, most often the low-traffic System Log/Journal tabs, would fail with an
+opaque `error sending request for url` with no further detail. **Fix:** the client now
+re-authenticates automatically once its ticket is older than ~90 minutes, sets a short
+`pool_idle_timeout`, and retries once on a transient transport error for idempotent GET
+requests; error messages also now include the full `source()` chain instead of just
+reqwest's generic top-level message. Separately, the frontend previously rendered a
+nonexistent `entry.msg` field — PVE syslog/task-log entries only ever have `{n, t}` (line
+number + full line text), no separate message field.
+
+### Ceph → CephFS tab shows no data
+
+**Cause:** `parse_cephfs` only read a single `data_pool` string field; current PVE versions
+return a `data_pools` **array** instead (a filesystem can have more than one data pool).
+**Fix:** the parser now accepts either shape, joining multiple pool names/ids with `", "`.
+The CephFS/Managers/Flags tabs also now autoload when selected and refresh every 30s (via
+`usePolling`) instead of requiring a manual **Load** click that previously existed for those
+three tabs only (Monitors already autoloaded).
+
+### Certificates page: Upload / Order via ACME / Renew silently did nothing
+
+**Cause:** `CertificatesPage.tsx`'s Upload and "Order via ACME" dialogs closed and refreshed
+the list on click without ever calling a Tauri command, and `handleRenew` discarded the
+certificate it was given. Separately, the `uploadCertificate` and `registerAcmeAccount`
+TS wrappers in `proxmoxClient.ts` didn't match their backend commands' actual parameter
+names (`cert`/`account` blobs vs. the backend's `certificate`/`privateKey`/`name` and
+`email`/`termsOfServiceAgreed`), so even a corrected call site would have failed at
+runtime. **Fix:** the wrappers now match their commands exactly; a new
+`request_acme_certificate` command/wrapper exposes the previously-unwired
+`proxmox::acme::request_certificate`; and the page now uploads real PEM content, resolves
+(or registers) an ACME account before ordering/renewing a certificate, and renews using the
+certificate's own domain (first SAN, falling back to its subject) instead of ignoring it.
+
+---
+
 ## Gitea
 
 ### API Token Authentication
@@ -244,3 +425,79 @@ docker exec gogs_postgres_db psql -U gogs -d gogsdb -c "SELECT id, lower_name, i
 ```
 
 Database is named `gogsdb`. The PostgreSQL instance uses SCRAM-SHA-256 auth (MD5 also configured for the `gogs` user for compatibility with older clients).
+
+---
+
+## Remote Desktop (RDP)
+
+### Connecting Re-Prompts for a Password Already Saved on the Connection
+
+**Cause:** The RDP password is stored encrypted in `remote_credentials.rdp_password_encrypted`, but the backend had no function to retrieve it, and `start_rdp_session` required a `password` argument — so the UI always showed a "Connect" password dialog.
+
+**Fix:** `get_remote_rdp_password()` (`src-tauri/src/remote/connection.rs`) decrypts the stored password, and `start_rdp_session` now takes `password: Option<String>`. When the argument is omitted/blank, the stored password is used. The frontend (`src/pages/Remote/RemoteDesktopPage.tsx`) connects with stored credentials immediately and only shows the password dialog as a fallback if that fails.
+
+> **Security note — stored RDP credentials.** RDP passwords are encrypted at rest
+> (AES-256-GCM via `integrations::auth`) in `remote_credentials.rdp_password_encrypted`,
+> keyed by `TRCAA_ENCRYPTION_KEY` (or an auto-generated `.enckey`, mode `0600`).
+> The protection is therefore only as strong as that key: anyone who can read the
+> key file and the database can recover the passwords. Prefer the SSH-tunnel path
+> for untrusted networks, keep the encryption key off the database host where
+> possible, and treat the auto-generated `.enckey` as a secret (back it up
+> securely, never commit it). Decrypted passwords are only held in memory for the
+> duration of a connect call and are never logged or returned to the frontend.
+
+### Connecting Shows Only a Black Screen (No Desktop)
+
+**Cause (two parts):**
+1. `start_rdp_session` called the legacy **sync** `RdpManager::start_session`, which never actually connected via IronRDP and never started a WebSocket server — it returned a `ws://` URL pointing at a dead port, so no frames were ever sent.
+2. Even on the async path, the session id used by the frame sender, `register_session`, the `ws://.../rdp/{id}` URL, and `handle_client` did not match (each generated its own UUID), so frames could not be routed to the client.
+
+**Fix:** The command now drives the real async connect path (`start_session_with_password`). A single canonical session id is used across `RdpClientSession` (`new_with_id` / `create_session_with_id`), `WebSocketServer::register_session`, the returned URL, and `handle_client`, which now parses the id from the `/rdp/{id}` request path (`session_id_from_path`) instead of generating a new one. `handle_client` rejects connections for unregistered session ids.
+
+### Black Screen Persisted After Connecting (Frames Produced but Never Delivered)
+
+**Symptom:** Backend logs show `connected=true` and frames being produced
+(`frames_sent` > 0), yet the canvas stays black — the WebSocket client receives
+no frames.
+
+**Cause:** The frame-forwarding task awaited `frame_rx.recv()`. Frames are
+produced by the blocking IronRDP `connect()` loop running on a tokio worker.
+Channel `try_send` wakeups are enqueued on that worker's **local** run-queue,
+which it never drains while parked in a blocking socket read; work-stealing did
+not reliably pick the wakeup up, so `recv().await` never woke despite buffered
+frames. (Timer wakeups such as the heartbeat use a different path and worked,
+which confirmed the runtime itself was healthy.)
+
+**Fix:** The forwarder polls `try_recv()` with a 5 ms async sleep instead of
+awaiting `recv()`, decoupling frame delivery from the starved channel waker. See
+`remote/rdp_client.rs` (`new_with_id`).
+
+### Black Screen with `Session not found` After WebSocket Reset
+
+**Symptom:** Disk logs show this sequence:
+1. WebSocket connects, then resets quickly (`Connection reset without closing handshake`)
+2. RDP decode continues and frame production logs continue
+3. Repeated `Failed to send frame: Session not found: <session_id>`
+
+**Cause:** WebSocket lifecycle teardown dropped frame-routing state while the
+RDP session stayed active. In parallel, subprotocol negotiation was not strict
+enough and clients could attach without session-bound token validation.
+
+**Fix:** The WebSocket layer now:
+- requires `Sec-WebSocket-Protocol: binary` at handshake
+- uses per-session auth tokens in the RDP WebSocket URL (`?token=...`)
+- enforces one active controlling client per session
+- keeps session routing registered across transient disconnect windows so reconnect can resume streaming
+
+### Mouse/Keyboard Do Nothing in the RDP Session
+
+**Cause:** Input was never wired from the webview to the session — `handle_client`
+only logged inbound WebSocket messages.
+
+**Fix:** The frontend sends `RawInputEvent` JSON over the same WebSocket; the
+server decodes it (`remote/input.rs`), routes it through a per-session channel to
+a dispatch task, and `RdpClientSession::handle_input` emits IronRDP fastpath
+input. Mouse moves are sent before button state changes, coordinates are scaled
+from CSS pixels to the RDP resolution on the frontend and clamped on the backend,
+and JS `KeyboardEvent.code` values map to RDP scancode set 1 (extended keys carry
+`0xE000`).

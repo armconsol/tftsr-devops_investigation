@@ -43,9 +43,9 @@ pub async fn list_ceph_clusters(
     let response: serde_json::Value = client
         .get(path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to list Ceph clusters: {}", e))?;
+        .map_err(|e| format!("Failed to list Ceph clusters: {e}"))?;
 
-    if let Some(clusters) = response.get("data").and_then(|d| d.as_array()) {
+    if let Some(clusters) = response.as_array() {
         let cluster_list: Vec<CephCluster> = clusters
             .iter()
             .filter_map(|cluster| {
@@ -150,7 +150,7 @@ pub async fn list_ceph_clusters(
 
         Ok(cluster_list)
     } else {
-        Err("Invalid response format: missing 'data' field".to_string())
+        Err("Invalid response format".to_string())
     }
 }
 
@@ -160,13 +160,14 @@ pub async fn get_ceph_cluster_status(
     cluster_id: &str,
     ticket: &str,
 ) -> Result<CephClusterStatus, String> {
-    let path = format!("ceph/clusters/{}/status", cluster_id);
+    let path = format!("ceph/clusters/{cluster_id}/status");
     let response: serde_json::Value = client
         .get(&path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to get Ceph cluster {} status: {}", cluster_id, e))?;
+        .map_err(|e| format!("Failed to get Ceph cluster {cluster_id} status: {e}"))?;
 
-    if let Some(data) = response.get("data") {
+    {
+        let data = &response;
         let id = data
             .get("cluster_id")
             .and_then(|i| i.as_str())
@@ -195,8 +196,6 @@ pub async fn get_ceph_cluster_status(
             osd_map,
             pg_map,
         })
-    } else {
-        Err("Invalid response format: missing 'data' field".to_string())
     }
 }
 
@@ -218,7 +217,7 @@ pub async fn add_ceph_cluster(
     let _response: serde_json::Value = client
         .post(path, &config, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to add Ceph cluster {}: {}", cluster_id, e))?;
+        .map_err(|e| format!("Failed to add Ceph cluster {cluster_id}: {e}"))?;
     Ok(())
 }
 
@@ -228,11 +227,11 @@ pub async fn remove_ceph_cluster(
     cluster_id: &str,
     ticket: &str,
 ) -> Result<(), String> {
-    let path = format!("ceph/clusters/{}", cluster_id);
+    let path = format!("ceph/clusters/{cluster_id}");
     let _response: serde_json::Value = client
         .delete(&path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to remove Ceph cluster {}: {}", cluster_id, e))?;
+        .map_err(|e| format!("Failed to remove Ceph cluster {cluster_id}: {e}"))?;
     Ok(())
 }
 
@@ -242,11 +241,11 @@ pub async fn get_ceph_cluster_config(
     cluster_id: &str,
     ticket: &str,
 ) -> Result<serde_json::Value, String> {
-    let path = format!("ceph/clusters/{}/config", cluster_id);
+    let path = format!("ceph/clusters/{cluster_id}/config");
     client
         .get(&path, Some(ticket))
         .await
-        .map_err(|e| format!("Failed to get Ceph cluster {} config: {}", cluster_id, e))
+        .map_err(|e| format!("Failed to get Ceph cluster {cluster_id} config: {e}"))
 }
 
 /// Sync Ceph cluster
@@ -255,10 +254,10 @@ pub async fn sync_ceph_cluster(
     cluster_id: &str,
     ticket: &str,
 ) -> Result<(), String> {
-    let path = format!("ceph/clusters/{}/sync", cluster_id);
+    let path = format!("ceph/clusters/{cluster_id}/sync");
     let _response: serde_json::Value = client
         .post(&path, &serde_json::json!({}), Some(ticket))
         .await
-        .map_err(|e| format!("Failed to sync Ceph cluster {}: {}", cluster_id, e))?;
+        .map_err(|e| format!("Failed to sync Ceph cluster {cluster_id}: {e}"))?;
     Ok(())
 }

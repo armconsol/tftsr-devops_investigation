@@ -1,14 +1,32 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { Download, Search, Square, Trash2, Play } from "lucide-react";
+import { save } from "@tauri-apps/plugin-dialog";
+import { Download, DownloadCloud, Search, Square, Trash2, Play } from "lucide-react";
 import { Button, Input } from "@/components/ui";
-import { streamPodLogsCmd, stopLogStreamCmd } from "@/lib/tauriCommands";
+import {
+  streamPodLogsCmd,
+  stopLogStreamCmd,
+  listPodsCmd,
+  getPodLogsCmd,
+  saveLogFileCmd,
+} from "@/lib/tauriCommands";
+import type { PodInfo } from "@/lib/tauriCommands";
 
 export interface LogsTabData {
   clusterId: string;
   namespace: string;
-  podName: string;
-  containers: string[];
+  /** Single-pod mode: the pod to stream. */
+  podName?: string;
+  /** Single-pod mode: containers belonging to {@link podName}. */
+  containers?: string[];
+  /**
+   * Workload mode: when set, the tab resolves the pods belonging to this
+   * workload (by name prefix) and exposes a pod picker. Mutually exclusive with
+   * {@link podName}.
+   */
+  workloadName?: string;
+  /** Workload mode: workload kind, used only for labelling. */
+  workloadType?: string;
 }
 
 interface LogsTabProps {
@@ -20,9 +38,59 @@ const MAX_LINES = 5000;
 /**
  * In-dock pod log viewer. Mirrors the structure of LogStreamPanel but renders
  * inline (no Dialog) and at the dock's available height.
+ *
+ * Supports two modes:
+ *  - single-pod: `data.podName` + `data.containers` are provided directly.
+ *  - workload:   `data.workloadName` is provided; the tab resolves matching
+ *                pods and renders a pod selector (freelens-style).
  */
 export function LogsTab({ data }: LogsTabProps) {
-  const { clusterId, namespace, podName, containers } = data;
+  const { clusterId, namespace, workloadName } = data;
+  const isWorkloadMode = Boolean(workloadName);
+
+  // ── Workload mode: resolve pods belonging to the workload ──────────────────
+  const [pods, setPods] = useState<PodInfo[]>([]);
+  const [podsError, setPodsError] = useState<string | null>(null);
+  const [selectedPodName, setSelectedPodName] = useState<string>(
+    data.podName ?? ""
+  );
+
+  useEffect(() => {
+    if (!isWorkloadMode) return;
+    let cancelled = false;
+
+    (async () => {
+      setPodsError(null);
+      try {
+        const allPods = await listPodsCmd(clusterId, namespace);
+        const namePattern = new RegExp(`^${escapeRegExp(workloadName!)}-`);
+        const matching = allPods.filter((p) => namePattern.test(p.name));
+        if (cancelled) return;
+        setPods(matching);
+        setSelectedPodName((prev) =>
+          prev && matching.some((p) => p.name === prev)
+            ? prev
+            : (matching[0]?.name ?? "")
+        );
+      } catch (err) {
+        if (!cancelled) {
+          setPodsError(err instanceof Error ? err.message : String(err));
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isWorkloadMode, clusterId, namespace, workloadName]);
+
+  // The effective pod + containers depend on mode.
+  const selectedPodData = pods.find((p) => p.name === selectedPodName);
+  const podName = isWorkloadMode ? selectedPodName : (data.podName ?? "");
+  const containers = isWorkloadMode
+    ? (selectedPodData?.containers ?? [])
+    : (data.containers ?? []);
+  const containersKey = containers.join(",");
 
   const [selectedContainer, setSelectedContainer] = useState<string>(
     containers[0] ?? ""
@@ -61,6 +129,15 @@ export function LogsTab({ data }: LogsTabProps) {
     };
   }, [stopStream]);
 
+  // Keep the selected container valid as the pod/containers change. Including
+  // selectedContainer is safe: when it is already valid the guard short-circuits
+  // without a setState, so this cannot loop.
+  useEffect(() => {
+    if (!containers.includes(selectedContainer)) {
+      setSelectedContainer(containers[0] ?? "");
+    }
+  }, [podName, containersKey, selectedContainer, containers]);
+
   useEffect(() => {
     if (follow && streaming && bottomRef.current) {
       bottomRef.current.scrollIntoView({ behavior: "smooth" });
@@ -68,7 +145,12 @@ export function LogsTab({ data }: LogsTabProps) {
   }, [lines, follow, streaming]);
 
   const startStream = async () => {
-    if (streaming) return;
+    if (streaming || !podName || !selectedContainer) return;
+    // Defensive: ensure any prior listener/stream is torn down before we open a
+    // new one so listeners can never accumulate.
+    if (streamIdRef.current || unlistenRef.current) {
+      await stopStream();
+    }
     setError(null);
     setLines([]);
 
@@ -103,15 +185,44 @@ export function LogsTab({ data }: LogsTabProps) {
     }
   };
 
-  const handleDownload = () => {
-    const content = lines.join("\n");
-    const blob = new Blob([content], { type: "text/plain" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${podName}-${selectedContainer}-logs.txt`;
-    a.click();
-    URL.revokeObjectURL(url);
+  const handlePodChange = (name: string) => {
+    void stopStream();
+    setLines([]);
+    setSelectedPodName(name);
+  };
+
+  const handleDownloadVisible = async () => {
+    try {
+      const filePath = await save({
+        defaultPath: `${podName || "workload"}-${selectedContainer}-visible-logs.txt`,
+        filters: [{ name: "Text", extensions: ["txt"] }],
+      });
+      if (!filePath) return;
+      await saveLogFileCmd(
+        filePath,
+        filteredLines.join("\n"),
+        clusterId,
+        namespace,
+        podName,
+        selectedContainer
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  const handleDownloadAll = async () => {
+    try {
+      const filePath = await save({
+        defaultPath: `${podName || "workload"}-${selectedContainer}-all-logs.txt`,
+        filters: [{ name: "Text", extensions: ["txt"] }],
+      });
+      if (!filePath) return;
+      const { logs } = await getPodLogsCmd(clusterId, namespace, podName, selectedContainer);
+      await saveLogFileCmd(filePath, logs, clusterId, namespace, podName, selectedContainer);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
   };
 
   const handleClear = () => setLines([]);
@@ -122,18 +233,42 @@ export function LogsTab({ data }: LogsTabProps) {
   return (
     <div className="flex flex-col gap-2 h-full p-3 min-h-0" data-testid="logs-tab">
       <div className="flex flex-wrap items-center gap-2">
+        {isWorkloadMode && (
+          <select
+            aria-label="Pod"
+            value={selectedPodName}
+            onChange={(e) => handlePodChange(e.target.value)}
+            disabled={streaming || pods.length === 0}
+            className="h-8 rounded-md border border-input bg-background px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
+          >
+            {pods.length === 0 ? (
+              <option value="">No pods found</option>
+            ) : (
+              pods.map((p) => (
+                <option key={p.name} value={p.name}>
+                  {p.name} ({p.status})
+                </option>
+              ))
+            )}
+          </select>
+        )}
+
         <select
           aria-label="Container"
           value={selectedContainer}
           onChange={(e) => setSelectedContainer(e.target.value)}
-          disabled={streaming}
+          disabled={streaming || containers.length === 0}
           className="h-8 rounded-md border border-input bg-background px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
         >
-          {containers.map((c) => (
-            <option key={c} value={c}>
-              {c}
-            </option>
-          ))}
+          {containers.length === 0 ? (
+            <option value="">No containers</option>
+          ) : (
+            containers.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))
+          )}
         </select>
 
         <label className="flex items-center gap-1 text-xs cursor-pointer select-none">
@@ -175,7 +310,11 @@ export function LogsTab({ data }: LogsTabProps) {
 
         <div className="flex items-center gap-1 ml-auto">
           {!streaming ? (
-            <Button size="sm" onClick={() => void startStream()}>
+            <Button
+              size="sm"
+              onClick={() => void startStream()}
+              disabled={!podName || !selectedContainer}
+            >
               <Play className="h-3.5 w-3.5 mr-1" />
               Stream
             </Button>
@@ -188,10 +327,20 @@ export function LogsTab({ data }: LogsTabProps) {
           <Button
             size="sm"
             variant="outline"
-            onClick={handleDownload}
-            disabled={lines.length === 0}
+            onClick={() => void handleDownloadVisible()}
+            disabled={filteredLines.length === 0}
           >
-            <Download className="h-3.5 w-3.5" />
+            <Download className="h-3.5 w-3.5 mr-1" />
+            Download Visible
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => void handleDownloadAll()}
+            disabled={!podName || !selectedContainer}
+          >
+            <DownloadCloud className="h-3.5 w-3.5 mr-1" />
+            Download All
           </Button>
           <Button
             size="sm"
@@ -214,9 +363,9 @@ export function LogsTab({ data }: LogsTabProps) {
         />
       </div>
 
-      {error && (
+      {(error || podsError) && (
         <div className="rounded-md border border-destructive/50 bg-destructive/10 px-2 py-1 text-xs text-destructive">
-          {error}
+          {error ?? podsError}
         </div>
       )}
 
@@ -243,4 +392,8 @@ export function LogsTab({ data }: LogsTabProps) {
       </div>
     </div>
   );
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }

@@ -1,0 +1,64 @@
+name: Sync Inbound (GitHub → Gitea)
+
+# Pulls GitHub mirror changes back into Gitea. Triggered event-driven by the
+# GitHub-side `gitea-sync-notify.yml` (which calls this workflow's dispatch
+# endpoint) and on a 15-minute safety poll. Runs the same bidirectional reconcile
+# engine (so merged
+# GitHub changes land on Gitea master/beta) and mirrors every OPEN GitHub PR into
+# Gitea as a review PR.
+#
+# Shares a concurrency group with Sync Outbound so the two never push concurrently.
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: twoway-sync-msicie
+  cancel-in-progress: false
+
+env:
+  GH_REPO: msicie/apollo_nxt-trcaa
+
+jobs:
+  reconcile-and-mirror:
+    if: false  # DISABLED — re-enable by removing this line
+    runs-on: linux-amd64
+    container:
+      image: alpine:latest
+    steps:
+      - name: Install dependencies
+        run: apk add --no-cache git curl jq
+
+      - name: Checkout sync scripts
+        run: |
+          set -eu
+          git init -q .
+          git remote add origin "https://oauth2:${{ secrets.RELEASE_TOKEN }}@gogs.tftsr.com/${GITHUB_REPOSITORY}.git"
+          git fetch --depth=1 origin master
+          git checkout -q FETCH_HEAD -- scripts/sync || git checkout -q FETCH_HEAD
+
+      - name: Reconcile master⇄main and beta⇄beta
+        env:
+          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          GH_SYNC_TOKEN: ${{ secrets.GH_SYNC_TOKEN }}
+        run: |
+          set -eu
+          export GITEA_REPO_URL="https://oauth2:${RELEASE_TOKEN}@gogs.tftsr.com/${GITHUB_REPOSITORY}.git"
+          export GITHUB_REPO_URL="https://x-access-token:${GH_SYNC_TOKEN}@github.com/${GH_REPO}.git"
+          export PAIRS="master:main beta:beta"
+          sh scripts/sync/reconcile.sh
+
+      - name: Mirror open GitHub PRs into Gitea
+        env:
+          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          GH_SYNC_TOKEN: ${{ secrets.GH_SYNC_TOKEN }}
+        run: |
+          set -eu
+          export GH_REPO="${GH_REPO}"
+          export GH_TOKEN="${GH_SYNC_TOKEN}"
+          export GITEA_API="https://gogs.tftsr.com/api/v1/repos/${GITHUB_REPOSITORY}"
+          export GITEA_TOKEN="${RELEASE_TOKEN}"
+          export GITEA_PUSH_URL="https://oauth2:${RELEASE_TOKEN}@gogs.tftsr.com/${GITHUB_REPOSITORY}.git"
+          sh scripts/sync/mirror_prs.sh

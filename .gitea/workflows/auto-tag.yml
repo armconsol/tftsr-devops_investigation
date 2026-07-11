@@ -22,17 +22,17 @@ jobs:
     outputs:
       release_tag: ${{ steps.bump.outputs.release_tag }}
     steps:
-      - name: Bump patch version and create tag
+      - name: Bump version, edit config files, and create tag
         id: bump
         env:
           RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
         run: |
           set -eu
-          apk add --no-cache curl jq git
+          apk add --no-cache curl jq git nodejs
 
           API="http://172.0.0.29:3000/api/v1/repos/$GITHUB_REPOSITORY"
 
-          # Checkout the source so we can read Cargo.toml
+          # Checkout master so we can read versions and commit the bump back
           git init
           git remote add origin "http://oauth2:${RELEASE_TOKEN}@172.0.0.29:3000/${GITHUB_REPOSITORY}.git"
           git fetch --depth=1 origin "$GITHUB_SHA"
@@ -45,36 +45,80 @@ jobs:
           CARGO_TAG="v${CARGO_VERSION}"
           echo "Cargo.toml declares: $CARGO_TAG"
 
-          # Get the latest clean semver tag (vX.Y.Z only, ignore rc/test suffixes)
+          # Get the latest clean semver tag (vX.Y.Z only, ignore beta/rc suffixes)
           LATEST=$(curl -s "$API/tags?limit=50" \
             -H "Authorization: token $RELEASE_TOKEN" | \
             jq -r '.[].name' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | \
             sort -V | tail -1)
-          echo "Latest git tag: ${LATEST:-none}"
+          echo "Latest stable tag: ${LATEST:-none}"
 
-          # Version resolution:
-          #   1. Cargo.toml > latest tag → use Cargo.toml (major/minor bump)
-          #   2. Cargo.toml == latest tag → tag already exists, use it for builds
-          #   3. Cargo.toml < latest tag  → auto-increment patch on latest tag
+          # Version resolution policy:
+          #   - No prior tag            → use Cargo.toml as-is.
+          #   - Cargo.toml > latest tag → use Cargo.toml. This is how an explicit
+          #                               MAJOR (or higher) bump is signalled from a
+          #                               beta PR; master never invents a major itself.
+          #   - Cargo.toml <= latest    → default MINOR bump off the latest tag
+          #                               (vX.Y.Z → vX.(Y+1).0). Every beta→master
+          #                               promotion ships a new minor stable.
           if [ -z "$LATEST" ]; then
             NEXT="$CARGO_TAG"
-          elif [ "$(printf '%s\n' "$LATEST" "$CARGO_TAG" | sort -V | tail -1)" = "$CARGO_TAG" ]; then
-            # Cargo.toml >= latest tag (covers both "ahead" and "equal" cases)
+          elif [ "$CARGO_TAG" != "$LATEST" ] && \
+               [ "$(printf '%s\n' "$LATEST" "$CARGO_TAG" | sort -V | tail -1)" = "$CARGO_TAG" ]; then
             NEXT="$CARGO_TAG"
-            if [ "$CARGO_TAG" = "$LATEST" ]; then
-              echo "Cargo.toml matches latest tag — reusing $NEXT for builds"
-            else
-              echo "Cargo.toml version $CARGO_TAG is ahead of $LATEST — using Cargo.toml"
-            fi
+            echo "Cargo.toml $CARGO_TAG is ahead of $LATEST — honoring explicit bump"
           else
             MAJOR=$(echo "$LATEST" | cut -d. -f1 | tr -d 'v')
             MINOR=$(echo "$LATEST" | cut -d. -f2)
-            PATCH=$(echo "$LATEST" | cut -d. -f3)
-            NEXT="v${MAJOR}.${MINOR}.$((PATCH + 1))"
+            NEXT="v${MAJOR}.$((MINOR + 1)).0"
+            echo "Default minor bump: $LATEST → $NEXT"
           fi
 
-          echo "Latest tag: ${LATEST:-none}  →  Next: $NEXT"
+          NEW_VERSION="${NEXT#v}"
+          echo "Resolved next release: $NEXT (version $NEW_VERSION)"
 
+          # If the resolved version differs from what the config files declare,
+          # rewrite all version-bearing files so the built binaries report $NEXT,
+          # then commit the bump back to master ([skip ci] avoids re-triggering).
+          if [ "$NEW_VERSION" != "$CARGO_VERSION" ]; then
+            echo "Updating version files: $CARGO_VERSION → $NEW_VERSION"
+
+            # Rewrite package.json / Cargo.toml / tauri.conf.json via the
+            # shared version script. GNU-only "0,/re/s//repl/" sed range
+            # addressing silently no-ops under BusyBox sed (this alpine
+            # image's default), which is why prior releases bumped only
+            # Cargo.lock (updated below with a POSIX-compatible sed form)
+            # and left these three files stale.
+            node scripts/update-version.mjs "${NEW_VERSION}"
+
+            # src-tauri/Cargo.lock — the version line for the trcaa crate entry
+            sed -i "/^name = \"trcaa\"/{n;s/^version = \".*\"/version = \"${NEW_VERSION}\"/}" src-tauri/Cargo.lock
+
+            # Verify every version-bearing file actually reflects $NEW_VERSION
+            # — fail loudly instead of silently shipping a stale version.
+            for f in package.json src-tauri/tauri.conf.json; do
+              grep -q "\"version\": \"${NEW_VERSION}\"" "$f" \
+                || { echo "ERROR: $f was not updated to ${NEW_VERSION}"; exit 1; }
+            done
+            for f in src-tauri/Cargo.toml src-tauri/Cargo.lock; do
+              grep -q "version = \"${NEW_VERSION}\"" "$f" \
+                || { echo "ERROR: $f was not updated to ${NEW_VERSION}"; exit 1; }
+            done
+
+            # Unshallow so pushing a new commit to master is accepted (Gitea
+            # rejects branch updates from a shallow clone).
+            git fetch --unshallow origin 2>/dev/null \
+              || git fetch --depth=2147483647 origin 2>/dev/null || true
+
+            git add src-tauri/Cargo.toml package.json src-tauri/tauri.conf.json src-tauri/Cargo.lock
+            git commit -m "chore: release ${NEXT} [skip ci]"
+            git push origin HEAD:master
+            echo "✓ Version bump committed to master"
+          else
+            echo "Config files already at $NEW_VERSION — no bump commit needed"
+          fi
+
+          # Tag the current HEAD — the bump commit when one was made, otherwise the
+          # merge commit (explicit-ahead or first-tag case).
           if git ls-remote --exit-code --tags origin "refs/tags/$NEXT" >/dev/null 2>&1; then
             echo "Tag $NEXT already exists; builds will target this tag."
           else
@@ -107,7 +151,12 @@ jobs:
             "http://oauth2:${RELEASE_TOKEN}@172.0.0.29:3000/${GITHUB_REPOSITORY}.git"
           git fetch --unshallow origin || git fetch --depth=2147483647 origin || true
           git fetch --tags origin
-          git checkout "$GITHUB_SHA" 2>/dev/null || git checkout FETCH_HEAD
+          # Base the CHANGELOG commit on the CURRENT master tip. The autotag job
+          # may have just pushed a "chore: release vX.Y.0 [skip ci]" version-bump
+          # commit to master; checking out $GITHUB_SHA (the pre-bump merge commit)
+          # would make the later 'git push origin HEAD:master' a non-fast-forward.
+          git fetch origin master
+          git checkout -B master FETCH_HEAD
           git config user.name "gitea-actions[bot]"
           git config user.email "gitea-actions@local"
 
@@ -312,17 +361,55 @@ jobs:
             echo "No wiki changes to commit"
           fi
 
+      - name: Mirror wiki to GitHub
+        env:
+          GH_RELEASE_TOKEN: ${{ secrets.GH_RELEASE_TOKEN }}
+        run: |
+          set -eu
+          GH_WIKI_URL="https://${GH_RELEASE_TOKEN}@github.com/armconsol/tftsr-devops_investigation.wiki.git"
+
+          cd /tmp
+          rm -rf ghwiki
+          # The GitHub wiki git repo only exists after the first page has been
+          # created via the web UI. If it isn't initialised yet, warn and skip
+          # rather than failing the release pipeline.
+          if ! git clone "$GH_WIKI_URL" ghwiki 2>/dev/null; then
+            echo "⚠ GitHub wiki not initialised — create the first page once at"
+            echo "  https://github.com/armconsol/tftsr-devops_investigation/wiki then re-run."
+            exit 0
+          fi
+
+          cd /tmp/ghwiki
+          if [ -d "$GITHUB_WORKSPACE/docs/wiki" ]; then
+            cp -v "$GITHUB_WORKSPACE"/docs/wiki/*.md . 2>/dev/null || echo "No wiki files to copy"
+          fi
+
+          git add -A
+          if ! git diff --staged --quiet; then
+            git commit -m "docs: sync from docs/wiki/ at commit ${GITHUB_SHA:0:8}"
+            if git push origin HEAD; then
+              echo "✓ GitHub wiki successfully synced"
+            else
+              echo "⚠ GitHub wiki push failed - check token permissions"
+              exit 1
+            fi
+          else
+            echo "No GitHub wiki changes to commit"
+          fi
+
   build-linux-amd64:
     needs: autotag
     runs-on: linux-amd64
     container:
-      image: 172.0.0.29:3000/sarman/tftsr-linux-amd64:rust1.88-node22
+      image: 172.0.0.29:3000/sarman/tftsr-linux-amd64:rust1.89-node22
+    env:
+      RELEASE_TAG: ${{ needs.autotag.outputs.release_tag }}
     steps:
       - name: Checkout
         run: |
           git init
           git remote add origin http://172.0.0.29:3000/sarman/tftsr-devops_investigation.git
-          git fetch --depth=1 origin "$GITHUB_SHA"
+          git fetch --depth=1 origin "refs/tags/${RELEASE_TAG}"
           git checkout FETCH_HEAD
       - name: Cache cargo registry
         uses: actions/cache@v4
@@ -341,6 +428,17 @@ jobs:
           key: ${{ runner.os }}-npm-${{ hashFiles('**/package-lock.json') }}
           restore-keys: |
             ${{ runner.os }}-npm-
+      - name: Install libsodium
+        run: |
+          apt-get update && apt-get install -y libsodium-dev pkg-config
+      - name: Clone IronRDP patch
+        run: |
+          # Clone from our fork until upstream PR #1398 merges
+          # https://github.com/Devolutions/IronRDP/pull/1398
+          # Using branch ref (not commit hash) to get latest Copilot review fixes
+          # TODO: Revert to upstream crates.io version once PR merges
+          git clone --depth=1 --branch=fix/rdp6-bitmap-stride-mismatch https://github.com/armconsol/IronRDP.git /tmp/ironrdp-patch
+          echo "IronRDP patch cloned from armconsol/IronRDP fix branch"
       - name: Build
         env:
           APPIMAGE_EXTRACT_AND_RUN: "1"
@@ -353,12 +451,9 @@ jobs:
         run: |
           set -eu
           API="http://172.0.0.29:3000/api/v1/repos/$GITHUB_REPOSITORY"
-          TAG=$(curl -s "$API/tags?limit=50" \
-            -H "Authorization: token $RELEASE_TOKEN" | \
-            jq -r '.[].name' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | \
-            sort -V | tail -1 || true)
+          TAG="${RELEASE_TAG}"
           if [ -z "$TAG" ]; then
-            echo "ERROR: Could not resolve release tag from repository tags."
+            echo "ERROR: release_tag from autotag job is empty."
             exit 1
           fi
           echo "Creating release for $TAG..."
@@ -411,13 +506,15 @@ jobs:
     needs: autotag
     runs-on: linux-amd64
     container:
-      image: 172.0.0.29:3000/sarman/tftsr-windows-cross:rust1.88-node22
+      image: 172.0.0.29:3000/sarman/tftsr-windows-cross:rust1.89-node22
+    env:
+      RELEASE_TAG: ${{ needs.autotag.outputs.release_tag }}
     steps:
       - name: Checkout
         run: |
           git init
           git remote add origin http://172.0.0.29:3000/sarman/tftsr-devops_investigation.git
-          git fetch --depth=1 origin "$GITHUB_SHA"
+          git fetch --depth=1 origin "refs/tags/${RELEASE_TAG}"
           git checkout FETCH_HEAD
       - name: Cache cargo registry
         uses: actions/cache@v4
@@ -436,16 +533,30 @@ jobs:
           key: ${{ runner.os }}-npm-${{ hashFiles('**/package-lock.json') }}
           restore-keys: |
             ${{ runner.os }}-npm-
+      - name: Install libsodium
+        run: |
+          apt-get update && apt-get install -y libsodium-dev pkg-config
+      - name: Clone IronRDP patch
+        run: |
+          # Clone from our fork until upstream PR #1398 merges
+          # https://github.com/Devolutions/IronRDP/pull/1398
+          # Using branch ref (not commit hash) to get latest Copilot review fixes
+          # TODO: Revert to upstream crates.io version once PR merges
+          git clone --depth=1 --branch=fix/rdp6-bitmap-stride-mismatch https://github.com/armconsol/IronRDP.git /tmp/ironrdp-patch
+          echo "IronRDP patch cloned from armconsol/IronRDP fix branch"
+      - name: Install npm dependencies
+        run: |
+          npm ci --legacy-peer-deps
       - name: Build
         env:
           CC_x86_64_pc_windows_gnu: x86_64-w64-mingw32-gcc
           CXX_x86_64_pc_windows_gnu: x86_64-w64-mingw32-g++
           AR_x86_64_pc_windows_gnu: x86_64-w64-mingw32-ar
           CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER: x86_64-w64-mingw32-gcc
-          OPENSSL_NO_VENDOR: "0"
+          # Match release-beta.yml: allow openssl-sys to use vendored OpenSSL
           OPENSSL_STATIC: "1"
+          OPENSSL_NO_VENDOR: "0"
         run: |
-          npm ci --legacy-peer-deps
           CI=true npx tauri build --target x86_64-pc-windows-gnu
       - name: Upload artifacts
         env:
@@ -453,12 +564,9 @@ jobs:
         run: |
           set -eu
           API="http://172.0.0.29:3000/api/v1/repos/$GITHUB_REPOSITORY"
-          TAG=$(curl -s "$API/tags?limit=50" \
-            -H "Authorization: token $RELEASE_TOKEN" | \
-            jq -r '.[].name' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | \
-            sort -V | tail -1 || true)
+          TAG="${RELEASE_TAG}"
           if [ -z "$TAG" ]; then
-            echo "ERROR: Could not resolve release tag from repository tags."
+            echo "ERROR: release_tag from autotag job is empty."
             exit 1
           fi
           echo "Creating release for $TAG..."
@@ -509,13 +617,53 @@ jobs:
   build-macos-arm64:
     needs: autotag
     runs-on: macos-arm64
+    timeout-minutes: 120
+    env:
+      RELEASE_TAG: ${{ needs.autotag.outputs.release_tag }}
     steps:
       - name: Checkout
         run: |
           git init
           git remote add origin http://172.0.0.29:3000/sarman/tftsr-devops_investigation.git
-          git fetch --depth=1 origin "$GITHUB_SHA"
+          git fetch --depth=1 origin "refs/tags/${RELEASE_TAG}"
           git checkout FETCH_HEAD
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+          key: ${{ runner.os }}-cargo-macos-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-macos-
+      - name: Cache cargo target
+        uses: actions/cache@v4
+        with:
+          path: src-tauri/target/aarch64-apple-darwin
+          key: ${{ runner.os }}-cargo-macos-target-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-macos-target-
+      - name: Cache npm
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-npm-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-npm-
+      - name: Clean up previous IronRDP patch
+        run: |
+          # macOS runners are persistent, so clean up from previous builds
+          rm -rf /tmp/ironrdp-patch
+          echo "Cleaned up /tmp/ironrdp-patch"
+      - name: Clone IronRDP patch
+        run: |
+          # Clone from our fork until upstream PR #1398 merges
+          # https://github.com/Devolutions/IronRDP/pull/1398
+          # Using branch ref (not commit hash) to get latest Copilot review fixes
+          # TODO: Revert to upstream crates.io version once PR merges
+          git clone --depth=1 --branch=fix/rdp6-bitmap-stride-mismatch https://github.com/armconsol/IronRDP.git /tmp/ironrdp-patch
+          echo "IronRDP patch cloned from armconsol/IronRDP fix branch"
       - name: Build
         env:
           MACOSX_DEPLOYMENT_TARGET: "11.0"
@@ -539,12 +687,9 @@ jobs:
         run: |
           set -eu
           API="http://172.0.0.29:3000/api/v1/repos/$GITHUB_REPOSITORY"
-          TAG=$(curl -s "$API/tags?limit=50" \
-            -H "Authorization: token $RELEASE_TOKEN" | \
-            jq -r '.[].name' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | \
-            sort -V | tail -1 || true)
+          TAG="${RELEASE_TAG}"
           if [ -z "$TAG" ]; then
-            echo "ERROR: Could not resolve release tag from repository tags."
+            echo "ERROR: release_tag from autotag job is empty."
             exit 1
           fi
           echo "Creating release for $TAG..."
@@ -595,13 +740,15 @@ jobs:
     needs: autotag
     runs-on: linux-amd64
     container:
-      image: 172.0.0.29:3000/sarman/tftsr-linux-arm64:rust1.88-node22
+      image: 172.0.0.29:3000/sarman/tftsr-linux-arm64:rust1.89-node22
+    env:
+      RELEASE_TAG: ${{ needs.autotag.outputs.release_tag }}
     steps:
       - name: Checkout
         run: |
           git init
           git remote add origin http://172.0.0.29:3000/sarman/tftsr-devops_investigation.git
-          git fetch --depth=1 origin "$GITHUB_SHA"
+          git fetch --depth=1 origin "refs/tags/${RELEASE_TAG}"
           git checkout FETCH_HEAD
       - name: Cache cargo registry
         uses: actions/cache@v4
@@ -620,6 +767,17 @@ jobs:
           key: ${{ runner.os }}-npm-${{ hashFiles('**/package-lock.json') }}
           restore-keys: |
             ${{ runner.os }}-npm-
+      - name: Install libsodium
+        run: |
+          apt-get update && apt-get install -y libsodium-dev pkg-config libssl-dev
+      - name: Clone IronRDP patch
+        run: |
+          # Clone from our fork until upstream PR #1398 merges
+          # https://github.com/Devolutions/IronRDP/pull/1398
+          # Using branch ref (not commit hash) to get latest Copilot review fixes
+          # TODO: Revert to upstream crates.io version once PR merges
+          git clone --depth=1 --branch=fix/rdp6-bitmap-stride-mismatch https://github.com/armconsol/IronRDP.git /tmp/ironrdp-patch
+          echo "IronRDP patch cloned from armconsol/IronRDP fix branch"
       - name: Build
         env:
           CC_aarch64_unknown_linux_gnu: aarch64-linux-gnu-gcc
@@ -627,7 +785,7 @@ jobs:
           AR_aarch64_unknown_linux_gnu: aarch64-linux-gnu-ar
           CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
           PKG_CONFIG_SYSROOT_DIR: /usr/aarch64-linux-gnu
-          PKG_CONFIG_PATH: /usr/lib/aarch64-linux-gnu/pkgconfig
+          PKG_CONFIG_PATH: /usr/lib/aarch64-linux-gnu/pkgconfig:/usr/aarch64-linux-gnu/lib/pkgconfig
           PKG_CONFIG_ALLOW_CROSS: "1"
           OPENSSL_NO_VENDOR: "0"
           OPENSSL_STATIC: "1"
@@ -641,12 +799,9 @@ jobs:
         run: |
           set -eu
           API="http://172.0.0.29:3000/api/v1/repos/$GITHUB_REPOSITORY"
-          TAG=$(curl -s "$API/tags?limit=50" \
-            -H "Authorization: token $RELEASE_TOKEN" | \
-            jq -r '.[].name' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | \
-            sort -V | tail -1 || true)
+          TAG="${RELEASE_TAG}"
           if [ -z "$TAG" ]; then
-            echo "ERROR: Could not resolve release tag from repository tags."
+            echo "ERROR: release_tag from autotag job is empty."
             exit 1
           fi
           echo "Creating release for $TAG..."

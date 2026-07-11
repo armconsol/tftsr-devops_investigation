@@ -1,0 +1,507 @@
+name: PR Review Automation
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    # Only run for same-repo pull requests. Fork PRs do not receive the LLM
+    # secret and only get a read-only GITHUB_TOKEN, so there is nothing to do
+    # (and exposing the key to untrusted forks would be unsafe).
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Build review batches
+        id: context
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin ${{ github.base_ref }}
+
+          # List changed source files (exclude generated/lock files)
+          git diff --name-only origin/${{ github.base_ref }}..HEAD \
+            -- ':!Cargo.lock' ':!package-lock.json' ':!*.lock' \
+            > /tmp/pr_files.txt
+
+          FILE_COUNT=$(wc -l < /tmp/pr_files.txt | tr -d ' ')
+          echo "files_changed=${FILE_COUNT}" >> $GITHUB_OUTPUT
+
+          if [ "$FILE_COUNT" -eq 0 ]; then
+            echo "No reviewable files changed."
+            echo "diff_size=0" >> $GITHUB_OUTPUT
+            echo "batch_count=0" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # Secret scrubbing: match actual credential VALUES only — known API key formats,
+          # or keyword="long_quoted_literal" (25+ chars). Never scrub on keyword alone,
+          # which would silently delete function signatures, variable declarations, and tests.
+          SECRET_PATTERN='AKIA[A-Z0-9]{16}|gh[opsu]_[A-Za-z0-9_]{36,}|xox[baprs]-[0-9]{10,13}-[0-9]{10,13}-[a-zA-Z0-9]{24}|(password|token|api_key|secret)[[:space:]]*=[[:space:]]*["'"'"'][A-Za-z0-9+/_!@#-]{25,}["'"'"']'
+          # Only strip lines that are ENTIRELY a long base64 blob (e.g. PEM cert bodies)
+          B64_PATTERN='^[[:space:]]*[A-Za-z0-9+/]{60,}={0,2}[[:space:]]*$'
+
+          # Split changed files into batches capped at MAX_BATCH_LINES each.
+          # File boundaries are always respected — a file is never split across batches.
+          MAX_BATCH_LINES=2500
+          BATCH=1
+          BATCH_LINES=0
+          TOTAL_LINES=0
+          BATCH_FILE="/tmp/pr_batch_001.txt"
+          > "$BATCH_FILE"
+
+          while IFS= read -r file; do
+            [ -f "$file" ] || continue
+            file_lines=$(wc -l < "$file" | tr -d ' ')
+
+            # Build context for this individual file into a temp file
+            {
+              printf '\n════════ FILE: %s (%s lines) ════════\n' "$file" "$file_lines"
+              if [ "$file_lines" -le 500 ]; then
+                grep -v -E "$SECRET_PATTERN" "$file" | grep -v -E "$B64_PATTERN" || true
+              else
+                printf '[File too large for full view (%s lines) — showing changed sections only]\n' "$file_lines"
+                git diff -U50 origin/${{ github.base_ref }}..HEAD -- "$file" \
+                  | grep -v -E "$SECRET_PATTERN" \
+                  | grep -v -E "$B64_PATTERN" \
+                  || true
+              fi
+            } > /tmp/fc_tmp.txt
+
+            FC_LINES=$(wc -l < /tmp/fc_tmp.txt | tr -d ' ')
+
+            # Start a new batch if this file would overflow the current one (and batch is not empty)
+            if [ "$BATCH_LINES" -gt 0 ] && [ $((BATCH_LINES + FC_LINES)) -gt $MAX_BATCH_LINES ]; then
+              BATCH=$((BATCH + 1))
+              BATCH_LINES=0
+              BATCH_FILE="/tmp/pr_batch_$(printf '%03d' $BATCH).txt"
+              > "$BATCH_FILE"
+            fi
+
+            cat /tmp/fc_tmp.txt >> "$BATCH_FILE"
+            BATCH_LINES=$((BATCH_LINES + FC_LINES))
+            TOTAL_LINES=$((TOTAL_LINES + FC_LINES))
+          done < /tmp/pr_files.txt
+
+          rm -f /tmp/fc_tmp.txt
+
+          echo "batch_count=${BATCH}" >> $GITHUB_OUTPUT
+          echo "diff_size=${TOTAL_LINES}" >> $GITHUB_OUTPUT
+          echo "Built ${BATCH} batch(es) from ${FILE_COUNT} files (${TOTAL_LINES} total lines)"
+
+      - name: Build codebase index
+        id: index
+        if: steps.context.outputs.diff_size != '0'
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Build a compact index of everything that EXISTS in this codebase.
+          # Included in the prompt so the model cannot invent functions/commands/tables
+          # that are not present — any finding referencing something absent from this
+          # index is immediately suspect.
+          {
+            echo "## CODEBASE INDEX"
+            echo "These are the ONLY Tauri commands, TypeScript exports, Rust public functions,"
+            echo "and database tables that exist in this project. Before raising any finding,"
+            echo "confirm that every symbol you cite appears in this list or in the file"
+            echo "contents below. If it does not appear in either, your finding is fabricated."
+            echo ""
+
+            echo "### Registered Tauri commands (lib.rs generate_handler![]):"
+            grep -oE 'commands::[a-z_]+::[a-z_]+' src-tauri/src/lib.rs 2>/dev/null \
+              | sort -u | sed 's/^/  /' || true
+            echo ""
+
+            echo "### TypeScript invoke wrappers (src/lib/tauriCommands.ts):"
+            grep -E '^export (const|interface|type) ' src/lib/tauriCommands.ts 2>/dev/null \
+              | sed 's/^/  /' || true
+            echo ""
+
+            echo "### Public Rust functions in src-tauri/src/commands/:"
+            grep -rh --include='*.rs' '^pub ' src-tauri/src/commands/ 2>/dev/null \
+              | grep 'fn ' | sed 's/^/  /' | sort || true
+            echo ""
+
+            echo "### Database tables (src-tauri/src/db/migrations.rs):"
+            grep -oE '"[0-9]+_[a-z_]+"' src-tauri/src/db/migrations.rs 2>/dev/null \
+              | tr -d '"' | sed 's/^/  /' || true
+            echo ""
+          } > /tmp/codebase_index.txt
+
+          INDEX_LINES=$(wc -l < /tmp/codebase_index.txt | tr -d ' ')
+          echo "index_lines=${INDEX_LINES}" >> $GITHUB_OUTPUT
+          echo "Built codebase index: ${INDEX_LINES} lines"
+
+      - name: Fetch PR comment history
+        id: pr_history
+        if: steps.context.outputs.diff_size != '0'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          > /tmp/pr_comments.txt
+
+          # Fetch automated review posts (what this action posts each round)
+          REVIEWS=$(curl -sf --max-time 30 --connect-timeout 10 \
+            "https://api.github.com/repos/${REPOSITORY}/pulls/${PR_NUMBER}/reviews" \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" || echo '[]')
+
+          # Fetch regular PR/issue comments (human responses, rebuttals, etc.)
+          COMMENTS=$(curl -sf --max-time 30 --connect-timeout 10 \
+            "https://api.github.com/repos/${REPOSITORY}/issues/${PR_NUMBER}/comments" \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" || echo '[]')
+
+          {
+            printf '%s\n\n' '## PREVIOUS REVIEW ROUNDS'
+            printf '%s\n\n' '### Automated review posts (oldest first):'
+            echo "$REVIEWS" \
+              | jq -r '.[] | "#### Review by \(.user.login) [state: \(.state // "COMMENT")]:\n\(.body)\n---"' \
+              2>/dev/null || true
+
+            printf '\n%s\n\n' '### PR comments (oldest first):'
+            echo "$COMMENTS" \
+              | jq -r '.[] | "#### Comment by \(.user.login):\n\(.body)\n---"' \
+              2>/dev/null || true
+          } >> /tmp/pr_comments.txt
+
+          LINES=$(wc -l < /tmp/pr_comments.txt | tr -d ' ')
+          echo "comment_lines=${LINES}" >> $GITHUB_OUTPUT
+          echo "Fetched PR history: ${LINES} lines"
+
+      - name: Analyze iteratively
+        id: analyze
+        if: steps.context.outputs.diff_size != '0'
+        shell: bash
+        env:
+          LITELLM_URL: https://llm.tftsr.com/v1
+          LITELLM_API_KEY: ${{ secrets.LITELLM_API_KEY }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+          BATCH_COUNT: ${{ steps.context.outputs.batch_count }}
+        run: |
+          set -euo pipefail
+          CHANGED_FILES=$(tr '\n' ' ' < /tmp/pr_files.txt)
+          > /tmp/pr_all_findings.txt
+          OVERALL_VERDICT="APPROVE"
+          BATCH_SUCCESS=0
+          BATCH_FAILED=0
+
+          for i in $(seq 1 "$BATCH_COUNT"); do
+            BATCH_FILE="/tmp/pr_batch_$(printf '%03d' $i).txt"
+            [ -f "$BATCH_FILE" ] || continue
+
+            # Build the prompt for this batch
+            {
+              printf '%s\n\n' 'You are a senior engineer performing a code review following the anthropics/claude-code code-review pattern.'
+              printf 'PR Title: %s\n' "$PR_TITLE"
+              printf 'PR Body: %s\n\n' "${PR_BODY:-No description provided}"
+              printf 'Files changed: %s\n\n' "$CHANGED_FILES"
+              if [ "$BATCH_COUNT" -gt 1 ]; then
+                printf 'NOTE: This is a large PR split into %s review batches. You are reviewing BATCH %s of %s.\n' "$BATCH_COUNT" "$i" "$BATCH_COUNT"
+                printf 'Focus ONLY on the files shown in this batch. Do not speculate about files not included here.\n\n'
+              fi
+              printf '%s\n' '---'
+              cat /tmp/codebase_index.txt
+              printf '%s\n\n' '---'
+              printf '%s\n\n' '## CHANGED FILE CONTENTS (THIS BATCH)'
+              printf '%s\n' 'Each section is the COMPLETE, FINAL file after PR changes (not a diff).'
+              printf '%s\n\n' 'Files over 500 lines show only changed sections with surrounding context.'
+              printf '%s\n' '---'
+              cat "$BATCH_FILE"
+              printf '%s\n\n' '---'
+              if [ -s /tmp/pr_comments.txt ]; then
+                cat /tmp/pr_comments.txt
+                printf '%s\n\n' '---'
+                printf '%s\n' '## CRITICAL: PRIOR REVIEW CONTEXT ABOVE'
+                printf '%s\n' 'Before raising ANY finding, check the review history above.'
+                printf '%s\n' 'SILENTLY DISCARD any finding that has already been:'
+                printf '%s\n' '  - Marked as invalid or incorrect by a reviewer'
+                printf '%s\n' '  - Acknowledged as an intentional design decision or known limitation'
+                printf '%s\n' '  - Confirmed fixed in a prior commit'
+                printf '%s\n\n' 'Raising a previously-refuted finding is a critical error.'
+                printf '%s\n' '---'
+              fi
+              printf '%s\n\n' '## CODE REVIEW INSTRUCTIONS'
+              printf '%s\n\n' 'You MUST follow this workflow precisely:'
+              printf '%s\n\n' '1. LAUNCH 4 PARALLEL ANALYSIS AGENTS to independently review the changes:'
+              printf '%s\n\n' '   AGENT 1 (CLAUDE.MD COMPLIANCE): Audit changes for CLAUDE.md compliance'
+              printf '%s\n' '   - Only consider CLAUDE.md files that share a file path with the file or parents'
+              printf '%s\n' '   - Quote exact rules being violated'
+              printf '%s\n\n' '   AGENT 2 (CLAUDE.MD COMPLIANCE): Audit changes for CLAUDE.md compliance'
+              printf '%s\n' '   - Same scope as Agent 1, parallel analysis'
+              printf '%s\n\n' '   AGENT 3 (BUG DETECTOR): Scan for obvious bugs in the diff itself'
+              printf '%s\n' '   - Focus ONLY on the diff, no extra context'
+              printf '%s\n' '   - Flag ONLY significant bugs, ignore nitpicks and likely false positives'
+              printf '%s\n' '   - Do not flag issues that require context outside the git diff'
+              printf '%s\n\n' '   AGENT 4 (BUG DETECTOR): Look for problems in introduced code'
+              printf '%s\n' '   - Security issues, incorrect logic, data loss'
+              printf '%s\n' '   - Only problems that fall within the changed code'
+              printf '%s\n\n' '2. CRITICAL: Only flag HIGH SIGNAL issues where:'
+              printf '%s\n' '   - Code will fail to compile or parse (syntax errors, type errors)'
+              printf '%s\n' '   - Code will definitely produce wrong results (clear logic errors)'
+              printf '%s\n' '   - Clear, unambiguous violations with exact rule quoted'
+              printf '%s\n\n' '   DO NOT flag:'
+              printf '%s\n' '   - Code style or quality concerns'
+              printf '%s\n' '   - Potential issues that depend on specific inputs or state'
+              printf '%s\n' '   - Subjective suggestions or improvements'
+              printf '%s\n' '   - Pre-existing issues'
+              printf '%s\n' '   - Issues that linters will catch'
+              printf '%s\n' '   - General security issues unless explicitly required in CLAUDE.md'
+              printf '%s\n\n' '3. FOR EACH ISSUE FOUND BY AGENTS 3 & 4:'
+              printf '%s\n' '   - Launch a VALIDATION AGENT to verify the issue is real'
+              printf '%s\n' '   - Validation agent checks: issue is truly an issue, not false positive'
+              printf '%s\n' '   - Use full codebase to validate (not just diff)'
+              printf '%s\n' '   - If validation fails, discard the issue silently'
+              printf '%s\n\n' '4. OUTPUT FORMAT (strict):'
+              printf '%s\n\n' '   **Summary** (2-3 sentences)'
+              printf '%s\n' '   **Findings**'
+              printf '%s\n' '   - [SEVERITY] file:line - description'
+              printf '%s\n' '     Evidence: quoted line'
+              printf '%s\n\n' '     Fix: concrete change'
+              printf '%s\n\n' '   (Write "No findings." if none.)'
+              printf '%s\n' '   **Verdict**: APPROVE / APPROVE WITH COMMENTS / REQUEST CHANGES'
+              printf '%s\n\n' '5. SEVERITY DEFINITIONS:'
+              printf '%s\n' '   - BLOCKER: fails to compile, corrupts data, or security vulnerability'
+              printf '%s\n' '   - WARNING: real risk to address before merge'
+              printf '%s\n' '   - SUGGESTION: minor improvement, follow-up PR fine'
+              printf '%s\n\n' '6. FOCUS AREAS:'
+              printf '%s\n' '   - Security bugs, logic errors, data loss, injection, unhandled errors'
+              printf '%s\n\n' '7. IGNORE:'
+              printf '%s\n' '   - Style, missing comments, speculative future concerns'
+              printf '%s\n\n' '8. FALSE POSITIVES TO AVOID:'
+              printf '%s\n' '   - Pre-existing issues'
+              printf '%s\n' '   - Something that appears buggy but is actually correct'
+              printf '%s\n' '   - Pedantic nitpicks that senior engineers would not flag'
+              printf '%s\n' '   - Issues that linters will catch'
+              printf '%s\n' '   - General code quality concerns unless explicitly required in CLAUDE.md'
+              printf '%s\n' '   - Issues mentioned in CLAUDE.md but explicitly silenced in code'
+            } > /tmp/prompt_batch.txt
+
+            jq -cn \
+              --arg model "qwen3.5-122b-think" \
+              --rawfile content /tmp/prompt_batch.txt \
+              '{model: $model, messages: [{role: "user", content: $content}], stream: false}' \
+              > /tmp/body.json
+
+            echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] PR #${PR_NUMBER} - Batch ${i}/${BATCH_COUNT} ($(wc -c < /tmp/body.json) bytes)..."
+
+            HTTP_CODE=$(curl -s --max-time 600 --connect-timeout 30 \
+              --retry 2 --retry-delay 15 --retry-connrefused --retry-max-time 1200 \
+              -o /tmp/llm_response.json -w "%{http_code}" \
+              -X POST "$LITELLM_URL/chat/completions" \
+              -H "Authorization: Bearer $LITELLM_API_KEY" \
+              -H "Content-Type: application/json" \
+              --data @/tmp/body.json)
+
+            echo "Batch ${i} HTTP status: $HTTP_CODE"
+            echo "Batch ${i} response size: $(wc -c < /tmp/llm_response.json) bytes"
+
+            if [ "$HTTP_CODE" != "200" ]; then
+              echo "ERROR: Batch ${i} failed (HTTP $HTTP_CODE)"
+              cat /tmp/llm_response.json
+              {
+                echo "## Batch ${i} of ${BATCH_COUNT}"
+                echo ""
+                echo "Review unavailable — LLM returned HTTP ${HTTP_CODE}."
+                echo ""
+                echo "---"
+                echo ""
+              } >> /tmp/pr_all_findings.txt
+              BATCH_FAILED=$((BATCH_FAILED + 1))
+              continue
+            fi
+
+            if ! jq empty /tmp/llm_response.json 2>/dev/null; then
+              echo "ERROR: Invalid JSON in batch ${i} response"
+              BATCH_FAILED=$((BATCH_FAILED + 1))
+              continue
+            fi
+
+            BATCH_REVIEW=$(jq -r '.choices[0].message.content // empty' /tmp/llm_response.json)
+            if [ -z "$BATCH_REVIEW" ]; then
+              echo "ERROR: Empty content in batch ${i} response"
+              BATCH_FAILED=$((BATCH_FAILED + 1))
+              continue
+            fi
+
+            echo "Batch ${i} review length: ${#BATCH_REVIEW} chars"
+            BATCH_SUCCESS=$((BATCH_SUCCESS + 1))
+
+            # Track harshest verdict across batches
+            if echo "$BATCH_REVIEW" | grep -q "REQUEST CHANGES"; then
+              OVERALL_VERDICT="REQUEST CHANGES"
+            elif echo "$BATCH_REVIEW" | grep -q "APPROVE WITH COMMENTS" && [ "$OVERALL_VERDICT" != "REQUEST CHANGES" ]; then
+              OVERALL_VERDICT="APPROVE WITH COMMENTS"
+            fi
+
+            if [ "$BATCH_COUNT" -eq 1 ]; then
+              echo "$BATCH_REVIEW" >> /tmp/pr_all_findings.txt
+            else
+              {
+                echo "## Batch ${i} of ${BATCH_COUNT}"
+                echo ""
+                echo "$BATCH_REVIEW"
+                echo ""
+                echo "---"
+                echo ""
+              } >> /tmp/pr_all_findings.txt
+            fi
+            if [ "$i" -lt "$BATCH_COUNT" ]; then
+              sleep 2
+            fi
+          done
+
+          if [ "$BATCH_SUCCESS" -eq 0 ]; then
+            echo "ERROR: All ${BATCH_COUNT} batches failed"
+            exit 1
+          fi
+
+          # Assemble final review
+          if [ "$BATCH_COUNT" -eq 1 ]; then
+            cp /tmp/pr_all_findings.txt /tmp/pr_review.txt
+          else
+            {
+              echo "_This PR was reviewed in ${BATCH_COUNT} batches (${BATCH_FAILED} batch(es) failed)._"
+              echo ""
+              cat /tmp/pr_all_findings.txt
+              echo "---"
+              echo ""
+              echo "**Overall Verdict**: ${OVERALL_VERDICT}"
+              echo ""
+              echo "_Overall verdict reflects the most critical finding across all batches._"
+            } > /tmp/pr_review.txt
+          fi
+
+      - name: Verify findings against codebase
+        if: steps.analyze.outcome == 'success'
+        shell: bash
+        run: |
+          set -euo pipefail
+          # For each finding that contains a fenced code block under "Evidence:",
+          # grep at least one substantial line of that block against the FULL repository.
+          # Searching the full repo (not just changed files) prevents false UNVERIFIED
+          # tags when the model correctly quotes unchanged files, while still flagging
+          # fabricated code that doesn't exist anywhere in the codebase.
+          python3 - << 'PYEOF'
+          import re, os, subprocess, sys
+
+          review = open('/tmp/pr_review.txt').read()
+
+          # Load ENTIRE tracked repository (all .rs, .ts, .tsx, .yml, .toml, .json files)
+          result = subprocess.run(
+              ['git', 'ls-files', '--',
+               '*.rs', '*.ts', '*.tsx', '*.yml', '*.yaml', '*.toml', '*.json', '*.sql'],
+              capture_output=True, text=True
+          )
+          all_tracked = [f.strip() for f in result.stdout.splitlines() if f.strip()]
+
+          all_content_parts = []
+          for path in all_tracked:
+              if os.path.isfile(path):
+                  try:
+                      all_content_parts.append(open(path).read())
+                  except Exception as e:
+                      print(f"Warning: Could not read {path}: {e}", file=sys.stderr)
+          all_content = '\n'.join(all_content_parts)
+
+          def evidence_exists(block: str) -> bool:
+              """True if ≥1 significant line from the block is found verbatim in the codebase."""
+              for raw in block.splitlines():
+                  line = raw.lstrip('+-').strip()
+                  # Skip blank, very short, pure-comment, or diff-header lines
+                  if len(line) < 20:
+                      continue
+                  if line.startswith(('//','#','/*','*','Fix:','Evidence:','---','+++')):
+                      continue
+                  if line in all_content:
+                      return True
+              return False
+
+          # Split on finding markers; re-join after optional tagging
+          severity_re = re.compile(r'\[(BLOCKER|WARNING|SUGGESTION)\]')
+
+          def tag_if_unverified(finding_text: str) -> str:
+              code_match = re.search(r'```[^\n]*\n(.*?)```', finding_text, re.DOTALL)
+              if code_match and not evidence_exists(code_match.group(1)):
+                  # Replace first severity tag with a prefixed version
+                  return severity_re.sub(
+                      lambda m: f'[{m.group(1)} — ⚠️ UNVERIFIED: evidence not found in codebase]',
+                      finding_text, count=1
+                  )
+              return finding_text
+
+          # Split review into preamble + individual finding blocks
+          # Each block starts at a severity marker line
+          parts  = re.split(r'(?=^\[(?:BLOCKER|WARNING|SUGGESTION)\])', review, flags=re.MULTILINE)
+          result = parts[0]                          # preamble (Summary, etc.)
+          for block in parts[1:]:
+              result += tag_if_unverified(block)
+
+          open('/tmp/pr_review.txt', 'w').write(result)
+          print(f"Verification complete — {len(parts)-1} finding(s) checked.")
+          PYEOF
+
+      - name: Post review comment
+        if: always() && steps.context.outputs.diff_size != '0'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "ERROR: GITHUB_TOKEN is not available"
+            exit 1
+          fi
+          if [ -f "/tmp/pr_review.txt" ] && [ -s "/tmp/pr_review.txt" ]; then
+            if [ "$(wc -c < /tmp/pr_review.txt)" -gt 65536 ]; then
+              echo "WARNING: Review body truncated to 65536 characters"
+            fi
+            REVIEW_BODY=$(head -c 65536 /tmp/pr_review.txt)
+            BODY=$(jq -n \
+              --arg body "Automated PR Review:${REVIEW_BODY}" \
+              '{body: $body, event: "COMMENT"}')
+          else
+            BODY=$(jq -n \
+              '{body: "Automated PR Review could not be completed - LLM analysis failed or produced no output.", event: "COMMENT"}')
+          fi
+          HTTP_CODE=$(curl -s --max-time 30 --connect-timeout 10 \
+            -o /tmp/review_post_response.json -w "%{http_code}" \
+            -X POST "https://api.github.com/repos/${REPOSITORY}/pulls/${PR_NUMBER}/reviews" \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "Content-Type: application/json" \
+            -d "$BODY")
+          echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Post review HTTP status: $HTTP_CODE"
+          if [ "$HTTP_CODE" != "200" ] && [ "$HTTP_CODE" != "201" ]; then
+            echo "ERROR: Failed to post review (HTTP $HTTP_CODE)"
+            cat /tmp/review_post_response.json
+            exit 1
+          fi
+
+      - name: Cleanup
+        if: always()
+        shell: bash
+        run: |
+          rm -f /tmp/pr_files.txt /tmp/pr_context.txt /tmp/codebase_index.txt \
+                /tmp/pr_comments.txt /tmp/prompt_batch.txt /tmp/body.json \
+                /tmp/llm_response.json /tmp/pr_review.txt /tmp/pr_all_findings.txt \
+                /tmp/review_post_response.json /tmp/fc_tmp.txt
+          rm -f /tmp/pr_batch_*.txt

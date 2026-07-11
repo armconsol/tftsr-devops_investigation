@@ -4,7 +4,7 @@
 # OpenSSL major version changes (used via OPENSSL_STATIC=1), or Tauri CLI changes
 # that affect bundler system deps.
 # Tag format: rust<VER>-node<VER>
-FROM rust:1.88-slim
+FROM rust:1.89-slim
 
 RUN apt-get update -qq \
     && apt-get install -y -qq --no-install-recommends \
@@ -26,10 +26,20 @@ RUN apt-get update -qq \
 
 # Pre-build libsodium for x86_64-pc-windows-gnu so libsodium-sys-stable
 # does not attempt a network download at cargo build time (no DNS in CI containers).
+# Primary URL: download.libsodium.org; fallback: GitHub releases (same file, different CDN).
+# --connect-timeout caps the TCP handshake so a blocked route fails fast instead of
+# spending 2+ minutes on a dead connection.
 RUN set -eu \
     && SODIUM_VER="1.0.20" \
-    && curl -fsSL "https://download.libsodium.org/libsodium/releases/libsodium-${SODIUM_VER}.tar.gz" \
-       | tar -xz -C /tmp \
+    && TMPTAR="/tmp/libsodium-${SODIUM_VER}.tar.gz" \
+    && (curl -fsSL --connect-timeout 20 --max-time 90 \
+           "https://download.libsodium.org/libsodium/releases/libsodium-${SODIUM_VER}.tar.gz" \
+           -o "$TMPTAR" \
+       || curl -fsSL --connect-timeout 20 --max-time 90 \
+           "https://github.com/jedisct1/libsodium/releases/download/${SODIUM_VER}-RELEASE/libsodium-${SODIUM_VER}.tar.gz" \
+           -o "$TMPTAR") \
+    && tar -xz -C /tmp -f "$TMPTAR" \
+    && rm "$TMPTAR" \
     && cd "/tmp/libsodium-${SODIUM_VER}" \
     && ./configure \
          --host=x86_64-w64-mingw32 \

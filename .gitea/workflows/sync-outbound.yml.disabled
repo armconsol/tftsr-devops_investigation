@@ -1,0 +1,68 @@
+name: Sync Outbound (Gitea → GitHub)
+
+# Authoritative push of Gitea content to the GitHub mirror msicie/apollo_nxt-trcaa.
+# Runs the bidirectional reconcile engine (Gitea wins on conflict) for master⇄main
+# and beta⇄beta, then mirrors tags Gitea→GitHub. The `.github/` directory is never
+# synced, so GitHub keeps its own workflows.
+#
+# Reconcile is idempotent: if there is nothing to push it exits without changes.
+# Shares a concurrency group with Sync Inbound so the two never push concurrently.
+
+on:
+  push:
+    branches:
+      - master
+      - beta
+  workflow_dispatch:
+
+concurrency:
+  group: twoway-sync-msicie
+  cancel-in-progress: false
+
+env:
+  GH_REPO: msicie/apollo_nxt-trcaa
+
+jobs:
+  reconcile:
+    if: false  # DISABLED — re-enable by removing this line
+    runs-on: linux-amd64
+    container:
+      image: alpine:latest
+    steps:
+      - name: Install dependencies
+        run: apk add --no-cache git curl jq
+
+      - name: Checkout sync scripts
+        run: |
+          set -eu
+          git init -q .
+          git remote add origin "https://oauth2:${{ secrets.RELEASE_TOKEN }}@gogs.tftsr.com/${GITHUB_REPOSITORY}.git"
+          git fetch --depth=1 origin "${GITHUB_REF_NAME:-master}"
+          git checkout -q FETCH_HEAD -- scripts/sync || git checkout -q FETCH_HEAD
+
+      - name: Reconcile master⇄main and beta⇄beta
+        env:
+          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          GH_SYNC_TOKEN: ${{ secrets.GH_SYNC_TOKEN }}
+        run: |
+          set -eu
+          export GITEA_REPO_URL="https://oauth2:${RELEASE_TOKEN}@gogs.tftsr.com/${GITHUB_REPOSITORY}.git"
+          export GITHUB_REPO_URL="https://x-access-token:${GH_SYNC_TOKEN}@github.com/${GH_REPO}.git"
+          export PAIRS="master:main beta:beta"
+          sh scripts/sync/reconcile.sh
+
+      - name: Mirror tags Gitea → GitHub
+        env:
+          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          GH_SYNC_TOKEN: ${{ secrets.GH_SYNC_TOKEN }}
+        run: |
+          set -eu
+          rm -rf /tmp/tagsync && git init -q /tmp/tagsync && cd /tmp/tagsync
+          git remote add gitea  "https://oauth2:${RELEASE_TOKEN}@gogs.tftsr.com/${GITHUB_REPOSITORY}.git"
+          git remote add github "https://x-access-token:${GH_SYNC_TOKEN}@github.com/${GH_REPO}.git"
+          git fetch -q --tags gitea
+          # Push every Gitea tag to GitHub; ignore tags that already exist identically.
+          # Redact tokens from any output git may emit in authenticated-URL errors.
+          git push github "refs/tags/*:refs/tags/*" 2>&1 \
+            | sed -e "s|${RELEASE_TOKEN}|***|g" -e "s|${GH_SYNC_TOKEN}|***|g" -e 's/^/  /' \
+            || true

@@ -4,7 +4,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Button } from '@/components/ui/index';
 import { MoreHorizontal, Play, Trash2 } from 'lucide-react';
 
-interface BackupJobInfo {
+export interface BackupJobInfo {
   id: string;
   name: string;
   node: string;
@@ -15,6 +15,10 @@ interface BackupJobInfo {
   size?: number;
   count?: number;
   enabled: boolean;
+  storage?: string;
+  vmid?: string | number;
+  mode?: string;
+  comment?: string;
 }
 
 interface BackupJobListProps {
@@ -57,37 +61,34 @@ export function BackupJobList({
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Name</TableHead>
+                <TableHead>ID</TableHead>
+                <TableHead>Storage</TableHead>
+                <TableHead>VMs</TableHead>
                 <TableHead>Node</TableHead>
                 <TableHead>Schedule</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Last Run</TableHead>
+                <TableHead>Enabled</TableHead>
                 <TableHead>Next Run</TableHead>
-                <TableHead>Size</TableHead>
-                <TableHead>Count</TableHead>
+                <TableHead>Mode</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {jobs.map((job) => (
                 <TableRow key={job.id}>
-                  <TableCell className="font-medium">{job.name}</TableCell>
-                  <TableCell>{job.node}</TableCell>
-                  <TableCell>{job.schedule}</TableCell>
+                  <TableCell className="font-medium font-mono text-xs">{job.name}</TableCell>
+                  <TableCell>{job.storage || '-'}</TableCell>
+                  <TableCell className="text-xs">{job.vmid ? String(job.vmid) : 'all'}</TableCell>
+                  <TableCell>{job.node || 'all'}</TableCell>
+                  <TableCell className="font-mono text-xs">{job.schedule}</TableCell>
                   <TableCell>
                     <span className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-medium ${
-                      job.status === 'running' ? 'bg-blue-100 text-blue-800' :
-                      job.status === 'success' ? 'bg-green-100 text-green-800' :
-                      job.status === 'failed' ? 'bg-red-100 text-red-800' :
-                      'bg-gray-100 text-gray-800'
+                      job.enabled ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
                     }`}>
-                      {job.status}
+                      {job.enabled ? 'enabled' : 'disabled'}
                     </span>
                   </TableCell>
-                  <TableCell>{job.lastRun || '-'}</TableCell>
-                  <TableCell>{job.nextRun || '-'}</TableCell>
-                  <TableCell>{job.size ? `${(job.size / (1024 * 1024 * 1024)).toFixed(2)} GB` : '-'}</TableCell>
-                  <TableCell>{job.count || '-'}</TableCell>
+                  <TableCell className="text-xs">{job.nextRun || '-'}</TableCell>
+                  <TableCell className="text-xs">{job.mode || '-'}</TableCell>
                   <TableCell className="text-right">
                     <div className="flex items-center justify-end space-x-2">
                       <button
