@@ -4,6 +4,11 @@ All notable changes to TRCAA are documented here.
 Commit types shown: feat, fix, perf, docs, refactor.
 CI, chore, and build changes are excluded.
 
+## [3.5.0] — 2026-07-11
+
+### Bug Fixes
+- Wire up Kubernetes log download with visible/all options
+
 ## [3.2.0] — 2026-07-06
 
 ### Bug Fixes
